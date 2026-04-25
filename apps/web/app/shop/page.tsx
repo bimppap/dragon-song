@@ -1,12 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Store, ClipboardList, PlusSquare, ChevronDown } from "lucide-react";
+import { Store, ClipboardList, PlusSquare } from "lucide-react";
 import ItemGrid from "./components/ItemGrid";
 import PurchaseGrid from "./components/PurchaseGrid";
 import AddItemForm from "./components/AddItemForm";
 import { fetchCharacters } from "@/lib/api";
 import type { Character } from "@/lib/api";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 type Tab = "items" | "purchases" | "add";
 
@@ -41,27 +50,22 @@ export default function ShopPage() {
       {/* 캐릭터 선택 */}
       <div className="flex items-center gap-3">
         <span className="text-sm font-semibold text-slate-600 whitespace-nowrap">캐릭터 선택</span>
-        <div className="relative">
-          <select
-            value={characterId ?? ""}
-            onChange={(e) => setCharacterId(Number(e.target.value))}
-            disabled={characters.length === 0}
-            className="appearance-none border border-slate-200 bg-white text-slate-800 text-sm font-medium rounded-lg pl-3 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition disabled:opacity-50 cursor-pointer"
-          >
-            {characters.length === 0 && (
-              <option value="">캐릭터 없음</option>
-            )}
+        <Select
+          value={characterId?.toString() ?? ""}
+          onValueChange={(v) => setCharacterId(Number(v))}
+          disabled={characters.length === 0}
+        >
+          <SelectTrigger className="w-44">
+            <SelectValue placeholder="캐릭터 없음" />
+          </SelectTrigger>
+          <SelectContent>
             {characters.map((c) => (
-              <option key={c.id} value={c.id}>
+              <SelectItem key={c.id} value={c.id.toString()}>
                 {c.name}
-              </option>
+              </SelectItem>
             ))}
-          </select>
-          <ChevronDown
-            size={14}
-            className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400"
-          />
-        </div>
+          </SelectContent>
+        </Select>
         {characterId != null && (
           <span className="text-xs text-slate-400">ID: {characterId}</span>
         )}
@@ -70,19 +74,20 @@ export default function ShopPage() {
       {/* 탭 바 */}
       <div className="flex items-center gap-1 border-b border-slate-200">
         {TABS.map(({ id, label, icon: Icon }) => (
-          <button
+          <Button
             key={id}
+            variant="ghost"
             onClick={() => setTab(id)}
-            className={[
-              "flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 -mb-px transition-colors",
+            className={cn(
+              "gap-2 rounded-none border-b-2 -mb-px h-11 px-5 font-semibold",
               tab === id
-                ? "border-indigo-600 text-indigo-600"
-                : "border-transparent text-slate-500 hover:text-slate-800",
-            ].join(" ")}
+                ? "border-indigo-600 text-indigo-600 bg-transparent hover:bg-transparent hover:text-indigo-600"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-transparent"
+            )}
           >
             <Icon size={15} />
             {label}
-          </button>
+          </Button>
         ))}
       </div>
 

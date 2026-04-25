@@ -7,15 +7,14 @@ import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Search } from "lucide-react";
 import { fetchPurchases } from "@/lib/api";
 import type { Purchase } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface Props {
   refreshKey: number;
 }
-
-const inputCls =
-  "border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition placeholder:text-gray-300 w-36";
 
 export default function PurchaseGrid({ refreshKey }: Props) {
   const [purchases, setPurchases] = useState<Purchase[]>([]);
@@ -52,27 +51,24 @@ export default function PurchaseGrid({ refreshKey }: Props) {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-2">
-        <input
+        <Input
           type="number"
           placeholder="캐릭터 ID"
           value={charFilter}
           onChange={(e) => setCharFilter(e.target.value)}
-          className={inputCls}
+          className="w-36"
         />
-        <input
+        <Input
           type="number"
           placeholder="아이템 ID"
           value={itemFilter}
           onChange={(e) => setItemFilter(e.target.value)}
-          className={inputCls}
+          className="w-36"
         />
-        <button
-          onClick={load}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 text-sm font-medium bg-gray-800 text-white rounded-lg hover:bg-gray-900 transition"
-        >
+        <Button variant="secondary" onClick={load}>
           <Search size={14} />
           조회
-        </button>
+        </Button>
       </div>
 
       <div className="ag-theme-quartz rounded-lg overflow-hidden" style={{ height: 440 }}>

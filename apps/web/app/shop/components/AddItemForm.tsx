@@ -4,6 +4,9 @@ import { useState } from "react";
 import { PlusCircle } from "lucide-react";
 import { createItem } from "@/lib/api";
 import type { ItemCreate } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 const EMPTY: ItemCreate = {
   name: "",
@@ -29,8 +32,6 @@ function Field({ label, required, children }: { label: string; required?: boolea
     </div>
   );
 }
-
-const inputCls = "w-full border border-slate-200 bg-white text-slate-900 rounded-lg px-3 py-2 text-sm placeholder:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:border-transparent transition";
 
 export default function AddItemForm({ onCreated }: Props) {
   const [form, setForm] = useState<ItemCreate>(EMPTY);
@@ -67,18 +68,17 @@ export default function AddItemForm({ onCreated }: Props) {
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-5">
       <Field label="아이템명" required>
-        <input
+        <Input
           name="name"
           required
           placeholder="ex) 체력 포션"
           value={form.name}
           onChange={handleChange}
-          className={inputCls}
         />
       </Field>
 
       <Field label="가격 (G)" required>
-        <input
+        <Input
           name="price"
           type="number"
           min={0}
@@ -86,67 +86,56 @@ export default function AddItemForm({ onCreated }: Props) {
           placeholder="0"
           value={form.price}
           onChange={handleChange}
-          className={inputCls}
         />
       </Field>
 
       <Field label="유저용 설명">
-        <textarea
+        <Textarea
           name="description_user"
           placeholder="유저에게 표시될 설명"
           value={form.description_user}
           onChange={handleChange}
           rows={2}
-          className={`${inputCls} resize-none`}
         />
       </Field>
 
       <Field label="내부 설명">
-        <textarea
+        <Textarea
           name="description_internal"
           placeholder="계산/운영용 설명 (유저에게 비공개)"
           value={form.description_internal}
           onChange={handleChange}
           rows={2}
-          className={`${inputCls} resize-none`}
         />
       </Field>
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="캐릭터별 구매 한도">
-          <input
+          <Input
             name="purchase_limit_per_character"
             type="number"
             min={1}
             placeholder="무제한"
             value={form.purchase_limit_per_character ?? ""}
             onChange={handleChange}
-            className={inputCls}
           />
         </Field>
         <Field label="전체 구매 한도">
-          <input
+          <Input
             name="purchase_limit_global"
             type="number"
             min={1}
             placeholder="무제한"
             value={form.purchase_limit_global ?? ""}
             onChange={handleChange}
-            className={inputCls}
           />
         </Field>
       </div>
 
-      <div className="pt-1">
-        <button
-          type="submit"
-          disabled={loading}
-          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white text-sm font-medium rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition"
-        >
-          <PlusCircle size={15} />
-          {loading ? "생성 중..." : "아이템 추가"}
-        </button>
-      </div>
+      <Button type="submit" disabled={loading}>
+        <PlusCircle size={15} />
+        {loading ? "생성 중..." : "아이템 추가"}
+      </Button>
     </form>
   );
 }

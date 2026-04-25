@@ -1,28 +1,33 @@
 @import "tailwindcss";
 
-/* 라이트모드 고정 — 다크모드 미디어쿼리 없음 */
-html,
-body {
-  height: 100%;
-  max-width: 100vw;
-  overflow-x: hidden;
-  background-color: #f8fafc; /* slate-50 */
-  color: #0f172a;            /* slate-900 */
-  font-family: Arial, Helvetica, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  color-scheme: light;
-}
+/*
+  @layer base 안에 작성해야 @layer utilities(Tailwind 유틸 클래스)보다
+  우선순위가 낮아진다. 밖에 쓰면 px-4, mx-auto 같은 유틸 클래스를 덮어씀.
+*/
+@layer base {
+  html,
+  body {
+    height: 100%;
+    max-width: 100vw;
+    overflow-x: hidden;
+    background-color: #f8fafc; /* slate-50 */
+    color: #0f172a;            /* slate-900 */
+    font-family: Arial, Helvetica, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    color-scheme: light;
+  }
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  padding: 0;
-  margin: 0;
-}
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    padding: 0;
+    margin: 0;
+  }
 
-a {
-  color: inherit;
-  text-decoration: none;
+  a {
+    color: inherit;
+    text-decoration: none;
+  }
 }

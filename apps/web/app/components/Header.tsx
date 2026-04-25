@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Users, Store, CalendarCheck, Swords } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "캐릭터", icon: Users },
@@ -21,7 +22,7 @@ export default function Header() {
           🐉 Dragon Song
         </span>
 
-        <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-2">
+        <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
           {NAV_ITEMS.map(({ href, label, icon: Icon, wip }) => {
             const active = pathname === href;
             return (
@@ -30,18 +31,18 @@ export default function Header() {
                 href={wip ? "#" : href}
                 aria-disabled={wip}
                 tabIndex={wip ? -1 : undefined}
-                className={[
-                  "flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-colors",
+                className={cn(
+                  "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
                   active
                     ? "bg-indigo-600 text-white"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-                  wip ? "opacity-40 pointer-events-none" : "",
-                ].join(" ")}
+                  wip && "opacity-40 pointer-events-none"
+                )}
               >
                 <Icon size={15} strokeWidth={active ? 2.5 : 2} />
                 {label}
                 {wip && (
-                  <span className="text-[10px] bg-slate-100 text-slate-400 font-semibold px-1.5 py-0.5 rounded">
+                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-semibold">
                     준비중
                   </span>
                 )}

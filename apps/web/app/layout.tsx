@@ -29,9 +29,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable}`}
       style={{ colorScheme: "light" }}
     >
-      <body className="flex flex-col min-h-screen bg-slate-50 text-slate-900">
+      <body className="min-h-screen bg-slate-50 text-slate-900">
         <Header />
-        <div className="flex-1 w-full">{children}</div>
+        {children}
       </body>
     </html>
   );

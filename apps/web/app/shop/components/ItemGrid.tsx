@@ -7,6 +7,8 @@ import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { ShoppingCart, Package } from "lucide-react";
 import { fetchItems, purchaseItem } from "@/lib/api";
 import type { Item } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -16,11 +18,9 @@ interface Props {
 }
 
 function StockBadge({ value }: { value: number | null }) {
-  if (value === null)
-    return <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">무제한</span>;
-  if (value === 0)
-    return <span className="text-xs text-red-600 bg-red-50 font-semibold px-2 py-0.5 rounded-full">품절</span>;
-  return <span className="text-xs text-green-700 bg-green-50 font-semibold px-2 py-0.5 rounded-full">{value}개</span>;
+  if (value === null) return <Badge variant="secondary">무제한</Badge>;
+  if (value === 0)    return <Badge variant="destructive">품절</Badge>;
+  return <Badge variant="success">{value}개</Badge>;
 }
 
 function calcStock(item: Item): number | null {
@@ -44,9 +44,7 @@ export default function ItemGrid({ characterId, onPurchased }: Props) {
     }
   }, [characterId]);
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   async function handlePurchase(item: Item) {
     if (loading) return;
@@ -103,14 +101,15 @@ export default function ItemGrid({ characterId, onPurchased }: Props) {
       cellRenderer: (p: ICellRendererParams<Item>) => {
         const soldOut = calcStock(p.data!) === 0;
         return (
-          <button
-            onClick={() => handlePurchase(p.data!)}
+          <Button
+            size="sm"
+            variant={soldOut ? "outline" : "default"}
             disabled={loading || soldOut}
-            className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+            onClick={() => handlePurchase(p.data!)}
           >
             <ShoppingCart size={13} />
             {soldOut ? "품절" : "구매"}
-          </button>
+          </Button>
         );
       },
     },
