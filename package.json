@@ -1,0 +1,9 @@
+{
+  "name": "dragon-song",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev:web": "cd apps/web && npm run dev",
+    "dev:api": "cd apps/api && source .venv/bin/activate && uvicorn app.main:app --reload"
+  }
+}
