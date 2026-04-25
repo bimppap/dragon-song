@@ -3,10 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app.db import engine, get_db
-from app.models import Base, Item
+from app.models import Base, Character, Item
 from app.schemas import (
     CharacterCreate,
     CharacterRead,
+    ChallengeCreate,
+    ChallengeProgressBulkUpdate,
+    ChallengeProgressRead,
+    ChallengeRead,
     ItemCreate,
     ItemRead,
     ItemWithStock,
@@ -48,6 +52,30 @@ def create_item(data: ItemCreate, db: Session = Depends(get_db)):
     return crud.create_item(db, data)
 
 
+@app.get("/challenges", response_model=list[ChallengeRead])
+def list_challenges(chapter: str | None = None, db: Session = Depends(get_db)):
+    return crud.get_challenges(db, chapter)
+
+
+@app.post("/challenges", response_model=ChallengeRead)
+def create_challenge(data: ChallengeCreate, db: Session = Depends(get_db)):
+    return crud.create_challenge(db, data)
+
+
+@app.get("/challenges/{challenge_id}/progress", response_model=list[ChallengeProgressRead])
+def list_challenge_progress(challenge_id: int, db: Session = Depends(get_db)):
+    return crud.get_challenge_progress(db, challenge_id)
+
+
+@app.put("/challenges/{challenge_id}/progress", response_model=list[ChallengeProgressRead])
+def save_challenge_progress(
+    challenge_id: int,
+    data: ChallengeProgressBulkUpdate,
+    db: Session = Depends(get_db),
+):
+    return crud.update_challenge_progress(db, challenge_id, data)
+
+
 @app.get("/items", response_model=list[ItemWithStock])
 def list_items(character_id: int | None = None, db: Session = Depends(get_db)):
     return crud.get_items_with_stock(db, character_id)
@@ -56,11 +84,17 @@ def list_items(character_id: int | None = None, db: Session = Depends(get_db)):
 @app.post("/purchases/bulk", response_model=list[PurchaseRead])
 def bulk_purchase(data: BulkPurchaseRequest, db: Session = Depends(get_db)):
     purchases = crud.bulk_purchase(db, data)
-    items = {i.id: i for i in db.query(Item).filter(Item.id.in_([p.item_id for p in purchases])).all()}
+    item_ids = {p.item_id for p in purchases}
+    character_ids = {p.character_id for p in purchases}
+    items = {i.id: i for i in db.query(Item).filter(Item.id.in_(item_ids)).all()}
+    characters = {
+        c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
+    }
     return [
         PurchaseRead(
             id=p.id,
             character_id=p.character_id,
+            character_name=characters[p.character_id].name,
             item_id=p.item_id,
             item_name=items[p.item_id].name,
             quantity=p.quantity,

@@ -22,9 +22,9 @@ import { cn } from "@/lib/utils";
 type Tab = "items" | "purchases" | "add";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "items",     label: "아이템 리스트", icon: Store },
-  { id: "purchases", label: "구매 내역",    icon: ClipboardList },
-  { id: "add",       label: "아이템 추가",  icon: PlusSquare },
+  { id: "items", label: "상점", icon: Store },
+  { id: "purchases", label: "구매 내역", icon: ClipboardList },
+  { id: "add", label: "아이템 추가", icon: PlusSquare },
 ];
 
 export default function ShopPage() {
@@ -51,7 +51,10 @@ export default function ShopPage() {
   function handleAddToCart(item: Item) {
     setCart((prev) => {
       const existing = prev.find((e) => e.item.id === item.id);
-      if (existing) return prev.map((e) => e.item.id === item.id ? { ...e, qty: e.qty + 1 } : e);
+      if (existing)
+        return prev.map((e) =>
+          e.item.id === item.id ? { ...e, qty: e.qty + 1 } : e,
+        );
       return [...prev, { item, qty: 1 }];
     });
   }
@@ -60,7 +63,9 @@ export default function ShopPage() {
     if (qty <= 0) {
       setCart((prev) => prev.filter((e) => e.item.id !== itemId));
     } else {
-      setCart((prev) => prev.map((e) => e.item.id === itemId ? { ...e, qty } : e));
+      setCart((prev) =>
+        prev.map((e) => (e.item.id === itemId ? { ...e, qty } : e)),
+      );
     }
   }
 
@@ -72,7 +77,10 @@ export default function ShopPage() {
     if (!characterId || cart.length === 0) return;
     setCartLoading(true);
     try {
-      await bulkPurchase(characterId, cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })));
+      await bulkPurchase(
+        characterId,
+        cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })),
+      );
       setCart([]);
       refresh();
     } catch (e) {
@@ -86,13 +94,17 @@ export default function ShopPage() {
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">
-
       {/* 캐릭터 선택 */}
       <div className="flex items-center gap-3">
-        <span className="text-sm font-semibold text-slate-600 whitespace-nowrap">캐릭터 선택</span>
+        <span className="text-sm font-semibold text-slate-600 whitespace-nowrap">
+          아이템을 구매할 캐릭터
+        </span>
         <Select
           value={characterId?.toString() ?? ""}
-          onValueChange={(v) => { setCharacterId(Number(v)); setCart([]); }}
+          onValueChange={(v) => {
+            setCharacterId(Number(v));
+            setCart([]);
+          }}
           disabled={characters.length === 0}
         >
           <SelectTrigger className="w-44">
@@ -122,7 +134,7 @@ export default function ShopPage() {
               "gap-2 rounded-none border-b-2 -mb-px h-11 px-5 font-semibold",
               tab === id
                 ? "border-indigo-600 text-indigo-600 bg-transparent hover:bg-transparent hover:text-indigo-600"
-                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-transparent"
+                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-transparent",
             )}
           >
             <Icon size={15} />
@@ -134,10 +146,17 @@ export default function ShopPage() {
       {/* 탭 컨텐츠 */}
       <div>
         {tab === "items" && characterId == null && (
-          <p className="py-12 text-center text-sm text-slate-400">캐릭터를 선택해 주세요.</p>
+          <p className="py-12 text-center text-sm text-slate-400">
+            캐릭터를 선택해 주세요.
+          </p>
         )}
         {tab === "items" && characterId != null && (
-          <div className={cn("flex gap-6 items-start", cart.length > 0 ? "flex-row" : "")}>
+          <div
+            className={cn(
+              "flex gap-6 items-start",
+              cart.length > 0 ? "flex-row" : "",
+            )}
+          >
             <div className="flex-1 min-w-0">
               <ItemGrid
                 characterId={characterId}

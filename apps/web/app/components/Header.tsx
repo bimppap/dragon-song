@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Users, Store, CalendarCheck, Swords } from "lucide-react";
+import { Users, Store, CalendarCheck, Swords, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "캐릭터", icon: Users },
-  { href: "/shop", label: "상점", icon: Store },
-  { href: "/attendance", label: "출석부", icon: CalendarCheck, wip: true },
+  { href: "/shop", label: "아이템", icon: Store },
+  { href: "/attendance", label: "출석부", icon: CalendarCheck },
+  { href: "/challenges", label: "도전과제", icon: Trophy },
   { href: "/battle", label: "전투", icon: Swords, wip: true },
 ];
 
@@ -36,7 +37,7 @@ export default function Header() {
                   active
                     ? "bg-indigo-600 text-white"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-                  wip && "opacity-40 pointer-events-none"
+                  wip && "opacity-40 pointer-events-none",
                 )}
               >
                 <Icon size={15} strokeWidth={active ? 2.5 : 2} />

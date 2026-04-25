@@ -62,9 +62,49 @@ class BulkPurchaseRequest(BaseModel):
 class PurchaseRead(BaseModel):
     id: int
     character_id: int
+    character_name: str
     item_id: int
     item_name: str
     quantity: int
     created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChallengeCreate(BaseModel):
+    chapter: str
+    name: str
+    description: str
+    reward: str
+    is_public: bool = True
+
+
+class ChallengeRead(BaseModel):
+    id: int
+    chapter: str
+    name: str
+    description: str
+    reward: str
+    is_public: bool
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ChallengeProgressUpdate(BaseModel):
+    character_id: int
+    achieved: bool
+    memo: str = ""
+
+
+class ChallengeProgressBulkUpdate(BaseModel):
+    entries: list[ChallengeProgressUpdate]
+
+
+class ChallengeProgressRead(BaseModel):
+    character_id: int
+    character_name: str
+    achieved: bool
+    memo: str
 
     model_config = {"from_attributes": True}

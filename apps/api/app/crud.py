@@ -1,8 +1,44 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models import Character, Item, Purchase
-from app.schemas import CharacterCreate, ItemCreate, BulkPurchaseRequest, ItemWithStock, PurchaseRead
+from app.models import Challenge, ChallengeProgress, Character, Item, Purchase
+from app.schemas import (
+    BulkPurchaseRequest,
+    ChallengeCreate,
+    ChallengeProgressBulkUpdate,
+    ChallengeProgressRead,
+    CharacterCreate,
+    ItemCreate,
+    ItemWithStock,
+    PurchaseRead,
+)
+
+
+def _create_progress_rows(
+    db: Session,
+    challenge_ids: list[int],
+    character_ids: list[int],
+) -> None:
+    if not challenge_ids or not character_ids:
+        return
+
+    existing_pairs = {
+        (challenge_id, character_id)
+        for challenge_id, character_id in (
+            db.query(ChallengeProgress.challenge_id, ChallengeProgress.character_id)
+            .filter(ChallengeProgress.challenge_id.in_(challenge_ids))
+            .filter(ChallengeProgress.character_id.in_(character_ids))
+            .all()
+        )
+    }
+
+    for challenge_id in challenge_ids:
+        for character_id in character_ids:
+            if (challenge_id, character_id) in existing_pairs:
+                continue
+            db.add(ChallengeProgress(challenge_id=challenge_id, character_id=character_id))
 
 
 def create_character(db: Session, data: CharacterCreate) -> Character:
@@ -13,6 +49,11 @@ def create_character(db: Session, data: CharacterCreate) -> Character:
         defense=data.defense,
     )
     db.add(character)
+    db.flush()
+
+    challenge_ids = [challenge_id for challenge_id, in db.query(Challenge.id).all()]
+    _create_progress_rows(db, challenge_ids, [character.id])
+
     db.commit()
     db.refresh(character)
     return character
@@ -35,6 +76,32 @@ def create_item(db: Session, data: ItemCreate) -> Item:
     db.commit()
     db.refresh(item)
     return item
+
+
+def create_challenge(db: Session, data: ChallengeCreate) -> Challenge:
+    challenge = Challenge(
+        chapter=data.chapter.strip(),
+        name=data.name.strip(),
+        description=data.description.strip(),
+        reward=data.reward.strip(),
+        is_public=data.is_public,
+    )
+    db.add(challenge)
+    db.flush()
+
+    character_ids = [character_id for character_id, in db.query(Character.id).all()]
+    _create_progress_rows(db, [challenge.id], character_ids)
+
+    db.commit()
+    db.refresh(challenge)
+    return challenge
+
+
+def get_challenges(db: Session, chapter: str | None = None) -> list[Challenge]:
+    query = db.query(Challenge)
+    if chapter is not None:
+        query = query.filter(Challenge.chapter == chapter)
+    return query.order_by(Challenge.created_at.asc(), Challenge.id.asc()).all()
 
 
 def _sum_quantity(db: Session, item_id: int, character_id: int | None = None) -> int:
@@ -142,7 +209,15 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest) -> list[Purchase]:
 
 
 def get_purchases(db: Session, character_id: int | None, item_id: int | None) -> list[PurchaseRead]:
-    query = db.query(Purchase, Item.name.label("item_name")).join(Item, Purchase.item_id == Item.id)
+    query = (
+        db.query(
+            Purchase,
+            Character.name.label("character_name"),
+            Item.name.label("item_name"),
+        )
+        .join(Character, Purchase.character_id == Character.id)
+        .join(Item, Purchase.item_id == Item.id)
+    )
     if character_id is not None:
         query = query.filter(Purchase.character_id == character_id)
     if item_id is not None:
@@ -153,6 +228,7 @@ def get_purchases(db: Session, character_id: int | None, item_id: int | None) ->
         PurchaseRead(
             id=row.Purchase.id,
             character_id=row.Purchase.character_id,
+            character_name=row.character_name,
             item_id=row.Purchase.item_id,
             item_name=row.item_name,
             quantity=row.Purchase.quantity,
@@ -160,3 +236,69 @@ def get_purchases(db: Session, character_id: int | None, item_id: int | None) ->
         )
         for row in rows
     ]
+
+
+def get_challenge_progress(db: Session, challenge_id: int) -> list[ChallengeProgressRead]:
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
+
+    character_ids = [character_id for character_id, in db.query(Character.id).all()]
+    _create_progress_rows(db, [challenge.id], character_ids)
+    db.commit()
+
+    rows = (
+        db.query(
+            ChallengeProgress.character_id,
+            Character.name.label("character_name"),
+            ChallengeProgress.achieved,
+            ChallengeProgress.memo,
+        )
+        .join(Character, ChallengeProgress.character_id == Character.id)
+        .filter(ChallengeProgress.challenge_id == challenge_id)
+        .order_by(Character.id.asc())
+        .all()
+    )
+
+    return [
+        ChallengeProgressRead(
+            character_id=row.character_id,
+            character_name=row.character_name,
+            achieved=row.achieved,
+            memo=row.memo,
+        )
+        for row in rows
+    ]
+
+
+def update_challenge_progress(
+    db: Session,
+    challenge_id: int,
+    data: ChallengeProgressBulkUpdate,
+) -> list[ChallengeProgressRead]:
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
+
+    character_ids = [entry.character_id for entry in data.entries]
+    _create_progress_rows(db, [challenge_id], character_ids)
+    db.flush()
+
+    rows = (
+        db.query(ChallengeProgress)
+        .filter(ChallengeProgress.challenge_id == challenge_id)
+        .filter(ChallengeProgress.character_id.in_(character_ids))
+        .all()
+    )
+    progress_by_character = {row.character_id: row for row in rows}
+
+    for entry in data.entries:
+        progress = progress_by_character.get(entry.character_id)
+        if not progress:
+            raise HTTPException(status_code=404, detail="도전과제 진행 현황을 찾을 수 없습니다.")
+        progress.achieved = entry.achieved
+        progress.memo = entry.memo.strip()
+        progress.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    return get_challenge_progress(db, challenge_id)

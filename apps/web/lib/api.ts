@@ -27,6 +27,7 @@ export interface ItemCreate {
 export interface Purchase {
   id: number;
   character_id: number;
+  character_name: string;
   item_id: number;
   item_name: string;
   quantity: number;
@@ -40,6 +41,37 @@ export interface Character {
   attack: number;
   defense: number;
   gold: number;
+}
+
+export interface Challenge {
+  id: number;
+  chapter: string;
+  name: string;
+  description: string;
+  reward: string;
+  is_public: boolean;
+  created_at: string;
+}
+
+export interface ChallengeCreate {
+  chapter: string;
+  name: string;
+  description: string;
+  reward: string;
+  is_public: boolean;
+}
+
+export interface ChallengeProgress {
+  character_id: number;
+  character_name: string;
+  achieved: boolean;
+  memo: string;
+}
+
+export interface ChallengeProgressUpdate {
+  character_id: number;
+  achieved: boolean;
+  memo: string;
 }
 
 export interface CartItem {
@@ -67,6 +99,50 @@ export async function createItem(data: ItemCreate): Promise<Item> {
     body: JSON.stringify(data),
   });
   if (!res.ok) throw new Error("아이템 생성 실패");
+  return res.json();
+}
+
+export async function fetchChallenges(chapter?: string): Promise<Challenge[]> {
+  const params = new URLSearchParams();
+  if (chapter) params.set("chapter", chapter);
+  const query = params.toString() ? `?${params}` : "";
+  const res = await fetch(`${API_URL}/challenges${query}`);
+  if (!res.ok) throw new Error("도전과제 조회 실패");
+  return res.json();
+}
+
+export async function createChallenge(data: ChallengeCreate): Promise<Challenge> {
+  const res = await fetch(`${API_URL}/challenges`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "도전과제 생성 실패");
+  }
+  return res.json();
+}
+
+export async function fetchChallengeProgress(challengeId: number): Promise<ChallengeProgress[]> {
+  const res = await fetch(`${API_URL}/challenges/${challengeId}/progress`);
+  if (!res.ok) throw new Error("도전과제 현황 조회 실패");
+  return res.json();
+}
+
+export async function saveChallengeProgress(
+  challengeId: number,
+  entries: ChallengeProgressUpdate[],
+): Promise<ChallengeProgress[]> {
+  const res = await fetch(`${API_URL}/challenges/${challengeId}/progress`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ entries }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "도전과제 현황 저장 실패");
+  }
   return res.json();
 }
 
