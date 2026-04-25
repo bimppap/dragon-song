@@ -2,13 +2,14 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { AgGridReact } from "ag-grid-react";
-import type { ColDef } from "ag-grid-community";
+import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Search } from "lucide-react";
 import { fetchPurchases } from "@/lib/api";
 import type { Purchase } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -25,20 +26,27 @@ export default function PurchaseGrid({ refreshKey }: Props) {
     try {
       const charId = charFilter ? Number(charFilter) : undefined;
       const itemId = itemFilter ? Number(itemFilter) : undefined;
-      const data = await fetchPurchases(charId, itemId);
-      setPurchases(data);
+      setPurchases(await fetchPurchases(charId, itemId));
     } catch (e) {
       console.error(e);
     }
   }, [charFilter, itemFilter]);
 
-  useEffect(() => {
-    load();
-  }, [load, refreshKey]);
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   const colDefs: ColDef<Purchase>[] = [
     { headerName: "캐릭터 ID", field: "character_id", width: 120, filter: true },
     { headerName: "아이템명", field: "item_name", flex: 1, filter: true },
+    {
+      headerName: "수량",
+      field: "quantity",
+      width: 90,
+      cellRenderer: (p: ICellRendererParams<Purchase>) => (
+        <Badge variant={p.value > 1 ? "default" : "secondary"}>
+          {p.value}개
+        </Badge>
+      ),
+    },
     {
       headerName: "구매 시간",
       field: "created_at",

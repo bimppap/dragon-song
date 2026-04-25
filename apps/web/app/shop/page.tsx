@@ -5,8 +5,10 @@ import { Store, ClipboardList, PlusSquare } from "lucide-react";
 import ItemGrid from "./components/ItemGrid";
 import PurchaseGrid from "./components/PurchaseGrid";
 import AddItemForm from "./components/AddItemForm";
-import { fetchCharacters } from "@/lib/api";
-import type { Character } from "@/lib/api";
+import Cart from "./components/Cart";
+import type { CartEntry } from "./components/Cart";
+import { fetchCharacters, bulkPurchase } from "@/lib/api";
+import type { Character, Item } from "@/lib/api";
 import {
   Select,
   SelectContent,
@@ -30,6 +32,8 @@ export default function ShopPage() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [characterId, setCharacterId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [cart, setCart] = useState<CartEntry[]>([]);
+  const [cartLoading, setCartLoading] = useState(false);
 
   useEffect(() => {
     fetchCharacters()
@@ -44,6 +48,42 @@ export default function ShopPage() {
     setRefreshKey((k) => k + 1);
   }
 
+  function handleAddToCart(item: Item) {
+    setCart((prev) => {
+      const existing = prev.find((e) => e.item.id === item.id);
+      if (existing) return prev.map((e) => e.item.id === item.id ? { ...e, qty: e.qty + 1 } : e);
+      return [...prev, { item, qty: 1 }];
+    });
+  }
+
+  function handleUpdateQty(itemId: number, qty: number) {
+    if (qty <= 0) {
+      setCart((prev) => prev.filter((e) => e.item.id !== itemId));
+    } else {
+      setCart((prev) => prev.map((e) => e.item.id === itemId ? { ...e, qty } : e));
+    }
+  }
+
+  function handleRemove(itemId: number) {
+    setCart((prev) => prev.filter((e) => e.item.id !== itemId));
+  }
+
+  async function handlePurchase() {
+    if (!characterId || cart.length === 0) return;
+    setCartLoading(true);
+    try {
+      await bulkPurchase(characterId, cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })));
+      setCart([]);
+      refresh();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "구매 실패");
+    } finally {
+      setCartLoading(false);
+    }
+  }
+
+  const cartItemIds = new Set(cart.map((e) => e.item.id));
+
   return (
     <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">
 
@@ -52,7 +92,7 @@ export default function ShopPage() {
         <span className="text-sm font-semibold text-slate-600 whitespace-nowrap">캐릭터 선택</span>
         <Select
           value={characterId?.toString() ?? ""}
-          onValueChange={(v) => setCharacterId(Number(v))}
+          onValueChange={(v) => { setCharacterId(Number(v)); setCart([]); }}
           disabled={characters.length === 0}
         >
           <SelectTrigger className="w-44">
@@ -93,11 +133,29 @@ export default function ShopPage() {
 
       {/* 탭 컨텐츠 */}
       <div>
-        {tab === "items" && characterId != null && (
-          <ItemGrid characterId={characterId} onPurchased={refresh} />
-        )}
         {tab === "items" && characterId == null && (
           <p className="py-12 text-center text-sm text-slate-400">캐릭터를 선택해 주세요.</p>
+        )}
+        {tab === "items" && characterId != null && (
+          <div className={cn("flex gap-6 items-start", cart.length > 0 ? "flex-row" : "")}>
+            <div className="flex-1 min-w-0">
+              <ItemGrid
+                characterId={characterId}
+                cartItemIds={cartItemIds}
+                onAddToCart={handleAddToCart}
+                refreshKey={refreshKey}
+              />
+            </div>
+            {cart.length > 0 && (
+              <Cart
+                entries={cart}
+                loading={cartLoading}
+                onUpdateQty={handleUpdateQty}
+                onRemove={handleRemove}
+                onPurchase={handlePurchase}
+              />
+            )}
+          </div>
         )}
         {tab === "purchases" && <PurchaseGrid refreshKey={refreshKey} />}
         {tab === "add" && <AddItemForm onCreated={refresh} />}

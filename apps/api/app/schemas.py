@@ -49,9 +49,14 @@ class ItemWithStock(ItemRead):
     remaining_global: int | None
 
 
-class PurchaseRequest(BaseModel):
-    character_id: int
+class CartItem(BaseModel):
     item_id: int
+    quantity: int
+
+
+class BulkPurchaseRequest(BaseModel):
+    character_id: int
+    items: list[CartItem]
 
 
 class PurchaseRead(BaseModel):
@@ -59,6 +64,7 @@ class PurchaseRead(BaseModel):
     character_id: int
     item_id: int
     item_name: str
+    quantity: int
     created_at: datetime
 
     model_config = {"from_attributes": True}

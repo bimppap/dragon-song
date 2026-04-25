@@ -10,7 +10,7 @@ from app.schemas import (
     ItemCreate,
     ItemRead,
     ItemWithStock,
-    PurchaseRequest,
+    BulkPurchaseRequest,
     PurchaseRead,
 )
 from app import crud
@@ -53,17 +53,21 @@ def list_items(character_id: int | None = None, db: Session = Depends(get_db)):
     return crud.get_items_with_stock(db, character_id)
 
 
-@app.post("/purchases", response_model=PurchaseRead)
-def purchase_item(data: PurchaseRequest, db: Session = Depends(get_db)):
-    purchase = crud.purchase_item(db, data)
-    item = db.query(Item).filter_by(id=purchase.item_id).first()
-    return PurchaseRead(
-        id=purchase.id,
-        character_id=purchase.character_id,
-        item_id=purchase.item_id,
-        item_name=item.name,
-        created_at=purchase.created_at,
-    )
+@app.post("/purchases/bulk", response_model=list[PurchaseRead])
+def bulk_purchase(data: BulkPurchaseRequest, db: Session = Depends(get_db)):
+    purchases = crud.bulk_purchase(db, data)
+    items = {i.id: i for i in db.query(Item).filter(Item.id.in_([p.item_id for p in purchases])).all()}
+    return [
+        PurchaseRead(
+            id=p.id,
+            character_id=p.character_id,
+            item_id=p.item_id,
+            item_name=items[p.item_id].name,
+            quantity=p.quantity,
+            created_at=p.created_at,
+        )
+        for p in purchases
+    ]
 
 
 @app.get("/purchases", response_model=list[PurchaseRead])

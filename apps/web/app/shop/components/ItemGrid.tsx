@@ -5,7 +5,7 @@ import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { ShoppingCart, Package } from "lucide-react";
-import { fetchItems, purchaseItem } from "@/lib/api";
+import { fetchItems } from "@/lib/api";
 import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,9 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface Props {
   characterId: number;
-  onPurchased: () => void;
+  cartItemIds: Set<number>;
+  onAddToCart: (item: Item) => void;
+  refreshKey: number;
 }
 
 function StockBadge({ value }: { value: number | null }) {
@@ -31,9 +33,8 @@ function calcStock(item: Item): number | null {
   return null;
 }
 
-export default function ItemGrid({ characterId, onPurchased }: Props) {
+export default function ItemGrid({ characterId, cartItemIds, onAddToCart, refreshKey }: Props) {
   const [items, setItems] = useState<Item[]>([]);
-  const [loading, setLoading] = useState(false);
   const gridRef = useRef<AgGridReact>(null);
 
   const load = useCallback(async () => {
@@ -44,22 +45,7 @@ export default function ItemGrid({ characterId, onPurchased }: Props) {
     }
   }, [characterId]);
 
-  useEffect(() => { load(); }, [load]);
-
-  async function handlePurchase(item: Item) {
-    if (loading) return;
-    setLoading(true);
-    try {
-      await purchaseItem(characterId, item.id);
-      alert(`"${item.name}" 구매 완료!`);
-      await load();
-      onPurchased();
-    } catch (e: unknown) {
-      alert(e instanceof Error ? e.message : "구매 실패");
-    } finally {
-      setLoading(false);
-    }
-  }
+  useEffect(() => { load(); }, [load, refreshKey]);
 
   const colDefs: ColDef<Item>[] = [
     {
@@ -94,21 +80,22 @@ export default function ItemGrid({ characterId, onPurchased }: Props) {
       ),
     },
     {
-      headerName: "구매",
-      width: 100,
+      headerName: "장바구니",
+      width: 110,
       sortable: false,
       filter: false,
       cellRenderer: (p: ICellRendererParams<Item>) => {
         const soldOut = calcStock(p.data!) === 0;
+        const inCart = cartItemIds.has(p.data!.id);
         return (
           <Button
             size="sm"
-            variant={soldOut ? "outline" : "default"}
-            disabled={loading || soldOut}
-            onClick={() => handlePurchase(p.data!)}
+            variant={inCart ? "secondary" : soldOut ? "outline" : "default"}
+            disabled={soldOut}
+            onClick={() => onAddToCart(p.data!)}
           >
             <ShoppingCart size={13} />
-            {soldOut ? "품절" : "구매"}
+            {soldOut ? "품절" : inCart ? "추가" : "담기"}
           </Button>
         );
       },

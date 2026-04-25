@@ -29,6 +29,7 @@ export interface Purchase {
   character_id: number;
   item_id: number;
   item_name: string;
+  quantity: number;
   created_at: string;
 }
 
@@ -39,6 +40,11 @@ export interface Character {
   attack: number;
   defense: number;
   gold: number;
+}
+
+export interface CartItem {
+  item_id: number;
+  quantity: number;
 }
 
 export async function fetchCharacters(): Promise<Character[]> {
@@ -64,11 +70,14 @@ export async function createItem(data: ItemCreate): Promise<Item> {
   return res.json();
 }
 
-export async function purchaseItem(character_id: number, item_id: number): Promise<Purchase> {
-  const res = await fetch(`${API_URL}/purchases`, {
+export async function bulkPurchase(
+  character_id: number,
+  items: CartItem[]
+): Promise<Purchase[]> {
+  const res = await fetch(`${API_URL}/purchases/bulk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ character_id, item_id }),
+    body: JSON.stringify({ character_id, items }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
