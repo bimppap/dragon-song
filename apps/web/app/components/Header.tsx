@@ -5,12 +5,12 @@ import { usePathname } from "next/navigation";
 import { Users, Store, CalendarCheck, Swords, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-const NAV_ITEMS = [
+const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; wip?: boolean }[] = [
   { href: "/", label: "캐릭터", icon: Users },
   { href: "/shop", label: "아이템", icon: Store },
   { href: "/attendance", label: "출석부", icon: CalendarCheck },
   { href: "/challenges", label: "도전과제", icon: Trophy },
-  { href: "/battle", label: "전투", icon: Swords, wip: true },
+  { href: "/battle", label: "전투", icon: Swords },
 ];
 
 export default function Header() {

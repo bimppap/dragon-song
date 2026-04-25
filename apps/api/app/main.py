@@ -3,9 +3,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app.db import engine, get_db
-from app.models import Base, Character, Item
+from app.migrations import ensure_schema
+from app.models import Character, Item
 from app.schemas import (
     CharacterCreate,
+    CharacterDetailRead,
     CharacterRead,
     ChallengeCreate,
     ChallengeProgressBulkUpdate,
@@ -19,7 +21,7 @@ from app.schemas import (
 )
 from app import crud
 
-Base.metadata.create_all(bind=engine)
+ensure_schema(engine)
 
 app = FastAPI()
 
@@ -45,6 +47,11 @@ def create_character(data: CharacterCreate, db: Session = Depends(get_db)):
 @app.get("/characters", response_model=list[CharacterRead])
 def list_characters(db: Session = Depends(get_db)):
     return crud.get_characters(db)
+
+
+@app.get("/characters/{character_id}", response_model=CharacterDetailRead)
+def get_character(character_id: int, db: Session = Depends(get_db)):
+    return crud.get_character_detail(db, character_id)
 
 
 @app.post("/items", response_model=ItemRead)

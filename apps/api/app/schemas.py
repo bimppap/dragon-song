@@ -1,12 +1,15 @@
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class CharacterCreate(BaseModel):
     name: str
-    hp: int
-    attack: int
-    defense: int
+    hp: int = Field(ge=0)
+    attack: int = Field(ge=0)
+    defense: int = Field(ge=0)
+    gold: int = Field(default=1000, ge=0)
+    ap: int = Field(default=10, gt=0)
+    experience: int = Field(default=1, gt=0)
 
 
 class CharacterRead(BaseModel):
@@ -16,6 +19,8 @@ class CharacterRead(BaseModel):
     attack: int
     defense: int
     gold: int
+    ap: int
+    experience: int
 
     model_config = {"from_attributes": True}
 
@@ -69,6 +74,26 @@ class PurchaseRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CharacterOwnedItemRead(BaseModel):
+    item_id: int
+    item_name: str
+    quantity: int
+
+
+class CharacterAchievedChallengeRead(BaseModel):
+    challenge_id: int
+    chapter: str
+    name: str
+    description: str
+    reward: str
+
+
+class CharacterDetailRead(CharacterRead):
+    owned_items: list[CharacterOwnedItemRead]
+    achieved_challenges: list[CharacterAchievedChallengeRead]
+    purchase_history: list[PurchaseRead]
 
 
 class ChallengeCreate(BaseModel):

@@ -1,17 +1,16 @@
 "use client";
 
-import { useEffect, useCallback } from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
-import { fetchCharacters } from "@/lib/api";
+import { Card, CardContent } from "@/components/ui/card";
 import type { Character } from "@/lib/api";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface Props {
   characters: Character[];
-  onLoad: (list: Character[]) => void;
+  loading: boolean;
 }
 
 const colDefs: ColDef<Character>[] = [
@@ -60,17 +59,49 @@ const colDefs: ColDef<Character>[] = [
       <span className="font-semibold text-yellow-600">{(p.value as number).toLocaleString()} G</span>
     ),
   },
+  {
+    headerName: "AP",
+    field: "ap",
+    width: 100,
+    type: "numericColumn",
+    cellRenderer: (p: ICellRendererParams<Character>) => (
+      <span className="font-semibold text-indigo-600">{(p.value as number).toLocaleString()}</span>
+    ),
+  },
+  {
+    headerName: "경험치",
+    field: "experience",
+    width: 120,
+    type: "numericColumn",
+    cellRenderer: (p: ICellRendererParams<Character>) => (
+      <span className="font-semibold text-violet-600">{(p.value as number).toLocaleString()}</span>
+    ),
+  },
 ];
 
-export default function CharacterList({ characters, onLoad }: Props) {
-  const load = useCallback(async () => {
-    onLoad(await fetchCharacters());
-  }, [onLoad]);
+export default function CharacterList({ characters, loading }: Props) {
+  if (loading) {
+    return (
+      <Card>
+        <CardContent className="py-16 text-center text-sm text-slate-500">
+          캐릭터 목록을 불러오는 중입니다.
+        </CardContent>
+      </Card>
+    );
+  }
 
-  useEffect(() => { load(); }, [load]);
+  if (characters.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-16 text-center text-sm text-slate-500">
+          등록된 캐릭터가 없습니다.
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
-    <div className="ag-theme-quartz rounded-lg overflow-hidden" style={{ height: 480 }}>
+    <div className="ag-theme-quartz h-[480px] rounded-lg overflow-hidden">
       <AgGridReact rowData={characters} columnDefs={colDefs} rowHeight={44} />
     </div>
   );

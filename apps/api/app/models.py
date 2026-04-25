@@ -13,6 +13,18 @@ class Character(Base):
     attack: Mapped[int] = mapped_column(Integer, nullable=False)
     defense: Mapped[int] = mapped_column(Integer, nullable=False)
     gold: Mapped[int] = mapped_column(Integer, nullable=False, default=1000)
+    ap: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=10,
+        server_default=text("10"),
+    )
+    experience: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default=text("1"),
+    )
 
 
 class Item(Base):

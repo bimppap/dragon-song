@@ -27,6 +27,7 @@
 | RadioGroup | `components/ui/radio-group.tsx` | `RadioGroup`, `RadioGroupItem` |
 | Card | `components/ui/card.tsx` | `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter` |
 | Pagination | `components/ui/pagination.tsx` | `Pagination`, `PaginationContent`, `PaginationItem`, `PaginationLink`, `PaginationPrevious`, `PaginationNext`, `PaginationEllipsis` |
+| Calendar | `components/ui/calendar.tsx` | `Calendar` |
 
 ### cn 유틸
 ```ts

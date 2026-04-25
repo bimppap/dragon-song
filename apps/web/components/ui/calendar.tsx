@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { DayPicker } from "react-day-picker";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { buttonVariants } from "@/components/ui/button";
 
@@ -25,6 +25,7 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         ),
         nav_button_previous: "absolute left-1",
         nav_button_next: "absolute right-1",
+        chevron: "size-4",
         table: "w-full border-collapse space-x-1",
         head_row: "flex",
         head_cell: "text-slate-400 rounded-md w-9 font-normal text-xs",
@@ -53,8 +54,14 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         ...classNames,
       }}
       components={{
-        IconLeft: () => <ChevronLeft size={16} />,
-        IconRight: () => <ChevronRight size={16} />,
+        Chevron: ({ orientation, ...props }) =>
+          orientation === "left" ? (
+            <ChevronLeft size={16} {...props} />
+          ) : orientation === "right" ? (
+            <ChevronRight size={16} {...props} />
+          ) : (
+            <ChevronDown size={16} {...props} />
+          ),
       }}
       {...props}
     />

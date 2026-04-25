@@ -9,7 +9,10 @@ from app.schemas import (
     ChallengeCreate,
     ChallengeProgressBulkUpdate,
     ChallengeProgressRead,
+    CharacterAchievedChallengeRead,
     CharacterCreate,
+    CharacterDetailRead,
+    CharacterOwnedItemRead,
     ItemCreate,
     ItemWithStock,
     PurchaseRead,
@@ -47,6 +50,9 @@ def create_character(db: Session, data: CharacterCreate) -> Character:
         hp=data.hp,
         attack=data.attack,
         defense=data.defense,
+        gold=data.gold,
+        ap=data.ap,
+        experience=data.experience,
     )
     db.add(character)
     db.flush()
@@ -60,7 +66,75 @@ def create_character(db: Session, data: CharacterCreate) -> Character:
 
 
 def get_characters(db: Session) -> list[Character]:
-    return db.query(Character).all()
+    return db.query(Character).order_by(Character.id.asc()).all()
+
+
+def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
+    character = db.query(Character).filter(Character.id == character_id).first()
+    if not character:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+
+    challenge_ids = [challenge_id for challenge_id, in db.query(Challenge.id).all()]
+    _create_progress_rows(db, challenge_ids, [character.id])
+    db.flush()
+
+    owned_item_rows = (
+        db.query(
+            Purchase.item_id,
+            Item.name.label("item_name"),
+            func.coalesce(func.sum(Purchase.quantity), 0).label("quantity"),
+        )
+        .join(Item, Purchase.item_id == Item.id)
+        .filter(Purchase.character_id == character.id)
+        .group_by(Purchase.item_id, Item.name)
+        .order_by(Item.name.asc())
+        .all()
+    )
+
+    achieved_challenge_rows = (
+        db.query(
+            Challenge.id.label("challenge_id"),
+            Challenge.chapter,
+            Challenge.name,
+            Challenge.description,
+            Challenge.reward,
+        )
+        .join(ChallengeProgress, Challenge.id == ChallengeProgress.challenge_id)
+        .filter(ChallengeProgress.character_id == character.id)
+        .filter(ChallengeProgress.achieved.is_(True))
+        .order_by(Challenge.chapter.asc(), Challenge.id.asc())
+        .all()
+    )
+
+    return CharacterDetailRead(
+        id=character.id,
+        name=character.name,
+        hp=character.hp,
+        attack=character.attack,
+        defense=character.defense,
+        gold=character.gold,
+        ap=character.ap,
+        experience=character.experience,
+        owned_items=[
+            CharacterOwnedItemRead(
+                item_id=row.item_id,
+                item_name=row.item_name,
+                quantity=row.quantity,
+            )
+            for row in owned_item_rows
+        ],
+        achieved_challenges=[
+            CharacterAchievedChallengeRead(
+                challenge_id=row.challenge_id,
+                chapter=row.chapter,
+                name=row.name,
+                description=row.description,
+                reward=row.reward,
+            )
+            for row in achieved_challenge_rows
+        ],
+        purchase_history=get_purchases(db, character.id, None),
+    )
 
 
 def create_item(db: Session, data: ItemCreate) -> Item:

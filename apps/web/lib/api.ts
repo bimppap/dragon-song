@@ -41,6 +41,38 @@ export interface Character {
   attack: number;
   defense: number;
   gold: number;
+  ap: number;
+  experience: number;
+}
+
+export interface CharacterCreate {
+  name: string;
+  hp: number;
+  attack: number;
+  defense: number;
+  gold: number;
+  ap: number;
+  experience: number;
+}
+
+export interface CharacterOwnedItem {
+  item_id: number;
+  item_name: string;
+  quantity: number;
+}
+
+export interface CharacterAchievedChallenge {
+  challenge_id: number;
+  chapter: string;
+  name: string;
+  description: string;
+  reward: string;
+}
+
+export interface CharacterDetail extends Character {
+  owned_items: CharacterOwnedItem[];
+  achieved_challenges: CharacterAchievedChallenge[];
+  purchase_history: Purchase[];
 }
 
 export interface Challenge {
@@ -82,6 +114,25 @@ export interface CartItem {
 export async function fetchCharacters(): Promise<Character[]> {
   const res = await fetch(`${API_URL}/characters`);
   if (!res.ok) throw new Error("캐릭터 조회 실패");
+  return res.json();
+}
+
+export async function fetchCharacterDetail(characterId: number): Promise<CharacterDetail> {
+  const res = await fetch(`${API_URL}/characters/${characterId}`);
+  if (!res.ok) throw new Error("캐릭터 상세 조회 실패");
+  return res.json();
+}
+
+export async function createCharacter(data: CharacterCreate): Promise<Character> {
+  const res = await fetch(`${API_URL}/characters`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "캐릭터 생성 실패");
+  }
   return res.json();
 }
 
