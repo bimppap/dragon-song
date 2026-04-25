@@ -106,6 +106,12 @@ export interface ChallengeProgressUpdate {
   memo: string;
 }
 
+export interface AttendanceRecord {
+  attendance_date: string;
+  character_ids: number[];
+  reward_paid: boolean;
+}
+
 export interface CartItem {
   item_id: number;
   quantity: number;
@@ -132,6 +138,34 @@ export async function createCharacter(data: CharacterCreate): Promise<Character>
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? "캐릭터 생성 실패");
+  }
+  return res.json();
+}
+
+export async function fetchAttendance(attendanceDate: string): Promise<AttendanceRecord> {
+  const params = new URLSearchParams({ attendance_date: attendanceDate });
+  const res = await fetch(`${API_URL}/attendance?${params.toString()}`);
+  if (!res.ok) throw new Error("출석 데이터 조회 실패");
+  return res.json();
+}
+
+export async function saveAttendance(
+  attendanceDate: string,
+  characterIds: number[],
+  rewardPaid: boolean,
+): Promise<AttendanceRecord> {
+  const params = new URLSearchParams({ attendance_date: attendanceDate });
+  const res = await fetch(`${API_URL}/attendance?${params.toString()}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      character_ids: characterIds,
+      reward_paid: rewardPaid,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "출석 데이터 저장 실패");
   }
   return res.json();
 }

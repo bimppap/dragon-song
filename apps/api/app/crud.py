@@ -1,10 +1,12 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models import Challenge, ChallengeProgress, Character, Item, Purchase
+from app.models import AttendanceRecord, Challenge, ChallengeProgress, Character, Item, Purchase
 from app.schemas import (
+    AttendanceRecordRead,
+    AttendanceRecordUpdate,
     BulkPurchaseRequest,
     ChallengeCreate,
     ChallengeProgressBulkUpdate,
@@ -17,6 +19,10 @@ from app.schemas import (
     ItemWithStock,
     PurchaseRead,
 )
+
+
+def _normalize_character_ids(character_ids: list[int]) -> list[int]:
+    return sorted(set(character_ids))
 
 
 def _create_progress_rows(
@@ -376,3 +382,67 @@ def update_challenge_progress(
 
     db.commit()
     return get_challenge_progress(db, challenge_id)
+
+
+def get_attendance_record(db: Session, attendance_date: date) -> AttendanceRecordRead:
+    record = (
+        db.query(AttendanceRecord)
+        .filter(AttendanceRecord.attendance_date == attendance_date)
+        .first()
+    )
+    if not record:
+        return AttendanceRecordRead(
+            attendance_date=attendance_date,
+            character_ids=[],
+            reward_paid=False,
+        )
+
+    return AttendanceRecordRead.model_validate(record)
+
+
+def upsert_attendance_record(
+    db: Session,
+    attendance_date: date,
+    data: AttendanceRecordUpdate,
+) -> AttendanceRecordRead:
+    character_ids = _normalize_character_ids(data.character_ids)
+
+    if character_ids:
+        existing_ids = {
+            character_id
+            for character_id, in (
+                db.query(Character.id)
+                .filter(Character.id.in_(character_ids))
+                .all()
+            )
+        }
+        missing_ids = sorted(set(character_ids) - existing_ids)
+        if missing_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"존재하지 않는 캐릭터 ID가 포함되어 있습니다: {', '.join(map(str, missing_ids))}",
+            )
+
+    record = (
+        db.query(AttendanceRecord)
+        .filter(AttendanceRecord.attendance_date == attendance_date)
+        .first()
+    )
+
+    if record is None:
+        if not character_ids and not data.reward_paid:
+            return AttendanceRecordRead(
+                attendance_date=attendance_date,
+                character_ids=[],
+                reward_paid=False,
+            )
+        record = AttendanceRecord(attendance_date=attendance_date)
+        db.add(record)
+
+    record.character_ids = character_ids
+    record.reward_paid = data.reward_paid
+    record.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(record)
+    return AttendanceRecordRead.model_validate(record)

@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
@@ -6,6 +8,8 @@ from app.db import engine, get_db
 from app.migrations import ensure_schema
 from app.models import Character, Item
 from app.schemas import (
+    AttendanceRecordRead,
+    AttendanceRecordUpdate,
     CharacterCreate,
     CharacterDetailRead,
     CharacterRead,
@@ -52,6 +56,20 @@ def list_characters(db: Session = Depends(get_db)):
 @app.get("/characters/{character_id}", response_model=CharacterDetailRead)
 def get_character(character_id: int, db: Session = Depends(get_db)):
     return crud.get_character_detail(db, character_id)
+
+
+@app.get("/attendance", response_model=AttendanceRecordRead)
+def get_attendance(attendance_date: date, db: Session = Depends(get_db)):
+    return crud.get_attendance_record(db, attendance_date)
+
+
+@app.put("/attendance", response_model=AttendanceRecordRead)
+def save_attendance(
+    attendance_date: date,
+    data: AttendanceRecordUpdate,
+    db: Session = Depends(get_db),
+):
+    return crud.upsert_attendance_record(db, attendance_date, data)
 
 
 @app.post("/items", response_model=ItemRead)

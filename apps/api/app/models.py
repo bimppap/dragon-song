@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, UniqueConstraint, text
+from datetime import date, datetime, timezone
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
@@ -96,6 +96,26 @@ class ChallengeProgress(Base):
         server_default=text("false"),
     )
     memo: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AttendanceRecord(Base):
+    __tablename__ = "attendance_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    attendance_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    character_ids: Mapped[list[int]] = mapped_column(JSON, nullable=False, default=list)
+    reward_paid: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

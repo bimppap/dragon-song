@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, Field
 
 
@@ -131,5 +131,18 @@ class ChallengeProgressRead(BaseModel):
     character_name: str
     achieved: bool
     memo: str
+
+    model_config = {"from_attributes": True}
+
+
+class AttendanceRecordUpdate(BaseModel):
+    character_ids: list[int] = Field(default_factory=list)
+    reward_paid: bool = False
+
+
+class AttendanceRecordRead(BaseModel):
+    attendance_date: date
+    character_ids: list[int]
+    reward_paid: bool
 
     model_config = {"from_attributes": True}
