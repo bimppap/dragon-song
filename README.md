@@ -5,28 +5,40 @@
 ## 기술 스택
 
 ### Frontend (`apps/web`)
-| 기술 | 버전 |
-|------|------|
-| Next.js | 16.2.4 |
-| React | 19.2.4 |
-| TypeScript | ^5 |
+
+| 기술       | 버전   |
+| ---------- | ------ |
+| Next.js    | 16.2.4 |
+| React      | 19.2.4 |
+| TypeScript | ^5     |
 
 ### Backend (`apps/api`)
-| 기술 | 버전 |
-|------|------|
-| Python | 3.x |
-| FastAPI | latest |
-| SQLAlchemy | latest |
+
+| 기술       | 버전              |
+| ---------- | ----------------- |
+| Python     | 3.x               |
+| FastAPI    | latest            |
+| SQLAlchemy | latest            |
 | PostgreSQL | (psycopg2-binary) |
-| Uvicorn | latest |
+| Uvicorn    | latest            |
+
+### Infra
+
+| 분야   | 인프라   |
+| ------ | -------- |
+| 백엔드 | Render   |
+| 프론트 | Vercel   |
+| DB     | Supabase |
 
 ---
 
 ## 로컬 실행 방법
 
 ### 사전 요구사항
+
 - Node.js
-- Python 3.x
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/getting-started/installation/)
 - PostgreSQL
 
 ### 1. 환경변수 설정
@@ -41,10 +53,7 @@ DATABASE_URL=postgresql://<user>:<password>@localhost:5432/<dbname>
 
 ```bash
 cd apps/api
-python -m venv .venv
-source .venv/bin/activate       # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
+uv run dev
 ```
 
 API 서버가 http://localhost:8000 에서 실행됩니다.
