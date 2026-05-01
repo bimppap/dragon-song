@@ -2,7 +2,6 @@ annotated-doc==0.0.4
 annotated-types==0.7.0
 anyio==4.13.0
 click==8.3.3
--e file:///Users/ahnyejang/Projects/dragon-song/apps/api
 fastapi==0.136.1
 h11==0.16.0
 httptools==0.7.1
