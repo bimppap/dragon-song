@@ -3,11 +3,13 @@ from datetime import date, datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models import AttendanceRecord, Challenge, ChallengeProgress, Character, Item, Purchase
+from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, Enemy, Item, Mission, MissionProgress, Purchase, Reward
 from app.schemas import (
     AttendanceRecordRead,
     AttendanceRecordUpdate,
     BulkPurchaseRequest,
+    ChapterCreate,
+    ChapterRead,
     ChallengeCreate,
     ChallengeProgressBulkUpdate,
     ChallengeProgressRead,
@@ -15,14 +17,73 @@ from app.schemas import (
     CharacterCreate,
     CharacterDetailRead,
     CharacterOwnedItemRead,
+    EnemyCreate,
+    EnemyRead,
+    EnemySkill,
     ItemCreate,
     ItemWithStock,
+    MissionCreate,
+    MissionProgressBulkUpdate,
+    MissionProgressRead,
     PurchaseRead,
+    RewardItemEntry,
+    RewardPayResult,
+    RewardRead,
 )
 
 
 def _normalize_character_ids(character_ids: list[int]) -> list[int]:
     return sorted(set(character_ids))
+
+
+def _today() -> date:
+    return datetime.now(timezone.utc).date()
+
+
+def _to_reward_read(r: Reward) -> RewardRead:
+    return RewardRead(
+        id=r.id,
+        type=r.type,
+        character_id=r.character_id,
+        source_id=r.source_id,
+        reward_items=[RewardItemEntry(**item) for item in (r.reward_items or [])],
+        rewarded_at=r.rewarded_at,
+        created_at=r.created_at,
+    )
+
+
+def _apply_stat_rewards(
+    entity: Challenge | Mission,
+    character: Character,
+    reward_items: list[dict],
+) -> None:
+    for entity_attr, char_attr, reward_type in (
+        ("reward_gold",       "gold",       "gold"),
+        ("reward_experience", "experience", "experience"),
+        ("reward_ap",         "ap",         "ap"),
+        ("reward_hp",         "hp",         "stat_hp"),
+        ("reward_attack",     "attack",     "stat_attack"),
+        ("reward_defense",    "defense",    "stat_defense"),
+    ):
+        amount = getattr(entity, entity_attr, 0)
+        if amount > 0:
+            setattr(character, char_attr, getattr(character, char_attr) + amount)
+            reward_items.append({"type": reward_type, "amount": amount})
+
+
+def _apply_item_grants(
+    db: Session,
+    item_grant_list: list[dict],
+    items_map: dict,
+    character_id: int,
+    reward_items: list[dict],
+) -> None:
+    for grant in item_grant_list:
+        item_id = grant.get("item_id")
+        quantity = grant.get("quantity", 1)
+        if item_id and item_id in items_map:
+            db.add(Purchase(character_id=character_id, item_id=item_id, quantity=quantity))
+            reward_items.append({"type": "item", "item_id": item_id, "quantity": quantity})
 
 
 def _create_progress_rows(
@@ -140,6 +201,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             for row in achieved_challenge_rows
         ],
         purchase_history=get_purchases(db, character.id, None),
+        reward_history=get_rewards_by_character(db, character.id),
     )
 
 
@@ -164,6 +226,13 @@ def create_challenge(db: Session, data: ChallengeCreate) -> Challenge:
         name=data.name.strip(),
         description=data.description.strip(),
         reward=data.reward.strip(),
+        reward_gold=data.reward_gold,
+        reward_experience=data.reward_experience,
+        reward_ap=data.reward_ap,
+        reward_hp=data.reward_hp,
+        reward_attack=data.reward_attack,
+        reward_defense=data.reward_defense,
+        reward_items=data.reward_items,
         is_public=data.is_public,
     )
     db.add(challenge)
@@ -400,6 +469,130 @@ def get_attendance_record(db: Session, attendance_date: date) -> AttendanceRecor
     return AttendanceRecordRead.model_validate(record)
 
 
+def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]:
+    rewards = (
+        db.query(Reward)
+        .filter(Reward.character_id == character_id)
+        .order_by(Reward.created_at.desc())
+        .all()
+    )
+    return [_to_reward_read(r) for r in rewards]
+
+
+def pay_attendance_rewards(db: Session, attendance_date: date) -> RewardPayResult:
+    record = (
+        db.query(AttendanceRecord)
+        .filter(AttendanceRecord.attendance_date == attendance_date)
+        .first()
+    )
+    if not record or not record.character_ids:
+        return RewardPayResult(paid_count=0, rewards=[])
+
+    already_paid_ids = {
+        r.character_id
+        for r, in db.query(Reward.character_id)
+        .filter(Reward.type == "attendance")
+        .filter(Reward.rewarded_at == attendance_date)
+        .all()
+    }
+
+    to_pay = [cid for cid in record.character_ids if cid not in already_paid_ids]
+    if not to_pay:
+        return RewardPayResult(paid_count=0, rewards=[])
+
+    characters = {
+        c.id: c
+        for c in db.query(Character).filter(Character.id.in_(to_pay)).all()
+    }
+
+    created_rewards: list[Reward] = []
+    for character_id in to_pay:
+        character = characters.get(character_id)
+        if not character:
+            continue
+        character.gold += 10
+        reward = Reward(
+            type="attendance",
+            character_id=character_id,
+            source_id=record.id,
+            reward_items=[{"type": "gold", "amount": 10}],
+            rewarded_at=attendance_date,
+        )
+        db.add(reward)
+        created_rewards.append(reward)
+
+    db.flush()
+    rewards_read = [_to_reward_read(r) for r in created_rewards]
+    db.commit()
+    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
+
+
+def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
+
+    achieved_ids = {
+        cp.character_id
+        for cp in db.query(ChallengeProgress)
+        .filter(ChallengeProgress.challenge_id == challenge_id)
+        .filter(ChallengeProgress.achieved.is_(True))
+        .all()
+    }
+    if not achieved_ids:
+        return RewardPayResult(paid_count=0, rewards=[])
+
+    already_paid_ids = {
+        r.character_id
+        for r, in db.query(Reward.character_id)
+        .filter(Reward.type == "challenge")
+        .filter(Reward.source_id == challenge_id)
+        .all()
+    }
+
+    to_pay = achieved_ids - already_paid_ids
+    if not to_pay:
+        return RewardPayResult(paid_count=0, rewards=[])
+
+    characters = {
+        c.id: c
+        for c in db.query(Character).filter(Character.id.in_(to_pay)).all()
+    }
+
+    item_grant_list = challenge.reward_items or []
+    item_ids = [g["item_id"] for g in item_grant_list if "item_id" in g]
+    items_map = (
+        {item.id: item for item in db.query(Item).filter(Item.id.in_(item_ids)).all()}
+        if item_ids else {}
+    )
+
+    created_rewards: list[Reward] = []
+    for character_id in to_pay:
+        character = characters.get(character_id)
+        if not character:
+            continue
+
+        reward_items: list[dict] = []
+        _apply_stat_rewards(challenge, character, reward_items)
+        _apply_item_grants(db, item_grant_list, items_map, character_id, reward_items)
+
+        reward = Reward(
+            type="challenge",
+            character_id=character_id,
+            source_id=challenge_id,
+            reward_items=reward_items,
+            rewarded_at=_today(),
+        )
+        db.add(reward)
+        created_rewards.append(reward)
+
+    db.flush()
+    rewards_read = [_to_reward_read(r) for r in created_rewards]
+    db.commit()
+    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
+    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
+
+
 def upsert_attendance_record(
     db: Session,
     attendance_date: date,
@@ -446,3 +639,297 @@ def upsert_attendance_record(
     db.commit()
     db.refresh(record)
     return AttendanceRecordRead.model_validate(record)
+
+
+# ── Mission ──────────────────────────────────────────────────────────────────
+
+def _create_mission_progress_rows(
+    db: Session,
+    mission_ids: list[int],
+    character_ids: list[int],
+) -> None:
+    if not mission_ids or not character_ids:
+        return
+    existing_pairs = {
+        (mid, cid)
+        for mid, cid in db.query(MissionProgress.mission_id, MissionProgress.character_id)
+        .filter(MissionProgress.mission_id.in_(mission_ids))
+        .filter(MissionProgress.character_id.in_(character_ids))
+        .all()
+    }
+    for mid in mission_ids:
+        for cid in character_ids:
+            if (mid, cid) not in existing_pairs:
+                db.add(MissionProgress(mission_id=mid, character_id=cid))
+
+
+def create_mission(db: Session, data: MissionCreate) -> Mission:
+    mission = Mission(
+        chapter=data.chapter.strip(),
+        mission_type=data.mission_type,
+        name=data.name.strip(),
+        description=data.description.strip(),
+        reward=data.reward.strip(),
+        reward_gold=data.reward_gold,
+        reward_experience=data.reward_experience,
+        reward_ap=data.reward_ap,
+        reward_hp=data.reward_hp,
+        reward_attack=data.reward_attack,
+        reward_defense=data.reward_defense,
+        reward_items=data.reward_items,
+        is_public=data.is_public,
+    )
+    db.add(mission)
+    db.flush()
+
+    character_ids = [cid for cid, in db.query(Character.id).all()]
+    _create_mission_progress_rows(db, [mission.id], character_ids)
+
+    db.commit()
+    db.refresh(mission)
+    return mission
+
+
+def get_missions(db: Session, chapter: str | None = None) -> list[Mission]:
+    query = db.query(Mission)
+    if chapter is not None:
+        query = query.filter(Mission.chapter == chapter)
+    return query.order_by(Mission.created_at.asc(), Mission.id.asc()).all()
+
+
+def get_mission_progress(db: Session, mission_id: int) -> list[MissionProgressRead]:
+    mission = db.query(Mission).filter(Mission.id == mission_id).first()
+    if not mission:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+
+    character_ids = [cid for cid, in db.query(Character.id).all()]
+    _create_mission_progress_rows(db, [mission.id], character_ids)
+    db.commit()
+
+    rows = (
+        db.query(
+            MissionProgress.character_id,
+            Character.name.label("character_name"),
+            MissionProgress.achieved,
+            MissionProgress.memo,
+        )
+        .join(Character, MissionProgress.character_id == Character.id)
+        .filter(MissionProgress.mission_id == mission_id)
+        .order_by(Character.id.asc())
+        .all()
+    )
+    return [
+        MissionProgressRead(
+            character_id=row.character_id,
+            character_name=row.character_name,
+            achieved=row.achieved,
+            memo=row.memo,
+        )
+        for row in rows
+    ]
+
+
+def update_mission_progress(
+    db: Session,
+    mission_id: int,
+    data: MissionProgressBulkUpdate,
+) -> list[MissionProgressRead]:
+    mission = db.query(Mission).filter(Mission.id == mission_id).first()
+    if not mission:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+
+    character_ids = [entry.character_id for entry in data.entries]
+    _create_mission_progress_rows(db, [mission_id], character_ids)
+    db.flush()
+
+    rows = (
+        db.query(MissionProgress)
+        .filter(MissionProgress.mission_id == mission_id)
+        .filter(MissionProgress.character_id.in_(character_ids))
+        .all()
+    )
+    progress_by_character = {row.character_id: row for row in rows}
+
+    for entry in data.entries:
+        progress = progress_by_character.get(entry.character_id)
+        if not progress:
+            raise HTTPException(status_code=404, detail="임무 진행 현황을 찾을 수 없습니다.")
+        progress.achieved = entry.achieved
+        progress.memo = entry.memo.strip()
+        progress.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    return get_mission_progress(db, mission_id)
+
+
+def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
+    mission = db.query(Mission).filter(Mission.id == mission_id).first()
+    if not mission:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+
+    achieved_ids = {
+        mp.character_id
+        for mp in db.query(MissionProgress)
+        .filter(MissionProgress.mission_id == mission_id)
+        .filter(MissionProgress.achieved.is_(True))
+        .all()
+    }
+    if not achieved_ids:
+        return RewardPayResult(paid_count=0, rewards=[])
+
+    already_paid_ids = {
+        r.character_id
+        for r, in db.query(Reward.character_id)
+        .filter(Reward.type == "mission")
+        .filter(Reward.source_id == mission_id)
+        .all()
+    }
+
+    to_pay = achieved_ids - already_paid_ids
+    if not to_pay:
+        return RewardPayResult(paid_count=0, rewards=[])
+
+    characters = {
+        c.id: c for c in db.query(Character).filter(Character.id.in_(to_pay)).all()
+    }
+
+    item_grant_list = mission.reward_items or []
+    item_ids = [g["item_id"] for g in item_grant_list if "item_id" in g]
+    items_map = (
+        {item.id: item for item in db.query(Item).filter(Item.id.in_(item_ids)).all()}
+        if item_ids else {}
+    )
+
+    created_rewards: list[Reward] = []
+    for character_id in to_pay:
+        character = characters.get(character_id)
+        if not character:
+            continue
+
+        reward_items: list[dict] = []
+        _apply_stat_rewards(mission, character, reward_items)
+        _apply_item_grants(db, item_grant_list, items_map, character_id, reward_items)
+
+        reward = Reward(
+            type="mission",
+            character_id=character_id,
+            source_id=mission_id,
+            reward_items=reward_items,
+            rewarded_at=_today(),
+        )
+        db.add(reward)
+        created_rewards.append(reward)
+
+    db.flush()
+    rewards_read = [_to_reward_read(r) for r in created_rewards]
+    db.commit()
+    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
+
+
+# ── Chapter ───────────────────────────────────────────────────────────────────
+
+def get_chapters(db: Session) -> list[ChapterRead]:
+    chapters = db.query(Chapter).order_by(Chapter.start_date.desc()).all()
+    today = _today()
+    return [
+        ChapterRead(
+            id=c.id,
+            name=c.name,
+            start_date=c.start_date,
+            end_date=c.end_date,
+            is_active=c.start_date <= today <= c.end_date,
+            created_at=c.created_at,
+        )
+        for c in chapters
+    ]
+
+
+def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
+    chapter = Chapter(
+        name=data.name.strip(),
+        start_date=data.start_date,
+        end_date=data.end_date,
+    )
+    db.add(chapter)
+    db.commit()
+    db.refresh(chapter)
+    today = _today()
+    return ChapterRead(
+        id=chapter.id,
+        name=chapter.name,
+        start_date=chapter.start_date,
+        end_date=chapter.end_date,
+        is_active=chapter.start_date <= today <= chapter.end_date,
+        created_at=chapter.created_at,
+    )
+
+
+def get_active_chapter(db: Session) -> ChapterRead | None:
+    today = _today()
+    chapter = (
+        db.query(Chapter)
+        .filter(Chapter.start_date <= today, Chapter.end_date >= today)
+        .first()
+    )
+    if not chapter:
+        return None
+    return ChapterRead(
+        id=chapter.id,
+        name=chapter.name,
+        start_date=chapter.start_date,
+        end_date=chapter.end_date,
+        is_active=True,
+        created_at=chapter.created_at,
+    )
+
+
+# ── Enemy ─────────────────────────────────────────────────────────────────────
+
+def get_enemies(db: Session, chapter: str | None = None) -> list[EnemyRead]:
+    query = db.query(Enemy)
+    if chapter is not None:
+        query = query.filter(Enemy.chapter == chapter)
+    enemies = query.order_by(Enemy.created_at.asc()).all()
+    return [
+        EnemyRead(
+            id=e.id,
+            name=e.name,
+            chapter=e.chapter,
+            base_hp=e.base_hp,
+            hp_per_attacker=e.hp_per_attacker,
+            hp_per_defender=e.hp_per_defender,
+            hp_per_healer=e.hp_per_healer,
+            attack=e.attack,
+            skills=[EnemySkill(**s) for s in (e.skills or [])],
+            created_at=e.created_at,
+        )
+        for e in enemies
+    ]
+
+
+def create_enemy(db: Session, data: EnemyCreate) -> EnemyRead:
+    enemy = Enemy(
+        name=data.name.strip(),
+        chapter=data.chapter.strip() if data.chapter else None,
+        base_hp=data.base_hp,
+        hp_per_attacker=data.hp_per_attacker,
+        hp_per_defender=data.hp_per_defender,
+        hp_per_healer=data.hp_per_healer,
+        attack=data.attack,
+        skills=[s.model_dump() for s in data.skills],
+    )
+    db.add(enemy)
+    db.commit()
+    db.refresh(enemy)
+    return EnemyRead(
+        id=enemy.id,
+        name=enemy.name,
+        chapter=enemy.chapter,
+        base_hp=enemy.base_hp,
+        hp_per_attacker=enemy.hp_per_attacker,
+        hp_per_defender=enemy.hp_per_defender,
+        hp_per_healer=enemy.hp_per_healer,
+        attack=enemy.attack,
+        skills=[EnemySkill(**s) for s in (enemy.skills or [])],
+        created_at=enemy.created_at,
+    )

@@ -10,7 +10,11 @@ from app.models import Character, Item
 from app.schemas import (
     AttendanceRecordRead,
     AttendanceRecordUpdate,
+    ChapterCreate,
+    ChapterRead,
     CharacterCreate,
+    EnemyCreate,
+    EnemyRead,
     CharacterDetailRead,
     CharacterRead,
     ChallengeCreate,
@@ -21,7 +25,12 @@ from app.schemas import (
     ItemRead,
     ItemWithStock,
     BulkPurchaseRequest,
+    MissionCreate,
+    MissionProgressBulkUpdate,
+    MissionProgressRead,
+    MissionRead,
     PurchaseRead,
+    RewardPayResult,
 )
 from app import crud
 
@@ -136,3 +145,67 @@ def list_purchases(
     db: Session = Depends(get_db),
 ):
     return crud.get_purchases(db, character_id, item_id)
+
+
+@app.get("/missions", response_model=list[MissionRead])
+def list_missions(chapter: str | None = None, db: Session = Depends(get_db)):
+    return crud.get_missions(db, chapter)
+
+
+@app.post("/missions", response_model=MissionRead)
+def create_mission(data: MissionCreate, db: Session = Depends(get_db)):
+    return crud.create_mission(db, data)
+
+
+@app.get("/missions/{mission_id}/progress", response_model=list[MissionProgressRead])
+def list_mission_progress(mission_id: int, db: Session = Depends(get_db)):
+    return crud.get_mission_progress(db, mission_id)
+
+
+@app.put("/missions/{mission_id}/progress", response_model=list[MissionProgressRead])
+def save_mission_progress(
+    mission_id: int,
+    data: MissionProgressBulkUpdate,
+    db: Session = Depends(get_db),
+):
+    return crud.update_mission_progress(db, mission_id, data)
+
+
+@app.post("/rewards/mission/{mission_id}", response_model=RewardPayResult)
+def pay_mission_rewards(mission_id: int, db: Session = Depends(get_db)):
+    return crud.pay_mission_rewards(db, mission_id)
+
+
+@app.post("/rewards/attendance", response_model=RewardPayResult)
+def pay_attendance_rewards(attendance_date: date, db: Session = Depends(get_db)):
+    return crud.pay_attendance_rewards(db, attendance_date)
+
+
+@app.post("/rewards/challenge/{challenge_id}", response_model=RewardPayResult)
+def pay_challenge_rewards(challenge_id: int, db: Session = Depends(get_db)):
+    return crud.pay_challenge_rewards(db, challenge_id)
+
+
+@app.get("/chapters", response_model=list[ChapterRead])
+def list_chapters(db: Session = Depends(get_db)):
+    return crud.get_chapters(db)
+
+
+@app.post("/chapters", response_model=ChapterRead)
+def create_chapter(data: ChapterCreate, db: Session = Depends(get_db)):
+    return crud.create_chapter(db, data)
+
+
+@app.get("/chapters/active", response_model=ChapterRead | None)
+def get_active_chapter(db: Session = Depends(get_db)):
+    return crud.get_active_chapter(db)
+
+
+@app.get("/enemies", response_model=list[EnemyRead])
+def list_enemies(chapter: str | None = None, db: Session = Depends(get_db)):
+    return crud.get_enemies(db, chapter)
+
+
+@app.post("/enemies", response_model=EnemyRead)
+def create_enemy(data: EnemyCreate, db: Session = Depends(get_db)):
+    return crud.create_enemy(db, data)
