@@ -35,31 +35,46 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createChallenge,
   fetchChallengeProgress,
+  fetchChapters,
   fetchChallenges,
+  fetchItems,
+  payChallengeRewards,
   saveChallengeProgress,
 } from "@/lib/api";
 import type {
   Challenge,
+  Chapter,
   ChallengeCreate,
   ChallengeProgress,
   ChallengeProgressUpdate,
+  ChallengeRewardItemGrant,
+  Item,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, parsePositiveInt } from "@/lib/utils";
 
 type PageTab = "manage" | "status";
 type ChallengeVisibility = "공개" | "비공개";
+
+type RewardItemFormEntry = { item_id: string; quantity: string };
 
 type ChallengeFormState = {
   chapter: string;
   name: string;
   description: string;
   reward: string;
+  reward_gold: string;
+  reward_experience: string;
+  reward_ap: string;
+  reward_hp: string;
+  reward_attack: string;
+  reward_defense: string;
+  reward_items: RewardItemFormEntry[];
   visibility: ChallengeVisibility;
 };
 
 const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
-  { id: "manage", label: "도전과제 관리", icon: PlusSquare },
   { id: "status", label: "현황", icon: ClipboardList },
+  { id: "manage", label: "도전과제 관리", icon: PlusSquare },
 ];
 
 const DEFAULT_FORM: ChallengeFormState = {
@@ -67,6 +82,13 @@ const DEFAULT_FORM: ChallengeFormState = {
   name: "",
   description: "",
   reward: "",
+  reward_gold: "0",
+  reward_experience: "0",
+  reward_ap: "0",
+  reward_hp: "0",
+  reward_attack: "0",
+  reward_defense: "0",
+  reward_items: [],
   visibility: "공개",
 };
 
@@ -75,11 +97,25 @@ function toVisibilityText(isPublic: boolean): ChallengeVisibility {
 }
 
 function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
+  const rewardItems: ChallengeRewardItemGrant[] = form.reward_items
+    .map((entry) => ({
+      item_id: parseInt(entry.item_id, 10) || 0,
+      quantity: Math.max(1, parseInt(entry.quantity, 10) || 1),
+    }))
+    .filter((entry) => entry.item_id > 0);
+
   return {
     chapter: form.chapter.trim(),
     name: form.name.trim(),
     description: form.description.trim(),
     reward: form.reward.trim(),
+    reward_gold: parsePositiveInt(form.reward_gold),
+    reward_experience: parsePositiveInt(form.reward_experience),
+    reward_ap: parsePositiveInt(form.reward_ap),
+    reward_hp: parsePositiveInt(form.reward_hp),
+    reward_attack: parsePositiveInt(form.reward_attack),
+    reward_defense: parsePositiveInt(form.reward_defense),
+    reward_items: rewardItems,
     is_public: form.visibility === "공개",
   };
 }
@@ -87,6 +123,8 @@ function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
 export default function ChallengesPage() {
   const [tab, setTab] = useState<PageTab>("manage");
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
+  const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [form, setForm] = useState<ChallengeFormState>(DEFAULT_FORM);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
@@ -98,6 +136,8 @@ export default function ChallengesPage() {
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [submittingChallenge, setSubmittingChallenge] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
+  const [payingReward, setPayingReward] = useState(false);
+  const [rewardMessage, setRewardMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const chapters = [...new Set(challenges.map((challenge) => challenge.chapter))];
@@ -115,21 +155,22 @@ export default function ChallengesPage() {
   useEffect(() => {
     let cancelled = false;
 
-    async function loadChallenges() {
+    async function loadInitialData() {
       try {
         setLoadingChallenges(true);
-        const challengeList = await fetchChallenges();
+        const [challengeList, itemList, chapList] = await Promise.all([fetchChallenges(), fetchItems(), fetchChapters()]);
 
         if (cancelled) return;
 
         setChallenges(challengeList);
+        setItems(itemList);
+        setChapterList(chapList);
         if (challengeList.length > 0) {
           setSelectedChapter(challengeList[0].chapter);
           setSelectedChallengeId(challengeList[0].id);
-          setForm((prev) => ({
-            ...prev,
-            chapter: prev.chapter || challengeList[0].chapter,
-          }));
+        }
+        if (chapList.length > 0) {
+          setForm((prev) => ({ ...prev, chapter: prev.chapter || chapList[0].name }));
         }
         setErrorMessage(null);
       } catch (error) {
@@ -145,7 +186,7 @@ export default function ChallengesPage() {
       }
     }
 
-    loadChallenges();
+    loadInitialData();
 
     return () => {
       cancelled = true;
@@ -217,6 +258,13 @@ export default function ChallengesPage() {
         name: "",
         description: "",
         reward: "",
+        reward_gold: "0",
+        reward_experience: "0",
+        reward_ap: "0",
+        reward_hp: "0",
+        reward_attack: "0",
+        reward_defense: "0",
+        reward_items: [],
         visibility: "공개",
       });
       setErrorMessage(null);
@@ -230,18 +278,71 @@ export default function ChallengesPage() {
     }
   }
 
+  async function handlePayChallengeReward() {
+    if (!selectedChallenge) return;
+    try {
+      setPayingReward(true);
+      setRewardMessage(null);
+      const result = await payChallengeRewards(selectedChallenge.id);
+      if (result.paid_count === 0) {
+        setRewardMessage("이미 모든 달성자에게 보상이 지급되었거나 달성자가 없습니다.");
+      } else {
+        const c = selectedChallenge;
+        const parts: string[] = [];
+        if (c.reward_gold > 0) parts.push(`골드 ${c.reward_gold.toLocaleString()}G`);
+        if (c.reward_experience > 0) parts.push(`경험치 ${c.reward_experience.toLocaleString()}`);
+        if (c.reward_ap > 0) parts.push(`AP ${c.reward_ap}`);
+        if (c.reward_hp > 0) parts.push(`HP +${c.reward_hp}`);
+        if (c.reward_attack > 0) parts.push(`공격력 +${c.reward_attack}`);
+        if (c.reward_defense > 0) parts.push(`방어력 +${c.reward_defense}`);
+        if (c.reward_items?.length > 0) parts.push(`아이템 ${c.reward_items.length}종`);
+        const rewardDesc = parts.length > 0 ? `(${parts.join(", ")})` : "";
+        setRewardMessage(`${result.paid_count}명에게 도전과제 보상${rewardDesc}이 지급되었습니다.`);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "도전과제 보상 지급에 실패했습니다.");
+    } finally {
+      setPayingReward(false);
+    }
+  }
+
+  function handleAddRewardItem() {
+    setForm((prev) => ({
+      ...prev,
+      reward_items: [...prev.reward_items, { item_id: "", quantity: "1" }],
+    }));
+  }
+
+  function handleUpdateRewardItem(index: number, key: keyof RewardItemFormEntry, value: string) {
+    setForm((prev) => ({
+      ...prev,
+      reward_items: prev.reward_items.map((entry, i) =>
+        i === index ? { ...entry, [key]: value } : entry,
+      ),
+    }));
+  }
+
+  function handleRemoveRewardItem(index: number) {
+    setForm((prev) => ({
+      ...prev,
+      reward_items: prev.reward_items.filter((_, i) => i !== index),
+    }));
+  }
+
   function handleSelectChapter(value: string) {
     const nextChallenge = challenges.find((challenge) => challenge.chapter === value);
     setSelectedChapter(value);
     setSelectedChallengeId(nextChallenge?.id ?? null);
     setShowAchievedOnly(false);
     setIsEditingProgress(false);
+    setRewardMessage(null);
   }
 
   function handleSelectChallenge(challengeId: number) {
     setSelectedChallengeId(challengeId);
     setShowAchievedOnly(false);
     setIsEditingProgress(false);
+    setRewardMessage(null);
   }
 
   function updateProgressDraft(
@@ -309,6 +410,11 @@ export default function ChallengesPage() {
       {errorMessage && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           {errorMessage}
+        </div>
+      )}
+      {rewardMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {rewardMessage}
         </div>
       )}
 
@@ -412,12 +518,21 @@ export default function ChallengesPage() {
               <form className="flex flex-col gap-4" onSubmit={handleAddChallenge}>
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-semibold text-slate-700">챕터</label>
-                  <Input
+                  <Select
                     value={form.chapter}
-                    onChange={(event) => handleFormChange("chapter", event.target.value)}
-                    placeholder="예: 2장"
-                    required
-                  />
+                    onValueChange={(value) => handleFormChange("chapter", value)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="챕터 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {chapterList.map((c) => (
+                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -444,13 +559,132 @@ export default function ChallengesPage() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700">보상</label>
+                  <label className="text-sm font-semibold text-slate-700">보상 설명</label>
                   <Input
                     value={form.reward}
                     onChange={(event) => handleFormChange("reward", event.target.value)}
                     placeholder="예: 골드 3,000G"
                     required
                   />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 flex flex-col gap-3">
+                  <p className="text-xs font-semibold tracking-widest text-slate-500 uppercase">보상 구성</p>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-600">골드 (G)</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={form.reward_gold}
+                        onChange={(e) => handleFormChange("reward_gold", e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-600">경험치</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={form.reward_experience}
+                        onChange={(e) => handleFormChange("reward_experience", e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-600">AP</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={form.reward_ap}
+                        onChange={(e) => handleFormChange("reward_ap", e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-600">HP 증가</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={form.reward_hp}
+                        onChange={(e) => handleFormChange("reward_hp", e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-600">공격력 증가</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={form.reward_attack}
+                        onChange={(e) => handleFormChange("reward_attack", e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-slate-600">방어력 증가</label>
+                      <Input
+                        type="number"
+                        min={0}
+                        value={form.reward_defense}
+                        onChange={(e) => handleFormChange("reward_defense", e.target.value)}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-semibold text-slate-600">지급 아이템</label>
+                      <Button type="button" variant="outline" onClick={handleAddRewardItem} className="h-7 px-3 text-xs">
+                        + 추가
+                      </Button>
+                    </div>
+                    {form.reward_items.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        {form.reward_items.map((entry, index) => (
+                          <div key={index} className="flex items-center gap-2">
+                            <Select
+                              value={entry.item_id}
+                              onValueChange={(value) => handleUpdateRewardItem(index, "item_id", value)}
+                            >
+                              <SelectTrigger className="flex-1">
+                                <SelectValue placeholder="아이템 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectGroup>
+                                  {items.map((item) => (
+                                    <SelectItem key={item.id} value={String(item.id)}>
+                                      {item.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectGroup>
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={entry.quantity}
+                              onChange={(e) => handleUpdateRewardItem(index, "quantity", e.target.value)}
+                              placeholder="수량"
+                              className="w-20"
+                            />
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              onClick={() => handleRemoveRewardItem(index)}
+                              className="h-8 px-2 text-slate-400 hover:text-red-500"
+                            >
+                              ✕
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-slate-400">아이템 없음</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -573,9 +807,12 @@ export default function ChallengesPage() {
                     캐릭터 이름, 달성 여부, 메모를 수정할 수 있는 리스트입니다.
                   </CardDescription>
                 </div>
-                <Button disabled={!selectedChallenge}>
+                <Button
+                  disabled={!selectedChallenge || payingReward}
+                  onClick={handlePayChallengeReward}
+                >
                   <Gift size={15} />
-                  보상 지급
+                  {payingReward ? "지급 중..." : "보상 지급"}
                 </Button>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">

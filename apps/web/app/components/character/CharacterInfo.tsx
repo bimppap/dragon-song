@@ -14,6 +14,30 @@ import {
   Sword,
   Trophy,
 } from "lucide-react";
+
+const REWARD_TYPE_LABELS: Record<string, string> = {
+  attendance: "출석",
+  challenge: "도전과제",
+  mission: "임무",
+};
+
+function formatRewardItems(reward: Reward): string {
+  if (!reward.reward_items || reward.reward_items.length === 0) return "보상 없음";
+  return reward.reward_items
+    .map((item) => {
+      switch (item.type) {
+        case "gold": return `골드 +${(item.amount ?? 0).toLocaleString()}G`;
+        case "experience": return `경험치 +${(item.amount ?? 0).toLocaleString()}`;
+        case "ap": return `AP +${item.amount ?? 0}`;
+        case "stat_hp": return `HP +${item.amount ?? 0}`;
+        case "stat_attack": return `공격력 +${item.amount ?? 0}`;
+        case "stat_defense": return `방어력 +${item.amount ?? 0}`;
+        case "item": return `아이템 ID${item.item_id} ×${item.quantity ?? 1}`;
+        default: return item.type;
+      }
+    })
+    .join("  /  ");
+}
 import { Badge } from "@/components/ui/badge";
 import {
   Card,
@@ -31,7 +55,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { fetchCharacterDetail } from "@/lib/api";
-import type { Character, CharacterDetail } from "@/lib/api";
+import type { Character, CharacterDetail, Reward } from "@/lib/api";
 
 interface Props {
   characters: Character[];
@@ -291,22 +315,43 @@ export default function CharacterInfo({ characters, loading }: Props) {
               <CardHeader>
                 <CardTitle>보상 이력</CardTitle>
                 <CardDescription>
-                  보상 지급 기록은 다음 단계에서 API 연동 예정이며, 현재는 레이아웃만 구성했습니다.
+                  지급된 보상 내역을 최신순으로 표시합니다.
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-4 py-5">
-                  <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <Gift size={15} className="text-emerald-500" />
-                    보상 지급 이력 영역
+                {selectedDetail.reward_history.length > 0 ? (
+                  selectedDetail.reward_history.map((reward) => (
+                    <div
+                      key={reward.id}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-4"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="flex size-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                          <Gift size={18} />
+                        </span>
+                        <div className="flex flex-col gap-1">
+                          <p className="font-semibold text-slate-900">
+                            {formatRewardItems(reward)}
+                          </p>
+                          <p className="text-sm text-slate-500">
+                            {reward.rewarded_at} ·{" "}
+                            <Badge variant="secondary" className="text-xs">
+                              {REWARD_TYPE_LABELS[reward.type] ?? reward.type}
+                            </Badge>
+                          </p>
+                        </div>
+                      </div>
+                      <span className="flex items-center gap-1 text-xs text-slate-400">
+                        <Receipt size={12} />
+                        #{reward.id}
+                      </span>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                    지급된 보상이 없습니다.
                   </div>
-                  <p className="mt-2 text-sm text-slate-500">
-                    도전과제 보상이 실제 지급되기 시작하면 날짜, 지급 항목, 처리 메모를 이 영역에 연결하면 됩니다.
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-200 px-4 py-4 text-sm text-slate-500">
-                  현재 달성 도전과제 {selectedDetail.achieved_challenges.length}개
-                </div>
+                )}
               </CardContent>
             </Card>
 
