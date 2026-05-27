@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Swords, Sparkles, BarChart3, Users, Trophy } from "lucide-react";
+import { Swords, Sparkles, BarChart3, Users, Trophy, Skull } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import BattleTab from "./components/BattleTab";
@@ -9,8 +9,9 @@ import SkillTab from "./components/SkillTab";
 import StatTab from "./components/StatTab";
 import RoleTab from "./components/RoleTab";
 import GradeTab from "./components/GradeTab";
+import EnemyTab from "./components/EnemyTab";
 
-type Tab = "battle" | "skill" | "stat" | "role" | "grade";
+type Tab = "battle" | "skill" | "stat" | "role" | "grade" | "enemy";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "battle", label: "전투", icon: Swords },
@@ -18,6 +19,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "stat",   label: "스탯", icon: BarChart3 },
   { id: "role",   label: "역할", icon: Users },
   { id: "grade",  label: "등급", icon: Trophy },
+  { id: "enemy",  label: "에너미", icon: Skull },
 ];
 
 export default function BattlePage() {
@@ -50,6 +52,7 @@ export default function BattlePage() {
         {tab === "stat"   && <StatTab />}
         {tab === "role"   && <RoleTab />}
         {tab === "grade"  && <GradeTab />}
+        {tab === "enemy"  && <EnemyTab />}
       </div>
     </main>
   );
