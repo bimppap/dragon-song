@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { fetchAttendance, fetchCharacters, saveAttendance } from "@/lib/api";
+import { fetchAttendance, fetchCharacters, payAttendanceRewards, saveAttendance } from "@/lib/api";
 import type { AttendanceRecord, Character } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -51,6 +51,8 @@ export default function AttendancePanel() {
   const [loadingCharacters, setLoadingCharacters] = useState(true);
   const [loadingAttendance, setLoadingAttendance] = useState(true);
   const [savingAttendance, setSavingAttendance] = useState(false);
+  const [payingReward, setPayingReward] = useState(false);
+  const [rewardMessage, setRewardMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -148,6 +150,25 @@ export default function AttendancePanel() {
     }
   }
 
+  async function handlePayReward() {
+    try {
+      setPayingReward(true);
+      setRewardMessage(null);
+      const result = await payAttendanceRewards(selectedDate);
+      if (result.paid_count === 0) {
+        setRewardMessage("이미 모든 출석자에게 보상이 지급되었거나 출석자가 없습니다.");
+      } else {
+        setRewardMessage(`${result.paid_count}명에게 출석 보상(골드 10G)이 지급되었습니다.`);
+        const updated = await fetchAttendance(selectedDate);
+        setAttendance(updated);
+      }
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "출석 보상 지급에 실패했습니다.");
+    } finally {
+      setPayingReward(false);
+    }
+  }
+
   function handleToggleAttendance(characterId: number, checked: boolean | "indeterminate") {
     const nextCharacterIds = updateCharacterIds(
       attendance?.character_ids ?? [],
@@ -190,6 +211,11 @@ export default function AttendancePanel() {
           {errorMessage}
         </div>
       )}
+      {rewardMessage && (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {rewardMessage}
+        </div>
+      )}
 
       <Card>
         <CardHeader className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
@@ -214,9 +240,14 @@ export default function AttendancePanel() {
                 disabled={savingAttendance}
               />
             </div>
-            <Button variant="outline" className="gap-2">
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={handlePayReward}
+              disabled={payingReward || savingAttendance || !attendance?.character_ids?.length}
+            >
               <Gift size={16} />
-              출석 보상 지급
+              {payingReward ? "지급 중..." : "출석 보상 지급"}
             </Button>
           </div>
         </CardHeader>
@@ -290,13 +321,18 @@ export default function AttendancePanel() {
                       <p className="text-sm text-slate-500">캐릭터 ID {character.id}</p>
                     </div>
 
-                    <label className="inline-flex items-center gap-3 self-start rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 md:self-auto">
+                    <label className={cn(
+                      "inline-flex items-center gap-3 self-start rounded-full border px-4 py-2 text-sm font-medium md:self-auto",
+                      checked
+                        ? "border-emerald-200 bg-emerald-100 text-emerald-700 cursor-not-allowed"
+                        : "border-slate-200 bg-white text-slate-700",
+                    )}>
                       <Checkbox
                         checked={checked}
                         onCheckedChange={(nextChecked) =>
                           handleToggleAttendance(character.id, nextChecked)
                         }
-                        disabled={savingAttendance}
+                        disabled={savingAttendance || checked}
                       />
                       출석
                     </label>
