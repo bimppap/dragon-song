@@ -84,17 +84,78 @@ export async function fetchMyCharacter(): Promise<CharacterDetail> {
   return request<CharacterDetail>("/members/me/character", undefined, "내 캐릭터 조회 실패");
 }
 
+export type ItemType = "consumable" | "equipment";
+
+export type ItemEffectStat =
+  | "lv" | "rank" | "exp" | "gold" | "cp" | "ap"
+  | "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom"
+  | "hp" | "hp_max" | "hp_max_p" | "hp_regen_true" | "hp_regen_fixed"
+  | "mp" | "mp_max" | "mp_regen"
+  | "atk" | "atk_p" | "def" | "def_p" | "def_eff"
+  | "attn" | "presence" | "heal_eff" | "heal_eff_p"
+  | "sh" | "dmg_p" | "dmg_r"
+  | "skill_lv" | "skill_eff_true" | "skill_eff_fixed"
+  | "skill_cost" | "skill_target"
+  | "start_sh" | "revive_hp" | "act_time";
+
+export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
+  { value: "lv", label: "성장 등급" },
+  { value: "rank", label: "모험가 등급" },
+  { value: "exp", label: "경험치" },
+  { value: "gold", label: "골드" },
+  { value: "cp", label: "CP" },
+  { value: "ap", label: "AP" },
+  { value: "stat_courage", label: "용기" },
+  { value: "stat_endurance", label: "인내" },
+  { value: "stat_charity", label: "자애" },
+  { value: "stat_wisdom", label: "지혜" },
+  { value: "hp", label: "현재 체력" },
+  { value: "hp_max", label: "최대 체력" },
+  { value: "hp_max_p", label: "체력 증폭(%)" },
+  { value: "hp_regen_true", label: "체력 재생력(고정)" },
+  { value: "hp_regen_fixed", label: "체력 재생력(비례)" },
+  { value: "mp", label: "마나" },
+  { value: "mp_max", label: "마나 최대치" },
+  { value: "mp_regen", label: "마나 재생력" },
+  { value: "atk", label: "공격력" },
+  { value: "atk_p", label: "공격력 증폭(%)" },
+  { value: "def", label: "방어력" },
+  { value: "def_p", label: "방어력 증폭(%)" },
+  { value: "def_eff", label: "방어 효율" },
+  { value: "attn", label: "주목도" },
+  { value: "presence", label: "존재감" },
+  { value: "heal_eff", label: "치유 효율" },
+  { value: "heal_eff_p", label: "치유 효율 증폭" },
+  { value: "sh", label: "보호막" },
+  { value: "dmg_p", label: "피해 증폭" },
+  { value: "dmg_r", label: "피해 감소" },
+  { value: "skill_lv", label: "기술 등급" },
+  { value: "skill_eff_true", label: "기술 효율(고정)" },
+  { value: "skill_eff_fixed", label: "기술 효율(비례)" },
+  { value: "skill_cost", label: "기술 비용" },
+  { value: "skill_target", label: "기술 대상" },
+  { value: "start_sh", label: "시작 보호막" },
+  { value: "revive_hp", label: "부활 후 체력" },
+  { value: "act_time", label: "행동횟수" },
+];
+
+export interface ItemEffect {
+  stat: ItemEffectStat;
+  delta: number;
+}
+
 export interface Item {
   id: number;
   name: string;
   price_gold: number | null;
   price_cp: number | null;
   description_user: string;
-  description_internal: string;
   purchase_limit_per_character: number | null;
   purchase_limit_global: number | null;
   available_from_chapter: string | null;
   available_until_chapter: string | null;
+  item_type: ItemType;
+  effects: ItemEffect[];
   created_at: string;
   purchased_by_character: number;
   purchased_total: number;
@@ -108,11 +169,12 @@ export interface ItemCreate {
   price_gold: number | null;
   price_cp: number | null;
   description_user: string;
-  description_internal: string;
   purchase_limit_per_character: number | null;
   purchase_limit_global: number | null;
   available_from_chapter: string | null;
   available_until_chapter: string | null;
+  item_type: ItemType;
+  effects: ItemEffect[];
 }
 
 export interface Purchase {
@@ -173,6 +235,12 @@ export interface Character {
   skill_eff_fixed: number;
   skill_cost: number;
   skill_target: number;
+
+  // 관리자 전용 능력치 (RUNNER 조회 시 null)
+  start_sh: number | null;
+  revive_hp: number | null;
+  act_time: number | null;
+  over_heal: boolean | null;
 }
 
 export type CharacterCreate = Partial<Omit<Character, "id">> & { name: string };
@@ -180,7 +248,12 @@ export type CharacterCreate = Partial<Omit<Character, "id">> & { name: string };
 export interface CharacterOwnedItem {
   item_id: number;
   item_name: string;
+  item_description: string;
+  item_type: ItemType;
+  effects: ItemEffect[];
   quantity: number;
+  used_quantity: number;
+  equipped: boolean;
 }
 
 export interface CharacterAchievedChallenge {
@@ -333,6 +406,24 @@ export async function updateItem(itemId: number, data: ItemCreate): Promise<Item
     method: "PUT",
     body: JSON.stringify(data),
   }, "아이템 수정 실패");
+}
+
+export async function useItem(characterId: number, itemId: number): Promise<CharacterDetail> {
+  return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
+    method: "POST",
+  }, "아이템 사용 실패");
+}
+
+export async function equipItem(characterId: number, itemId: number): Promise<CharacterDetail> {
+  return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/equip`, {
+    method: "POST",
+  }, "아이템 장착 실패");
+}
+
+export async function unequipItem(characterId: number, itemId: number): Promise<CharacterDetail> {
+  return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/unequip`, {
+    method: "POST",
+  }, "아이템 장착 해제 실패");
 }
 
 export async function fetchChallenges(chapter?: string): Promise<Challenge[]> {

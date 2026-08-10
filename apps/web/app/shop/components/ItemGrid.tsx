@@ -5,7 +5,7 @@ import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Package, Settings2, ShoppingCart } from "lucide-react";
-import { fetchItems } from "@/lib/api";
+import { fetchItems, ITEM_EFFECT_STAT_OPTIONS } from "@/lib/api";
 import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -18,14 +18,18 @@ interface Props {
   onAddToCart: (item: Item) => void;
   refreshKey: number;
   showAvailability?: boolean;
-  showInternalDescription?: boolean;
+  showEffects?: boolean;
   onEditItem?: (item: Item) => void;
 }
+
+const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
+  ITEM_EFFECT_STAT_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 function StockBadge({ value }: { value: number | null }) {
   if (value === null) return <Badge variant="secondary">무제한</Badge>;
   if (value === 0)    return <Badge variant="destructive">품절</Badge>;
-  return <Badge variant="success">{value}개</Badge>;
+  return <Badge variant="success" className="font-num">{value}개</Badge>;
 }
 
 function formatAvailability(item: Item): string {
@@ -35,6 +39,17 @@ function formatAvailability(item: Item): string {
   if (from && until) return `${from} ~ ${until}`;
   if (from) return `${from}부터`;
   return `~${until}`;
+}
+
+function formatEffects(item: Item): string {
+  if (item.effects.length === 0) return "효과 없음";
+  return item.effects
+    .map((effect) => {
+      const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
+      const sign = effect.delta >= 0 ? "+" : "";
+      return `${label} ${sign}${effect.delta}`;
+    })
+    .join(", ");
 }
 
 function calcStock(item: Item): number | null {
@@ -51,7 +66,7 @@ export default function ItemGrid({
   onAddToCart,
   refreshKey,
   showAvailability = false,
-  showInternalDescription = false,
+  showEffects = false,
   onEditItem,
 }: Props) {
   const [items, setItems] = useState<Item[]>([]);
@@ -111,12 +126,27 @@ export default function ItemGrid({
     },
   ] : [];
 
-  const internalDescriptionColDef: ColDef<Item>[] = showInternalDescription ? [
+  const effectsColDef: ColDef<Item>[] = showEffects ? [
     {
-      headerName: "내부 설명",
-      field: "description_internal",
+      headerName: "종류",
+      width: 90,
+      sortable: false,
+      filter: false,
+      cellRenderer: (p: ICellRendererParams<Item>) => (
+        <Badge variant={p.data!.item_type === "equipment" ? "secondary" : "outline"}>
+          {p.data!.item_type === "equipment" ? "장착형" : "소모형"}
+        </Badge>
+      ),
+    },
+    {
+      headerName: "효과",
       minWidth: 220,
       flex: 2,
+      sortable: false,
+      filter: false,
+      cellRenderer: (p: ICellRendererParams<Item>) => (
+        <span className="font-num text-sm text-slate-600">{formatEffects(p.data!)}</span>
+      ),
       ...textColDef,
     },
   ] : [];
@@ -178,14 +208,14 @@ export default function ItemGrid({
       filter: true,
       ...textColDef,
     },
-    ...internalDescriptionColDef,
+    ...effectsColDef,
     {
       headerName: "가격",
       width: 150,
       sortable: false,
       filter: false,
       cellRenderer: (p: ICellRendererParams<Item>) => (
-        <span className="text-sm font-semibold">
+        <span className="font-num text-sm font-semibold">
           {p.data!.price_gold != null && (
             <span className="text-yellow-600">{p.data!.price_gold.toLocaleString()} G</span>
           )}

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PlusCircle } from "lucide-react";
-import { createItem, fetchChapters, updateItem } from "@/lib/api";
-import type { Chapter, Item, ItemCreate } from "@/lib/api";
+import { Plus, PlusCircle, X } from "lucide-react";
+import { createItem, fetchChapters, updateItem, ITEM_EFFECT_STAT_OPTIONS } from "@/lib/api";
+import type { Chapter, Item, ItemCreate, ItemEffect, ItemType } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -18,17 +18,23 @@ import {
 
 const NO_CHAPTER_LIMIT = "__no_limit__";
 
+const ITEM_TYPE_OPTIONS: { value: ItemType; label: string; description: string }[] = [
+  { value: "consumable", label: "소모형", description: "'사용'해야 능력치에 반영되고, 사용하면 소모됩니다." },
+  { value: "equipment", label: "장착형", description: "'장착'해야 능력치에 반영되고, '해제'하면 무효화됩니다." },
+];
+
 function createEmptyItemForm(): ItemCreate {
   return {
     name: "",
     price_gold: null,
     price_cp: null,
     description_user: "",
-    description_internal: "",
     purchase_limit_per_character: null,
     purchase_limit_global: null,
     available_from_chapter: null,
     available_until_chapter: null,
+    item_type: "consumable",
+    effects: [],
   };
 }
 
@@ -39,11 +45,12 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     price_gold: item.price_gold,
     price_cp: item.price_cp,
     description_user: item.description_user,
-    description_internal: item.description_internal,
     purchase_limit_per_character: item.purchase_limit_per_character,
     purchase_limit_global: item.purchase_limit_global,
     available_from_chapter: item.available_from_chapter,
     available_until_chapter: item.available_until_chapter,
+    item_type: item.item_type,
+    effects: item.effects,
   };
 }
 
@@ -88,6 +95,27 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
         name === "purchase_limit_global"
           ? value === "" ? null : Number(value)
           : value,
+    }));
+  }
+
+  function handleAddEffect() {
+    setForm((prev) => ({
+      ...prev,
+      effects: [...prev.effects, { stat: ITEM_EFFECT_STAT_OPTIONS[0].value, delta: 0 }],
+    }));
+  }
+
+  function handleUpdateEffect(index: number, patch: Partial<ItemEffect>) {
+    setForm((prev) => ({
+      ...prev,
+      effects: prev.effects.map((effect, i) => (i === index ? { ...effect, ...patch } : effect)),
+    }));
+  }
+
+  function handleRemoveEffect(index: number) {
+    setForm((prev) => ({
+      ...prev,
+      effects: prev.effects.filter((_, i) => i !== index),
     }));
   }
 
@@ -180,15 +208,84 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
         />
       </Field>
 
-      <Field label="내부 설명">
-        <Textarea
-          name="description_internal"
-          placeholder="계산/운영용 설명 (유저에게 비공개)"
-          value={form.description_internal}
-          onChange={handleChange}
-          rows={2}
-        />
+      <Field label="아이템 종류" required>
+        <div className="grid grid-cols-2 gap-3">
+          {ITEM_TYPE_OPTIONS.map((option) => (
+            <label
+              key={option.value}
+              className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors ${
+                form.item_type === option.value
+                  ? "border-indigo-500 bg-indigo-50"
+                  : "border-slate-200 hover:border-slate-300"
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="item_type"
+                  checked={form.item_type === option.value}
+                  onChange={() => setForm((prev) => ({ ...prev, item_type: option.value }))}
+                />
+                <span className="font-semibold text-slate-800">{option.label}</span>
+              </div>
+              <span className="text-xs text-slate-500">{option.description}</span>
+            </label>
+          ))}
+        </div>
       </Field>
+
+      <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+        <div className="flex items-center justify-between">
+          <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">효과</label>
+          <Button type="button" variant="outline" onClick={handleAddEffect} className="h-7 px-3 text-xs">
+            <Plus size={12} />
+            효과 추가
+          </Button>
+        </div>
+        {form.effects.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {form.effects.map((effect, index) => (
+              <div key={index} className="flex items-center gap-2">
+                <Select
+                  value={effect.stat}
+                  onValueChange={(value) => handleUpdateEffect(index, { stat: value as ItemEffect["stat"] })}
+                >
+                  <SelectTrigger className="flex-1">
+                    <SelectValue placeholder="능력치 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {ITEM_EFFECT_STAT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="number"
+                  step="any"
+                  value={effect.delta}
+                  onChange={(e) => handleUpdateEffect(index, { delta: Number(e.target.value) })}
+                  placeholder="변동값 (+/-)"
+                  className="w-32"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => handleRemoveEffect(index)}
+                  className="h-8 px-2 text-slate-400 hover:text-red-500"
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-slate-400">효과 없음</p>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="캐릭터별 구매 한도">

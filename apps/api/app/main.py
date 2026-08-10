@@ -82,7 +82,10 @@ def create_my_character(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
-    return crud.create_character_for_member(db, member, data)
+    created = crud.create_character_for_member(db, member, data)
+    if member.role != "ADMIN":
+        created = crud.scrub_admin_only_stats(created)
+    return created
 
 
 @app.get("/members/me/character", response_model=CharacterDetailRead)
@@ -90,7 +93,10 @@ def get_my_character(member: Member = Depends(get_current_member), db: Session =
     character_id = crud.get_member_character_id(db, member.id)
     if character_id is None:
         raise HTTPException(status_code=404, detail="생성된 캐릭터가 없습니다.")
-    return crud.get_character_detail(db, character_id)
+    detail = crud.get_character_detail(db, character_id)
+    if member.role != "ADMIN":
+        detail = crud.scrub_admin_only_stats(detail)
+    return detail
 
 
 @app.post("/characters", response_model=CharacterRead)
@@ -111,7 +117,10 @@ def get_character(
 ):
     if member.role != "ADMIN" and crud.get_member_character_id(db, member.id) != character_id:
         raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
-    return crud.get_character_detail(db, character_id)
+    detail = crud.get_character_detail(db, character_id)
+    if member.role != "ADMIN":
+        detail = crud.scrub_admin_only_stats(detail)
+    return detail
 
 
 @app.get("/attendance", response_model=AttendanceRecordRead)
@@ -187,7 +196,6 @@ def list_items(
         items = [
             item.model_copy(
                 update={
-                    "description_internal": "",
                     "available_from_chapter": None,
                     "available_until_chapter": None,
                 }
@@ -222,6 +230,53 @@ def bulk_purchase(data: BulkPurchaseRequest, member: Member = Depends(get_curren
         )
         for p in purchases
     ]
+
+
+def _require_own_character_or_admin(db: Session, member: Member, character_id: int) -> None:
+    if member.role != "ADMIN" and crud.get_member_character_id(db, member.id) != character_id:
+        raise HTTPException(status_code=403, detail="본인 캐릭터에만 사용할 수 있습니다.")
+
+
+@app.post("/characters/{character_id}/items/{item_id}/use", response_model=CharacterDetailRead)
+def use_item(
+    character_id: int,
+    item_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    detail = crud.use_item(db, character_id, item_id)
+    if member.role != "ADMIN":
+        detail = crud.scrub_admin_only_stats(detail)
+    return detail
+
+
+@app.post("/characters/{character_id}/items/{item_id}/equip", response_model=CharacterDetailRead)
+def equip_item(
+    character_id: int,
+    item_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    detail = crud.equip_item(db, character_id, item_id)
+    if member.role != "ADMIN":
+        detail = crud.scrub_admin_only_stats(detail)
+    return detail
+
+
+@app.post("/characters/{character_id}/items/{item_id}/unequip", response_model=CharacterDetailRead)
+def unequip_item(
+    character_id: int,
+    item_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    detail = crud.unequip_item(db, character_id, item_id)
+    if member.role != "ADMIN":
+        detail = crud.scrub_admin_only_stats(detail)
+    return detail
 
 
 @app.get("/purchases", response_model=list[PurchaseRead])

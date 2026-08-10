@@ -4,8 +4,9 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import hash_password, verify_password
-from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward
+from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward
 from app.schemas import (
+    ITEM_EFFECT_STAT_TYPES,
     AttendanceRecordRead,
     AttendanceRecordUpdate,
     BulkPurchaseRequest,
@@ -203,7 +204,20 @@ def _character_read_kwargs(character: Character) -> dict:
         skill_eff_fixed=character.skill_eff_fixed,
         skill_cost=character.skill_cost,
         skill_target=character.skill_target,
+        start_sh=character.start_sh,
+        revive_hp=character.revive_hp,
+        act_time=character.act_time,
+        over_heal=character.over_heal,
     )
+
+
+def scrub_admin_only_stats(character_read: CharacterRead) -> CharacterRead:
+    return character_read.model_copy(update={
+        "start_sh": None,
+        "revive_hp": None,
+        "act_time": None,
+        "over_heal": None,
+    })
 
 
 def _to_character_read(character: Character) -> CharacterRead:
@@ -281,6 +295,10 @@ def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
         skill_eff_fixed=data.skill_eff_fixed,
         skill_cost=data.skill_cost,
         skill_target=data.skill_target,
+        start_sh=data.start_sh,
+        revive_hp=data.revive_hp,
+        act_time=data.act_time,
+        over_heal=data.over_heal,
     )
     db.add(character)
     db.flush()
@@ -311,14 +329,24 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         db.query(
             Purchase.item_id,
             Item.name.label("item_name"),
+            Item.description_user.label("item_description"),
             func.coalesce(func.sum(Purchase.quantity), 0).label("quantity"),
         )
         .join(Item, Purchase.item_id == Item.id)
         .filter(Purchase.character_id == character.id)
-        .group_by(Purchase.item_id, Item.name)
+        .group_by(Purchase.item_id, Item.name, Item.description_user)
         .order_by(Item.name.asc())
         .all()
     )
+    owned_item_ids = [row.item_id for row in owned_item_rows]
+    items_by_id = (
+        {i.id: i for i in db.query(Item).filter(Item.id.in_(owned_item_ids)).all()}
+        if owned_item_ids else {}
+    )
+    item_states_by_id = {
+        s.item_id: s
+        for s in db.query(CharacterItemState).filter(CharacterItemState.character_id == character.id).all()
+    }
 
     achieved_challenge_rows = (
         db.query(
@@ -341,7 +369,12 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             CharacterOwnedItemRead(
                 item_id=row.item_id,
                 item_name=row.item_name,
+                item_description=row.item_description,
+                item_type=items_by_id[row.item_id].item_type,
+                effects=items_by_id[row.item_id].effects or [],
                 quantity=row.quantity,
+                used_quantity=item_states_by_id[row.item_id].used_quantity if row.item_id in item_states_by_id else 0,
+                equipped=item_states_by_id[row.item_id].equipped if row.item_id in item_states_by_id else False,
             )
             for row in owned_item_rows
         ],
@@ -410,11 +443,12 @@ def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.price_gold = data.price_gold
     item.price_cp = data.price_cp
     item.description_user = data.description_user
-    item.description_internal = data.description_internal
     item.purchase_limit_per_character = data.purchase_limit_per_character
     item.purchase_limit_global = data.purchase_limit_global
     item.available_from_chapter = data.available_from_chapter
     item.available_until_chapter = data.available_until_chapter
+    item.item_type = data.item_type
+    item.effects = [effect.model_dump() for effect in data.effects]
 
 
 def create_item(db: Session, data: ItemCreate) -> Item:
@@ -439,6 +473,93 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
     db.commit()
     db.refresh(item)
     return item
+
+
+def _apply_item_effects(character: Character, effects: list[dict], sign: int) -> None:
+    for effect in effects:
+        stat = effect["stat"]
+        attr = "def_" if stat == "def" else stat
+        value_type = ITEM_EFFECT_STAT_TYPES.get(stat, float)
+        delta = effect["delta"] * sign
+        current = getattr(character, attr)
+        next_value = int(round(current + delta)) if value_type is int else float(current + delta)
+        setattr(character, attr, next_value)
+
+
+def _get_or_create_item_state(db: Session, character_id: int, item_id: int) -> CharacterItemState:
+    state = (
+        db.query(CharacterItemState)
+        .filter(CharacterItemState.character_id == character_id, CharacterItemState.item_id == item_id)
+        .first()
+    )
+    if state is None:
+        state = CharacterItemState(character_id=character_id, item_id=item_id)
+        db.add(state)
+        db.flush()
+    return state
+
+
+def use_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
+    character = db.query(Character).filter(Character.id == character_id).first()
+    if not character:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    item = db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
+    if item.item_type != "consumable":
+        raise HTTPException(status_code=400, detail="소모형 아이템만 사용할 수 있습니다.")
+
+    owned_quantity = _sum_quantity(db, item_id, character_id)
+    state = _get_or_create_item_state(db, character_id, item_id)
+    if state.used_quantity >= owned_quantity:
+        raise HTTPException(status_code=400, detail="사용 가능한 수량이 없습니다.")
+
+    _apply_item_effects(character, item.effects or [], sign=1)
+    state.used_quantity += 1
+    db.commit()
+    return get_character_detail(db, character_id)
+
+
+def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
+    character = db.query(Character).filter(Character.id == character_id).first()
+    if not character:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    item = db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
+    if item.item_type != "equipment":
+        raise HTTPException(status_code=400, detail="장착형 아이템만 장착할 수 있습니다.")
+
+    owned_quantity = _sum_quantity(db, item_id, character_id)
+    if owned_quantity <= 0:
+        raise HTTPException(status_code=400, detail="보유하고 있지 않은 아이템입니다.")
+
+    state = _get_or_create_item_state(db, character_id, item_id)
+    if state.equipped:
+        raise HTTPException(status_code=400, detail="이미 장착 중인 아이템입니다.")
+
+    _apply_item_effects(character, item.effects or [], sign=1)
+    state.equipped = True
+    db.commit()
+    return get_character_detail(db, character_id)
+
+
+def unequip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
+    character = db.query(Character).filter(Character.id == character_id).first()
+    if not character:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    item = db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
+
+    state = _get_or_create_item_state(db, character_id, item_id)
+    if not state.equipped:
+        raise HTTPException(status_code=400, detail="장착 중인 아이템이 아닙니다.")
+
+    _apply_item_effects(character, item.effects or [], sign=-1)
+    state.equipped = False
+    db.commit()
+    return get_character_detail(db, character_id)
 
 
 def create_challenge(db: Session, data: ChallengeCreate) -> Challenge:
@@ -505,11 +626,12 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
             price_gold=item.price_gold,
             price_cp=item.price_cp,
             description_user=item.description_user,
-            description_internal=item.description_internal,
             purchase_limit_per_character=item.purchase_limit_per_character,
             purchase_limit_global=item.purchase_limit_global,
             available_from_chapter=item.available_from_chapter,
             available_until_chapter=item.available_until_chapter,
+            item_type=item.item_type,
+            effects=item.effects or [],
             created_at=item.created_at,
             purchased_by_character=char_purchased,
             purchased_total=total_purchased,

@@ -6,6 +6,39 @@ EnemySkillType = Literal["지정 공격A", "지정 공격B", "광역 공격A", "
 Faction = Literal["공격", "수비", "치유"]
 MemberRole = Literal["RUNNER", "ADMIN"]
 
+# 아이템 효과가 적용될 수 있는 캐릭터 능력치와 값의 정수/실수 여부.
+# "def"는 Character 모델의 예약어 회피용 컬럼명(def_)에 대응한다.
+ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
+    "lv": int, "rank": int, "exp": int, "gold": int, "cp": int, "ap": int,
+    "stat_courage": int, "stat_endurance": int, "stat_charity": int, "stat_wisdom": int,
+    "hp": int, "hp_max": int, "hp_max_p": float, "hp_regen_true": int, "hp_regen_fixed": float,
+    "mp": int, "mp_max": int, "mp_regen": int,
+    "atk": int, "atk_p": float, "def": int, "def_p": float, "def_eff": float,
+    "attn": int, "presence": float, "heal_eff": float, "heal_eff_p": float,
+    "sh": int, "dmg_p": float, "dmg_r": float,
+    "skill_lv": int, "skill_eff_true": int, "skill_eff_fixed": float,
+    "skill_cost": int, "skill_target": int,
+    "start_sh": int, "revive_hp": float, "act_time": int,
+}
+ItemEffectStat = Literal[
+    "lv", "rank", "exp", "gold", "cp", "ap",
+    "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
+    "hp", "hp_max", "hp_max_p", "hp_regen_true", "hp_regen_fixed",
+    "mp", "mp_max", "mp_regen",
+    "atk", "atk_p", "def", "def_p", "def_eff",
+    "attn", "presence", "heal_eff", "heal_eff_p",
+    "sh", "dmg_p", "dmg_r",
+    "skill_lv", "skill_eff_true", "skill_eff_fixed",
+    "skill_cost", "skill_target",
+    "start_sh", "revive_hp", "act_time",
+]
+ItemType = Literal["consumable", "equipment"]
+
+
+class ItemEffect(BaseModel):
+    stat: ItemEffectStat
+    delta: float
+
 
 class SignupRequest(BaseModel):
     login_id: str = Field(min_length=3, max_length=50)
@@ -145,6 +178,12 @@ class CharacterCreate(BaseModel):
     skill_cost: int = Field(default=0)
     skill_target: int = Field(default=0)
 
+    # 관리자 전용 능력치
+    start_sh: int = Field(default=0)
+    revive_hp: float = Field(default=0.1)
+    act_time: int = Field(default=1)
+    over_heal: bool = Field(default=False)
+
 
 class CharacterRead(BaseModel):
     model_config = {"from_attributes": True, "populate_by_name": True}
@@ -193,17 +232,24 @@ class CharacterRead(BaseModel):
     skill_cost: int
     skill_target: int
 
+    # 관리자 전용 능력치 (RUNNER 조회 시 null 처리됨)
+    start_sh: int | None
+    revive_hp: float | None
+    act_time: int | None
+    over_heal: bool | None
+
 
 class ItemCreate(BaseModel):
     name: str
     price_gold: int | None = Field(default=None, ge=0)
     price_cp: int | None = Field(default=None, ge=0)
     description_user: str = ""
-    description_internal: str = ""
     purchase_limit_per_character: int | None = None
     purchase_limit_global: int | None = None
     available_from_chapter: str | None = None
     available_until_chapter: str | None = None
+    item_type: ItemType = "consumable"
+    effects: list[ItemEffect] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_at_least_one_price(self):
@@ -218,14 +264,20 @@ class ItemRead(BaseModel):
     price_gold: int | None
     price_cp: int | None
     description_user: str
-    description_internal: str
     purchase_limit_per_character: int | None
     purchase_limit_global: int | None
     available_from_chapter: str | None
     available_until_chapter: str | None
+    item_type: ItemType
+    effects: list[ItemEffect] = Field(default_factory=list)
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+    @field_validator("effects", mode="before")
+    @classmethod
+    def coerce_effects(cls, v: object) -> list:
+        return v if v is not None else []
 
 
 class ItemWithStock(ItemRead):
@@ -261,7 +313,17 @@ class PurchaseRead(BaseModel):
 class CharacterOwnedItemRead(BaseModel):
     item_id: int
     item_name: str
+    item_description: str
+    item_type: ItemType
+    effects: list[ItemEffect] = Field(default_factory=list)
     quantity: int
+    used_quantity: int
+    equipped: bool
+
+    @field_validator("effects", mode="before")
+    @classmethod
+    def coerce_effects(cls, v: object) -> list:
+        return v if v is not None else []
 
 
 class CharacterAchievedChallengeRead(BaseModel):

@@ -45,11 +45,11 @@ export default function Header() {
     <header className="sticky top-0 z-50 w-full bg-white border-b border-slate-200 shadow-sm">
       <div className="max-w-6xl mx-auto px-6 h-14 flex items-center">
         <div className="flex items-center gap-3 whitespace-nowrap">
-          <span className="text-sm font-bold text-indigo-600 tracking-tight select-none">
+          <span className="text-xs font-bold text-indigo-600 tracking-tight select-none">
             🐉 Dragon Song
           </span>
           {activeChapter !== undefined && (
-            <span className="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+            <span className="text-[11px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
               {activeChapter ? activeChapter.name : "준비 중..."}
             </span>
           )}
@@ -63,7 +63,7 @@ export default function Header() {
                 key={href}
                 href={href}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
+                  "flex items-center gap-2 px-3 py-1.5 rounded-lg text-[13px] font-semibold transition-colors whitespace-nowrap",
                   active
                     ? "bg-indigo-600 text-white"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
@@ -79,7 +79,7 @@ export default function Header() {
         <div className="ml-auto flex items-center gap-3 whitespace-nowrap">
           {member ? (
             <>
-              <span className="text-xs font-semibold text-slate-500">
+              <span className="text-[11px] font-semibold text-slate-500 whitespace-nowrap">
                 {member.login_id}
                 <span className="ml-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
                   {member.role}

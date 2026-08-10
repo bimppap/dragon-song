@@ -13,13 +13,14 @@ import {
   Gift,
   Heart,
   HeartHandshake,
+  Lock,
   Package,
   Receipt,
   Shield,
-  Sparkles,
   Trophy,
   Zap,
 } from "lucide-react";
+import InfoTooltip from "@/components/common/InfoTooltip";
 
 const REWARD_TYPE_LABELS: Record<string, string> = {
   attendance: "출석",
@@ -62,8 +63,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { fetchCharacterDetail } from "@/lib/api";
-import type { Character, CharacterDetail, Reward } from "@/lib/api";
+import { equipItem, fetchCharacterDetail, unequipItem, useItem } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem, Reward } from "@/lib/api";
 
 interface Props {
   characters: Character[];
@@ -86,6 +87,29 @@ const CORE_STATS: {
   { key: "stat_charity", label: "자애", icon: HeartHandshake, accent: "text-pink-500" },
   { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-indigo-500" },
 ];
+
+const RANK_GRADES = [
+  {
+    name: "브론즈",
+    description: "기본적인 전투 감각을 익히는 입문 등급입니다.",
+  },
+  {
+    name: "실버",
+    description: "기본 전투를 안정적으로 수행할 수 있는 숙련 등급입니다.",
+  },
+  {
+    name: "골드",
+    description: "전투와 파티 운영에서 중심 역할을 맡는 중상급 등급입니다.",
+  },
+  {
+    name: "플래티넘",
+    description: "고난도 전투에서도 강한 영향력을 보이는 상위 등급입니다.",
+  },
+  {
+    name: "다이아몬드",
+    description: "최상위 전투 성과를 보여주는 정예 등급입니다.",
+  },
+] as const;
 
 const DETAIL_STATS: {
   key: keyof Pick<
@@ -125,6 +149,46 @@ const DETAIL_STATS: {
   { key: "skill_target", label: "기술 대상" },
 ];
 
+type AdminOnlyStatType = "int" | "percent" | "boolean";
+
+const ADMIN_ONLY_STATS: {
+  key: "start_sh" | "revive_hp" | "act_time" | "over_heal";
+  label: string;
+  description: string;
+  type: AdminOnlyStatType;
+}[] = [
+  {
+    key: "start_sh",
+    label: "시작 보호막",
+    description: "시작 시 가지는 보호막 수치 (기본: 0)",
+    type: "int",
+  },
+  {
+    key: "revive_hp",
+    label: "부활 후 체력",
+    description: "부활 시 얼만큼 체력을 가지고 있는지 정하는 수치 (기본: 10%)",
+    type: "percent",
+  },
+  {
+    key: "act_time",
+    label: "행동횟수",
+    description: "(적군 전용 능력치) 한 차례의 몇 번의 행동을 하는지 정하는 수치 (기본: 1)",
+    type: "int",
+  },
+  {
+    key: "over_heal",
+    label: "오버힐",
+    description: "회복되는 수치가 회복 대상의 최대 체력을 초과하는 경우, 초과분 누적의 허용을 결정하는 값",
+    type: "boolean",
+  },
+];
+
+function formatAdminOnlyStat(type: AdminOnlyStatType, value: number | boolean): string {
+  if (type === "boolean") return value ? "가능" : "불가능";
+  if (type === "percent") return `${(Number(value) * 100).toFixed(1)}%`;
+  return numberFormatter.format(Number(value));
+}
+
 function StatBar({
   label,
   icon: Icon,
@@ -142,17 +206,17 @@ function StatBar({
 }) {
   const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-      <div className="flex items-center justify-between text-sm font-semibold text-slate-500">
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
         <span className="flex items-center gap-2">
           <Icon size={15} className={iconAccent} />
           {label}
         </span>
-        <span className="text-slate-700">
+        <span className="font-num text-slate-700">
           {numberFormatter.format(value)} / {numberFormatter.format(max)}
         </span>
       </div>
-      <div className="mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-200">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
         <div
           className={cn("h-full rounded-full transition-all", barColor)}
           style={{ width: `${pct}%` }}
@@ -162,22 +226,133 @@ function StatBar({
   );
 }
 
+function CoreStatLine({
+  label,
+  icon: Icon,
+  value,
+  accent,
+}: {
+  label: string;
+  icon: React.ElementType;
+  value: number;
+  accent: string;
+}) {
+  return (
+    <div className="flex items-center justify-between border-b border-slate-200 py-2 last:border-b-0">
+      <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+        <Icon size={15} className={accent} />
+        {label}
+      </span>
+      <span className="font-num text-base font-semibold text-slate-900">
+        {numberFormatter.format(value)}
+      </span>
+    </div>
+  );
+}
+
+function getRankGrade(rank: number) {
+  return RANK_GRADES[Math.min(RANK_GRADES.length - 1, Math.max(0, rank - 1))];
+}
+
+function getExperienceCap(level: number, experience: number) {
+  return Math.max(1000, level * 1000, experience);
+}
+
+function ExperienceBar({
+  value,
+  max,
+}: {
+  value: number;
+  max: number;
+}) {
+  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+
+  return (
+    <InfoTooltip content={`경험치 ${numberFormatter.format(value)} / ${numberFormatter.format(max)}`}>
+      <span className="inline-flex w-40 items-center">
+        <span className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+          <span
+            className="block h-full rounded-full bg-violet-500 transition-all"
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+      </span>
+    </InfoTooltip>
+  );
+}
+
+function OwnedItemTile({
+  item,
+  loading,
+  onUse,
+  onEquip,
+  onUnequip,
+}: {
+  item: CharacterOwnedItem;
+  loading: boolean;
+  onUse: () => void;
+  onEquip: () => void;
+  onUnequip: () => void;
+}) {
+  const isConsumable = item.item_type === "consumable";
+  const remainingUses = item.quantity - item.used_quantity;
+  const badgeCount = isConsumable ? remainingUses : item.quantity;
+
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <InfoTooltip
+        side="top"
+        content={
+          <div className="max-w-56 text-left">
+            <div className="font-semibold">{item.item_name}</div>
+            {item.item_description && (
+              <div className="mt-1 text-slate-300">{item.item_description}</div>
+            )}
+          </div>
+        }
+      >
+        <div
+          className={cn(
+            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600",
+            item.equipped && "ring-2 ring-indigo-500",
+          )}
+        >
+          <Package size={22} />
+          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 text-sm font-bold text-slate-900 [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
+            {badgeCount}
+          </span>
+        </div>
+      </InfoTooltip>
+      {isConsumable ? (
+        <Button size="sm" variant="outline" onClick={onUse} disabled={loading || remainingUses <= 0}>
+          사용
+        </Button>
+      ) : item.equipped ? (
+        <Button size="sm" variant="secondary" onClick={onUnequip} disabled={loading}>
+          해제
+        </Button>
+      ) : (
+        <Button size="sm" variant="outline" onClick={onEquip} disabled={loading || item.quantity <= 0}>
+          장착
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function CharacterInfo({
   characters,
   loading,
   showSelector = true,
   showId = true,
-  focusCharacterId = null,
 }: Props) {
   const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(null);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
-
-  useEffect(() => {
-    if (focusCharacterId != null) setSelectedCharacterIdState(focusCharacterId);
-  }, [focusCharacterId]);
+  const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(null);
+  const [itemActionError, setItemActionError] = useState<string | null>(null);
 
   const selectedCharacterId = characters.some(
     (character) => character.id === selectedCharacterIdState,
@@ -223,6 +398,23 @@ export default function CharacterInfo({
       cancelled = true;
     };
   }, [selectedCharacterId]);
+
+  async function handleItemAction(
+    itemId: number,
+    action: (characterId: number, itemId: number) => Promise<CharacterDetail>,
+  ) {
+    if (selectedDetail == null) return;
+    setItemActionLoadingId(itemId);
+    setItemActionError(null);
+    try {
+      const nextDetail = await action(selectedDetail.id, itemId);
+      setDetail(nextDetail);
+    } catch (error) {
+      setItemActionError(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.");
+    } finally {
+      setItemActionLoadingId(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -308,13 +500,13 @@ export default function CharacterInfo({
                   </CardDescription>
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  {showId && <Badge variant="outline">ID {selectedDetail.id}</Badge>}
+                  {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
                   {selectedDetail.faction && <Badge variant="secondary">{selectedDetail.faction}</Badge>}
-                  <Badge variant="outline" className="gap-1">
+                  <Badge variant="outline" className="gap-1 font-num">
                     <Coins size={12} className="text-amber-500" />
                     {numberFormatter.format(selectedDetail.gold)} G
                   </Badge>
-                  <Badge variant="outline" className="gap-1">
+                  <Badge variant="outline" className="gap-1 font-num">
                     <Gem size={12} className="text-cyan-500" />
                     {numberFormatter.format(selectedDetail.cp)} CP
                   </Badge>
@@ -323,23 +515,35 @@ export default function CharacterInfo({
 
               {/* 성장 등급 배지 */}
               <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Badge className="gap-1">
+                <Badge className="gap-1 font-num">
                   <Trophy size={12} />
                   성장 등급 Lv.{selectedDetail.lv}
                 </Badge>
-                <Badge variant="secondary" className="gap-1">
-                  <Award size={12} />
-                  모험가 등급 {selectedDetail.rank}
-                </Badge>
-                <Badge variant="outline" className="gap-1">
-                  <Sparkles size={12} className="text-violet-500" />
-                  경험치 {numberFormatter.format(selectedDetail.exp)}
-                </Badge>
+                <InfoTooltip
+                  content={
+                    <div className="max-w-52 whitespace-pre-line text-left">
+                      <div className="font-semibold">
+                        {getRankGrade(selectedDetail.rank).name}
+                      </div>
+                      <div className="mt-1 text-slate-300">
+                        {getRankGrade(selectedDetail.rank).description}
+                      </div>
+                    </div>
+                  }
+                >
+                  <Badge variant="secondary" className="gap-1 font-num cursor-help">
+                    <Award size={12} />
+                    모험가 등급 {selectedDetail.rank}
+                  </Badge>
+                </InfoTooltip>
+                <ExperienceBar
+                  value={selectedDetail.exp}
+                  max={getExperienceCap(selectedDetail.lv, selectedDetail.exp)}
+                />
               </div>
             </CardHeader>
 
             <CardContent className="flex flex-col gap-6">
-              {/* 자주 변하는 스탯: 상태 바 */}
               <div className="grid gap-4 md:grid-cols-2">
                 <StatBar
                   label="HP"
@@ -359,18 +563,15 @@ export default function CharacterInfo({
                 />
               </div>
 
-              {/* 적게 변하는 능력치 */}
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+              <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
                 {CORE_STATS.map(({ key, label, icon: Icon, accent }) => (
-                  <div key={key} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-500">
-                      <Icon size={15} className={accent} />
-                      {label}
-                    </div>
-                    <p className="mt-3 text-2xl font-bold text-slate-900">
-                      {numberFormatter.format(selectedDetail[key])}
-                    </p>
-                  </div>
+                  <CoreStatLine
+                    key={key}
+                    label={label}
+                    icon={Icon}
+                    value={selectedDetail[key]}
+                    accent={accent}
+                  />
                 ))}
               </div>
             </CardContent>
@@ -388,54 +589,83 @@ export default function CharacterInfo({
               </Button>
             </CardHeader>
             {showDetails && (
-              <CardContent className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {DETAIL_STATS.map(({ key, label, isFloat }) => (
-                  <div
-                    key={key}
-                    className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"
-                  >
-                    <span className="text-slate-500">{label}</span>
-                    <span className="font-semibold text-slate-800">
-                      {isFloat
-                        ? Number(selectedDetail[key]).toFixed(2)
-                        : numberFormatter.format(selectedDetail[key])}
-                    </span>
+              <CardContent className="flex flex-col gap-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                  {DETAIL_STATS.map(({ key, label, isFloat }) => (
+                    <div
+                      key={key}
+                      className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"
+                    >
+                      <span className="text-slate-500">{label}</span>
+                      <span className="font-num font-semibold text-slate-800">
+                        {isFloat
+                          ? `${(Number(selectedDetail[key]) * 100).toFixed(1)}%`
+                          : numberFormatter.format(selectedDetail[key])}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {selectedDetail.start_sh != null && (
+                  <div className="flex flex-col gap-3 border-t border-slate-200 pt-4">
+                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                      <Lock size={12} />
+                      관리자 전용 능력치
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                      {ADMIN_ONLY_STATS.map(({ key, label, description, type }) => {
+                        const value = selectedDetail[key];
+                        if (value == null) return null;
+                        return (
+                          <InfoTooltip
+                            key={key}
+                            side="top"
+                            content={description}
+                          >
+                            <div className="flex cursor-help items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm">
+                              <span className="text-amber-700">{label}</span>
+                              <span className="font-num font-semibold text-amber-900">
+                                {formatAdminOnlyStat(type, value)}
+                              </span>
+                            </div>
+                          </InfoTooltip>
+                        );
+                      })}
+                    </div>
                   </div>
-                ))}
+                )}
               </CardContent>
             )}
           </Card>
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <CardTitle>보유 중인 아이템</CardTitle>
-                  <CardDescription>
-                    구매 기록을 기준으로 현재 보유한 아이템 수량을 집계했습니다.
-                  </CardDescription>
-                </div>
-                <Badge variant="secondary" className="shrink-0 whitespace-nowrap">{selectedDetail.owned_items.length}종</Badge>
+              <CardHeader>
+                <CardTitle>보유 중인 아이템</CardTitle>
+                <CardDescription>
+                  구매 기록을 기준으로 현재 보유한 아이템 수량을 집계했습니다. 아이템에 마우스를 올리면 이름과 설명이 보입니다.
+                  소모형은 &apos;사용&apos;해야, 장착형은 &apos;장착&apos;해야 능력치에 반영됩니다.
+                </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
+                {itemActionError && (
+                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+                    {itemActionError}
+                  </div>
+                )}
                 {selectedDetail.owned_items.length > 0 ? (
-                  selectedDetail.owned_items.map((item) => (
-                    <div
-                      key={item.item_id}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-10 items-center justify-center rounded-full bg-indigo-50 text-indigo-600">
-                          <Package size={18} />
-                        </span>
-                        <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900">{item.item_name}</p>
-                          <p className="text-sm text-slate-500">아이템 ID {item.item_id}</p>
-                        </div>
-                      </div>
-                      <Badge variant="default">{item.quantity}개</Badge>
-                    </div>
-                  ))
+                  <div className="flex flex-wrap gap-4">
+                    {selectedDetail.owned_items.map((item) => (
+                      <OwnedItemTile
+                        key={item.item_id}
+                        item={item}
+                        loading={itemActionLoadingId === item.item_id}
+                        onUse={() => handleItemAction(item.item_id, useItem)}
+                        onEquip={() => handleItemAction(item.item_id, equipItem)}
+                        onUnequip={() => handleItemAction(item.item_id, unequipItem)}
+                      />
+                    ))}
+                  </div>
                 ) : (
                   <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
                     보유 중인 아이템이 없습니다.

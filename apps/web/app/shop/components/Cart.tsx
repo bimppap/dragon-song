@@ -35,7 +35,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
         <ShoppingCart size={16} className="text-indigo-500" />
         <span className="text-sm font-semibold text-slate-700">장바구니</span>
-        <span className="ml-auto text-xs text-slate-400 font-medium">{totalQty}개</span>
+        <span className="font-num ml-auto text-xs text-slate-400 font-medium">{totalQty}개</span>
       </div>
 
       {/* 아이템 목록 */}
@@ -63,7 +63,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
                 >
                   <Minus size={11} />
                 </button>
-                <span className="w-7 text-center text-sm font-semibold text-slate-700">{qty}</span>
+                <span className="font-num w-7 text-center text-sm font-semibold text-slate-700">{qty}</span>
                 <button
                   onClick={() => onUpdateQty(item.id, qty + 1)}
                   className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 text-slate-500 hover:bg-slate-100 transition"
@@ -73,12 +73,12 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
               </div>
 
               {/* 소계 */}
-              <span className="text-sm font-semibold text-yellow-600">
+              <span className="font-num text-sm font-semibold text-yellow-600">
                 {formatPrice((item.price_gold ?? 0) * qty, (item.price_cp ?? 0) * qty)}
               </span>
             </div>
 
-            <div className="text-xs text-slate-400">
+            <div className="font-num text-xs text-slate-400">
               단가 {formatPrice(item.price_gold ?? 0, item.price_cp ?? 0)}
             </div>
           </li>
@@ -89,7 +89,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
       <div className="border-t border-slate-100 px-4 py-4 space-y-3 bg-slate-50">
         <div className="flex items-center justify-between">
           <span className="text-sm text-slate-500">총 금액</span>
-          <span className="text-base font-bold text-indigo-600">
+          <span className="font-num text-base font-bold text-indigo-600">
             {formatPrice(totalGold, totalCp)}
           </span>
         </div>

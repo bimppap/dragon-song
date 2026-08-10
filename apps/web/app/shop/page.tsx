@@ -210,7 +210,7 @@ function AdminShop() {
                 onAddToCart={handleAddToCart}
                 refreshKey={refreshKey}
                 showAvailability
-                showInternalDescription
+                showEffects
                 onEditItem={(item) => {
                   setEditingItem(item);
                   setTab("add");

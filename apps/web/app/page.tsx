@@ -108,6 +108,7 @@ function AdminCharacterConsole() {
         )}
         {tab === "info" && (
           <CharacterInfo
+            key={focusCharacterId ?? "info"}
             characters={characters}
             loading={loadingCharacters}
             focusCharacterId={focusCharacterId}

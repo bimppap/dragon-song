@@ -27,7 +27,7 @@ const colDefs: ColDef<Character>[] = [
     field: "id",
     width: 80,
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-mono text-xs text-slate-400">{p.value}</span>
+      <span className="font-num font-mono text-xs text-slate-400">{p.value}</span>
     ),
   },
   { headerName: "이름", field: "name", flex: 1, minWidth: 140, filter: true },
@@ -37,7 +37,7 @@ const colDefs: ColDef<Character>[] = [
     width: 80,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-emerald-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-emerald-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
@@ -45,7 +45,7 @@ const colDefs: ColDef<Character>[] = [
     width: 130,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-rose-600">
+      <span className="font-num font-semibold text-rose-600">
         {p.data!.hp.toLocaleString()} / {p.data!.hp_max.toLocaleString()}
       </span>
     ),
@@ -56,7 +56,7 @@ const colDefs: ColDef<Character>[] = [
     width: 110,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-orange-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-orange-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
@@ -65,7 +65,7 @@ const colDefs: ColDef<Character>[] = [
     width: 110,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-blue-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-blue-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
@@ -74,7 +74,7 @@ const colDefs: ColDef<Character>[] = [
     width: 130,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-yellow-600">{(p.value as number).toLocaleString()} G</span>
+      <span className="font-num font-semibold text-yellow-600">{(p.value as number).toLocaleString()} G</span>
     ),
   },
   {
@@ -83,7 +83,7 @@ const colDefs: ColDef<Character>[] = [
     width: 110,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-cyan-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-cyan-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
@@ -92,7 +92,7 @@ const colDefs: ColDef<Character>[] = [
     width: 100,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-indigo-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-indigo-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
@@ -101,7 +101,7 @@ const colDefs: ColDef<Character>[] = [
     width: 120,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-violet-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-violet-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
 ];

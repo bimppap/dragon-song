@@ -115,6 +115,12 @@ class Character(Base):
     skill_cost: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     skill_target: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
+    # 관리자 전용 능력치 (RUNNER에게는 노출되지 않음)
+    start_sh: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    revive_hp: Mapped[float] = mapped_column(Float, nullable=False, default=0.1, server_default=text("0.1"))
+    act_time: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    over_heal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+
 
 class Item(Base):
     __tablename__ = "items"
@@ -129,10 +135,33 @@ class Item(Base):
     purchase_limit_global: Mapped[int | None] = mapped_column(Integer, nullable=True)
     available_from_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     available_until_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
+    item_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="consumable", server_default=text("'consumable'")
+    )  # "consumable" | "equipment"
+    effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class CharacterItemState(Base):
+    __tablename__ = "character_item_states"
+    __table_args__ = (
+        UniqueConstraint("character_id", "item_id", name="uq_character_item_state"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    item_id: Mapped[int] = mapped_column(Integer, ForeignKey("items.id"), nullable=False, index=True)
+    used_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    equipped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
 

@@ -73,6 +73,16 @@ def ensure_schema(engine: Engine) -> None:
         if col not in character_columns:
             statements.append(f"ALTER TABLE characters ADD COLUMN {col} DOUBLE PRECISION NOT NULL DEFAULT 0")
 
+    # 관리자 전용 능력치
+    if "start_sh" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN start_sh INTEGER NOT NULL DEFAULT 0")
+    if "revive_hp" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN revive_hp DOUBLE PRECISION NOT NULL DEFAULT 0.1")
+    if "act_time" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN act_time INTEGER NOT NULL DEFAULT 1")
+    if "over_heal" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN over_heal BOOLEAN NOT NULL DEFAULT false")
+
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}
         if "price_gold" not in item_columns:
@@ -87,6 +97,10 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE items ADD COLUMN available_from_chapter VARCHAR")
         if "available_until_chapter" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN available_until_chapter VARCHAR")
+        if "item_type" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN item_type VARCHAR NOT NULL DEFAULT 'consumable'")
+        if "effects" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN effects JSON NOT NULL DEFAULT '[]'")
 
     if "challenges" in table_names:
         challenge_columns = {col["name"] for col in inspector.get_columns("challenges")}
