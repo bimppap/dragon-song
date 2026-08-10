@@ -1,24 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Users, Store, CalendarCheck, Swords, Trophy, ScrollText, Settings } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { Users, Store, CalendarCheck, Swords, Trophy, ScrollText, Settings, LogIn, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { fetchActiveChapter, type Chapter } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { Button } from "@/components/ui/button";
+import type { MemberRole } from "@/lib/api";
 
-const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; wip?: boolean }[] = [
-  { href: "/", label: "캐릭터", icon: Users },
-  { href: "/shop", label: "아이템", icon: Store },
-  { href: "/attendance", label: "출석부", icon: CalendarCheck },
-  { href: "/challenges", label: "도전과제", icon: Trophy },
-  { href: "/missions", label: "임무", icon: ScrollText },
-  { href: "/battle", label: "전투", icon: Swords },
-  { href: "/admin", label: "관리", icon: Settings },
+const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: MemberRole[] }[] = [
+  { href: "/", label: "캐릭터", icon: Users, roles: ["RUNNER", "ADMIN"] },
+  { href: "/shop", label: "아이템", icon: Store, roles: ["RUNNER", "ADMIN"] },
+  { href: "/challenges", label: "도전과제", icon: Trophy, roles: ["RUNNER", "ADMIN"] },
+  { href: "/missions", label: "임무", icon: ScrollText, roles: ["RUNNER", "ADMIN"] },
+  { href: "/attendance", label: "출석부", icon: CalendarCheck, roles: ["ADMIN"] },
+  { href: "/battle", label: "전투", icon: Swords, roles: ["ADMIN"] },
+  { href: "/admin", label: "관리", icon: Settings, roles: ["ADMIN"] },
 ];
 
 export default function Header() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { member, logout } = useAuth();
   const [activeChapter, setActiveChapter] = useState<Chapter | null | undefined>(undefined);
 
   useEffect(() => {
@@ -28,6 +33,13 @@ export default function Header() {
       .catch(() => { if (!cancelled) setActiveChapter(null); });
     return () => { cancelled = true; };
   }, []);
+
+  const navItems = member ? NAV_ITEMS.filter((item) => item.roles.includes(member.role)) : [];
+
+  function handleLogout() {
+    logout();
+    router.replace("/login");
+  }
 
   return (
     <header className="sticky top-0 z-50 w-full bg-white border-b border-slate-200 shadow-sm">
@@ -44,33 +56,49 @@ export default function Header() {
         </div>
 
         <nav className="absolute left-1/2 -translate-x-1/2 flex items-center gap-1">
-          {NAV_ITEMS.map(({ href, label, icon: Icon, wip }) => {
+          {navItems.map(({ href, label, icon: Icon }) => {
             const active = pathname === href || (href !== "/" && pathname.startsWith(href));
             return (
               <Link
                 key={href}
-                href={wip ? "#" : href}
-                aria-disabled={wip}
-                tabIndex={wip ? -1 : undefined}
+                href={href}
                 className={cn(
                   "flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-colors",
                   active
                     ? "bg-indigo-600 text-white"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
-                  wip && "opacity-40 pointer-events-none",
                 )}
               >
                 <Icon size={15} strokeWidth={active ? 2.5 : 2} />
                 {label}
-                {wip && (
-                  <span className="text-[10px] bg-white/20 px-1.5 py-0.5 rounded font-semibold">
-                    준비중
-                  </span>
-                )}
               </Link>
             );
           })}
         </nav>
+
+        <div className="ml-auto flex items-center gap-3 whitespace-nowrap">
+          {member ? (
+            <>
+              <span className="text-xs font-semibold text-slate-500">
+                {member.login_id}
+                <span className="ml-1.5 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] text-slate-500">
+                  {member.role}
+                </span>
+              </span>
+              <Button variant="ghost" size="sm" onClick={handleLogout}>
+                <LogOut size={13} />
+                로그아웃
+              </Button>
+            </>
+          ) : (
+            <Link href="/login">
+              <Button variant="outline" size="sm">
+                <LogIn size={13} />
+                로그인
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   );

@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, JSON, String, UniqueConstraint, text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
@@ -34,27 +34,86 @@ class Reward(Base):
     )
 
 
+class Member(Base):
+    __tablename__ = "members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    login_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    role: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="RUNNER",
+        server_default=text("'RUNNER'"),
+    )  # "RUNNER" | "ADMIN"
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Character(Base):
     __tablename__ = "characters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    hp: Mapped[int] = mapped_column(Integer, nullable=False)
-    attack: Mapped[int] = mapped_column(Integer, nullable=False)
-    defense: Mapped[int] = mapped_column(Integer, nullable=False)
     gold: Mapped[int] = mapped_column(Integer, nullable=False, default=1000)
+    cp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     ap: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=10,
         server_default=text("10"),
     )
-    experience: Mapped[int] = mapped_column(
+    member_id: Mapped[int | None] = mapped_column(
         Integer,
-        nullable=False,
-        default=1,
-        server_default=text("1"),
+        ForeignKey("members.id"),
+        nullable=True,
+        unique=True,
+        index=True,
     )
+    faction: Mapped[str | None] = mapped_column(String, nullable=True)  # "공격" | "수비" | "치유"
+
+    # 성장 등급 배지
+    lv: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    rank: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    exp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+
+    # 적게 변하는 능력치 (온보딩 AP 투자)
+    stat_courage: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    stat_endurance: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    stat_charity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    stat_wisdom: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+
+    # 체력 / 마나 (상태 바)
+    hp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    hp_max: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    hp_max_p: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    hp_regen_true: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    hp_regen_fixed: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    mp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    mp_max: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    mp_regen: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+
+    # 상세 능력치
+    atk: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    atk_p: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    def_: Mapped[int] = mapped_column("def", Integer, nullable=False, default=0, server_default=text("0"))
+    def_p: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    def_eff: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    attn: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    presence: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    heal_eff: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    heal_eff_p: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    sh: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    dmg_p: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    dmg_r: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    skill_lv: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    skill_eff_true: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    skill_eff_fixed: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
+    skill_cost: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    skill_target: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
 
 class Item(Base):
@@ -62,11 +121,14 @@ class Item(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    price: Mapped[int] = mapped_column(Integer, nullable=False)
+    price_gold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    price_cp: Mapped[int | None] = mapped_column(Integer, nullable=True)
     description_user: Mapped[str] = mapped_column(String, nullable=False, default="")
     description_internal: Mapped[str] = mapped_column(String, nullable=False, default="")
     purchase_limit_per_character: Mapped[int | None] = mapped_column(Integer, nullable=True)
     purchase_limit_global: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    available_from_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
+    available_until_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

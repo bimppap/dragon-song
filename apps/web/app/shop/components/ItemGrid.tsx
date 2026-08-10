@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
-import { ShoppingCart, Package } from "lucide-react";
+import { Package, Settings2, ShoppingCart } from "lucide-react";
 import { fetchItems } from "@/lib/api";
 import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -17,12 +17,24 @@ interface Props {
   cartItemIds: Set<number>;
   onAddToCart: (item: Item) => void;
   refreshKey: number;
+  showAvailability?: boolean;
+  showInternalDescription?: boolean;
+  onEditItem?: (item: Item) => void;
 }
 
 function StockBadge({ value }: { value: number | null }) {
   if (value === null) return <Badge variant="secondary">무제한</Badge>;
   if (value === 0)    return <Badge variant="destructive">품절</Badge>;
   return <Badge variant="success">{value}개</Badge>;
+}
+
+function formatAvailability(item: Item): string {
+  const { available_from_chapter: from, available_until_chapter: until } = item;
+  if (!from && !until) return "전체";
+  if (from && until && from === until) return `${from}만`;
+  if (from && until) return `${from} ~ ${until}`;
+  if (from) return `${from}부터`;
+  return `~${until}`;
 }
 
 function calcStock(item: Item): number | null {
@@ -33,19 +45,110 @@ function calcStock(item: Item): number | null {
   return null;
 }
 
-export default function ItemGrid({ characterId, cartItemIds, onAddToCart, refreshKey }: Props) {
+export default function ItemGrid({
+  characterId,
+  cartItemIds,
+  onAddToCart,
+  refreshKey,
+  showAvailability = false,
+  showInternalDescription = false,
+  onEditItem,
+}: Props) {
   const [items, setItems] = useState<Item[]>([]);
-  const gridRef = useRef<AgGridReact>(null);
 
-  const load = useCallback(async () => {
-    try {
-      setItems(await fetchItems(characterId));
-    } catch (e) {
-      console.error(e);
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadItems() {
+      try {
+        const nextItems = await fetchItems(characterId);
+        if (!cancelled) {
+          setItems(nextItems);
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
-  }, [characterId]);
 
-  useEffect(() => { load(); }, [load, refreshKey]);
+    void loadItems();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [characterId, refreshKey]);
+
+  const textColDef: ColDef<Item> = {
+    wrapText: true,
+    autoHeight: true,
+    cellStyle: {
+      whiteSpace: "normal",
+      lineHeight: "1.45",
+      paddingTop: "10px",
+      paddingBottom: "10px",
+    },
+  };
+
+  const defaultColDef: ColDef<Item> = {
+    wrapHeaderText: true,
+    autoHeaderHeight: true,
+  };
+
+  const availabilityColDef: ColDef<Item>[] = showAvailability ? [
+    {
+      headerName: "노출 범위",
+      minWidth: 150,
+      width: 150,
+      sortable: false,
+      filter: false,
+      cellRenderer: (p: ICellRendererParams<Item>) => (
+        <div className="flex items-center gap-1.5">
+          <span className={p.data!.purchasable ? "text-slate-600" : "text-slate-400"}>
+            {formatAvailability(p.data!)}
+          </span>
+          {!p.data!.purchasable && <Badge variant="secondary">비활성</Badge>}
+        </div>
+      ),
+    },
+  ] : [];
+
+  const internalDescriptionColDef: ColDef<Item>[] = showInternalDescription ? [
+    {
+      headerName: "내부 설명",
+      field: "description_internal",
+      minWidth: 220,
+      flex: 2,
+      ...textColDef,
+    },
+  ] : [];
+
+  const editColDef: ColDef<Item>[] = onEditItem ? [
+    {
+      headerName: "설정",
+      width: 84,
+      minWidth: 84,
+      pinned: "right",
+      sortable: false,
+      filter: false,
+      suppressMovable: true,
+      cellRenderer: (p: ICellRendererParams<Item>) => (
+        <div className="flex h-full items-center justify-center">
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 text-slate-500 hover:text-slate-900"
+            onClick={(event) => {
+              event.stopPropagation();
+              onEditItem(p.data!);
+            }}
+            aria-label={`${p.data!.name} 수정`}
+          >
+            <Settings2 size={15} />
+          </Button>
+        </div>
+      ),
+    },
+  ] : [];
 
   const colDefs: ColDef<Item>[] = [
     {
@@ -59,19 +162,43 @@ export default function ItemGrid({ characterId, cartItemIds, onAddToCart, refres
         </div>
       ),
     },
-    { headerName: "아이템명", field: "name", flex: 1, filter: true },
-    { headerName: "유저 설명", field: "description_user", flex: 2, filter: true },
-    { headerName: "내부 설명", field: "description_internal", flex: 2 },
+    {
+      headerName: "아이템명",
+      field: "name",
+      minWidth: 180,
+      flex: 1.2,
+      filter: true,
+      ...textColDef,
+    },
+    {
+      headerName: "유저 설명",
+      field: "description_user",
+      minWidth: 260,
+      flex: 2.4,
+      filter: true,
+      ...textColDef,
+    },
+    ...internalDescriptionColDef,
     {
       headerName: "가격",
-      field: "price",
-      width: 110,
+      width: 150,
+      sortable: false,
+      filter: false,
       cellRenderer: (p: ICellRendererParams<Item>) => (
-        <span className="text-sm font-semibold text-yellow-600">
-          {(p.value as number).toLocaleString()} G
+        <span className="text-sm font-semibold">
+          {p.data!.price_gold != null && (
+            <span className="text-yellow-600">{p.data!.price_gold.toLocaleString()} G</span>
+          )}
+          {p.data!.price_gold != null && p.data!.price_cp != null && (
+            <span className="text-slate-400"> + </span>
+          )}
+          {p.data!.price_cp != null && (
+            <span className="text-cyan-600">{p.data!.price_cp.toLocaleString()} CP</span>
+          )}
         </span>
       ),
     },
+    ...availabilityColDef,
     {
       headerName: "남은 구매 수",
       width: 130,
@@ -100,11 +227,17 @@ export default function ItemGrid({ characterId, cartItemIds, onAddToCart, refres
         );
       },
     },
+    ...editColDef,
   ];
 
   return (
     <div className="ag-theme-quartz rounded-lg overflow-hidden" style={{ height: 480 }}>
-      <AgGridReact ref={gridRef} rowData={items} columnDefs={colDefs} rowHeight={46} />
+      <AgGridReact
+        rowData={items}
+        columnDefs={colDefs}
+        defaultColDef={defaultColDef}
+        rowHeight={46}
+      />
     </div>
   );
 }

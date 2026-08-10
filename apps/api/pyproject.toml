@@ -8,6 +8,8 @@ dependencies = [
     "sqlalchemy",
     "psycopg2-binary",
     "python-dotenv",
+    "bcrypt>=5.0.0",
+    "pyjwt>=2.13.0",
 ]
 
 [project.scripts]

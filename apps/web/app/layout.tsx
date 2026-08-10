@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "./components/Header";
+import { AuthProvider } from "@/lib/auth";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -30,8 +31,10 @@ export default function RootLayout({
       style={{ colorScheme: "light" }}
     >
       <body className="min-h-screen bg-slate-50 text-slate-900">
-        <Header />
-        {children}
+        <AuthProvider>
+          <Header />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

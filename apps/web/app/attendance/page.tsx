@@ -1,8 +1,12 @@
 "use client";
 
+import { useRequireAdmin } from "@/lib/auth";
 import AttendancePanel from "./components/AttendancePanel";
 
 export default function AttendancePage() {
+  const member = useRequireAdmin();
+  if (!member) return null;
+
   return (
     <main className="mx-auto max-w-5xl space-y-8 px-6 py-10">
       <section className="flex flex-col gap-3">

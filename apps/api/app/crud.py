@@ -3,7 +3,8 @@ from datetime import date, datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, Enemy, Item, Mission, MissionProgress, Purchase, Reward
+from app.auth import hash_password, verify_password
+from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward
 from app.schemas import (
     AttendanceRecordRead,
     AttendanceRecordUpdate,
@@ -16,12 +17,16 @@ from app.schemas import (
     CharacterAchievedChallengeRead,
     CharacterCreate,
     CharacterDetailRead,
+    CharacterOnboardingCreate,
     CharacterOwnedItemRead,
+    CharacterRead,
     EnemyCreate,
     EnemyRead,
     EnemySkill,
     ItemCreate,
     ItemWithStock,
+    LoginRequest,
+    MemberRead,
     MissionCreate,
     MissionProgressBulkUpdate,
     MissionProgressRead,
@@ -29,6 +34,7 @@ from app.schemas import (
     RewardItemEntry,
     RewardPayResult,
     RewardRead,
+    SignupRequest,
 )
 
 
@@ -58,17 +64,23 @@ def _apply_stat_rewards(
     reward_items: list[dict],
 ) -> None:
     for entity_attr, char_attr, reward_type in (
-        ("reward_gold",       "gold",       "gold"),
-        ("reward_experience", "experience", "experience"),
-        ("reward_ap",         "ap",         "ap"),
-        ("reward_hp",         "hp",         "stat_hp"),
-        ("reward_attack",     "attack",     "stat_attack"),
-        ("reward_defense",    "defense",    "stat_defense"),
+        ("reward_gold",       "gold", "gold"),
+        ("reward_experience", "exp",  "experience"),
+        ("reward_ap",         "ap",   "ap"),
+        ("reward_attack",     "atk",  "stat_attack"),
+        ("reward_defense",    "def_", "stat_defense"),
     ):
         amount = getattr(entity, entity_attr, 0)
         if amount > 0:
             setattr(character, char_attr, getattr(character, char_attr) + amount)
             reward_items.append({"type": reward_type, "amount": amount})
+
+    # HP 보상은 최대 체력과 현재 체력을 함께 올린다.
+    hp_amount = getattr(entity, "reward_hp", 0)
+    if hp_amount > 0:
+        character.hp_max += hp_amount
+        character.hp += hp_amount
+        reward_items.append({"type": "stat_hp", "amount": hp_amount})
 
 
 def _apply_item_grants(
@@ -111,15 +123,113 @@ def _create_progress_rows(
             db.add(ChallengeProgress(challenge_id=challenge_id, character_id=character_id))
 
 
-def create_character(db: Session, data: CharacterCreate) -> Character:
+# ── Member ────────────────────────────────────────────────────────────────────
+
+def create_member(db: Session, data: SignupRequest) -> Member:
+    existing = db.query(Member).filter(Member.login_id == data.login_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="이미 사용 중인 아이디입니다.")
+
+    member = Member(
+        login_id=data.login_id,
+        password_hash=hash_password(data.password),
+        role="RUNNER",
+    )
+    db.add(member)
+    db.commit()
+    db.refresh(member)
+    return member
+
+
+def authenticate_member(db: Session, data: LoginRequest) -> Member:
+    member = db.query(Member).filter(Member.login_id == data.login_id).first()
+    if not member or not verify_password(data.password, member.password_hash):
+        raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
+    return member
+
+
+def get_member_character_id(db: Session, member_id: int) -> int | None:
+    character = db.query(Character).filter(Character.member_id == member_id).first()
+    return character.id if character else None
+
+
+def to_member_read(db: Session, member: Member) -> MemberRead:
+    return MemberRead(
+        id=member.id,
+        login_id=member.login_id,
+        role=member.role,
+        character_id=get_member_character_id(db, member.id),
+    )
+
+
+def _character_read_kwargs(character: Character) -> dict:
+    return dict(
+        id=character.id,
+        name=character.name,
+        member_id=character.member_id,
+        faction=character.faction,
+        gold=character.gold,
+        cp=character.cp,
+        ap=character.ap,
+        lv=character.lv,
+        rank=character.rank,
+        exp=character.exp,
+        stat_courage=character.stat_courage,
+        stat_endurance=character.stat_endurance,
+        stat_charity=character.stat_charity,
+        stat_wisdom=character.stat_wisdom,
+        hp=character.hp,
+        hp_max=character.hp_max,
+        hp_max_p=character.hp_max_p,
+        hp_regen_true=character.hp_regen_true,
+        hp_regen_fixed=character.hp_regen_fixed,
+        mp=character.mp,
+        mp_max=character.mp_max,
+        mp_regen=character.mp_regen,
+        atk=character.atk,
+        atk_p=character.atk_p,
+        def_=character.def_,
+        def_p=character.def_p,
+        def_eff=character.def_eff,
+        attn=character.attn,
+        presence=character.presence,
+        heal_eff=character.heal_eff,
+        heal_eff_p=character.heal_eff_p,
+        sh=character.sh,
+        dmg_p=character.dmg_p,
+        dmg_r=character.dmg_r,
+        skill_lv=character.skill_lv,
+        skill_eff_true=character.skill_eff_true,
+        skill_eff_fixed=character.skill_eff_fixed,
+        skill_cost=character.skill_cost,
+        skill_target=character.skill_target,
+    )
+
+
+def _to_character_read(character: Character) -> CharacterRead:
+    return CharacterRead(**_character_read_kwargs(character))
+
+
+def create_character_for_member(
+    db: Session,
+    member: Member,
+    data: CharacterOnboardingCreate,
+) -> CharacterRead:
+    if get_member_character_id(db, member.id) is not None:
+        raise HTTPException(status_code=400, detail="이미 캐릭터를 생성했습니다.")
+
     character = Character(
-        name=data.name,
-        hp=data.hp,
-        attack=data.attack,
-        defense=data.defense,
-        gold=data.gold,
-        ap=data.ap,
-        experience=data.experience,
+        name=data.name.strip(),
+        hp=100,
+        hp_max=100,
+        atk=10,
+        def_=10,
+        member_id=member.id,
+        faction=data.faction,
+        stat_courage=data.stat_courage,
+        stat_endurance=data.stat_endurance,
+        stat_charity=data.stat_charity,
+        stat_wisdom=data.stat_wisdom,
     )
     db.add(character)
     db.flush()
@@ -129,11 +239,63 @@ def create_character(db: Session, data: CharacterCreate) -> Character:
 
     db.commit()
     db.refresh(character)
-    return character
+    return _to_character_read(character)
 
 
-def get_characters(db: Session) -> list[Character]:
-    return db.query(Character).order_by(Character.id.asc()).all()
+def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
+    character = Character(
+        name=data.name,
+        faction=data.faction,
+        gold=data.gold,
+        cp=data.cp,
+        ap=data.ap,
+        lv=data.lv,
+        rank=data.rank,
+        exp=data.exp,
+        stat_courage=data.stat_courage,
+        stat_endurance=data.stat_endurance,
+        stat_charity=data.stat_charity,
+        stat_wisdom=data.stat_wisdom,
+        hp=data.hp,
+        hp_max=data.hp_max,
+        hp_max_p=data.hp_max_p,
+        hp_regen_true=data.hp_regen_true,
+        hp_regen_fixed=data.hp_regen_fixed,
+        mp=data.mp,
+        mp_max=data.mp_max,
+        mp_regen=data.mp_regen,
+        atk=data.atk,
+        atk_p=data.atk_p,
+        def_=data.def_,
+        def_p=data.def_p,
+        def_eff=data.def_eff,
+        attn=data.attn,
+        presence=data.presence,
+        heal_eff=data.heal_eff,
+        heal_eff_p=data.heal_eff_p,
+        sh=data.sh,
+        dmg_p=data.dmg_p,
+        dmg_r=data.dmg_r,
+        skill_lv=data.skill_lv,
+        skill_eff_true=data.skill_eff_true,
+        skill_eff_fixed=data.skill_eff_fixed,
+        skill_cost=data.skill_cost,
+        skill_target=data.skill_target,
+    )
+    db.add(character)
+    db.flush()
+
+    challenge_ids = [challenge_id for challenge_id, in db.query(Challenge.id).all()]
+    _create_progress_rows(db, challenge_ids, [character.id])
+
+    db.commit()
+    db.refresh(character)
+    return _to_character_read(character)
+
+
+def get_characters(db: Session) -> list[CharacterRead]:
+    characters = db.query(Character).order_by(Character.id.asc()).all()
+    return [_to_character_read(c) for c in characters]
 
 
 def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
@@ -174,14 +336,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
     )
 
     return CharacterDetailRead(
-        id=character.id,
-        name=character.name,
-        hp=character.hp,
-        attack=character.attack,
-        defense=character.defense,
-        gold=character.gold,
-        ap=character.ap,
-        experience=character.experience,
+        **_character_read_kwargs(character),
         owned_items=[
             CharacterOwnedItemRead(
                 item_id=row.item_id,
@@ -205,16 +360,82 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
     )
 
 
+def _chapters_by_name(db: Session) -> dict[str, Chapter]:
+    return {c.name: c for c in db.query(Chapter).all()}
+
+
+def _active_chapter(chapters_by_name: dict[str, Chapter]) -> Chapter | None:
+    today = _today()
+    for chapter in chapters_by_name.values():
+        if chapter.start_date <= today <= chapter.end_date:
+            return chapter
+    return None
+
+
+def _is_item_purchasable(
+    item: Item,
+    chapters_by_name: dict[str, Chapter],
+    active_chapter: Chapter | None,
+) -> bool:
+    if item.available_from_chapter is None and item.available_until_chapter is None:
+        return True
+    if active_chapter is None:
+        return False
+
+    from_chapter = chapters_by_name.get(item.available_from_chapter) if item.available_from_chapter else None
+    until_chapter = chapters_by_name.get(item.available_until_chapter) if item.available_until_chapter else None
+
+    if from_chapter and active_chapter.start_date < from_chapter.start_date:
+        return False
+    if until_chapter and active_chapter.start_date > until_chapter.start_date:
+        return False
+    return True
+
+
+def _validate_item_chapter_window(db: Session, data: ItemCreate) -> None:
+    chapters_by_name = _chapters_by_name(db)
+    from_chapter = chapters_by_name.get(data.available_from_chapter) if data.available_from_chapter else None
+    until_chapter = chapters_by_name.get(data.available_until_chapter) if data.available_until_chapter else None
+
+    if data.available_from_chapter and not from_chapter:
+        raise HTTPException(status_code=400, detail=f"존재하지 않는 챕터입니다: {data.available_from_chapter}")
+    if data.available_until_chapter and not until_chapter:
+        raise HTTPException(status_code=400, detail=f"존재하지 않는 챕터입니다: {data.available_until_chapter}")
+    if from_chapter and until_chapter and from_chapter.start_date > until_chapter.start_date:
+        raise HTTPException(status_code=400, detail="시작 챕터가 종료 챕터보다 늦을 수 없습니다.")
+
+
+def _apply_item_data(item: Item, data: ItemCreate) -> None:
+    item.name = data.name
+    item.price_gold = data.price_gold
+    item.price_cp = data.price_cp
+    item.description_user = data.description_user
+    item.description_internal = data.description_internal
+    item.purchase_limit_per_character = data.purchase_limit_per_character
+    item.purchase_limit_global = data.purchase_limit_global
+    item.available_from_chapter = data.available_from_chapter
+    item.available_until_chapter = data.available_until_chapter
+
+
 def create_item(db: Session, data: ItemCreate) -> Item:
+    _validate_item_chapter_window(db, data)
     item = Item(
         name=data.name,
-        price=data.price,
-        description_user=data.description_user,
-        description_internal=data.description_internal,
-        purchase_limit_per_character=data.purchase_limit_per_character,
-        purchase_limit_global=data.purchase_limit_global,
     )
+    _apply_item_data(item, data)
     db.add(item)
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
+
+    _validate_item_chapter_window(db, data)
+    _apply_item_data(item, data)
     db.commit()
     db.refresh(item)
     return item
@@ -262,6 +483,8 @@ def _sum_quantity(db: Session, item_id: int, character_id: int | None = None) ->
 
 def get_items_with_stock(db: Session, character_id: int | None = None) -> list[ItemWithStock]:
     items = db.query(Item).all()
+    chapters_by_name = _chapters_by_name(db)
+    active_chapter = _active_chapter(chapters_by_name)
     result = []
     for item in items:
         total_purchased = _sum_quantity(db, item.id)
@@ -279,40 +502,51 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
         result.append(ItemWithStock(
             id=item.id,
             name=item.name,
-            price=item.price,
+            price_gold=item.price_gold,
+            price_cp=item.price_cp,
             description_user=item.description_user,
             description_internal=item.description_internal,
             purchase_limit_per_character=item.purchase_limit_per_character,
             purchase_limit_global=item.purchase_limit_global,
+            available_from_chapter=item.available_from_chapter,
+            available_until_chapter=item.available_until_chapter,
             created_at=item.created_at,
             purchased_by_character=char_purchased,
             purchased_total=total_purchased,
             remaining_per_character=remaining_per_character,
             remaining_global=remaining_global,
+            purchasable=_is_item_purchasable(item, chapters_by_name, active_chapter),
         ))
     return result
 
 
-def bulk_purchase(db: Session, data: BulkPurchaseRequest) -> list[Purchase]:
+def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False) -> list[Purchase]:
     # 1. 캐릭터 조회
     character = db.query(Character).filter(Character.id == data.character_id).first()
     if not character:
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
 
     # 2. 아이템 검증 및 총 비용 계산
-    total_cost = 0
+    total_cost_gold = 0
+    total_cost_cp = 0
     validated: list[tuple[Item, int]] = []
+    chapters_by_name = _chapters_by_name(db)
+    active_chapter = _active_chapter(chapters_by_name)
 
     for cart_item in data.items:
         item = db.query(Item).filter(Item.id == cart_item.item_id).first()
         if not item:
             raise HTTPException(status_code=404, detail=f"아이템 ID {cart_item.item_id}를 찾을 수 없습니다.")
 
+        if not is_admin and not _is_item_purchasable(item, chapters_by_name, active_chapter):
+            raise HTTPException(status_code=400, detail=f"'{item.name}'은(는) 현재 구매할 수 없는 아이템입니다.")
+
         qty = cart_item.quantity
         if qty < 1:
             raise HTTPException(status_code=400, detail=f"'{item.name}' 수량은 1 이상이어야 합니다.")
 
-        total_cost += item.price * qty
+        total_cost_gold += (item.price_gold or 0) * qty
+        total_cost_cp += (item.price_cp or 0) * qty
 
         # 캐릭터별 한도 체크
         if item.purchase_limit_per_character is not None:
@@ -337,14 +571,17 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest) -> list[Purchase]:
         validated.append((item, qty))
 
     # 3. 재화 확인
-    if character.gold < total_cost:
-        raise HTTPException(
-            status_code=400,
-            detail=f"재화가 부족합니다. (필요: {total_cost:,}G / 보유: {character.gold:,}G)"
-        )
+    shortages = []
+    if character.gold < total_cost_gold:
+        shortages.append(f"골드 (필요: {total_cost_gold:,}G / 보유: {character.gold:,}G)")
+    if character.cp < total_cost_cp:
+        shortages.append(f"CP (필요: {total_cost_cp:,} / 보유: {character.cp:,})")
+    if shortages:
+        raise HTTPException(status_code=400, detail=f"재화가 부족합니다. {', '.join(shortages)}")
 
     # 4. 재화 차감 + 구매 기록 생성 (아이템별 별개 레코드)
-    character.gold -= total_cost
+    character.gold -= total_cost_gold
+    character.cp -= total_cost_cp
     purchases = []
     for item, qty in validated:
         p = Purchase(character_id=character.id, item_id=item.id, quantity=qty)

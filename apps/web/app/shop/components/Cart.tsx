@@ -17,9 +17,17 @@ interface Props {
   onPurchase: () => void;
 }
 
+function formatPrice(goldAmount: number, cpAmount: number): string {
+  const parts: string[] = [];
+  if (goldAmount > 0) parts.push(`${goldAmount.toLocaleString()} G`);
+  if (cpAmount > 0) parts.push(`${cpAmount.toLocaleString()} CP`);
+  return parts.length > 0 ? parts.join(" + ") : "-";
+}
+
 export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurchase }: Props) {
-  const totalPrice = entries.reduce((sum, e) => sum + e.item.price * e.qty, 0);
-  const totalQty   = entries.reduce((sum, e) => sum + e.qty, 0);
+  const totalGold = entries.reduce((sum, e) => sum + (e.item.price_gold ?? 0) * e.qty, 0);
+  const totalCp = entries.reduce((sum, e) => sum + (e.item.price_cp ?? 0) * e.qty, 0);
+  const totalQty = entries.reduce((sum, e) => sum + e.qty, 0);
 
   return (
     <aside className="w-72 shrink-0 border border-slate-200 rounded-xl bg-white overflow-hidden flex flex-col">
@@ -66,12 +74,12 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
 
               {/* 소계 */}
               <span className="text-sm font-semibold text-yellow-600">
-                {(item.price * qty).toLocaleString()} G
+                {formatPrice((item.price_gold ?? 0) * qty, (item.price_cp ?? 0) * qty)}
               </span>
             </div>
 
             <div className="text-xs text-slate-400">
-              단가 {item.price.toLocaleString()} G
+              단가 {formatPrice(item.price_gold ?? 0, item.price_cp ?? 0)}
             </div>
           </li>
         ))}
@@ -82,7 +90,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
         <div className="flex items-center justify-between">
           <span className="text-sm text-slate-500">총 금액</span>
           <span className="text-base font-bold text-indigo-600">
-            {totalPrice.toLocaleString()} G
+            {formatPrice(totalGold, totalCp)}
           </span>
         </div>
         <Button

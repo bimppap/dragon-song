@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Settings, BookMarked } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useRequireAdmin } from "@/lib/auth";
 import ChapterTab from "./components/ChapterTab";
 
 type PageTab = "chapter";
@@ -13,7 +14,10 @@ const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
 ];
 
 export default function AdminPage() {
+  const member = useRequireAdmin();
   const [tab, setTab] = useState<PageTab>("chapter");
+
+  if (!member) return null;
 
   return (
     <main className="max-w-4xl mx-auto px-6 py-10 flex flex-col gap-8">

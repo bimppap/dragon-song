@@ -51,6 +51,79 @@ import type {
   Item,
 } from "@/lib/api";
 import { cn, parsePositiveInt } from "@/lib/utils";
+import { useRequireMember } from "@/lib/auth";
+
+function RunnerChallengeList() {
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchChallenges()
+      .then((list) => { if (!cancelled) setChallenges(list); })
+      .catch((error) => {
+        if (cancelled) return;
+        setErrorMessage(error instanceof Error ? error.message : "도전과제 조회 실패");
+      })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const chapters = [...new Set(challenges.map((c) => c.chapter))];
+
+  return (
+    <main className="max-w-4xl mx-auto px-6 py-10 flex flex-col gap-8">
+      <section className="flex flex-col gap-2">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+          <Trophy size={24} className="text-indigo-600" />
+          도전과제
+        </h1>
+        <p className="text-sm text-slate-500">현재 공개된 도전과제 목록입니다.</p>
+      </section>
+
+      {errorMessage && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+          {errorMessage}
+        </div>
+      )}
+
+      {loading ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+          도전과제 목록을 불러오는 중입니다.
+        </div>
+      ) : challenges.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+          공개된 도전과제가 없습니다.
+        </div>
+      ) : (
+        chapters.map((chapter) => (
+          <Card key={chapter}>
+            <CardHeader>
+              <CardTitle>{chapter}</CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {challenges
+                .filter((c) => c.chapter === chapter)
+                .map((challenge) => (
+                  <div key={challenge.id} className="rounded-2xl border border-slate-200 px-4 py-4">
+                    <div className="flex flex-col gap-1">
+                      <p className="font-semibold text-slate-900">{challenge.name}</p>
+                      <p className="text-sm text-slate-500">{challenge.description}</p>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                      <Gift size={14} />
+                      {challenge.reward}
+                    </div>
+                  </div>
+                ))}
+            </CardContent>
+          </Card>
+        ))
+      )}
+    </main>
+  );
+}
 
 type PageTab = "manage" | "status";
 type ChallengeVisibility = "공개" | "비공개";
@@ -120,7 +193,7 @@ function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
   };
 }
 
-export default function ChallengesPage() {
+function AdminChallengesPage() {
   const [tab, setTab] = useState<PageTab>("manage");
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -921,4 +994,12 @@ export default function ChallengesPage() {
       )}
     </main>
   );
+}
+
+export default function ChallengesPage() {
+  const member = useRequireMember();
+
+  if (!member) return null;
+
+  return member.role === "ADMIN" ? <AdminChallengesPage /> : <RunnerChallengeList />;
 }

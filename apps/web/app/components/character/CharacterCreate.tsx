@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Coins, Flame, Heart, Shield, Sparkles, Sword, UserPlus } from "lucide-react";
+import { Coins, Flame, Gem, Heart, Shield, Sparkles, Sword, Trophy, UserPlus, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createCharacter } from "@/lib/api";
@@ -9,31 +9,43 @@ import type { Character } from "@/lib/api";
 
 type CharacterCreateForm = {
   name: string;
-  hp: string;
-  attack: string;
-  defense: string;
+  hp_max: string;
+  mp_max: string;
+  atk: string;
+  def: string;
   gold: string;
+  cp: string;
   ap: string;
-  experience: string;
+  lv: string;
+  rank: string;
+  exp: string;
 };
 
 const EMPTY_FORM: CharacterCreateForm = {
   name: "",
-  hp: "",
-  attack: "",
-  defense: "",
+  hp_max: "100",
+  mp_max: "0",
+  atk: "10",
+  def: "10",
   gold: "1000",
+  cp: "0",
   ap: "10",
-  experience: "1",
+  lv: "1",
+  rank: "1",
+  exp: "0",
 };
 
 const STAT_CONFIG = [
-  { name: "hp",      label: "HP",   icon: Heart,  color: "text-rose-500" },
-  { name: "attack",  label: "공격력", icon: Sword,  color: "text-orange-500" },
-  { name: "defense", label: "방어력", icon: Shield, color: "text-blue-500" },
-  { name: "gold",    label: "골드",  icon: Coins,  color: "text-yellow-500" },
-  { name: "ap", label: "AP", icon: Flame, color: "text-indigo-500" },
-  { name: "experience", label: "경험치", icon: Sparkles, color: "text-violet-500" },
+  { name: "hp_max", label: "최대 체력", icon: Heart,   color: "text-rose-500" },
+  { name: "mp_max", label: "최대 마나", icon: Zap,      color: "text-sky-500" },
+  { name: "atk",     label: "공격력",   icon: Sword,    color: "text-orange-500" },
+  { name: "def",     label: "방어력",   icon: Shield,   color: "text-blue-500" },
+  { name: "gold",    label: "골드",     icon: Coins,    color: "text-yellow-500" },
+  { name: "cp",      label: "CP",       icon: Gem,      color: "text-cyan-500" },
+  { name: "ap",      label: "AP",       icon: Flame,    color: "text-indigo-500" },
+  { name: "lv",      label: "성장 등급", icon: Trophy,   color: "text-emerald-500" },
+  { name: "rank",    label: "모험가 등급", icon: Trophy, color: "text-amber-500" },
+  { name: "exp",     label: "경험치",   icon: Sparkles, color: "text-violet-500" },
 ] as const;
 
 interface Props {
@@ -51,12 +63,18 @@ export default function CharacterCreate({ onCreated }: Props) {
     try {
       const createdCharacter = await createCharacter({
         name: form.name,
-        hp: Number(form.hp),
-        attack: Number(form.attack),
-        defense: Number(form.defense),
+        hp: Number(form.hp_max),
+        hp_max: Number(form.hp_max),
+        mp: Number(form.mp_max),
+        mp_max: Number(form.mp_max),
+        atk: Number(form.atk),
+        def: Number(form.def),
         gold: Number(form.gold),
+        cp: Number(form.cp),
         ap: Number(form.ap),
-        experience: Number(form.experience),
+        lv: Number(form.lv),
+        rank: Number(form.rank),
+        exp: Number(form.exp),
       });
       setForm(EMPTY_FORM);
       setErrorMessage(null);
@@ -104,7 +122,7 @@ export default function CharacterCreate({ onCreated }: Props) {
               <Input
                 name={name}
                 type="number"
-                min={name === "ap" || name === "experience" ? 1 : 0}
+                min={0}
                 placeholder="0"
                 value={form[name]}
                 onChange={handleChange}
@@ -113,6 +131,9 @@ export default function CharacterCreate({ onCreated }: Props) {
             </div>
           ))}
         </div>
+        <p className="text-xs text-slate-400">
+          위 항목 외의 상세 능력치(공격력 증폭, 방어 효율, 기술 관련 등)는 0으로 생성되며, 상세정보에서 확인할 수 있습니다.
+        </p>
 
         <Button type="submit" disabled={loading}>
           <UserPlus size={15} />

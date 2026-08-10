@@ -18,35 +18,11 @@ import {
 } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useRequireMember } from "@/lib/auth";
 
-type Tab = "items" | "purchases" | "add";
-
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "items", label: "상점", icon: Store },
-  { id: "purchases", label: "구매 내역", icon: ClipboardList },
-  { id: "add", label: "아이템 추가", icon: PlusSquare },
-];
-
-export default function ShopPage() {
-  const [tab, setTab] = useState<Tab>("items");
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [characterId, setCharacterId] = useState<number | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
+function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
   const [cart, setCart] = useState<CartEntry[]>([]);
   const [cartLoading, setCartLoading] = useState(false);
-
-  useEffect(() => {
-    fetchCharacters()
-      .then((list) => {
-        setCharacters(list);
-        if (list.length > 0) setCharacterId(list[0].id);
-      })
-      .catch(console.error);
-  }, []);
-
-  function refresh() {
-    setRefreshKey((k) => k + 1);
-  }
 
   function handleAddToCart(item: Item) {
     setCart((prev) => {
@@ -82,13 +58,78 @@ export default function ShopPage() {
         cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })),
       );
       setCart([]);
-      refresh();
+      onPurchased();
     } catch (e) {
       alert(e instanceof Error ? e.message : "구매 실패");
     } finally {
       setCartLoading(false);
     }
   }
+
+  return { cart, setCart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase };
+}
+
+function RunnerShop({ characterId }: { characterId: number }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+  const { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
+    usePurchaseCart(characterId, () => setRefreshKey((k) => k + 1));
+  const cartItemIds = new Set(cart.map((e) => e.item.id));
+
+  return (
+    <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900">상점</h1>
+        <p className="text-sm text-slate-500">보유 골드로 아이템을 구매할 수 있습니다.</p>
+      </div>
+
+      <div className={cn("flex gap-6 items-start", cart.length > 0 ? "flex-row" : "")}>
+        <div className="flex-1 min-w-0">
+          <ItemGrid
+            characterId={characterId}
+            cartItemIds={cartItemIds}
+            onAddToCart={handleAddToCart}
+            refreshKey={refreshKey}
+          />
+        </div>
+        {cart.length > 0 && (
+          <Cart
+            entries={cart}
+            loading={cartLoading}
+            onUpdateQty={handleUpdateQty}
+            onRemove={handleRemove}
+            onPurchase={handlePurchase}
+          />
+        )}
+      </div>
+    </main>
+  );
+}
+
+type Tab = "items" | "purchases" | "add";
+
+const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
+  { id: "items", label: "상점", icon: Store },
+  { id: "purchases", label: "구매 내역", icon: ClipboardList },
+  { id: "add", label: "아이템 추가", icon: PlusSquare },
+];
+
+function AdminShop() {
+  const [tab, setTab] = useState<Tab>("items");
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [characterId, setCharacterId] = useState<number | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const { cart, setCart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
+    usePurchaseCart(characterId, () => setRefreshKey((k) => k + 1));
+
+  useEffect(() => {
+    fetchCharacters()
+      .then((list) => {
+        setCharacters(list);
+        if (list.length > 0) setCharacterId(list[0].id);
+      })
+      .catch(console.error);
+  }, []);
 
   const cartItemIds = new Set(cart.map((e) => e.item.id));
 
@@ -129,7 +170,12 @@ export default function ShopPage() {
           <Button
             key={id}
             variant="ghost"
-            onClick={() => setTab(id)}
+            onClick={() => {
+              if (id === "add") {
+                setEditingItem(null);
+              }
+              setTab(id);
+            }}
             className={cn(
               "gap-2 rounded-none border-b-2 -mb-px h-11 px-5 font-semibold",
               tab === id
@@ -163,6 +209,12 @@ export default function ShopPage() {
                 cartItemIds={cartItemIds}
                 onAddToCart={handleAddToCart}
                 refreshKey={refreshKey}
+                showAvailability
+                showInternalDescription
+                onEditItem={(item) => {
+                  setEditingItem(item);
+                  setTab("add");
+                }}
               />
             </div>
             {cart.length > 0 && (
@@ -177,8 +229,33 @@ export default function ShopPage() {
           </div>
         )}
         {tab === "purchases" && <PurchaseGrid refreshKey={refreshKey} />}
-        {tab === "add" && <AddItemForm onCreated={refresh} />}
+        {tab === "add" && (
+          <AddItemForm
+            key={editingItem?.id ?? "create"}
+            item={editingItem}
+            onSubmitted={() => {
+              setRefreshKey((k) => k + 1);
+              if (editingItem) {
+                setEditingItem(null);
+                setTab("items");
+              }
+            }}
+            onCancelEdit={() => setEditingItem(null)}
+          />
+        )}
       </div>
     </main>
+  );
+}
+
+export default function ShopPage() {
+  const member = useRequireMember();
+
+  if (!member) return null;
+
+  return member.role === "ADMIN" ? (
+    <AdminShop />
+  ) : (
+    <RunnerShop characterId={member.character_id!} />
   );
 }

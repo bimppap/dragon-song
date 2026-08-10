@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Swords, Sparkles, BarChart3, Users, Trophy, Skull } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useRequireAdmin } from "@/lib/auth";
 import BattleTab from "./components/BattleTab";
 import SkillTab from "./components/SkillTab";
 import StatTab from "./components/StatTab";
@@ -23,7 +24,10 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 ];
 
 export default function BattlePage() {
+  const member = useRequireAdmin();
   const [tab, setTab] = useState<Tab>("battle");
+
+  if (!member) return null;
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">

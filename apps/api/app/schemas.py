@@ -1,8 +1,58 @@
 from datetime import date, datetime
 from typing import Literal
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 EnemySkillType = Literal["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환"]
+Faction = Literal["공격", "수비", "치유"]
+MemberRole = Literal["RUNNER", "ADMIN"]
+
+
+class SignupRequest(BaseModel):
+    login_id: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=4, max_length=100)
+    password_confirm: str
+
+    @model_validator(mode="after")
+    def check_passwords_match(self):
+        if self.password != self.password_confirm:
+            raise ValueError("비밀번호가 일치하지 않습니다.")
+        return self
+
+
+class LoginRequest(BaseModel):
+    login_id: str
+    password: str
+
+
+class MemberRead(BaseModel):
+    id: int
+    login_id: str
+    role: MemberRole
+    character_id: int | None
+
+    model_config = {"from_attributes": True}
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    member: MemberRead
+
+
+class CharacterOnboardingCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=50)
+    faction: Faction
+    stat_courage: int = Field(default=0, ge=0, le=2)
+    stat_endurance: int = Field(default=0, ge=0, le=2)
+    stat_charity: int = Field(default=0, ge=0, le=2)
+    stat_wisdom: int = Field(default=0, ge=0, le=2)
+
+    @model_validator(mode="after")
+    def check_ap_total(self):
+        total = self.stat_courage + self.stat_endurance + self.stat_charity + self.stat_wisdom
+        if total != 2:
+            raise ValueError("AP 포인트 2를 모두 투자해야 합니다.")
+        return self
 
 
 class ChapterCreate(BaseModel):
@@ -47,45 +97,132 @@ class RewardPayResult(BaseModel):
 
 
 class CharacterCreate(BaseModel):
+    model_config = {"populate_by_name": True}
+
     name: str
-    hp: int = Field(ge=0)
-    attack: int = Field(ge=0)
-    defense: int = Field(ge=0)
+    faction: Faction | None = None
     gold: int = Field(default=1000, ge=0)
-    ap: int = Field(default=10, gt=0)
-    experience: int = Field(default=1, gt=0)
+    cp: int = Field(default=0, ge=0)
+    ap: int = Field(default=10, ge=0)
+
+    # 성장 등급 배지
+    lv: int = Field(default=1, ge=0)
+    rank: int = Field(default=1, ge=0)
+    exp: int = Field(default=0, ge=0)
+
+    # 적게 변하는 능력치
+    stat_courage: int = Field(default=0, ge=0)
+    stat_endurance: int = Field(default=0, ge=0)
+    stat_charity: int = Field(default=0, ge=0)
+    stat_wisdom: int = Field(default=0, ge=0)
+
+    # 체력 / 마나
+    hp: int = Field(default=0, ge=0)
+    hp_max: int = Field(default=0, ge=0)
+    hp_max_p: float = Field(default=0)
+    hp_regen_true: int = Field(default=0)
+    hp_regen_fixed: float = Field(default=0)
+    mp: int = Field(default=0, ge=0)
+    mp_max: int = Field(default=0, ge=0)
+    mp_regen: int = Field(default=0)
+
+    # 상세 능력치
+    atk: int = Field(default=0, ge=0)
+    atk_p: float = Field(default=0)
+    def_: int = Field(default=0, ge=0, alias="def")
+    def_p: float = Field(default=0)
+    def_eff: float = Field(default=0)
+    attn: int = Field(default=0)
+    presence: float = Field(default=0)
+    heal_eff: float = Field(default=0)
+    heal_eff_p: float = Field(default=0)
+    sh: int = Field(default=0)
+    dmg_p: float = Field(default=0)
+    dmg_r: float = Field(default=0)
+    skill_lv: int = Field(default=0)
+    skill_eff_true: int = Field(default=0)
+    skill_eff_fixed: float = Field(default=0)
+    skill_cost: int = Field(default=0)
+    skill_target: int = Field(default=0)
 
 
 class CharacterRead(BaseModel):
+    model_config = {"from_attributes": True, "populate_by_name": True}
+
     id: int
     name: str
-    hp: int
-    attack: int
-    defense: int
+    member_id: int | None
+    faction: Faction | None
     gold: int
+    cp: int
     ap: int
-    experience: int
 
-    model_config = {"from_attributes": True}
+    lv: int
+    rank: int
+    exp: int
+
+    stat_courage: int
+    stat_endurance: int
+    stat_charity: int
+    stat_wisdom: int
+
+    hp: int
+    hp_max: int
+    hp_max_p: float
+    hp_regen_true: int
+    hp_regen_fixed: float
+    mp: int
+    mp_max: int
+    mp_regen: int
+
+    atk: int
+    atk_p: float
+    def_: int = Field(alias="def")
+    def_p: float
+    def_eff: float
+    attn: int
+    presence: float
+    heal_eff: float
+    heal_eff_p: float
+    sh: int
+    dmg_p: float
+    dmg_r: float
+    skill_lv: int
+    skill_eff_true: int
+    skill_eff_fixed: float
+    skill_cost: int
+    skill_target: int
 
 
 class ItemCreate(BaseModel):
     name: str
-    price: int
+    price_gold: int | None = Field(default=None, ge=0)
+    price_cp: int | None = Field(default=None, ge=0)
     description_user: str = ""
     description_internal: str = ""
     purchase_limit_per_character: int | None = None
     purchase_limit_global: int | None = None
+    available_from_chapter: str | None = None
+    available_until_chapter: str | None = None
+
+    @model_validator(mode="after")
+    def check_at_least_one_price(self):
+        if not self.price_gold and not self.price_cp:
+            raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
+        return self
 
 
 class ItemRead(BaseModel):
     id: int
     name: str
-    price: int
+    price_gold: int | None
+    price_cp: int | None
     description_user: str
     description_internal: str
     purchase_limit_per_character: int | None
     purchase_limit_global: int | None
+    available_from_chapter: str | None
+    available_until_chapter: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -96,6 +233,7 @@ class ItemWithStock(ItemRead):
     purchased_total: int
     remaining_per_character: int | None
     remaining_global: int | None
+    purchasable: bool
 
 
 class CartItem(BaseModel):

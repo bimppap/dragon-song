@@ -1,18 +1,20 @@
 from datetime import date
 
-from fastapi import FastAPI, Depends
+from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from app.auth import create_access_token, get_current_member, require_admin
 from app.db import engine, get_db
 from app.migrations import ensure_schema
-from app.models import Character, Item
+from app.models import Character, Item, Member
 from app.schemas import (
     AttendanceRecordRead,
     AttendanceRecordUpdate,
     ChapterCreate,
     ChapterRead,
     CharacterCreate,
+    CharacterOnboardingCreate,
     EnemyCreate,
     EnemyRead,
     CharacterDetailRead,
@@ -25,12 +27,16 @@ from app.schemas import (
     ItemRead,
     ItemWithStock,
     BulkPurchaseRequest,
+    LoginRequest,
+    MemberRead,
     MissionCreate,
     MissionProgressBulkUpdate,
     MissionProgressRead,
     MissionRead,
     PurchaseRead,
     RewardPayResult,
+    SignupRequest,
+    TokenResponse,
 )
 from app import crud
 
@@ -52,23 +58,64 @@ def health_check():
     return {"status": "ok"}
 
 
+@app.post("/auth/signup", response_model=MemberRead)
+def signup(data: SignupRequest, db: Session = Depends(get_db)):
+    member = crud.create_member(db, data)
+    return crud.to_member_read(db, member)
+
+
+@app.post("/auth/login", response_model=TokenResponse)
+def login(data: LoginRequest, db: Session = Depends(get_db)):
+    member = crud.authenticate_member(db, data)
+    token = create_access_token(member.id)
+    return TokenResponse(access_token=token, member=crud.to_member_read(db, member))
+
+
+@app.get("/auth/me", response_model=MemberRead)
+def get_me(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.to_member_read(db, member)
+
+
+@app.post("/members/me/character", response_model=CharacterRead)
+def create_my_character(
+    data: CharacterOnboardingCreate,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    return crud.create_character_for_member(db, member, data)
+
+
+@app.get("/members/me/character", response_model=CharacterDetailRead)
+def get_my_character(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    character_id = crud.get_member_character_id(db, member.id)
+    if character_id is None:
+        raise HTTPException(status_code=404, detail="생성된 캐릭터가 없습니다.")
+    return crud.get_character_detail(db, character_id)
+
+
 @app.post("/characters", response_model=CharacterRead)
-def create_character(data: CharacterCreate, db: Session = Depends(get_db)):
+def create_character(data: CharacterCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_character(db, data)
 
 
 @app.get("/characters", response_model=list[CharacterRead])
-def list_characters(db: Session = Depends(get_db)):
+def list_characters(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_characters(db)
 
 
 @app.get("/characters/{character_id}", response_model=CharacterDetailRead)
-def get_character(character_id: int, db: Session = Depends(get_db)):
+def get_character(
+    character_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    if member.role != "ADMIN" and crud.get_member_character_id(db, member.id) != character_id:
+        raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
     return crud.get_character_detail(db, character_id)
 
 
 @app.get("/attendance", response_model=AttendanceRecordRead)
-def get_attendance(attendance_date: date, db: Session = Depends(get_db)):
+def get_attendance(attendance_date: date, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_attendance_record(db, attendance_date)
 
 
@@ -76,28 +123,46 @@ def get_attendance(attendance_date: date, db: Session = Depends(get_db)):
 def save_attendance(
     attendance_date: date,
     data: AttendanceRecordUpdate,
+    member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     return crud.upsert_attendance_record(db, attendance_date, data)
 
 
 @app.post("/items", response_model=ItemRead)
-def create_item(data: ItemCreate, db: Session = Depends(get_db)):
+def create_item(data: ItemCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_item(db, data)
 
 
+@app.put("/items/{item_id}", response_model=ItemRead)
+def update_item(
+    item_id: int,
+    data: ItemCreate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_item(db, item_id, data)
+
+
 @app.get("/challenges", response_model=list[ChallengeRead])
-def list_challenges(chapter: str | None = None, db: Session = Depends(get_db)):
-    return crud.get_challenges(db, chapter)
+def list_challenges(
+    chapter: str | None = None,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    challenges = crud.get_challenges(db, chapter)
+    if member.role != "ADMIN":
+        challenges = [c for c in challenges if c.is_public]
+    return challenges
 
 
 @app.post("/challenges", response_model=ChallengeRead)
-def create_challenge(data: ChallengeCreate, db: Session = Depends(get_db)):
+def create_challenge(data: ChallengeCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_challenge(db, data)
 
 
 @app.get("/challenges/{challenge_id}/progress", response_model=list[ChallengeProgressRead])
-def list_challenge_progress(challenge_id: int, db: Session = Depends(get_db)):
+def list_challenge_progress(challenge_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_challenge_progress(db, challenge_id)
 
 
@@ -105,19 +170,40 @@ def list_challenge_progress(challenge_id: int, db: Session = Depends(get_db)):
 def save_challenge_progress(
     challenge_id: int,
     data: ChallengeProgressBulkUpdate,
+    member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     return crud.update_challenge_progress(db, challenge_id, data)
 
 
 @app.get("/items", response_model=list[ItemWithStock])
-def list_items(character_id: int | None = None, db: Session = Depends(get_db)):
-    return crud.get_items_with_stock(db, character_id)
+def list_items(
+    character_id: int | None = None,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    items = crud.get_items_with_stock(db, character_id)
+    if member.role != "ADMIN":
+        items = [
+            item.model_copy(
+                update={
+                    "description_internal": "",
+                    "available_from_chapter": None,
+                    "available_until_chapter": None,
+                }
+            )
+            for item in items
+            if item.purchasable
+        ]
+    return items
 
 
 @app.post("/purchases/bulk", response_model=list[PurchaseRead])
-def bulk_purchase(data: BulkPurchaseRequest, db: Session = Depends(get_db)):
-    purchases = crud.bulk_purchase(db, data)
+def bulk_purchase(data: BulkPurchaseRequest, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    is_admin = member.role == "ADMIN"
+    if not is_admin and crud.get_member_character_id(db, member.id) != data.character_id:
+        raise HTTPException(status_code=403, detail="본인 캐릭터로만 구매할 수 있습니다.")
+    purchases = crud.bulk_purchase(db, data, is_admin=is_admin)
     item_ids = {p.item_id for p in purchases}
     character_ids = {p.character_id for p in purchases}
     items = {i.id: i for i in db.query(Item).filter(Item.id.in_(item_ids)).all()}
@@ -142,23 +228,31 @@ def bulk_purchase(data: BulkPurchaseRequest, db: Session = Depends(get_db)):
 def list_purchases(
     character_id: int | None = None,
     item_id: int | None = None,
+    member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     return crud.get_purchases(db, character_id, item_id)
 
 
 @app.get("/missions", response_model=list[MissionRead])
-def list_missions(chapter: str | None = None, db: Session = Depends(get_db)):
-    return crud.get_missions(db, chapter)
+def list_missions(
+    chapter: str | None = None,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    missions = crud.get_missions(db, chapter)
+    if member.role != "ADMIN":
+        missions = [m for m in missions if m.is_public]
+    return missions
 
 
 @app.post("/missions", response_model=MissionRead)
-def create_mission(data: MissionCreate, db: Session = Depends(get_db)):
+def create_mission(data: MissionCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_mission(db, data)
 
 
 @app.get("/missions/{mission_id}/progress", response_model=list[MissionProgressRead])
-def list_mission_progress(mission_id: int, db: Session = Depends(get_db)):
+def list_mission_progress(mission_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_mission_progress(db, mission_id)
 
 
@@ -166,23 +260,24 @@ def list_mission_progress(mission_id: int, db: Session = Depends(get_db)):
 def save_mission_progress(
     mission_id: int,
     data: MissionProgressBulkUpdate,
+    member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     return crud.update_mission_progress(db, mission_id, data)
 
 
 @app.post("/rewards/mission/{mission_id}", response_model=RewardPayResult)
-def pay_mission_rewards(mission_id: int, db: Session = Depends(get_db)):
+def pay_mission_rewards(mission_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.pay_mission_rewards(db, mission_id)
 
 
 @app.post("/rewards/attendance", response_model=RewardPayResult)
-def pay_attendance_rewards(attendance_date: date, db: Session = Depends(get_db)):
+def pay_attendance_rewards(attendance_date: date, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.pay_attendance_rewards(db, attendance_date)
 
 
 @app.post("/rewards/challenge/{challenge_id}", response_model=RewardPayResult)
-def pay_challenge_rewards(challenge_id: int, db: Session = Depends(get_db)):
+def pay_challenge_rewards(challenge_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.pay_challenge_rewards(db, challenge_id)
 
 
@@ -192,7 +287,7 @@ def list_chapters(db: Session = Depends(get_db)):
 
 
 @app.post("/chapters", response_model=ChapterRead)
-def create_chapter(data: ChapterCreate, db: Session = Depends(get_db)):
+def create_chapter(data: ChapterCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_chapter(db, data)
 
 
@@ -202,10 +297,10 @@ def get_active_chapter(db: Session = Depends(get_db)):
 
 
 @app.get("/enemies", response_model=list[EnemyRead])
-def list_enemies(chapter: str | None = None, db: Session = Depends(get_db)):
+def list_enemies(chapter: str | None = None, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_enemies(db, chapter)
 
 
 @app.post("/enemies", response_model=EnemyRead)
-def create_enemy(data: EnemyCreate, db: Session = Depends(get_db)):
+def create_enemy(data: EnemyCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_enemy(db, data)

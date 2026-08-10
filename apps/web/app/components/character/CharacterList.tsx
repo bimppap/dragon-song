@@ -1,7 +1,7 @@
 "use client";
 
 import { AgGridReact } from "ag-grid-react";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import type { ColDef, ICellRendererParams, RowClickedEvent } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Card, CardContent } from "@/components/ui/card";
 import type { Character } from "@/lib/api";
@@ -11,7 +11,15 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 interface Props {
   characters: Character[];
   loading: boolean;
+  onSelectCharacter?: (character: Character) => void;
 }
+
+const defaultColDef: ColDef<Character> = {
+  wrapText: true,
+  autoHeight: true,
+  wrapHeaderText: true,
+  autoHeaderHeight: true,
+};
 
 const colDefs: ColDef<Character>[] = [
   {
@@ -22,19 +30,29 @@ const colDefs: ColDef<Character>[] = [
       <span className="font-mono text-xs text-slate-400">{p.value}</span>
     ),
   },
-  { headerName: "이름", field: "name", flex: 1, filter: true },
+  { headerName: "이름", field: "name", flex: 1, minWidth: 140, filter: true },
   {
-    headerName: "HP",
-    field: "hp",
-    width: 110,
+    headerName: "Lv",
+    field: "lv",
+    width: 80,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-semibold text-rose-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-semibold text-emerald-600">{(p.value as number).toLocaleString()}</span>
+    ),
+  },
+  {
+    headerName: "HP",
+    width: 130,
+    type: "numericColumn",
+    cellRenderer: (p: ICellRendererParams<Character>) => (
+      <span className="font-semibold text-rose-600">
+        {p.data!.hp.toLocaleString()} / {p.data!.hp_max.toLocaleString()}
+      </span>
     ),
   },
   {
     headerName: "공격력",
-    field: "attack",
+    field: "atk",
     width: 110,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
@@ -43,7 +61,7 @@ const colDefs: ColDef<Character>[] = [
   },
   {
     headerName: "방어력",
-    field: "defense",
+    field: "def",
     width: 110,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
@@ -60,6 +78,15 @@ const colDefs: ColDef<Character>[] = [
     ),
   },
   {
+    headerName: "CP",
+    field: "cp",
+    width: 110,
+    type: "numericColumn",
+    cellRenderer: (p: ICellRendererParams<Character>) => (
+      <span className="font-semibold text-cyan-600">{(p.value as number).toLocaleString()}</span>
+    ),
+  },
+  {
     headerName: "AP",
     field: "ap",
     width: 100,
@@ -70,7 +97,7 @@ const colDefs: ColDef<Character>[] = [
   },
   {
     headerName: "경험치",
-    field: "experience",
+    field: "exp",
     width: 120,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
@@ -79,7 +106,7 @@ const colDefs: ColDef<Character>[] = [
   },
 ];
 
-export default function CharacterList({ characters, loading }: Props) {
+export default function CharacterList({ characters, loading, onSelectCharacter }: Props) {
   if (loading) {
     return (
       <Card>
@@ -100,9 +127,20 @@ export default function CharacterList({ characters, loading }: Props) {
     );
   }
 
+  function handleRowClicked(event: RowClickedEvent<Character>) {
+    if (event.data) onSelectCharacter?.(event.data);
+  }
+
   return (
-    <div className="ag-theme-quartz h-[480px] rounded-lg overflow-hidden">
-      <AgGridReact rowData={characters} columnDefs={colDefs} rowHeight={44} />
+    <div className="ag-theme-quartz h-120 rounded-lg overflow-hidden">
+      <AgGridReact
+        rowData={characters}
+        columnDefs={colDefs}
+        defaultColDef={defaultColDef}
+        rowHeight={44}
+        onRowClicked={handleRowClicked}
+        rowStyle={{ cursor: onSelectCharacter ? "pointer" : "default" }}
+      />
     </div>
   );
 }
