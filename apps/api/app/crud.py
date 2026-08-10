@@ -4,9 +4,12 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import hash_password, verify_password
-from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward
+from app.game_data import get_level_grade_stats
+from app.game_data import SKILL_TREE_MOCK, get_level_grade_stats
+from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward, SkillNode
 from app.schemas import (
     ITEM_EFFECT_STAT_TYPES,
+    TIER_LABELS,
     AttendanceRecordRead,
     AttendanceRecordUpdate,
     BulkPurchaseRequest,
@@ -21,6 +24,8 @@ from app.schemas import (
     CharacterOnboardingCreate,
     CharacterOwnedItemRead,
     CharacterRead,
+    CharacterSkillNodeRead,
+    CharacterSkillTreeRead,
     EnemyCreate,
     EnemyRead,
     EnemySkill,
@@ -36,6 +41,7 @@ from app.schemas import (
     RewardPayResult,
     RewardRead,
     SignupRequest,
+    SkillNodeRead,
 )
 
 
@@ -232,12 +238,14 @@ def create_character_for_member(
     if get_member_character_id(db, member.id) is not None:
         raise HTTPException(status_code=400, detail="이미 캐릭터를 생성했습니다.")
 
+    starting_grade = get_level_grade_stats(1)
     character = Character(
         name=data.name.strip(),
-        hp=100,
-        hp_max=100,
-        atk=10,
-        def_=10,
+        lv=1,
+        hp=starting_grade["hp"],
+        hp_max=starting_grade["hp"],
+        atk=starting_grade["atk"],
+        def_=starting_grade["def"],
         member_id=member.id,
         faction=data.faction,
         stat_courage=data.stat_courage,
@@ -1292,3 +1300,223 @@ def create_enemy(db: Session, data: EnemyCreate) -> EnemyRead:
         skills=[EnemySkill(**s) for s in (enemy.skills or [])],
         created_at=enemy.created_at,
     )
+
+
+# ── Skill Tree ───────────────────────────────────────────────────────────────
+
+def _get_character_or_404(db: Session, character_id: int) -> Character:
+    character = db.query(Character).filter(Character.id == character_id).first()
+    if not character:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    return character
+
+
+def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
+    return SkillNodeRead(
+        id=node.id,
+        faction=node.faction,
+        branch=node.branch,
+        col=node.col,
+        tier=node.tier,
+        tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
+        default_name=node.default_name,
+    )
+
+
+def _seed_skill_tree_if_empty(db: Session, faction: str) -> None:
+    if db.query(SkillNode).filter(SkillNode.faction == faction).first():
+        return
+    config = SKILL_TREE_MOCK.get(faction)
+    if not config:
+        return
+    db.add(SkillNode(faction=faction, branch=None, col=None, tier=0, default_name=config["base_name"]))
+    for branch_index, branch in enumerate(config["branches"]):
+        db.add(SkillNode(faction=faction, branch=branch_index, col=None, tier=1, default_name=branch["name"]))
+        for col_index, col_name in enumerate(branch["columns"]):
+            for tier in range(2, 6):
+                db.add(SkillNode(
+                    faction=faction,
+                    branch=branch_index,
+                    col=col_index,
+                    tier=tier,
+                    default_name=f"{col_name} {TIER_LABELS[tier]}",
+                ))
+    db.commit()
+
+
+def get_skill_nodes(db: Session, faction: str) -> list[SkillNodeRead]:
+    _seed_skill_tree_if_empty(db, faction)
+    nodes = (
+        db.query(SkillNode)
+        .filter(SkillNode.faction == faction)
+        .order_by(SkillNode.tier.asc(), SkillNode.branch.asc(), SkillNode.col.asc())
+        .all()
+    )
+    return [_to_skill_node_read(n) for n in nodes]
+
+
+def update_skill_node(db: Session, node_id: int, default_name: str) -> SkillNodeRead:
+    node = db.get(SkillNode, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
+    node.default_name = default_name.strip()
+    db.commit()
+    db.refresh(node)
+    return _to_skill_node_read(node)
+
+
+def _find_parent_node(db: Session, node: SkillNode) -> SkillNode | None:
+    if node.tier == 0:
+        return None
+    if node.tier == 1:
+        return db.query(SkillNode).filter(SkillNode.faction == node.faction, SkillNode.tier == 0).first()
+    return (
+        db.query(SkillNode)
+        .filter(
+            SkillNode.faction == node.faction,
+            SkillNode.branch == node.branch,
+            SkillNode.col == node.col,
+            SkillNode.tier == node.tier - 1,
+        )
+        .first()
+    )
+
+
+def _ensure_base_unlock(db: Session, character: Character) -> None:
+    base_node = db.query(SkillNode).filter(SkillNode.faction == character.faction, SkillNode.tier == 0).first()
+    if not base_node:
+        return
+    exists = (
+        db.query(CharacterSkillUnlock)
+        .filter(CharacterSkillUnlock.character_id == character.id, CharacterSkillUnlock.node_id == base_node.id)
+        .first()
+    )
+    if not exists:
+        db.add(CharacterSkillUnlock(character_id=character.id, node_id=base_node.id))
+        db.commit()
+
+
+def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTreeRead:
+    character = _get_character_or_404(db, character_id)
+    if not character.faction:
+        raise HTTPException(status_code=400, detail="진영이 설정되지 않은 캐릭터입니다.")
+
+    _seed_skill_tree_if_empty(db, character.faction)
+    _ensure_base_unlock(db, character)
+
+    nodes = (
+        db.query(SkillNode)
+        .filter(SkillNode.faction == character.faction)
+        .order_by(SkillNode.tier.asc(), SkillNode.branch.asc(), SkillNode.col.asc())
+        .all()
+    )
+    unlocks = db.query(CharacterSkillUnlock).filter(CharacterSkillUnlock.character_id == character.id).all()
+    unlock_by_node = {u.node_id: u for u in unlocks}
+
+    node_reads = []
+    for node in nodes:
+        unlock = unlock_by_node.get(node.id)
+        node_reads.append(
+            CharacterSkillNodeRead(
+                id=node.id,
+                faction=node.faction,
+                branch=node.branch,
+                col=node.col,
+                tier=node.tier,
+                tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
+                default_name=node.default_name,
+                unlocked=unlock is not None,
+                custom_name=unlock.custom_name if unlock else None,
+                display_name=(unlock.custom_name if unlock and unlock.custom_name else node.default_name),
+            )
+        )
+
+    return CharacterSkillTreeRead(
+        faction=character.faction,
+        character_ap=character.ap,
+        ap_cost_to_unlock=get_level_grade_stats(character.lv)["ap_cost"],
+        nodes=node_reads,
+    )
+
+
+def unlock_character_skill_node(db: Session, character_id: int, node_id: int) -> CharacterSkillTreeRead:
+    character = _get_character_or_404(db, character_id)
+    node = db.get(SkillNode, node_id)
+    if not node or node.faction != character.faction:
+        raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
+    if node.tier == 0:
+        raise HTTPException(status_code=400, detail="기본 기술은 자동으로 습득됩니다.")
+
+    _seed_skill_tree_if_empty(db, character.faction)
+    _ensure_base_unlock(db, character)
+
+    already = (
+        db.query(CharacterSkillUnlock)
+        .filter(CharacterSkillUnlock.character_id == character.id, CharacterSkillUnlock.node_id == node.id)
+        .first()
+    )
+    if already:
+        raise HTTPException(status_code=400, detail="이미 습득한 기술입니다.")
+
+    parent = _find_parent_node(db, node)
+    if parent and parent.tier > 0:
+        parent_unlocked = (
+            db.query(CharacterSkillUnlock)
+            .filter(CharacterSkillUnlock.character_id == character.id, CharacterSkillUnlock.node_id == parent.id)
+            .first()
+        )
+        if not parent_unlocked:
+            raise HTTPException(status_code=400, detail="이전 단계를 먼저 습득해야 합니다.")
+
+    if node.tier == 1:
+        other_branch_chosen = (
+            db.query(CharacterSkillUnlock)
+            .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
+            .filter(
+                CharacterSkillUnlock.character_id == character.id,
+                SkillNode.tier == 1,
+                SkillNode.branch != node.branch,
+            )
+            .first()
+        )
+        if other_branch_chosen:
+            raise HTTPException(status_code=400, detail="이미 다른 계열을 선택했습니다.")
+
+    if node.tier >= 2:
+        other_column_chosen = (
+            db.query(CharacterSkillUnlock)
+            .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
+            .filter(
+                CharacterSkillUnlock.character_id == character.id,
+                SkillNode.branch == node.branch,
+                SkillNode.tier >= 2,
+                SkillNode.col != node.col,
+            )
+            .first()
+        )
+        if other_column_chosen:
+            raise HTTPException(status_code=400, detail="이미 다른 세부 계열을 선택했습니다.")
+
+    cost = get_level_grade_stats(character.lv)["ap_cost"]
+    if character.ap < cost:
+        raise HTTPException(status_code=400, detail=f"AP가 부족합니다. (필요: {cost})")
+
+    character.ap -= cost
+    db.add(CharacterSkillUnlock(character_id=character.id, node_id=node.id))
+    db.commit()
+
+    return get_character_skill_tree(db, character.id)
+
+
+def rename_character_skill(db: Session, character_id: int, node_id: int, custom_name: str) -> CharacterSkillTreeRead:
+    character = _get_character_or_404(db, character_id)
+    unlock = (
+        db.query(CharacterSkillUnlock)
+        .filter(CharacterSkillUnlock.character_id == character.id, CharacterSkillUnlock.node_id == node_id)
+        .first()
+    )
+    if not unlock:
+        raise HTTPException(status_code=400, detail="습득하지 않은 기술입니다.")
+    unlock.custom_name = custom_name.strip() or None
+    db.commit()
+    return get_character_skill_tree(db, character.id)

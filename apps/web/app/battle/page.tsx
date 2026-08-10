@@ -13,7 +13,7 @@ type Tab = "battle" | "skill" | "enemy";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "battle", label: "전투", icon: Swords },
-  { id: "skill", label: "스킬", icon: Sparkles },
+  { id: "skill", label: "기술", icon: Sparkles },
   { id: "enemy", label: "에너미", icon: Skull },
 ];
 

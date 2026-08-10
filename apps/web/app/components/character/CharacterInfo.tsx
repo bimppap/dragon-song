@@ -9,6 +9,7 @@ import {
   ChevronUp,
   Coins,
   Flame,
+  Gauge,
   Gem,
   Gift,
   Heart,
@@ -21,6 +22,7 @@ import {
   Zap,
 } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
+import CharacterSkillTreeCard from "./CharacterSkillTree";
 
 const REWARD_TYPE_LABELS: Record<string, string> = {
   attendance: "출석",
@@ -90,26 +92,27 @@ const CORE_STATS: {
 
 const RANK_GRADES = [
   {
-    name: "브론즈",
+    name: "동",
     description: "기본적인 전투 감각을 익히는 입문 등급입니다.",
+    badgeClass: "border-amber-800 bg-amber-100 text-amber-900",
   },
   {
-    name: "실버",
+    name: "은",
     description: "기본 전투를 안정적으로 수행할 수 있는 숙련 등급입니다.",
+    badgeClass: "border-slate-400 bg-slate-200 text-slate-700",
   },
   {
-    name: "골드",
-    description: "전투와 파티 운영에서 중심 역할을 맡는 중상급 등급입니다.",
-  },
-  {
-    name: "플래티넘",
-    description: "고난도 전투에서도 강한 영향력을 보이는 상위 등급입니다.",
-  },
-  {
-    name: "다이아몬드",
-    description: "최상위 전투 성과를 보여주는 정예 등급입니다.",
+    name: "금",
+    description: "전투와 파티 운영에서 중심 역할을 맡는 상위 등급입니다.",
+    badgeClass: "border-yellow-500 bg-yellow-100 text-yellow-800",
   },
 ] as const;
+
+/** 모험가 등급(rank) 값을 동/은/금 3단계로 분류한다. */
+function getRankGrade(rank: number) {
+  const index = rank <= 3 ? 0 : rank <= 6 ? 1 : 2;
+  return RANK_GRADES[index];
+}
 
 const DETAIL_STATS: {
   key: keyof Pick<
@@ -226,6 +229,18 @@ function StatBar({
   );
 }
 
+function ApStat({ value }: { value: number }) {
+  return (
+    <div className="flex flex-col justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2">
+      <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+        <Gauge size={15} className="text-indigo-500" />
+        AP
+      </span>
+      <span className="font-num text-2xl font-bold text-slate-900">{numberFormatter.format(value)}</span>
+    </div>
+  );
+}
+
 function CoreStatLine({
   label,
   icon: Icon,
@@ -248,10 +263,6 @@ function CoreStatLine({
       </span>
     </div>
   );
-}
-
-function getRankGrade(rank: number) {
-  return RANK_GRADES[Math.min(RANK_GRADES.length - 1, Math.max(0, rank - 1))];
 }
 
 function getExperienceCap(level: number, experience: number) {
@@ -531,7 +542,7 @@ export default function CharacterInfo({
                     </div>
                   }
                 >
-                  <Badge variant="secondary" className="gap-1 font-num cursor-help">
+                  <Badge className={cn("gap-1 font-num cursor-help border", getRankGrade(selectedDetail.rank).badgeClass)}>
                     <Award size={12} />
                     모험가 등급 {selectedDetail.rank}
                   </Badge>
@@ -544,7 +555,7 @@ export default function CharacterInfo({
             </CardHeader>
 
             <CardContent className="flex flex-col gap-6">
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-3">
                 <StatBar
                   label="HP"
                   icon={Heart}
@@ -561,6 +572,7 @@ export default function CharacterInfo({
                   iconAccent="text-sky-500"
                   barColor="bg-sky-500"
                 />
+                <ApStat value={selectedDetail.ap} />
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
@@ -637,6 +649,12 @@ export default function CharacterInfo({
               </CardContent>
             )}
           </Card>
+
+          <CharacterSkillTreeCard
+            characterId={selectedDetail.id}
+            faction={selectedDetail.faction}
+            canManage
+          />
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>

@@ -36,6 +36,10 @@ from app.schemas import (
     PurchaseRead,
     RewardPayResult,
     SignupRequest,
+    SkillNameUpdate,
+    SkillNodeRead,
+    SkillNodeUpdate,
+    CharacterSkillTreeRead,
     TokenResponse,
 )
 from app import crud
@@ -359,3 +363,51 @@ def list_enemies(chapter: str | None = None, member: Member = Depends(require_ad
 @app.post("/enemies", response_model=EnemyRead)
 def create_enemy(data: EnemyCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_enemy(db, data)
+
+
+@app.get("/skills", response_model=list[SkillNodeRead])
+def list_skill_nodes(faction: str, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_skill_nodes(db, faction)
+
+
+@app.put("/skills/{node_id}", response_model=SkillNodeRead)
+def update_skill_node(
+    node_id: int,
+    data: SkillNodeUpdate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_skill_node(db, node_id, data.default_name)
+
+
+@app.get("/characters/{character_id}/skills", response_model=CharacterSkillTreeRead)
+def get_character_skills(
+    character_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.get_character_skill_tree(db, character_id)
+
+
+@app.post("/characters/{character_id}/skills/{node_id}/unlock", response_model=CharacterSkillTreeRead)
+def unlock_character_skill(
+    character_id: int,
+    node_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.unlock_character_skill_node(db, character_id, node_id)
+
+
+@app.put("/characters/{character_id}/skills/{node_id}/name", response_model=CharacterSkillTreeRead)
+def rename_character_skill(
+    character_id: int,
+    node_id: int,
+    data: SkillNameUpdate,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.rename_character_skill(db, character_id, node_id, data.custom_name)

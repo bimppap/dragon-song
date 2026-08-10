@@ -512,3 +512,39 @@ class AttendanceRecordRead(BaseModel):
     reward_paid: bool
 
     model_config = {"from_attributes": True}
+
+
+TIER_LABELS = {0: "기본", 1: "선택", 2: "I", 3: "II", 4: "III", 5: "IV"}
+
+
+class SkillNodeRead(BaseModel):
+    id: int
+    faction: Faction
+    branch: int | None
+    col: int | None
+    tier: int
+    tier_label: str
+    default_name: str
+
+    model_config = {"from_attributes": True}
+
+
+class SkillNodeUpdate(BaseModel):
+    default_name: str = Field(min_length=1, max_length=50)
+
+
+class CharacterSkillNodeRead(SkillNodeRead):
+    unlocked: bool
+    custom_name: str | None
+    display_name: str
+
+
+class CharacterSkillTreeRead(BaseModel):
+    faction: Faction
+    character_ap: int
+    ap_cost_to_unlock: int
+    nodes: list[CharacterSkillNodeRead]
+
+
+class SkillNameUpdate(BaseModel):
+    custom_name: str = Field(default="", max_length=50)

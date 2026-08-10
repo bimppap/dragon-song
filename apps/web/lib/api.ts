@@ -647,3 +647,58 @@ export async function createEnemy(data: EnemyCreate): Promise<Enemy> {
     body: JSON.stringify(data),
   }, "에너미 생성 실패");
 }
+
+export interface SkillNode {
+  id: number;
+  faction: Faction;
+  branch: number | null;
+  col: number | null;
+  tier: number;
+  tier_label: string;
+  default_name: string;
+}
+
+export interface CharacterSkillNode extends SkillNode {
+  unlocked: boolean;
+  custom_name: string | null;
+  display_name: string;
+}
+
+export interface CharacterSkillTree {
+  faction: Faction;
+  character_ap: number;
+  ap_cost_to_unlock: number;
+  nodes: CharacterSkillNode[];
+}
+
+export async function fetchSkillNodes(faction: Faction): Promise<SkillNode[]> {
+  return request<SkillNode[]>(`/skills?faction=${encodeURIComponent(faction)}`, undefined, "기술트리 조회 실패");
+}
+
+export async function updateSkillNode(nodeId: number, defaultName: string): Promise<SkillNode> {
+  return request<SkillNode>(`/skills/${nodeId}`, {
+    method: "PUT",
+    body: JSON.stringify({ default_name: defaultName }),
+  }, "기술 이름 수정 실패");
+}
+
+export async function fetchCharacterSkillTree(characterId: number): Promise<CharacterSkillTree> {
+  return request<CharacterSkillTree>(`/characters/${characterId}/skills`, undefined, "캐릭터 기술트리 조회 실패");
+}
+
+export async function unlockCharacterSkill(characterId: number, nodeId: number): Promise<CharacterSkillTree> {
+  return request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/unlock`, {
+    method: "POST",
+  }, "기술 강화 실패");
+}
+
+export async function renameCharacterSkill(
+  characterId: number,
+  nodeId: number,
+  customName: string,
+): Promise<CharacterSkillTree> {
+  return request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/name`, {
+    method: "PUT",
+    body: JSON.stringify({ custom_name: customName }),
+  }, "기술 이름 설정 실패");
+}

@@ -165,6 +165,42 @@ class CharacterItemState(Base):
     )
 
 
+class SkillNode(Base):
+    __tablename__ = "skill_nodes"
+    __table_args__ = (
+        UniqueConstraint("faction", "branch", "col", "tier", name="uq_skill_node_slot"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    faction: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "공격" | "수비" | "치유"
+    branch: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0,1,2 (tier 0은 None)
+    col: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0,1 (tier 0,1은 None)
+    tier: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=기본, 1=계열선택, 2~5=I~IV
+    default_name: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class CharacterSkillUnlock(Base):
+    __tablename__ = "character_skill_unlocks"
+    __table_args__ = (
+        UniqueConstraint("character_id", "node_id", name="uq_character_skill_unlock"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    node_id: Mapped[int] = mapped_column(Integer, ForeignKey("skill_nodes.id"), nullable=False, index=True)
+    custom_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    unlocked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Purchase(Base):
     __tablename__ = "purchases"
 
