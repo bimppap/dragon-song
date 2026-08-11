@@ -324,7 +324,12 @@ function OwnedItemTile({
         </div>
       </InfoTooltip>
       {isConsumable ? (
-        <Button size="sm" variant="outline" onClick={onUse} disabled={loading || remainingUses <= 0}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => { if (window.confirm(`'${item.item_name}'을(를) 사용하시겠습니까?`)) onUse(); }}
+          disabled={loading || remainingUses <= 0}
+        >
           사용
         </Button>
       ) : item.equipped ? (
@@ -332,7 +337,12 @@ function OwnedItemTile({
           해제
         </Button>
       ) : (
-        <Button size="sm" variant="outline" onClick={onEquip} disabled={loading || item.quantity <= 0}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => { if (window.confirm(`'${item.item_name}'을(를) 장착하시겠습니까?`)) onEquip(); }}
+          disabled={loading || item.quantity <= 0}
+        >
           장착
         </Button>
       )}

@@ -7,7 +7,7 @@ import PurchaseGrid from "./components/PurchaseGrid";
 import AddItemForm from "./components/AddItemForm";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
-import { fetchCharacters, bulkPurchase } from "@/lib/api";
+import { fetchCharacters, bulkPurchase, equipItem, useItem } from "@/lib/api";
 import type { Character, Item } from "@/lib/api";
 import {
   Select,
@@ -57,6 +57,20 @@ function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
         characterId,
         cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })),
       );
+      // 구매 직후 바로 장착/사용할지 아이템별로 확인
+      for (const { item } of cart) {
+        if (item.item_type === "equipment") {
+          if (window.confirm(`'${item.name}'을(를) 지금 장착하시겠습니까?`)) {
+            try { await equipItem(characterId, item.id); }
+            catch (e) { alert(e instanceof Error ? e.message : "장착 실패"); }
+          }
+        } else if (item.item_type === "consumable") {
+          if (window.confirm(`'${item.name}'을(를) 지금 사용하시겠습니까?`)) {
+            try { await useItem(characterId, item.id); }
+            catch (e) { alert(e instanceof Error ? e.message : "사용 실패"); }
+          }
+        }
+      }
       setCart([]);
       onPurchased();
     } catch (e) {
