@@ -721,9 +721,3 @@ export async function renameCharacterSkill(
     body: JSON.stringify({ custom_name: customName }),
   }, "기술 이름 설정 실패");
 }
-
-export async function resetCharacterSkills(characterId: number): Promise<CharacterSkillTree> {
-  return request<CharacterSkillTree>(`/characters/${characterId}/skills/reset`, {
-    method: "POST",
-  }, "기술 초기화 실패");
-}

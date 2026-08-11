@@ -128,6 +128,14 @@ def ensure_schema(engine: Engine) -> None:
         unlock_columns = {col["name"] for col in inspector.get_columns("character_skill_unlocks")}
         if "ap_spent" not in unlock_columns:
             statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN ap_spent INTEGER NOT NULL DEFAULT 0")
+            # 이 컬럼 도입 전에 강화된 기술은 강화당 AP 1을 소모했다(성장 등급 1~5의 ap_cost=1,
+            # 기본 tier 0은 무료). 백필하지 않으면 AP 초기화 시 환급액이 0이 되어 AP가 증발한다.
+            statements.append(
+                "UPDATE character_skill_unlocks SET ap_spent = 1 "
+                "WHERE node_id IN (SELECT id FROM skill_nodes WHERE tier <> 0)"
+            )
+        if "applied_effects" not in unlock_columns:
+            statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN applied_effects JSON NOT NULL DEFAULT '[]'")
 
     if not statements:
         return

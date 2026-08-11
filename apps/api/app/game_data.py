@@ -43,5 +43,3 @@ SKILL_TREE_MOCK = {
         ],
     },
 }
-
-TIER_LABELS = {0: "기본", 1: "선택", 2: "I", 3: "II", 4: "III", 5: "IV"}

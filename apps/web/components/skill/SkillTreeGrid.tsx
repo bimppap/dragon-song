@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
@@ -31,7 +30,6 @@ export function SkillTooltipContent({ name, effects }: { name: string; effects: 
 interface SkillTreeGridProps<T extends SkillTreeGridNode> {
   nodes: T[];
   getLabel: (node: T) => string;
-  getTooltip?: (node: T) => ReactNode;
   isHighlighted?: (node: T) => boolean;
   isDisabled?: (node: T) => boolean;
   onNodeClick?: (node: T) => void;
@@ -40,7 +38,6 @@ interface SkillTreeGridProps<T extends SkillTreeGridNode> {
 export default function SkillTreeGrid<T extends SkillTreeGridNode>({
   nodes,
   getLabel,
-  getTooltip,
   isHighlighted,
   isDisabled,
   onNodeClick,
@@ -64,9 +61,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
         const highlighted = isHighlighted?.(node) ?? false;
         const disabled = isDisabled?.(node) ?? false;
         const clickable = Boolean(onNodeClick) && !disabled;
-        const tooltip = getTooltip?.(node) ?? (
-          <SkillTooltipContent name={getLabel(node)} effects={node.effects} />
-        );
+        const tooltip = <SkillTooltipContent name={getLabel(node)} effects={node.effects} />;
 
         const tile = (
           <button
