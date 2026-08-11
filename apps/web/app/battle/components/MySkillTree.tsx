@@ -8,12 +8,16 @@ import { Input } from "@/components/ui/input";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import {
   fetchCharacterSkillTree,
+  fetchSkillNodes,
   renameCharacterSkill,
   unlockCharacterSkill,
   type CharacterSkillNode,
   type CharacterSkillTree,
+  type Faction,
+  type SkillNode,
 } from "@/lib/api";
 
+const FACTIONS: Faction[] = ["공격", "수비", "치유"];
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 interface Props {
@@ -22,6 +26,7 @@ interface Props {
 
 export default function MySkillTree({ characterId }: Props) {
   const [tree, setTree] = useState<CharacterSkillTree | null>(null);
+  const [otherNodes, setOtherNodes] = useState<Record<string, SkillNode[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyNodeId, setBusyNodeId] = useState<number | null>(null);
@@ -33,7 +38,14 @@ export default function MySkillTree({ characterId }: Props) {
     setLoading(true);
     setError(null);
     fetchCharacterSkillTree(characterId)
-      .then((data) => { if (!cancelled) setTree(data); })
+      .then(async (data) => {
+        if (cancelled) return;
+        setTree(data);
+        const others = FACTIONS.filter((f) => f !== data.faction);
+        const lists = await Promise.all(others.map((f) => fetchSkillNodes(f)));
+        if (cancelled) return;
+        setOtherNodes(Object.fromEntries(others.map((f, i) => [f, lists[i]])));
+      })
       .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패"); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
@@ -82,11 +94,11 @@ export default function MySkillTree({ characterId }: Props) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-800">내 기술트리</h2>
+          <h2 className="text-lg font-bold text-slate-800">기술트리</h2>
           <p className="text-sm text-slate-500">
-            {tree ? `진영(${tree.faction})에 따른 기술트리입니다. ` : ""}
-            강조된 아이콘이 현재 습득한 기술입니다. 다음 단계를 눌러 AP로 강화하거나, 습득한 기술을 눌러 이름을 바꿀 수 있습니다.
-            1분기(계열)와 2분기(세부 경로)에서는 각각 하나만 선택할 수 있습니다.
+            {tree ? `내 진영은 ${tree.faction}입니다. ` : ""}
+            내 진영 기술트리는 다음 단계를 눌러 AP로 강화하거나 습득한 기술을 눌러 이름을 바꿀 수 있고, 다른 진영 트리는
+            참고용으로 확인만 할 수 있습니다. 1분기(계열)와 2분기(세부 경로)에서는 각각 하나만 선택할 수 있습니다.
           </p>
         </div>
         {tree && (
@@ -101,22 +113,39 @@ export default function MySkillTree({ characterId }: Props) {
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</div>
       )}
 
-      {loading ? (
+      {loading || !tree ? (
         <p className="text-sm text-slate-400">불러오는 중...</p>
-      ) : tree ? (
-        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
-          <div className="w-fit">
-            <SkillTreeGrid
-              nodes={tree.nodes}
-              getLabel={(n) => n.display_name}
-              isHighlighted={(n) => n.unlocked}
-              isDisabled={() => busyNodeId !== null}
-              onNodeClick={handleNodeClick}
-            />
-          </div>
-        </div>
       ) : (
-        <p className="text-sm text-slate-400">기술트리를 불러오지 못했습니다.</p>
+        <div className="flex gap-6 overflow-x-auto pb-2">
+          {FACTIONS.map((faction) => {
+            const isOwn = faction === tree.faction;
+            return (
+              <div key={faction} className="flex flex-col items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-700">{faction} 계열</h3>
+                  {isOwn ? (
+                    <Badge className="text-[10px]">내 진영</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px] text-slate-400">참고용</Badge>
+                  )}
+                </div>
+                <div className={isOwn ? "rounded-xl border border-indigo-200 bg-white p-4" : "rounded-xl border border-slate-200 bg-slate-50/60 p-4"}>
+                  {isOwn ? (
+                    <SkillTreeGrid
+                      nodes={tree.nodes}
+                      getLabel={(n) => n.display_name}
+                      isHighlighted={(n) => n.unlocked}
+                      isDisabled={() => busyNodeId !== null}
+                      onNodeClick={handleNodeClick}
+                    />
+                  ) : (
+                    <SkillTreeGrid nodes={otherNodes[faction] ?? []} getLabel={(n) => n.default_name} />
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
 
       {editingId !== null && (

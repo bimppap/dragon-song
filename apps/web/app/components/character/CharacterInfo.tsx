@@ -14,6 +14,7 @@ import {
   Gift,
   Heart,
   HeartHandshake,
+  Image as ImageIcon,
   Lock,
   Package,
   Receipt,
@@ -225,18 +226,6 @@ function StatBar({
           style={{ width: `${pct}%` }}
         />
       </div>
-    </div>
-  );
-}
-
-function ApStat({ value }: { value: number }) {
-  return (
-    <div className="flex flex-col justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2">
-      <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
-        <Gauge size={15} className="text-indigo-500" />
-        AP
-      </span>
-      <span className="font-num text-2xl font-bold text-slate-900">{numberFormatter.format(value)}</span>
     </div>
   );
 }
@@ -502,158 +491,163 @@ export default function CharacterInfo({
       ) : (
         <>
           <Card>
-            <CardHeader>
-              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div className="flex flex-col gap-1.5">
+            <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row">
+              {/* 명함 좌측: 캐릭터 이미지 자리 */}
+              <div className="flex aspect-3/4 w-full shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 sm:aspect-auto sm:w-40 sm:self-stretch">
+                <div className="flex flex-col items-center gap-1 text-slate-300">
+                  <ImageIcon size={30} />
+                  <span className="text-xs font-medium">이미지</span>
+                </div>
+              </div>
+
+              {/* 명함 우측: 정보 */}
+              <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <CardTitle className="text-xl">{selectedDetail.name}</CardTitle>
-                  <CardDescription>
-                    캐릭터 목록에서 보이는 기본 정보와 추가 능력치를 함께 제공합니다.
-                  </CardDescription>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
+                    {selectedDetail.faction && <Badge variant="secondary">{selectedDetail.faction}</Badge>}
+                    <Badge variant="outline" className="gap-1 font-num">
+                      <Coins size={12} className="text-amber-500" />
+                      {numberFormatter.format(selectedDetail.gold)} G
+                    </Badge>
+                    <Badge variant="outline" className="gap-1 font-num">
+                      <Gem size={12} className="text-cyan-500" />
+                      {numberFormatter.format(selectedDetail.cp)} CP
+                    </Badge>
+                  </div>
                 </div>
+
+                {/* 성장 등급 · 경험치 · AP */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
-                  {selectedDetail.faction && <Badge variant="secondary">{selectedDetail.faction}</Badge>}
-                  <Badge variant="outline" className="gap-1 font-num">
-                    <Coins size={12} className="text-amber-500" />
-                    {numberFormatter.format(selectedDetail.gold)} G
+                  <Badge className="gap-1 font-num">
+                    <Trophy size={12} />
+                    성장 등급 Lv.{selectedDetail.lv}
                   </Badge>
+                  <InfoTooltip
+                    content={
+                      <div className="max-w-52 whitespace-pre-line text-left">
+                        <div className="font-semibold">
+                          {getRankGrade(selectedDetail.rank).name}
+                        </div>
+                        <div className="mt-1 text-slate-300">
+                          {getRankGrade(selectedDetail.rank).description}
+                        </div>
+                      </div>
+                    }
+                  >
+                    <Badge className={cn("gap-1 font-num cursor-help border", getRankGrade(selectedDetail.rank).badgeClass)}>
+                      <Award size={12} />
+                      모험가 등급 {selectedDetail.rank}
+                    </Badge>
+                  </InfoTooltip>
+                  <ExperienceBar
+                    value={selectedDetail.exp}
+                    max={getExperienceCap(selectedDetail.lv, selectedDetail.exp)}
+                  />
                   <Badge variant="outline" className="gap-1 font-num">
-                    <Gem size={12} className="text-cyan-500" />
-                    {numberFormatter.format(selectedDetail.cp)} CP
+                    <Gauge size={12} className="text-indigo-500" />
+                    AP {numberFormatter.format(selectedDetail.ap)}
                   </Badge>
                 </div>
-              </div>
 
-              {/* 성장 등급 배지 */}
-              <div className="mt-4 flex flex-wrap items-center gap-2">
-                <Badge className="gap-1 font-num">
-                  <Trophy size={12} />
-                  성장 등급 Lv.{selectedDetail.lv}
-                </Badge>
-                <InfoTooltip
-                  content={
-                    <div className="max-w-52 whitespace-pre-line text-left">
-                      <div className="font-semibold">
-                        {getRankGrade(selectedDetail.rank).name}
-                      </div>
-                      <div className="mt-1 text-slate-300">
-                        {getRankGrade(selectedDetail.rank).description}
-                      </div>
-                    </div>
-                  }
-                >
-                  <Badge className={cn("gap-1 font-num cursor-help border", getRankGrade(selectedDetail.rank).badgeClass)}>
-                    <Award size={12} />
-                    모험가 등급 {selectedDetail.rank}
-                  </Badge>
-                </InfoTooltip>
-                <ExperienceBar
-                  value={selectedDetail.exp}
-                  max={getExperienceCap(selectedDetail.lv, selectedDetail.exp)}
-                />
-              </div>
-            </CardHeader>
-
-            <CardContent className="flex flex-col gap-6">
-              <div className="grid gap-4 md:grid-cols-3">
-                <StatBar
-                  label="HP"
-                  icon={Heart}
-                  value={selectedDetail.hp}
-                  max={selectedDetail.hp_max}
-                  iconAccent="text-rose-500"
-                  barColor="bg-rose-500"
-                />
-                <StatBar
-                  label="MP"
-                  icon={Zap}
-                  value={selectedDetail.mp}
-                  max={selectedDetail.mp_max}
-                  iconAccent="text-sky-500"
-                  barColor="bg-sky-500"
-                />
-                <ApStat value={selectedDetail.ap} />
-              </div>
-
-              <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
-                {CORE_STATS.map(({ key, label, icon: Icon, accent }) => (
-                  <CoreStatLine
-                    key={key}
-                    label={label}
-                    icon={Icon}
-                    value={selectedDetail[key]}
-                    accent={accent}
+                <div className="grid gap-4 md:grid-cols-2">
+                  <StatBar
+                    label="HP"
+                    icon={Heart}
+                    value={selectedDetail.hp}
+                    max={selectedDetail.hp_max}
+                    iconAccent="text-rose-500"
+                    barColor="bg-rose-500"
                   />
-                ))}
+                  <StatBar
+                    label="MP"
+                    icon={Zap}
+                    value={selectedDetail.mp}
+                    max={selectedDetail.mp_max}
+                    iconAccent="text-sky-500"
+                    barColor="bg-sky-500"
+                  />
+                </div>
+
+                {/* 핵심 능력치 + 보유 기술 */}
+                <div className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
+                  <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
+                    {CORE_STATS.map(({ key, label, icon: Icon, accent }) => (
+                      <CoreStatLine
+                        key={key}
+                        label={label}
+                        icon={Icon}
+                        value={selectedDetail[key]}
+                        accent={accent}
+                      />
+                    ))}
+                  </div>
+                  <CharacterOwnedSkills
+                    characterId={selectedDetail.id}
+                    faction={selectedDetail.faction}
+                  />
+                </div>
+
+                {/* 상세정보 (테두리 없는 펼치기 버튼) */}
+                <div className="border-t border-slate-200 pt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowDetails((prev) => !prev)}
+                    className="h-auto px-0 text-slate-500 hover:bg-transparent hover:text-slate-800"
+                  >
+                    {showDetails ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    상세정보 {showDetails ? "접기" : "펼치기"}
+                  </Button>
+                  {showDetails && (
+                    <div className="mt-4 flex flex-col gap-4">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                        {DETAIL_STATS.map(({ key, label, isFloat }) => (
+                          <div
+                            key={key}
+                            className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"
+                          >
+                            <span className="text-slate-500">{label}</span>
+                            <span className="font-num font-semibold text-slate-800">
+                              {isFloat
+                                ? `${(Number(selectedDetail[key]) * 100).toFixed(1)}%`
+                                : numberFormatter.format(selectedDetail[key])}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+
+                      {selectedDetail.start_sh != null && (
+                        <div className="flex flex-col gap-3 border-t border-slate-200 pt-4">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                            <Lock size={12} />
+                            관리자 전용 능력치
+                          </div>
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                            {ADMIN_ONLY_STATS.map(({ key, label, description, type }) => {
+                              const value = selectedDetail[key];
+                              if (value == null) return null;
+                              return (
+                                <InfoTooltip key={key} side="top" content={description}>
+                                  <div className="flex cursor-help items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm">
+                                    <span className="text-amber-700">{label}</span>
+                                    <span className="font-num font-semibold text-amber-900">
+                                      {formatAdminOnlyStat(type, value)}
+                                    </span>
+                                  </div>
+                                </InfoTooltip>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
-              <div className="flex flex-col gap-1.5">
-                <CardTitle>상세정보</CardTitle>
-                <CardDescription>공격·방어·체력·마나·기술 관련 세부 능력치입니다.</CardDescription>
-              </div>
-              <Button variant="outline" size="sm" onClick={() => setShowDetails((prev) => !prev)}>
-                {showDetails ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
-                {showDetails ? "접기" : "펼치기"}
-              </Button>
-            </CardHeader>
-            {showDetails && (
-              <CardContent className="flex flex-col gap-4">
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                  {DETAIL_STATS.map(({ key, label, isFloat }) => (
-                    <div
-                      key={key}
-                      className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"
-                    >
-                      <span className="text-slate-500">{label}</span>
-                      <span className="font-num font-semibold text-slate-800">
-                        {isFloat
-                          ? `${(Number(selectedDetail[key]) * 100).toFixed(1)}%`
-                          : numberFormatter.format(selectedDetail[key])}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-
-                {selectedDetail.start_sh != null && (
-                  <div className="flex flex-col gap-3 border-t border-slate-200 pt-4">
-                    <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
-                      <Lock size={12} />
-                      관리자 전용 능력치
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                      {ADMIN_ONLY_STATS.map(({ key, label, description, type }) => {
-                        const value = selectedDetail[key];
-                        if (value == null) return null;
-                        return (
-                          <InfoTooltip
-                            key={key}
-                            side="top"
-                            content={description}
-                          >
-                            <div className="flex cursor-help items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm">
-                              <span className="text-amber-700">{label}</span>
-                              <span className="font-num font-semibold text-amber-900">
-                                {formatAdminOnlyStat(type, value)}
-                              </span>
-                            </div>
-                          </InfoTooltip>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-              </CardContent>
-            )}
-          </Card>
-
-          <CharacterOwnedSkills
-            characterId={selectedDetail.id}
-            faction={selectedDetail.faction}
-          />
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>
