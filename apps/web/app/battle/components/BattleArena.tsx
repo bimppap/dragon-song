@@ -162,28 +162,29 @@ export default function BattleArena({ enemy, onExit }: Props) {
       }
     }
 
-    // 2) 캐릭터 공격 합계
-    let dmgSum = 0;
-    for (const c of living) {
-      if (charActions[c.id]?.kind === "attack") dmgSum += c.atk;
-    }
+    // 2) 캐릭터 공격 (개별 적용 · 입힌 피해와 에너미 남은 HP 로그)
     let newEnemyHp = enemyHp;
-    if (dmgSum > 0) {
-      newEnemyHp = Math.max(0, newEnemyHp - dmgSum);
-      events.push(`⚔️ 캐릭터 공격 ${dmgSum} 피해 → ${enemy.name}`);
+    for (const c of living) {
+      if (charActions[c.id]?.kind !== "attack") continue;
+      const dealt = Math.min(c.atk, newEnemyHp);
+      newEnemyHp = Math.max(0, newEnemyHp - c.atk);
+      events.push(
+        `⚔️ ${c.name} 공격: ${numberFormatter.format(dealt)} 피해 · ${enemy.name} [${numberFormatter.format(newEnemyHp)}/${numberFormatter.format(enemyMax)}]`,
+      );
+      if (newEnemyHp <= 0) break;
     }
 
-    // 3) 치유
+    // 3) 치유 (누가 누구를 얼마나 · 대상 체력 변화 로그)
     for (const c of living) {
       const a = charActions[c.id];
-      if (a?.kind === "heal" && a.targetId != null) {
-        const t = byId.get(a.targetId);
-        if (t && !t.downed) {
-          const before = t.hp;
-          t.hp = Math.min(t.maxHp, t.hp + c.atk);
-          events.push(`💚 ${c.name} → ${t.name} 치유 +${t.hp - before}`);
-        }
-      }
+      if (a?.kind !== "heal" || a.targetId == null) continue;
+      const t = byId.get(a.targetId);
+      if (!t || t.downed) continue;
+      const before = t.hp;
+      t.hp = Math.min(t.maxHp, t.hp + c.atk);
+      events.push(
+        `💚 ${c.name} → ${t.name} ${numberFormatter.format(t.hp - before)} 치유 · ${t.name} [${numberFormatter.format(before)}→${numberFormatter.format(t.hp)}/${numberFormatter.format(t.maxHp)}]`,
+      );
     }
 
     // 4) 에너미 격파 판정
@@ -193,7 +194,7 @@ export default function BattleArena({ enemy, onExit }: Props) {
       return;
     }
 
-    // 5) 에너미 행동
+    // 5) 에너미 행동 (대상별 피해 · 남은 HP, 0이면 전투불능 로그 별도)
     if (enemyAction.kind === "attack") {
       const skill = attackSkills[enemyAction.skillIndex];
       if (skill) {
@@ -205,7 +206,9 @@ export default function BattleArena({ enemy, onExit }: Props) {
         for (const t of targets) {
           const dmg = Math.max(0, base - (shields.get(t.id) ?? 0));
           t.hp = Math.max(0, t.hp - dmg);
-          events.push(`🔥 ${enemy.name}의 ${skill.name} → ${t.name} ${dmg} 피해`);
+          events.push(
+            `🔥 ${enemy.name}의 ${skill.name} → ${t.name} ${numberFormatter.format(dmg)} 피해 · ${t.name} [${numberFormatter.format(t.hp)}/${numberFormatter.format(t.maxHp)}]`,
+          );
           if (t.hp === 0 && !t.downed) {
             t.downed = true;
             events.push(`💀 ${t.name} 전투불능`);
