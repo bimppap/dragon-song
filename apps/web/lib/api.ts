@@ -684,6 +684,7 @@ export interface CharacterSkillTree {
   faction: Faction;
   character_ap: number;
   ap_cost_to_unlock: number;
+  latest_unlocked_node_id: number | null;
   nodes: CharacterSkillNode[];
 }
 

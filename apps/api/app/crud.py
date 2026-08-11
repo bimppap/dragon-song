@@ -1416,6 +1416,7 @@ def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTr
     )
     unlocks = db.query(CharacterSkillUnlock).filter(CharacterSkillUnlock.character_id == character.id).all()
     unlock_by_node = {u.node_id: u for u in unlocks}
+    latest_unlock = max(unlocks, key=lambda u: u.unlocked_at, default=None)
 
     node_reads = []
     for node in nodes:
@@ -1440,6 +1441,7 @@ def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTr
         faction=character.faction,
         character_ap=character.ap,
         ap_cost_to_unlock=get_level_grade_stats(character.lv)["ap_cost"],
+        latest_unlocked_node_id=latest_unlock.node_id if latest_unlock else None,
         nodes=node_reads,
     )
 

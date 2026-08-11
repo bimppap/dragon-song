@@ -79,19 +79,17 @@ export default function AdminSkillEditor() {
       {loading || !nodesByFaction ? (
         <p className="text-sm text-slate-400">불러오는 중...</p>
       ) : (
-        <div className="space-y-6">
+        <div className="flex gap-6 overflow-x-auto pb-2">
           {FACTIONS.map((faction) => (
-            <div key={faction} className="space-y-3">
+            <div key={faction} className="flex flex-col items-center gap-3">
               <h3 className="text-sm font-semibold text-slate-700">{faction} 계열</h3>
-              <div className="border border-slate-200 rounded-xl p-6 bg-white overflow-x-auto">
-                <div className="min-w-160">
-                  <SkillTreeGrid
-                    nodes={nodesByFaction[faction]}
-                    getLabel={(n) => n.default_name}
-                    isHighlighted={(n) => editing?.id === n.id}
-                    onNodeClick={startEdit}
-                  />
-                </div>
+              <div className="rounded-xl border border-slate-200 bg-white p-4">
+                <SkillTreeGrid
+                  nodes={nodesByFaction[faction]}
+                  getLabel={(n) => n.default_name}
+                  isHighlighted={(n) => editing?.id === n.id}
+                  onNodeClick={startEdit}
+                />
               </div>
             </div>
           ))}

@@ -554,6 +554,7 @@ class CharacterSkillTreeRead(BaseModel):
     faction: Faction
     character_ap: int
     ap_cost_to_unlock: int
+    latest_unlocked_node_id: int | None = None
     nodes: list[CharacterSkillNodeRead]
 
 

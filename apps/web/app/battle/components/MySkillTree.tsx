@@ -104,8 +104,8 @@ export default function MySkillTree({ characterId }: Props) {
       {loading ? (
         <p className="text-sm text-slate-400">불러오는 중...</p>
       ) : tree ? (
-        <div className="border border-slate-200 rounded-xl p-6 bg-white overflow-x-auto">
-          <div className="min-w-160">
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-4">
+          <div className="w-fit">
             <SkillTreeGrid
               nodes={tree.nodes}
               getLabel={(n) => n.display_name}
