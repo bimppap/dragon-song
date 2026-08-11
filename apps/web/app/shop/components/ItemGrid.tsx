@@ -129,11 +129,21 @@ export default function ItemGrid({
   const effectsColDef: ColDef<Item>[] = showEffects ? [
     {
       headerName: "종류",
-      width: 90,
+      width: 96,
+      minWidth: 96,
       sortable: false,
       filter: false,
+      cellStyle: {
+        display: "flex",
+        alignItems: "center",
+        overflow: "visible",
+        textOverflow: "clip",
+      },
       cellRenderer: (p: ICellRendererParams<Item>) => (
-        <Badge variant={p.data!.item_type === "equipment" ? "secondary" : "outline"}>
+        <Badge
+          variant={p.data!.item_type === "equipment" ? "secondary" : "outline"}
+          className="whitespace-nowrap"
+        >
           {p.data!.item_type === "equipment" ? "장착형" : "소모형"}
         </Badge>
       ),

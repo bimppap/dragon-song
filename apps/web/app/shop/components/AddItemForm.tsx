@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import EffectListEditor from "@/components/common/EffectListEditor";
+import { useDialog } from "@/components/common/DialogProvider";
 import {
   Select,
   SelectContent,
@@ -74,6 +75,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
 }
 
 export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: Props) {
+  const { alert } = useDialog();
   const [form, setForm] = useState<ItemCreate>(() => toItemForm(item));
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(false);
@@ -102,7 +104,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.price_gold && !form.price_cp) {
-      alert("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.");
+      await alert("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.");
       return;
     }
 
@@ -110,15 +112,15 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
     try {
       if (editingItemId != null) {
         await updateItem(editingItemId, form);
-        alert("아이템이 수정되었습니다.");
+        await alert("아이템이 수정되었습니다.");
       } else {
         await createItem(form);
-        alert("아이템이 생성되었습니다.");
+        await alert("아이템이 생성되었습니다.");
         setForm(createEmptyItemForm());
       }
       onSubmitted();
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : isEditMode ? "수정 실패" : "생성 실패");
+      await alert(err instanceof Error ? err.message : isEditMode ? "수정 실패" : "생성 실패");
     } finally {
       setLoading(false);
     }

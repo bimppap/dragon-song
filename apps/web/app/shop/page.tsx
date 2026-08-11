@@ -19,8 +19,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useRequireMember } from "@/lib/auth";
+import { useDialog } from "@/components/common/DialogProvider";
 
 function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
+  const { confirm, alert } = useDialog();
   const [cart, setCart] = useState<CartEntry[]>([]);
   const [cartLoading, setCartLoading] = useState(false);
 
@@ -60,21 +62,21 @@ function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
       // 구매 직후 바로 장착/사용할지 아이템별로 확인
       for (const { item } of cart) {
         if (item.item_type === "equipment") {
-          if (window.confirm(`'${item.name}'을(를) 지금 장착하시겠습니까?`)) {
+          if (await confirm({ title: "아이템 장착", description: `'${item.name}'을(를) 지금 장착하시겠습니까?` })) {
             try { await equipItem(characterId, item.id); }
-            catch (e) { alert(e instanceof Error ? e.message : "장착 실패"); }
+            catch (e) { await alert(e instanceof Error ? e.message : "장착 실패"); }
           }
         } else if (item.item_type === "consumable") {
-          if (window.confirm(`'${item.name}'을(를) 지금 사용하시겠습니까?`)) {
+          if (await confirm({ title: "아이템 사용", description: `'${item.name}'을(를) 지금 사용하시겠습니까?` })) {
             try { await useItem(characterId, item.id); }
-            catch (e) { alert(e instanceof Error ? e.message : "사용 실패"); }
+            catch (e) { await alert(e instanceof Error ? e.message : "사용 실패"); }
           }
         }
       }
       setCart([]);
       onPurchased();
     } catch (e) {
-      alert(e instanceof Error ? e.message : "구매 실패");
+      await alert(e instanceof Error ? e.message : "구매 실패");
     } finally {
       setCartLoading(false);
     }

@@ -23,6 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
+import { useDialog } from "@/components/common/DialogProvider";
 import CharacterOwnedSkills from "./CharacterOwnedSkills";
 
 const REWARD_TYPE_LABELS: Record<string, string> = {
@@ -295,6 +296,7 @@ function OwnedItemTile({
   onEquip: () => void;
   onUnequip: () => void;
 }) {
+  const { confirm } = useDialog();
   const isConsumable = item.item_type === "consumable";
   const remainingUses = item.quantity - item.used_quantity;
   const badgeCount = isConsumable ? remainingUses : item.quantity;
@@ -328,7 +330,7 @@ function OwnedItemTile({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => { if (window.confirm(`'${item.item_name}'을(를) 사용하시겠습니까?`)) onUse(); }}
+          onClick={async () => { if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse(); }}
           disabled={loading || remainingUses <= 0}
         >
           사용
@@ -341,7 +343,7 @@ function OwnedItemTile({
         <Button
           size="sm"
           variant="outline"
-          onClick={() => { if (window.confirm(`'${item.item_name}'을(를) 장착하시겠습니까?`)) onEquip(); }}
+          onClick={async () => { if (await confirm({ title: "아이템 장착", description: `'${item.item_name}'을(를) 장착하시겠습니까?` })) onEquip(); }}
           disabled={loading || item.quantity <= 0}
         >
           장착
