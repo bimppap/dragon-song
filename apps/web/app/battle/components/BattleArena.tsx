@@ -17,16 +17,41 @@ import { cn } from "@/lib/utils";
 import { fetchCharacters, type Character, type Enemy } from "@/lib/api";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
+const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
 
 interface Combatant {
   id: number;
   name: string;
   faction: string | null;
+  // 공격 계열
   atk: number;
+  atkP: number;
+  dmgP: number;
+  skillLv: number;
+  skillEffTrue: number;
+  skillEffFixed: number;
+  skillCost: number;
+  // 방어 계열
   def: number;
+  defP: number;
+  defEff: number;
+  dmgR: number;
+  // 치유 계열
+  healEff: number;
+  healEffP: number;
+  skillTarget: number;
+  overHeal: boolean;
+  // 자원 / 상태
   attn: number;
+  presence: number;
   hp: number;
   maxHp: number;
+  shield: number;
+  mp: number;
+  maxMp: number;
+  hpRegenTrue: number;
+  hpRegenFixed: number;
+  mpRegen: number;
   downed: boolean;
 }
 
@@ -42,7 +67,6 @@ interface Props {
   onExit: () => void;
 }
 
-/** 에너미 hp 배율을 결정하는 진영별 인원 보너스. */
 function enemyMaxHp(enemy: Enemy, party: Character[]): number {
   let hp = enemy.base_hp;
   for (const c of party) {
@@ -54,19 +78,42 @@ function enemyMaxHp(enemy: Enemy, party: Character[]): number {
 }
 
 function toCombatant(c: Character): Combatant {
-  const maxHp = Math.max(c.hp_max, c.hp, 1);
+  const maxHp = Math.max(Math.round(c.hp_max * (1 + c.hp_max_p)), c.hp, 1);
   return {
     id: c.id,
     name: c.name,
     faction: c.faction,
     atk: c.atk,
+    atkP: c.atk_p,
+    dmgP: c.dmg_p,
+    skillLv: c.skill_lv,
+    skillEffTrue: c.skill_eff_true,
+    skillEffFixed: c.skill_eff_fixed,
+    skillCost: c.skill_cost,
     def: c.def,
+    defP: c.def_p,
+    defEff: c.def_eff,
+    dmgR: c.dmg_r,
+    healEff: c.heal_eff,
+    healEffP: c.heal_eff_p,
+    skillTarget: Math.max(1, c.skill_target || 1),
+    overHeal: Boolean(c.over_heal),
     attn: c.attn,
-    hp: maxHp,
+    presence: c.presence,
+    hp: c.hp > 0 ? Math.min(c.hp, maxHp) : maxHp,
     maxHp,
+    shield: (c.sh || 0) + (c.start_sh || 0),
+    mp: Math.min(c.mp, c.mp_max),
+    maxMp: c.mp_max,
+    hpRegenTrue: c.hp_regen_true,
+    hpRegenFixed: c.hp_regen_fixed,
+    mpRegen: c.mp_regen,
     downed: false,
   };
 }
+
+const skillCoef = (c: Combatant) => 1 + c.skillLv * c.skillEffFixed;
+const effDef = (c: Combatant) => Math.round(c.def * (1 + c.defP) * c.defEff);
 
 function HpBar({ hp, max, color }: { hp: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, Math.max(0, (hp / max) * 100)) : 0;
@@ -76,7 +123,7 @@ function HpBar({ hp, max, color }: { hp: number; max: number; color: string }) {
         <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
       </div>
       <span className="font-num w-24 shrink-0 text-right text-xs text-slate-500">
-        {numberFormatter.format(Math.max(0, hp))} / {numberFormatter.format(max)}
+        {fmt(hp)} / {fmt(max)}
       </span>
     </div>
   );
@@ -87,10 +134,8 @@ export default function BattleArena({ enemy, onExit }: Props) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  // setup
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
-  // fight
   const [started, setStarted] = useState(false);
   const [combatants, setCombatants] = useState<Combatant[]>([]);
   const [enemyHp, setEnemyHp] = useState(0);
@@ -126,7 +171,9 @@ export default function BattleArena({ enemy, onExit }: Props) {
   }
 
   function defaultCharActions(list: Combatant[]): Record<number, CharAction> {
-    return Object.fromEntries(list.filter((c) => !c.downed).map((c) => [c.id, { kind: "attack", targetId: null } as CharAction]));
+    return Object.fromEntries(
+      list.filter((c) => !c.downed).map((c) => [c.id, { kind: "attack", targetId: null } as CharAction]),
+    );
   }
 
   function startBattle() {
@@ -152,39 +199,70 @@ export default function BattleArena({ enemy, onExit }: Props) {
     const next = combatants.map((c) => ({ ...c }));
     const byId = new Map(next.map((c) => [c.id, c]));
     const living = next.filter((c) => !c.downed);
-    const shields = new Map<number, number>();
+    const defending = new Set<number>();
 
-    // 1) 수비
+    // 0) 라운드 시작: 체력·마나 재생
     for (const c of living) {
-      if (charActions[c.id]?.kind === "defend") {
-        shields.set(c.id, c.def);
-        events.push(`🛡️ ${c.name} 수비 태세 (피해 ${c.def} 경감)`);
+      const hpHeal = c.hpRegenTrue + Math.round(c.maxHp * c.hpRegenFixed);
+      const mpHeal = c.mpRegen;
+      if (hpHeal > 0) c.hp = Math.min(c.maxHp, c.hp + hpHeal);
+      if (mpHeal > 0) c.mp = Math.min(c.maxMp, c.mp + mpHeal);
+      if (hpHeal > 0 || mpHeal > 0) {
+        events.push(`♻️ ${c.name} 재생 (+${fmt(hpHeal)} HP / +${fmt(mpHeal)} MP)`);
       }
     }
 
-    // 2) 캐릭터 공격 (개별 적용 · 입힌 피해와 에너미 남은 HP 로그)
+    // 1) 수비 태세
+    for (const c of living) {
+      if (charActions[c.id]?.kind === "defend") {
+        defending.add(c.id);
+        events.push(`🛡️ ${c.name} 수비 태세 (방어력 ${fmt(effDef(c))} 경감)`);
+      }
+    }
+
+    // 2) 캐릭터 공격
     let newEnemyHp = enemyHp;
     for (const c of living) {
       if (charActions[c.id]?.kind !== "attack") continue;
-      const dealt = Math.min(c.atk, newEnemyHp);
-      newEnemyHp = Math.max(0, newEnemyHp - c.atk);
+      const hasMana = c.mp >= c.skillCost;
+      const manaCoef = hasMana ? 1 : 0.5;
+      if (hasMana) c.mp -= c.skillCost;
+      const raw = (c.atk * (1 + c.atkP) + c.skillEffTrue) * (1 + c.dmgP) * skillCoef(c) * manaCoef;
+      const dmg = Math.max(0, Math.round(raw));
+      const dealt = Math.min(dmg, newEnemyHp);
+      newEnemyHp = Math.max(0, newEnemyHp - dmg);
       events.push(
-        `⚔️ ${c.name} 공격: ${numberFormatter.format(dealt)} 피해 · ${enemy.name} [${numberFormatter.format(newEnemyHp)}/${numberFormatter.format(enemyMax)}]`,
+        `⚔️ ${c.name} 공격: ${fmt(dealt)} 피해${hasMana ? "" : "(마나 부족·위력↓)"} · ${enemy.name} [${fmt(newEnemyHp)}/${fmt(enemyMax)}]`,
       );
       if (newEnemyHp <= 0) break;
     }
 
-    // 3) 치유 (누가 누구를 얼마나 · 대상 체력 변화 로그)
+    // 3) 치유
     for (const c of living) {
       const a = charActions[c.id];
-      if (a?.kind !== "heal" || a.targetId == null) continue;
-      const t = byId.get(a.targetId);
-      if (!t || t.downed) continue;
-      const before = t.hp;
-      t.hp = Math.min(t.maxHp, t.hp + c.atk);
-      events.push(
-        `💚 ${c.name} → ${t.name} ${numberFormatter.format(t.hp - before)} 치유 · ${t.name} [${numberFormatter.format(before)}→${numberFormatter.format(t.hp)}/${numberFormatter.format(t.maxHp)}]`,
-      );
+      if (a?.kind !== "heal") continue;
+      const hasMana = c.mp >= c.skillCost;
+      const manaCoef = hasMana ? 1 : 0.5;
+      if (hasMana) c.mp -= c.skillCost;
+      const heal = Math.max(0, Math.round((c.healEff + c.skillEffTrue) * (1 + c.healEffP) * skillCoef(c) * manaCoef));
+
+      // 대상: 지정 대상 + 체력 낮은 아군 (기술 대상 수만큼)
+      const chosen = a.targetId != null ? byId.get(a.targetId) : undefined;
+      const targets: Combatant[] = [];
+      if (chosen && !chosen.downed) targets.push(chosen);
+      const extras = next
+        .filter((t) => !t.downed && !targets.includes(t))
+        .sort((x, y) => x.hp / x.maxHp - y.hp / y.maxHp);
+      for (const t of extras) {
+        if (targets.length >= c.skillTarget) break;
+        targets.push(t);
+      }
+      for (const t of targets) {
+        const cap = t.overHeal ? Number.MAX_SAFE_INTEGER : t.maxHp;
+        const before = t.hp;
+        t.hp = Math.min(cap, t.hp + heal);
+        events.push(`💚 ${c.name} → ${t.name} ${fmt(t.hp - before)} 치유 · ${t.name} [${fmt(before)}→${fmt(t.hp)}/${fmt(t.maxHp)}]`);
+      }
     }
 
     // 4) 에너미 격파 판정
@@ -194,20 +272,26 @@ export default function BattleArena({ enemy, onExit }: Props) {
       return;
     }
 
-    // 5) 에너미 행동 (대상별 피해 · 남은 HP, 0이면 전투불능 로그 별도)
+    // 5) 에너미 행동
     if (enemyAction.kind === "attack") {
       const skill = attackSkills[enemyAction.skillIndex];
       if (skill) {
         const livingNow = next.filter((c) => !c.downed);
         const targets = skill.skill_type.startsWith("광역")
           ? livingNow
-          : [...livingNow].sort((a, b) => b.attn - a.attn).slice(0, Math.max(1, skill.target_count));
+          : [...livingNow]
+              .sort((a, b) => b.attn + b.presence - (a.attn + a.presence))
+              .slice(0, Math.max(1, skill.target_count));
         const base = Math.round((enemy.attack * skill.damage_percent) / 100);
         for (const t of targets) {
-          const dmg = Math.max(0, base - (shields.get(t.id) ?? 0));
+          let dmg = Math.round(base * (1 - t.dmgR));
+          if (defending.has(t.id)) dmg = Math.max(0, dmg - effDef(t));
+          const absorbed = Math.min(t.shield, dmg);
+          t.shield -= absorbed;
+          dmg -= absorbed;
           t.hp = Math.max(0, t.hp - dmg);
           events.push(
-            `🔥 ${enemy.name}의 ${skill.name} → ${t.name} ${numberFormatter.format(dmg)} 피해 · ${t.name} [${numberFormatter.format(t.hp)}/${numberFormatter.format(t.maxHp)}]`,
+            `🔥 ${enemy.name}의 ${skill.name} → ${t.name} ${fmt(dmg)} 피해${absorbed > 0 ? `(보호막 ${fmt(absorbed)} 흡수)` : ""} · ${t.name} [${fmt(t.hp)}/${fmt(t.maxHp)}]`,
           );
           if (t.hp === 0 && !t.downed) {
             t.downed = true;
@@ -261,7 +345,7 @@ export default function BattleArena({ enemy, onExit }: Props) {
             <h2 className="text-lg font-bold text-slate-800">{enemy.name} 전투 준비</h2>
           </div>
           <Badge variant="outline" className="font-num">
-            에너미 예상 HP {numberFormatter.format(previewEnemyHp)}
+            에너미 예상 HP {fmt(previewEnemyHp)}
           </Badge>
         </div>
 
@@ -294,7 +378,7 @@ export default function BattleArena({ enemy, onExit }: Props) {
                     <div className="font-num mt-0.5 flex gap-3 text-xs text-slate-500">
                       <span>공 {c.atk}</span>
                       <span>방 {c.def}</span>
-                      <span>HP {Math.max(c.hp_max, c.hp, 1)}</span>
+                      <span>HP {Math.max(Math.round(c.hp_max * (1 + c.hp_max_p)), c.hp, 1)}</span>
                     </div>
                   </div>
                 </label>
@@ -376,11 +460,15 @@ export default function BattleArena({ enemy, onExit }: Props) {
               )}
             >
               <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-slate-800">{c.name}</span>
                   {c.faction && <Badge variant="secondary" className="text-[10px]">{c.faction}</Badge>}
                   {c.downed && <Badge variant="destructive" className="text-[10px]">전투불능</Badge>}
-                  <span className="font-num text-xs text-slate-400">공 {c.atk} · 방 {c.def} · 주목 {c.attn}</span>
+                  <span className="font-num text-xs text-slate-400">
+                    공 {c.atk} · 방 {c.def} · 주목 {c.attn}
+                    {c.maxMp > 0 && ` · 마나 ${fmt(c.mp)}/${fmt(c.maxMp)}`}
+                    {c.shield > 0 && ` · 보호막 ${fmt(c.shield)}`}
+                  </span>
                 </div>
               </div>
               <div className="mt-2">
