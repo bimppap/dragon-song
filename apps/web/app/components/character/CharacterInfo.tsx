@@ -491,9 +491,9 @@ export default function CharacterInfo({
       ) : (
         <>
           <Card>
-            <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row">
-              {/* 명함 좌측: 캐릭터 이미지 자리 */}
-              <div className="flex aspect-3/4 w-full shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 sm:aspect-auto sm:w-40 sm:self-stretch">
+            <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row sm:items-start">
+              {/* 명함 좌측: 캐릭터 이미지 자리 (상세정보 펼침과 무관하게 고정 크기) */}
+              <div className="flex aspect-3/4 w-full shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 sm:w-40">
                 <div className="flex flex-col items-center gap-1 text-slate-300">
                   <ImageIcon size={30} />
                   <span className="text-xs font-medium">이미지</span>
