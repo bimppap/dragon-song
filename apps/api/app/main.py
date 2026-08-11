@@ -377,7 +377,7 @@ def update_skill_node(
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return crud.update_skill_node(db, node_id, data.default_name)
+    return crud.update_skill_node(db, node_id, data)
 
 
 @app.get("/characters/{character_id}/skills", response_model=CharacterSkillTreeRead)
@@ -399,6 +399,16 @@ def unlock_character_skill(
 ):
     _require_own_character_or_admin(db, member, character_id)
     return crud.unlock_character_skill_node(db, character_id, node_id)
+
+
+@app.post("/characters/{character_id}/skills/reset", response_model=CharacterSkillTreeRead)
+def reset_character_skills(
+    character_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.reset_character_skills(db, character_id)
 
 
 @app.put("/characters/{character_id}/skills/{node_id}/name", response_model=CharacterSkillTreeRead)

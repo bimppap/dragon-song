@@ -119,6 +119,16 @@ def ensure_schema(engine: Engine) -> None:
         if "reward_items" not in challenge_columns:
             statements.append("ALTER TABLE challenges ADD COLUMN reward_items JSON")
 
+    if "skill_nodes" in table_names:
+        skill_node_columns = {col["name"] for col in inspector.get_columns("skill_nodes")}
+        if "effects" not in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN effects JSON NOT NULL DEFAULT '[]'")
+
+    if "character_skill_unlocks" in table_names:
+        unlock_columns = {col["name"] for col in inspector.get_columns("character_skill_unlocks")}
+        if "ap_spent" not in unlock_columns:
+            statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN ap_spent INTEGER NOT NULL DEFAULT 0")
+
     if not statements:
         return
 

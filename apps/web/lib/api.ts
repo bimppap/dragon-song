@@ -96,7 +96,8 @@ export type ItemEffectStat =
   | "sh" | "dmg_p" | "dmg_r"
   | "skill_lv" | "skill_eff_true" | "skill_eff_fixed"
   | "skill_cost" | "skill_target"
-  | "start_sh" | "revive_hp" | "act_time";
+  | "start_sh" | "revive_hp" | "act_time"
+  | "ap_reset";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -137,7 +138,21 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "start_sh", label: "시작 보호막" },
   { value: "revive_hp", label: "부활 후 체력" },
   { value: "act_time", label: "행동횟수" },
+  { value: "ap_reset", label: "AP 초기화(기술 리셋)" },
 ];
+
+/** ItemEffectStat → 한글 라벨 조회 맵. */
+export const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
+  ITEM_EFFECT_STAT_OPTIONS.map((option) => [option.value, option.label]),
+);
+
+/** 효과 하나를 "라벨 +N" 형태의 문자열로 표현한다. */
+export function formatEffect(effect: ItemEffect): string {
+  const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
+  if (effect.stat === "ap_reset") return label;
+  const sign = effect.delta >= 0 ? "+" : "";
+  return `${label} ${sign}${effect.delta}`;
+}
 
 export interface ItemEffect {
   stat: ItemEffectStat;
@@ -656,6 +671,7 @@ export interface SkillNode {
   tier: number;
   tier_label: string;
   default_name: string;
+  effects: ItemEffect[];
 }
 
 export interface CharacterSkillNode extends SkillNode {
@@ -675,11 +691,14 @@ export async function fetchSkillNodes(faction: Faction): Promise<SkillNode[]> {
   return request<SkillNode[]>(`/skills?faction=${encodeURIComponent(faction)}`, undefined, "기술트리 조회 실패");
 }
 
-export async function updateSkillNode(nodeId: number, defaultName: string): Promise<SkillNode> {
+export async function updateSkillNode(
+  nodeId: number,
+  data: { default_name: string; effects: ItemEffect[] },
+): Promise<SkillNode> {
   return request<SkillNode>(`/skills/${nodeId}`, {
     method: "PUT",
-    body: JSON.stringify({ default_name: defaultName }),
-  }, "기술 이름 수정 실패");
+    body: JSON.stringify(data),
+  }, "기술 수정 실패");
 }
 
 export async function fetchCharacterSkillTree(characterId: number): Promise<CharacterSkillTree> {
@@ -701,4 +720,10 @@ export async function renameCharacterSkill(
     method: "PUT",
     body: JSON.stringify({ custom_name: customName }),
   }, "기술 이름 설정 실패");
+}
+
+export async function resetCharacterSkills(characterId: number): Promise<CharacterSkillTree> {
+  return request<CharacterSkillTree>(`/characters/${characterId}/skills/reset`, {
+    method: "POST",
+  }, "기술 초기화 실패");
 }

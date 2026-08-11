@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, PlusCircle, X } from "lucide-react";
-import { createItem, fetchChapters, updateItem, ITEM_EFFECT_STAT_OPTIONS } from "@/lib/api";
-import type { Chapter, Item, ItemCreate, ItemEffect, ItemType } from "@/lib/api";
+import { PlusCircle } from "lucide-react";
+import { createItem, fetchChapters, updateItem } from "@/lib/api";
+import type { Chapter, Item, ItemCreate, ItemType } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import EffectListEditor from "@/components/common/EffectListEditor";
 import {
   Select,
   SelectContent,
@@ -95,27 +96,6 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
         name === "purchase_limit_global"
           ? value === "" ? null : Number(value)
           : value,
-    }));
-  }
-
-  function handleAddEffect() {
-    setForm((prev) => ({
-      ...prev,
-      effects: [...prev.effects, { stat: ITEM_EFFECT_STAT_OPTIONS[0].value, delta: 0 }],
-    }));
-  }
-
-  function handleUpdateEffect(index: number, patch: Partial<ItemEffect>) {
-    setForm((prev) => ({
-      ...prev,
-      effects: prev.effects.map((effect, i) => (i === index ? { ...effect, ...patch } : effect)),
-    }));
-  }
-
-  function handleRemoveEffect(index: number) {
-    setForm((prev) => ({
-      ...prev,
-      effects: prev.effects.filter((_, i) => i !== index),
     }));
   }
 
@@ -234,58 +214,11 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
         </div>
       </Field>
 
-      <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">효과</label>
-          <Button type="button" variant="outline" onClick={handleAddEffect} className="h-7 px-3 text-xs">
-            <Plus size={12} />
-            효과 추가
-          </Button>
-        </div>
-        {form.effects.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {form.effects.map((effect, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <Select
-                  value={effect.stat}
-                  onValueChange={(value) => handleUpdateEffect(index, { stat: value as ItemEffect["stat"] })}
-                >
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="능력치 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {ITEM_EFFECT_STAT_OPTIONS.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                          {option.label}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-                <Input
-                  type="number"
-                  step="any"
-                  value={effect.delta}
-                  onChange={(e) => handleUpdateEffect(index, { delta: Number(e.target.value) })}
-                  placeholder="변동값 (+/-)"
-                  className="w-32"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => handleRemoveEffect(index)}
-                  className="h-8 px-2 text-slate-400 hover:text-red-500"
-                >
-                  <X size={14} />
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-slate-400">효과 없음</p>
-        )}
-      </div>
+      <EffectListEditor
+        effects={form.effects}
+        onChange={(effects) => setForm((prev) => ({ ...prev, effects }))}
+        allowSpecialStats
+      />
 
       <div className="grid grid-cols-2 gap-4">
         <Field label="캐릭터별 구매 한도">

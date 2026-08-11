@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Users, Store, CalendarCheck, Swords, Trophy, ScrollText, Settings, LogIn, LogOut } from "lucide-react";
+import { Users, Store, CalendarCheck, Swords, Sparkles, Trophy, ScrollText, Settings, LogIn, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { fetchActiveChapter, type Chapter } from "@/lib/api";
@@ -17,6 +17,7 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: 
   { href: "/missions", label: "임무", icon: ScrollText, roles: ["RUNNER", "ADMIN"] },
   { href: "/attendance", label: "출석부", icon: CalendarCheck, roles: ["ADMIN"] },
   { href: "/battle", label: "전투", icon: Swords, roles: ["ADMIN"] },
+  { href: "/battle", label: "기술", icon: Sparkles, roles: ["RUNNER"] },
   { href: "/admin", label: "관리", icon: Settings, roles: ["ADMIN"] },
 ];
 

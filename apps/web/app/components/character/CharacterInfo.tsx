@@ -22,7 +22,7 @@ import {
   Zap,
 } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
-import CharacterSkillTreeCard from "./CharacterSkillTree";
+import CharacterOwnedSkills from "./CharacterOwnedSkills";
 
 const REWARD_TYPE_LABELS: Record<string, string> = {
   attendance: "출석",
@@ -650,10 +650,9 @@ export default function CharacterInfo({
             )}
           </Card>
 
-          <CharacterSkillTreeCard
+          <CharacterOwnedSkills
             characterId={selectedDetail.id}
             faction={selectedDetail.faction}
-            canManage
           />
 
           <div className="grid gap-6 xl:grid-cols-2">

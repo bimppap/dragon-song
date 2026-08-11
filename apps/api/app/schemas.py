@@ -20,6 +20,9 @@ ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
     "skill_cost": int, "skill_target": int,
     "start_sh": int, "revive_hp": float, "act_time": int,
 }
+# 특수 효과: 캐릭터 능력치가 아니라 별도 동작을 트리거한다(값 무시).
+# "ap_reset": 소모 시 기술을 전부 기본으로 되돌리고 소모한 AP를 환급한다.
+ITEM_EFFECT_SPECIAL_STATS = {"ap_reset"}
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap",
     "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
@@ -31,6 +34,7 @@ ItemEffectStat = Literal[
     "skill_lv", "skill_eff_true", "skill_eff_fixed",
     "skill_cost", "skill_target",
     "start_sh", "revive_hp", "act_time",
+    "ap_reset",
 ]
 ItemType = Literal["consumable", "equipment"]
 
@@ -525,12 +529,19 @@ class SkillNodeRead(BaseModel):
     tier: int
     tier_label: str
     default_name: str
+    effects: list[ItemEffect] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
+
+    @field_validator("effects", mode="before")
+    @classmethod
+    def coerce_effects(cls, v: object) -> list:
+        return v if v is not None else []
 
 
 class SkillNodeUpdate(BaseModel):
     default_name: str = Field(min_length=1, max_length=50)
+    effects: list[ItemEffect] = Field(default_factory=list)
 
 
 class CharacterSkillNodeRead(SkillNodeRead):

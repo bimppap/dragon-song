@@ -1,32 +1,40 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { Swords, Sparkles, Skull } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { useRequireAdmin } from "@/lib/auth";
+import { useRequireMember } from "@/lib/auth";
+import type { Member } from "@/lib/api";
 import BattleTab from "./components/BattleTab";
 import SkillTab from "./components/SkillTab";
 import EnemyTab from "./components/EnemyTab";
 
 type Tab = "battle" | "skill" | "enemy";
 
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "battle", label: "전투", icon: Swords },
-  { id: "skill", label: "기술", icon: Sparkles },
-  { id: "enemy", label: "에너미", icon: Skull },
+const TABS: { id: Tab; label: string; icon: React.ElementType; adminOnly: boolean }[] = [
+  { id: "battle", label: "전투", icon: Swords, adminOnly: true },
+  { id: "skill", label: "기술", icon: Sparkles, adminOnly: false },
+  { id: "enemy", label: "에너미", icon: Skull, adminOnly: true },
 ];
 
-export default function BattlePage() {
-  const member = useRequireAdmin();
-  const [tab, setTab] = useState<Tab>("battle");
+function BattleConsole({ member }: { member: Member }) {
+  const isAdmin = member.role === "ADMIN";
+  const visibleTabs = TABS.filter((tab) => isAdmin || !tab.adminOnly);
 
-  if (!member) return null;
+  const searchParams = useSearchParams();
+  const requestedTab = searchParams.get("tab") as Tab | null;
+  const initialTab =
+    requestedTab && visibleTabs.some((tab) => tab.id === requestedTab)
+      ? requestedTab
+      : visibleTabs[0].id;
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   return (
     <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">
       <div className="flex items-center gap-1 border-b border-slate-200">
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {visibleTabs.map(({ id, label, icon: Icon }) => (
           <Button
             key={id}
             variant="ghost"
@@ -46,9 +54,21 @@ export default function BattlePage() {
 
       <div>
         {tab === "battle" && <BattleTab />}
-        {tab === "skill" && <SkillTab />}
+        {tab === "skill" && <SkillTab member={member} />}
         {tab === "enemy" && <EnemyTab />}
       </div>
     </main>
+  );
+}
+
+export default function BattlePage() {
+  const member = useRequireMember();
+
+  if (!member) return null;
+
+  return (
+    <Suspense>
+      <BattleConsole member={member} />
+    </Suspense>
   );
 }

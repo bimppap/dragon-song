@@ -177,6 +177,7 @@ class SkillNode(Base):
     col: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0,1 (tier 0,1은 None)
     tier: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=기본, 1=계열선택, 2~5=I~IV
     default_name: Mapped[str] = mapped_column(String, nullable=False)
+    effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -194,6 +195,8 @@ class CharacterSkillUnlock(Base):
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
     node_id: Mapped[int] = mapped_column(Integer, ForeignKey("skill_nodes.id"), nullable=False, index=True)
     custom_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 강화(unlock)에 실제로 소모한 AP. AP 초기화 아이템으로 리셋할 때 정확히 환급하기 위해 저장한다.
+    ap_spent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     unlocked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

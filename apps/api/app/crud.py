@@ -4,7 +4,6 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import hash_password, verify_password
-from app.game_data import get_level_grade_stats
 from app.game_data import SKILL_TREE_MOCK, get_level_grade_stats
 from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward, SkillNode
 from app.schemas import (
@@ -42,6 +41,7 @@ from app.schemas import (
     RewardRead,
     SignupRequest,
     SkillNodeRead,
+    SkillNodeUpdate,
 )
 
 
@@ -486,8 +486,11 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
 def _apply_item_effects(character: Character, effects: list[dict], sign: int) -> None:
     for effect in effects:
         stat = effect["stat"]
+        # 능력치가 아닌 특수 효과(ap_reset 등)는 여기서 다루지 않는다.
+        if stat not in ITEM_EFFECT_STAT_TYPES:
+            continue
         attr = "def_" if stat == "def" else stat
-        value_type = ITEM_EFFECT_STAT_TYPES.get(stat, float)
+        value_type = ITEM_EFFECT_STAT_TYPES[stat]
         delta = effect["delta"] * sign
         current = getattr(character, attr)
         next_value = int(round(current + delta)) if value_type is int else float(current + delta)
@@ -523,6 +526,9 @@ def use_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRea
         raise HTTPException(status_code=400, detail="사용 가능한 수량이 없습니다.")
 
     _apply_item_effects(character, item.effects or [], sign=1)
+    # 특수 효과: AP 초기화(기술 리셋). 능력치 효과와 별개로 처리한다.
+    if any(effect.get("stat") == "ap_reset" for effect in (item.effects or [])):
+        _reset_character_skills(db, character)
     state.used_quantity += 1
     db.commit()
     return get_character_detail(db, character_id)
@@ -1320,6 +1326,7 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         tier=node.tier,
         tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
         default_name=node.default_name,
+        effects=node.effects or [],
     )
 
 
@@ -1355,11 +1362,12 @@ def get_skill_nodes(db: Session, faction: str) -> list[SkillNodeRead]:
     return [_to_skill_node_read(n) for n in nodes]
 
 
-def update_skill_node(db: Session, node_id: int, default_name: str) -> SkillNodeRead:
+def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> SkillNodeRead:
     node = db.get(SkillNode, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
-    node.default_name = default_name.strip()
+    node.default_name = data.default_name.strip()
+    node.effects = [effect.model_dump() for effect in data.effects]
     db.commit()
     db.refresh(node)
     return _to_skill_node_read(node)
@@ -1425,6 +1433,7 @@ def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTr
                 tier=node.tier,
                 tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
                 default_name=node.default_name,
+                effects=node.effects or [],
                 unlocked=unlock is not None,
                 custom_name=unlock.custom_name if unlock else None,
                 display_name=(unlock.custom_name if unlock and unlock.custom_name else node.default_name),
@@ -1502,9 +1511,39 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
         raise HTTPException(status_code=400, detail=f"AP가 부족합니다. (필요: {cost})")
 
     character.ap -= cost
-    db.add(CharacterSkillUnlock(character_id=character.id, node_id=node.id))
+    _apply_item_effects(character, node.effects or [], sign=1)
+    db.add(CharacterSkillUnlock(character_id=character.id, node_id=node.id, ap_spent=cost))
     db.commit()
 
+    return get_character_skill_tree(db, character.id)
+
+
+def _reset_character_skills(db: Session, character: Character) -> None:
+    """기술을 기본(tier 0)으로 되돌리고, 강화 효과를 되돌리며, 소모한 AP를 전부 환급한다.
+
+    db.commit()은 호출자가 담당한다.
+    """
+    rows = (
+        db.query(CharacterSkillUnlock, SkillNode)
+        .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
+        .filter(
+            CharacterSkillUnlock.character_id == character.id,
+            SkillNode.tier != 0,
+        )
+        .all()
+    )
+    for unlock, node in rows:
+        _apply_item_effects(character, node.effects or [], sign=-1)
+        character.ap += unlock.ap_spent
+        db.delete(unlock)
+
+
+def reset_character_skills(db: Session, character_id: int) -> CharacterSkillTreeRead:
+    character = _get_character_or_404(db, character_id)
+    if not character.faction:
+        raise HTTPException(status_code=400, detail="진영이 설정되지 않은 캐릭터입니다.")
+    _reset_character_skills(db, character)
+    db.commit()
     return get_character_skill_tree(db, character.id)
 
 
