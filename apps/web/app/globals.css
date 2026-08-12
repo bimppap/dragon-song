@@ -81,3 +81,21 @@
     display: none;
   }
 }
+
+/*
+  ag-grid는 런타임에 자체(레이어 밖) 스타일을 주입해 테마 폰트를 강제한다.
+  이를 이기려면 레이어 밖 + !important로 픽셀 폰트를 덮어써야 한다.
+  (셀 내부의 .font-num/.font-pixel-sm 스팬은 자식이라 자기 폰트를 유지한다.)
+*/
+.ag-theme-quartz,
+.ag-theme-quartz-dark {
+  --ag-font-family: "Galmuri11", "Courier New", monospace;
+}
+.ag-root-wrapper,
+.ag-root-wrapper .ag-header-cell-text,
+.ag-root-wrapper .ag-cell,
+.ag-root-wrapper input,
+.ag-root-wrapper .ag-picker-field-display,
+.ag-root-wrapper .ag-list-item {
+  font-family: "Galmuri11", "Courier New", monospace !important;
+}
