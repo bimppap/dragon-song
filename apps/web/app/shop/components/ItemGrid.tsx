@@ -201,7 +201,7 @@ export default function ItemGrid({
       filter: false,
       cellRenderer: () => (
         <div className="flex items-center justify-center h-full">
-          <Package size={18} className="text-indigo-400" />
+          <Package size={18} className="text-amber-400" />
         </div>
       ),
     },

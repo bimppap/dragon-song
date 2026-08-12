@@ -7,7 +7,7 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default:     "bg-indigo-600 text-white",
+        default:     "bg-amber-600 text-white",
         secondary:   "bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200",
         destructive: "bg-red-50 text-red-600",
         success:     "bg-green-50 text-green-700",

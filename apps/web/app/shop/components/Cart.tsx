@@ -33,7 +33,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
     <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 lg:w-72">
       {/* 헤더 */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-        <ShoppingCart size={16} className="text-indigo-500" />
+        <ShoppingCart size={16} className="text-amber-500" />
         <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">장바구니</span>
         <span className="font-num ml-auto text-xs text-slate-400 dark:text-slate-500 font-medium">{totalQty}개</span>
       </div>
@@ -89,7 +89,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
       <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-4 space-y-3 bg-slate-50 dark:bg-slate-800/60">
         <div className="flex items-center justify-between">
           <span className="text-sm text-slate-500 dark:text-slate-400">총 금액</span>
-          <span className="font-num text-base font-bold text-indigo-600">
+          <span className="font-num text-base font-bold text-amber-600">
             {formatPrice(totalGold, totalCp)}
           </span>
         </div>

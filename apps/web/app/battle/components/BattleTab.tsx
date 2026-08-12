@@ -22,7 +22,7 @@ const BATTLE_FORMULAS: { label: string; icon: React.ElementType; accent: string;
   {
     label: "수비",
     icon: Shield,
-    accent: "text-indigo-500",
+    accent: "text-amber-500",
     formula:
       "받는 피해 = max(0, 에너미 피해 × (1 − 피해 감소) − 방어력 × (1 + 방어력 증폭) × 방어 효율), 남은 피해는 보호막(보호막 + 시작 보호막)이 먼저 흡수",
   },
@@ -119,7 +119,7 @@ function BattleList({ enemies, loading, error, numberFormatter, onStart }: Battl
           {enemies.map((enemy) => (
             <div
               key={enemy.id}
-              className="space-y-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 transition hover:border-indigo-300 hover:shadow-sm"
+              className="space-y-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 transition hover:border-amber-300 hover:shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">

@@ -45,8 +45,14 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto max-w-sm px-4 py-12 sm:px-6 sm:py-20">
-      <Card>
+    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-8 px-4 py-10 sm:px-6">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src="/dragonsong_title.png"
+        alt="Dragon Song"
+        className="w-full max-w-md [image-rendering:pixelated]"
+      />
+      <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>로그인</CardTitle>
           <CardDescription>아이디와 비밀번호를 입력해 주세요.</CardDescription>
@@ -79,7 +85,7 @@ export default function LoginPage() {
 
           <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
             계정이 없으신가요?{" "}
-            <Link href="/signup" className="font-semibold text-indigo-600 hover:underline">
+            <Link href="/signup" className="font-semibold text-amber-600 hover:underline">
               회원가입
             </Link>
           </p>

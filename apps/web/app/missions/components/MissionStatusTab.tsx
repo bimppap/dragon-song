@@ -256,7 +256,7 @@ export default function MissionStatusTab() {
                     className={cn(
                       "rounded-2xl border px-4 py-4 text-left transition-colors",
                       selectedMission?.id === mission.id
-                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                        ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40"
                         : "border-slate-200 dark:border-slate-700 hover:border-slate-300 hover:bg-slate-50",
                     )}
                   >
@@ -302,7 +302,7 @@ export default function MissionStatusTab() {
             <CardContent className="flex flex-col gap-4">
               <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 px-4 py-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <Target size={15} className="text-indigo-500" />
+                  <Target size={15} className="text-amber-500" />
                   완료 {achievedCount} / {activeProgress.length}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">

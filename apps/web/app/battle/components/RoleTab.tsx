@@ -68,13 +68,13 @@ export default function RoleTab() {
             key={id}
             className={`border rounded-xl p-5 bg-white dark:bg-slate-900 space-y-4 transition ${
               active
-                ? "border-indigo-400 ring-2 ring-indigo-100 shadow-sm"
+                ? "border-amber-400 ring-2 ring-amber-100 shadow-sm"
                 : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
             }`}
           >
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${active ? "bg-indigo-100" : "bg-slate-100 dark:bg-slate-800"}`}>
-                <Icon size={20} className={active ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"} />
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${active ? "bg-amber-100" : "bg-slate-100 dark:bg-slate-800"}`}>
+                <Icon size={20} className={active ? "text-amber-600" : "text-slate-400 dark:text-slate-500"} />
               </div>
               <div className="flex-1">
                 <p className="font-bold text-slate-800 dark:text-slate-100">{name}</p>

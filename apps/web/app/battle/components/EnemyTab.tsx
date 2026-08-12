@@ -95,10 +95,10 @@ function toPayload(form: EnemyFormState): EnemyCreate {
 
 const SKILL_TYPE_COLOR: Record<SkillType, string> = {
   "지정 공격A": "bg-blue-100 text-blue-700",
-  "지정 공격B": "bg-indigo-100 text-indigo-700",
+  "지정 공격B": "bg-amber-100 text-amber-700",
   "광역 공격A": "bg-orange-100 text-orange-700",
   "광역 공격B": "bg-red-100 text-red-700",
-  소환: "bg-purple-100 text-purple-700",
+  소환: "bg-amber-100 text-amber-700",
 };
 
 export default function EnemyTab() {

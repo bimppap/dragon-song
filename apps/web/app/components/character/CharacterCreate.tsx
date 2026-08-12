@@ -43,10 +43,10 @@ const STAT_CONFIG = [
   { name: "def",     label: "방어력",   icon: Shield,   color: "text-blue-500" },
   { name: "gold",    label: "골드",     icon: Coins,    color: "text-yellow-500" },
   { name: "cp",      label: "CP",       icon: Gem,      color: "text-cyan-500" },
-  { name: "ap",      label: "AP",       icon: Flame,    color: "text-indigo-500" },
+  { name: "ap",      label: "AP",       icon: Flame,    color: "text-amber-500" },
   { name: "lv",      label: "성장 등급", icon: Trophy,   color: "text-emerald-500" },
   { name: "rank",    label: "모험가 등급", icon: Trophy, color: "text-amber-500" },
-  { name: "exp",     label: "경험치",   icon: Sparkles, color: "text-violet-500" },
+  { name: "exp",     label: "경험치",   icon: Sparkles, color: "text-amber-500" },
 ] as const;
 
 interface Props {

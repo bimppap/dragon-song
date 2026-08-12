@@ -253,7 +253,7 @@ export default function AttendancePanel() {
           <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-3">
               <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
-                <CalendarDays size={16} className="text-indigo-600" />
+                <CalendarDays size={16} className="text-amber-600" />
                 {formatDateLabel(selectedDate)}
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -305,7 +305,7 @@ export default function AttendancePanel() {
                       "group relative aspect-square overflow-hidden rounded-xl border-2 transition-colors",
                       checked
                         ? "border-emerald-500 ring-2 ring-emerald-500/30"
-                        : "cursor-pointer border-slate-200 dark:border-slate-700 hover:border-indigo-400",
+                        : "cursor-pointer border-slate-200 dark:border-slate-700 hover:border-amber-400",
                     )}
                   >
                     {/* 캐릭터 이미지 */}

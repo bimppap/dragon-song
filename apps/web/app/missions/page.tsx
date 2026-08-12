@@ -49,7 +49,7 @@ function RunnerMissionList() {
     <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-2">
         <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          <ScrollText size={24} className="text-indigo-600" />
+          <ScrollText size={24} className="text-amber-600" />
           임무
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">현재 공개된 임무 목록입니다.</p>

@@ -48,12 +48,15 @@ export default function Header() {
     return pathname === href || (href !== "/" && pathname.startsWith(href));
   }
 
+  // 로그인/회원가입 등 진입 화면에서는 헤더를 숨긴다.
+  if (pathname === "/login" || pathname === "/signup") return null;
+
   return (
     <header className="sticky top-0 z-50 w-full border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
       <div className="mx-auto flex h-14 max-w-6xl items-center px-4 sm:px-6">
         {/* 로고 */}
         <div className="flex items-center gap-2 whitespace-nowrap">
-          <span className="select-none text-xs font-bold tracking-tight text-indigo-600">🐉 Dragon Song</span>
+          <span className="select-none text-xs font-bold tracking-tight text-amber-600">🐉 Dragon Song</span>
           {activeChapter !== undefined && (
             <span className="hidden rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-600 sm:inline">
               {activeChapter ? activeChapter.name : "준비 중..."}
@@ -69,7 +72,7 @@ export default function Header() {
               href={href}
               className={cn(
                 "flex items-center gap-2 whitespace-nowrap rounded-lg px-3 py-1.5 text-[13px] font-semibold transition-colors",
-                isActive(href) ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 hover:text-slate-900",
+                isActive(href) ? "bg-amber-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 hover:text-slate-900",
               )}
             >
               <Icon size={15} strokeWidth={isActive(href) ? 2.5 : 2} />
@@ -128,7 +131,7 @@ export default function Header() {
                 onClick={() => setMenuOpen(false)}
                 className={cn(
                   "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
-                  isActive(href) ? "bg-indigo-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 hover:text-slate-900",
+                  isActive(href) ? "bg-amber-600 text-white" : "text-slate-600 dark:text-slate-300 hover:bg-slate-100 hover:text-slate-900",
                 )}
               >
                 <Icon size={16} strokeWidth={isActive(href) ? 2.5 : 2} />

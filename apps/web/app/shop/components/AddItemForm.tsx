@@ -215,7 +215,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
               type="file"
               accept="image/*"
               onChange={handleImageChange}
-              className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+              className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-amber-600 hover:file:bg-amber-100"
             />
             <p className="text-xs text-slate-400 dark:text-slate-500">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
           </div>
@@ -229,7 +229,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
               key={option.value}
               className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors ${
                 form.item_type === option.value
-                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                  ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40"
                   : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
               }`}
             >

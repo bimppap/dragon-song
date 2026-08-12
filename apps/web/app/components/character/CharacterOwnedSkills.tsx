@@ -61,7 +61,7 @@ export default function CharacterOwnedSkills({ characterId, faction }: Props) {
             onClick={() => router.push("/battle?tab=skill")}
             className="flex w-16 cursor-pointer flex-col items-center gap-1.5 text-center"
           >
-            <span className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border-2 border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 transition-colors hover:bg-indigo-100">
+            <span className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-600 transition-colors hover:bg-amber-100">
               {latestSkill.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={latestSkill.image_url} alt="" className="size-full object-cover" />

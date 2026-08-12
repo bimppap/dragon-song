@@ -91,7 +91,7 @@ const CORE_STATS: {
   { key: "stat_courage", label: "용기", icon: Flame, accent: "text-red-500" },
   { key: "stat_endurance", label: "인내", icon: Shield, accent: "text-blue-500" },
   { key: "stat_charity", label: "자애", icon: HeartHandshake, accent: "text-pink-500" },
-  { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-indigo-500" },
+  { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-amber-500" },
 ];
 
 const RANK_GRADES = [
@@ -276,7 +276,7 @@ function ExperienceBar({
       <span className="inline-flex w-40 items-center">
         <span className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
           <span
-            className="block h-full rounded-full bg-violet-500 transition-all"
+            className="block h-full rounded-full bg-amber-500 transition-all"
             style={{ width: `${pct}%` }}
           />
         </span>
@@ -318,8 +318,8 @@ function OwnedItemTile({
       >
         <div
           className={cn(
-            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600",
-            item.equipped && "ring-2 ring-indigo-500",
+            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600",
+            item.equipped && "ring-2 ring-amber-500",
           )}
         >
           <Package size={22} />
@@ -593,7 +593,7 @@ export default function CharacterInfo({
                     max={getExperienceCap(selectedDetail.lv, selectedDetail.exp)}
                   />
                   <Badge variant="outline" className="gap-1 font-num">
-                    <Gauge size={12} className="text-indigo-500" />
+                    <Gauge size={12} className="text-amber-500" />
                     AP {numberFormatter.format(selectedDetail.ap)}
                   </Badge>
                   {selectedDetail.attendance_streak > 0 && (
@@ -760,7 +760,7 @@ export default function CharacterInfo({
                         <Badge variant="outline">{challenge.chapter}</Badge>
                       </div>
                       <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                        <Trophy size={14} className="text-indigo-500" />
+                        <Trophy size={14} className="text-amber-500" />
                         {challenge.reward}
                       </div>
                     </div>

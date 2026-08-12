@@ -29,7 +29,7 @@ export default function TabBar<T extends string>({ tabs, active, onChange, class
           className={cn(
             "-mb-px h-11 shrink-0 gap-2 whitespace-nowrap rounded-none border-b-2 px-4 font-semibold sm:px-5",
             active === id
-              ? "border-indigo-600 bg-transparent text-indigo-600 hover:bg-transparent hover:text-indigo-600"
+              ? "border-amber-600 bg-transparent text-amber-600 hover:bg-transparent hover:text-amber-600"
               : "border-transparent text-slate-500 dark:text-slate-400 hover:bg-transparent hover:text-slate-800",
           )}
         >

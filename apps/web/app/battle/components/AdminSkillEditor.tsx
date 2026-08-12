@@ -156,7 +156,7 @@ export default function AdminSkillEditor() {
                   type="file"
                   accept="image/*"
                   onChange={handleImageChange}
-                  className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+                  className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-amber-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-amber-600 hover:file:bg-amber-100"
                 />
                 <p className="text-xs text-slate-400 dark:text-slate-500">업로드 시 WebP로 변환되며(5MB 이하), 없으면 기본 아이콘이 표시됩니다.</p>
               </div>

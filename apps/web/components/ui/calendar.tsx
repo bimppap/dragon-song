@@ -32,9 +32,9 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         row: "flex w-full mt-2",
         cell: cn(
           "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
-          "[&:has([aria-selected])]:bg-indigo-50 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md",
+          "[&:has([aria-selected])]:bg-amber-50 first:[&:has([aria-selected])]:rounded-l-md last:[&:has([aria-selected])]:rounded-r-md",
           "[&:has([aria-selected].day-range-end)]:rounded-r-md",
-          "[&:has([aria-selected].day-outside)]:bg-indigo-50/50"
+          "[&:has([aria-selected].day-outside)]:bg-amber-50/50"
         ),
         day: cn(
           buttonVariants({ variant: "ghost" }),
@@ -43,13 +43,13 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         day_range_start: "day-range-start",
         day_range_end: "day-range-end",
         day_selected:
-          "bg-indigo-600 text-white hover:bg-indigo-600 hover:text-white focus:bg-indigo-600 focus:text-white rounded-md",
+          "bg-amber-600 text-white hover:bg-amber-600 hover:text-white focus:bg-amber-600 focus:text-white rounded-md",
         day_today: "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-semibold",
         day_outside:
-          "day-outside text-slate-300 aria-selected:bg-indigo-50/50 aria-selected:text-slate-400",
+          "day-outside text-slate-300 aria-selected:bg-amber-50/50 aria-selected:text-slate-400",
         day_disabled: "text-slate-300 opacity-50",
         day_range_middle:
-          "aria-selected:bg-indigo-50 aria-selected:text-slate-900",
+          "aria-selected:bg-amber-50 aria-selected:text-slate-900",
         day_hidden: "invisible",
         ...classNames,
       }}

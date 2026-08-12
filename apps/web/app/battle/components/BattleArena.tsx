@@ -367,7 +367,7 @@ export default function BattleArena({ enemy, onExit }: Props) {
                   key={c.id}
                   className={cn(
                     "flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors",
-                    checked ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40" : "border-slate-200 dark:border-slate-700 hover:border-slate-300",
+                    checked ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40" : "border-slate-200 dark:border-slate-700 hover:border-slate-300",
                   )}
                 >
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelect(c.id)} />

@@ -4,9 +4,9 @@ const BASE_STATS = [
   { label: "HP", icon: Heart, value: 1250, max: 2000, color: "bg-red-400", textColor: "text-red-500" },
   { label: "MP", icon: Star, value: 430, max: 600, color: "bg-blue-400", textColor: "text-blue-500" },
   { label: "공격력", icon: Zap, value: 184, max: 400, color: "bg-orange-400", textColor: "text-orange-500" },
-  { label: "방어력", icon: Shield, value: 97, max: 300, color: "bg-indigo-400", textColor: "text-indigo-500" },
+  { label: "방어력", icon: Shield, value: 97, max: 300, color: "bg-amber-400", textColor: "text-amber-500" },
   { label: "민첩성", icon: Wind, value: 145, max: 300, color: "bg-emerald-400", textColor: "text-emerald-500" },
-  { label: "명중률", icon: Eye, value: 88, max: 100, color: "bg-purple-400", textColor: "text-purple-500" },
+  { label: "명중률", icon: Eye, value: 88, max: 100, color: "bg-amber-400", textColor: "text-amber-500" },
 ];
 
 const ADDITIONAL_STATS = [

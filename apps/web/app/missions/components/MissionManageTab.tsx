@@ -173,7 +173,7 @@ export default function MissionManageTab() {
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
             <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-              <ScrollText size={16} className="text-indigo-500" />
+              <ScrollText size={16} className="text-amber-500" />
               등록된 임무 {missions.length}개
             </div>
             <Badge variant="secondary">관리 탭</Badge>

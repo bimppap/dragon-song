@@ -129,7 +129,7 @@ export default function CharacterOnboardingPage() {
                     className={cn(
                       "flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors",
                       faction === f.value
-                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                        ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40"
                         : "border-slate-200 dark:border-slate-700 hover:border-slate-300",
                     )}
                   >
@@ -146,7 +146,7 @@ export default function CharacterOnboardingPage() {
             <div className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-4">
               <div className="flex items-center justify-between">
                 <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
-                  <Sparkles size={12} className="text-indigo-500" />
+                  <Sparkles size={12} className="text-amber-500" />
                   AP 포인트 투자
                 </label>
                 <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">남은 포인트 {remainingPoints}</span>

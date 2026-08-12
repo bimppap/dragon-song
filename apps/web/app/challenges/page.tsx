@@ -81,7 +81,7 @@ function RunnerChallengeList() {
     <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-2">
         <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          <Trophy size={24} className="text-indigo-600" />
+          <Trophy size={24} className="text-amber-600" />
           도전과제
         </h1>
         <p className="text-sm text-slate-500 dark:text-slate-400">현재 공개된 도전과제 목록입니다.</p>
@@ -481,7 +481,7 @@ export function ChallengeAdmin() {
             <CardContent className="flex flex-col gap-4">
               <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
                 <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <Trophy size={16} className="text-indigo-500" />
+                  <Trophy size={16} className="text-amber-500" />
                   등록된 도전과제 {challenges.length}개
                 </div>
                 <Badge variant="secondary">관리 탭</Badge>
@@ -691,7 +691,7 @@ export function ChallengeAdmin() {
                       className={cn(
                         "rounded-2xl border px-4 py-4 text-left transition-colors",
                         selectedChallenge?.id === challenge.id
-                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                          ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40"
                           : "border-slate-200 dark:border-slate-700 hover:border-slate-300 hover:bg-slate-50",
                       )}
                     >
@@ -741,7 +741,7 @@ export function ChallengeAdmin() {
               <CardContent className="flex flex-col gap-4">
                 <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 px-4 py-4 md:flex-row md:items-center md:justify-between">
                   <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                    <Target size={15} className="text-indigo-500" />
+                    <Target size={15} className="text-amber-500" />
                     완료 {achievedCount} / {activeProgress.length}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">

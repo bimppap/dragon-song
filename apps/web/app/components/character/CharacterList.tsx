@@ -93,7 +93,7 @@ const colDefs: ColDef<Character>[] = [
     width: 100,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-indigo-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-amber-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
@@ -102,7 +102,7 @@ const colDefs: ColDef<Character>[] = [
     width: 120,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-violet-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-amber-600">{(p.value as number).toLocaleString()}</span>
     ),
   },
 ];

@@ -130,7 +130,7 @@ export default function MySkillTree({ characterId }: Props) {
                     <Badge variant="outline" className="text-[10px] text-slate-400 dark:text-slate-500">참고용</Badge>
                   )}
                 </div>
-                <div className={isOwn ? "rounded-xl border border-indigo-200 bg-white dark:bg-slate-900 p-4" : "rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 p-4"}>
+                <div className={isOwn ? "rounded-xl border border-amber-200 bg-white dark:bg-slate-900 p-4" : "rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 p-4"}>
                   {isOwn ? (
                     <SkillTreeGrid
                       nodes={tree.nodes}
@@ -150,8 +150,8 @@ export default function MySkillTree({ characterId }: Props) {
       )}
 
       {editingId !== null && (
-        <div className="flex flex-wrap items-center gap-2 border border-indigo-200 bg-indigo-50 dark:bg-indigo-950/40 rounded-xl p-4">
-          <Pencil size={15} className="text-indigo-500 shrink-0" />
+        <div className="flex flex-wrap items-center gap-2 border border-amber-200 bg-amber-50 dark:bg-amber-950/40 rounded-xl p-4">
+          <Pencil size={15} className="text-amber-500 shrink-0" />
           <Input
             value={editingName}
             onChange={(e) => setEditingName(e.target.value)}

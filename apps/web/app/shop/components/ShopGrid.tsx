@@ -39,7 +39,7 @@ function ItemImage({ url, className }: { url: string | null; className: string }
     return <img src={url} alt="" className={`${className} object-cover`} />;
   }
   return (
-    <div className={`${className} flex items-center justify-center bg-indigo-50 dark:bg-indigo-950/40 text-indigo-300`}>
+    <div className={`${className} flex items-center justify-center bg-amber-50 dark:bg-amber-950/40 text-amber-300`}>
       <Package size={26} />
     </div>
   );
@@ -90,7 +90,7 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
         const inCart = cartItemIds.has(item.id);
         return (
           <InfoTooltip key={item.id} side="top" content={<ItemTooltip item={item} />}>
-            <div className="flex cursor-default gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 transition hover:border-indigo-300 hover:shadow-sm">
+            <div className="flex cursor-default gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 transition hover:border-amber-300 hover:shadow-sm">
               <ItemImage url={item.image_url} className="size-16 shrink-0 rounded-lg" />
               <div className="flex min-w-0 flex-1 flex-col justify-between gap-1.5">
                 <div className="min-w-0">

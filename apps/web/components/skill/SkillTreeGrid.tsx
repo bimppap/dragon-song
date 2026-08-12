@@ -113,7 +113,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
             y1={line.parent.cy}
             x2={line.child.cx}
             y2={line.child.cy}
-            stroke={line.active ? "#4f46e5" : "#e2e8f0"}
+            stroke={line.active ? "#d97706" : "#e2e8f0"}
             strokeWidth={2}
           />
         ))}
@@ -152,9 +152,9 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 className={cn(
                   "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-white dark:bg-slate-900 transition-colors",
                   highlighted
-                    ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 shadow-[0_0_0_3px_rgba(79,70,229,0.18)]"
+                    ? "border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-600 shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
                     : "border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500",
-                  clickable && !highlighted ? "hover:border-indigo-400" : "",
+                  clickable && !highlighted ? "hover:border-amber-400" : "",
                 )}
               >
                 {node.image_url ? (
@@ -167,7 +167,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
               <span
                 className={cn(
                   "line-clamp-2 text-[10px] font-semibold leading-tight",
-                  highlighted ? "text-indigo-700" : "text-slate-600 dark:text-slate-300",
+                  highlighted ? "text-amber-700" : "text-slate-600 dark:text-slate-300",
                 )}
               >
                 {getLabel(node)}
