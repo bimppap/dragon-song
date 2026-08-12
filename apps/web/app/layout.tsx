@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import "galmuri/dist/galmuri.css";
 import "./globals.css";
 import Header from "./components/Header";
 import { AuthProvider } from "@/lib/auth";
