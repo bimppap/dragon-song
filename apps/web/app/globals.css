@@ -55,4 +55,13 @@
   .font-num {
     font-variant-numeric: tabular-nums;
   }
+
+  /* 스크롤 기능은 유지하되 스크롤바만 숨김 */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 }
