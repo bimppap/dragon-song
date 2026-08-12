@@ -1,4 +1,3 @@
-import re
 from datetime import date
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
@@ -146,8 +145,7 @@ async def upload_character_image(
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
 
     data = await file.read()
-    slug = re.sub(r"\s+", "_", character.name.strip())
-    result = await storage.upload_image_to_bucket(f"character/{character.id}_{slug}", data)
+    result = await storage.upload_image_to_bucket(storage.make_key("character", character.id, character.name), data)
 
     old_path = storage.public_url_to_path(character.image_url)
     if old_path and old_path != result["path"]:
@@ -208,8 +206,7 @@ async def upload_item_image(
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
 
     data = await file.read()
-    slug = re.sub(r"\s+", "_", item.name.strip())
-    result = await storage.upload_image_to_bucket(f"item/{item.id}_{slug}", data)
+    result = await storage.upload_image_to_bucket(storage.make_key("item", item.id, item.name), data)
 
     old_path = storage.public_url_to_path(item.image_url)
     if old_path and old_path != result["path"]:
@@ -471,8 +468,7 @@ async def upload_skill_image(
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
 
     data = await file.read()
-    slug = re.sub(r"\s+", "_", node.default_name.strip())
-    result = await storage.upload_image_to_bucket(f"skill/{node.id}_{slug}", data)
+    result = await storage.upload_image_to_bucket(storage.make_key("skill", node.id, node.default_name), data)
 
     old_path = storage.public_url_to_path(node.image_url)
     if old_path and old_path != result["path"]:

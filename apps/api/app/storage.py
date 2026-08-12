@@ -14,6 +14,7 @@
 
 import io
 import os
+import re
 
 import httpx
 from fastapi import HTTPException
@@ -108,6 +109,18 @@ async def upload_image_to_bucket(
 
     public_url = f"{base_url}/storage/v1/object/public/{bucket}/{key}"
     return {"path": key, "public_url": public_url}
+
+
+def make_key(prefix: str, entity_id: int, name: str) -> str:
+    """Supabase Storage 키를 만든다. (예: item/12_healing_potion)
+
+    Supabase 키는 ASCII 안전 문자만 허용하므로 한글 등 비ASCII는 제거하고,
+    공백은 _로 바꾼다. id를 접두로 붙여 고유성을 보장한다.
+    (한글 전용 이름이면 슬러그가 비어 prefix/{id} 형태가 된다.)
+    """
+    slug = re.sub(r"\s+", "_", (name or "").strip())
+    slug = re.sub(r"[^A-Za-z0-9._-]", "", slug).strip("._-")
+    return f"{prefix}/{entity_id}_{slug}" if slug else f"{prefix}/{entity_id}"
 
 
 def public_url_to_path(url: str | None) -> str | None:
