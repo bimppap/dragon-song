@@ -1,5 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { CalendarDays, Gift, Users } from "lucide-react";
@@ -17,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { fetchAttendance, fetchCharacters, payAttendanceRewards, saveAttendance } from "@/lib/api";
 import type { AttendanceRecord, Character } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import AlertBanner from "@/components/common/AlertBanner";
 
 const dateFormatter = new Intl.DateTimeFormat("ko-KR", {
   dateStyle: "full",

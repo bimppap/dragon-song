@@ -1,16 +1,16 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { List, User, UserPlus } from "lucide-react";
-import PageContainer from "@/components/common/PageContainer";
-import TabBar from "@/components/common/TabBar";
 import { useRequireMember } from "@/lib/auth";
 import CharacterList from "./components/character/CharacterList";
 import CharacterInfo from "./components/character/CharacterInfo";
 import CharacterCreate from "./components/character/CharacterCreate";
 import { fetchCharacters, fetchMyCharacter } from "@/lib/api";
 import type { Character } from "@/lib/api";
+import AlertBanner from "@/components/common/AlertBanner";
+import PageContainer from "@/components/common/PageContainer";
+import TabBar from "@/components/common/TabBar";
 
 type Tab = "list" | "info" | "create";
 

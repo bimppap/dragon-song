@@ -1,6 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
-import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -19,6 +17,8 @@ import {
 import { createEnemy, fetchChapters, fetchEnemies } from "@/lib/api";
 import type { Chapter, Enemy, EnemyCreate, EnemySkill } from "@/lib/api";
 import { cn, parsePositiveInt } from "@/lib/utils";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 const SKILL_TYPES = ["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환"] as const;
 type SkillType = (typeof SKILL_TYPES)[number];

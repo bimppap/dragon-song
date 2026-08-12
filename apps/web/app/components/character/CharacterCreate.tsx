@@ -1,5 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
 
 import { useState } from "react";
 import { Coins, Flame, Gem, Heart, Shield, Sparkles, Sword, Trophy, UserPlus, Zap } from "lucide-react";
@@ -7,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createCharacter } from "@/lib/api";
 import type { Character } from "@/lib/api";
+import AlertBanner from "@/components/common/AlertBanner";
 
 type CharacterCreateForm = {
   name: string;

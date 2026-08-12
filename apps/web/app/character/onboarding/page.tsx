@@ -1,5 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -18,6 +17,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { createMyCharacter } from "@/lib/api";
 import type { Faction } from "@/lib/api";
+import AlertBanner from "@/components/common/AlertBanner";
 
 const TOTAL_POINTS = 2;
 

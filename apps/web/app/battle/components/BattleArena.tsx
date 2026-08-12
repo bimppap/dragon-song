@@ -1,5 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Ban, Heart, Play, RotateCcw, Shield, Skull, Swords } from "lucide-react";
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { fetchCharacters, type Character, type Enemy } from "@/lib/api";
+import AlertBanner from "@/components/common/AlertBanner";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));

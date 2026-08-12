@@ -1,6 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
-import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -38,6 +36,8 @@ import {
 } from "@/lib/api";
 import type { Mission, MissionProgress, MissionProgressUpdate } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 type MissionType = "일일" | "중요";
 

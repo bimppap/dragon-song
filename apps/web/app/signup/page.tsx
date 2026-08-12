@@ -1,5 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -16,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
+import AlertBanner from "@/components/common/AlertBanner";
 
 export default function SignupPage() {
   const { member, signup } = useAuth();

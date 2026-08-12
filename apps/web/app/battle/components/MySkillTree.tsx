@@ -1,5 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
@@ -17,6 +16,7 @@ import {
   type Faction,
   type SkillNode,
 } from "@/lib/api";
+import AlertBanner from "@/components/common/AlertBanner";
 
 const FACTIONS: Faction[] = ["공격", "수비", "치유"];
 const numberFormatter = new Intl.NumberFormat("ko-KR");

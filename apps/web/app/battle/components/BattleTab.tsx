@@ -1,6 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
-import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { Heart, Shield, Skull, Swords, Zap } from "lucide-react";
@@ -8,6 +6,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { fetchEnemies, type Enemy } from "@/lib/api";
 import BattleArena from "./BattleArena";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 

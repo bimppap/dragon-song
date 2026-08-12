@@ -1,6 +1,4 @@
 "use client";
-import AlertBanner from "@/components/common/AlertBanner";
-import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import {
@@ -24,9 +22,11 @@ import {
   Trophy,
   Zap,
 } from "lucide-react";
+import CharacterOwnedSkills from "./CharacterOwnedSkills";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { useDialog } from "@/components/common/DialogProvider";
-import CharacterOwnedSkills from "./CharacterOwnedSkills";
 
 const REWARD_TYPE_LABELS: Record<string, string> = {
   attendance: "출석",
