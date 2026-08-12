@@ -79,7 +79,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-sm rounded-2xl bg-surface p-6 shadow-xl"
+            className="pixel-frame w-full max-w-sm bg-surface p-6"
             onClick={(e) => e.stopPropagation()}
           >
             {dialog.title && <h2 className="text-base font-bold text-ivory">{dialog.title}</h2>}

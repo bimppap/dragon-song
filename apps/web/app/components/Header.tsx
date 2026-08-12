@@ -51,7 +51,7 @@ export default function Header() {
   if (pathname === "/login" || pathname === "/signup") return null;
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-line bg-base shadow-sm">
+    <header className="sticky top-0 z-50 w-full border-b border-line bg-ground shadow-sm">
       <div className="mx-auto flex h-14 max-w-6xl items-center px-4 sm:px-6">
         {/* 로고 */}
         <div className="flex items-center gap-2 whitespace-nowrap">

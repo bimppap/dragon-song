@@ -535,7 +535,7 @@ export default function CharacterInfo({
                       <span className="text-xs font-medium">이미지</span>
                     </div>
                   )}
-                  <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-base/60 py-1.5 text-xs font-semibold text-ivory transition-colors hover:bg-base/75">
+                  <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-ground/60 py-1.5 text-xs font-semibold text-ivory transition-colors hover:bg-ground/75">
                     <ImageIcon size={12} />
                     {imageUploading ? "업로드 중..." : selectedDetail.image_url ? "이미지 변경" : "이미지 등록"}
                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />

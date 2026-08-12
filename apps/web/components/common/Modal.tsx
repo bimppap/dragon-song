@@ -33,7 +33,7 @@ export default function Modal({ open, onClose, title, children, className }: Pro
       <div
         role="dialog"
         aria-modal="true"
-        className={cn("max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-surface p-6 shadow-xl", className)}
+        className={cn("pixel-frame max-h-[85vh] w-full max-w-lg overflow-y-auto bg-surface p-6", className)}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (

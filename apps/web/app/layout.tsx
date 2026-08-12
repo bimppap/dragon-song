@@ -23,7 +23,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko">
-      <body className="min-h-screen bg-base text-ivory">
+      <body className="min-h-screen bg-ground text-ivory">
         <AuthProvider>
           <DialogProvider>
             <Header />
