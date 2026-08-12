@@ -17,9 +17,9 @@ const GRADES = [
     id: "silver",
     name: "실버",
     icon: Award,
-    color: "text-slate-500",
-    bg: "bg-slate-50",
-    border: "border-slate-200",
+    color: "text-slate-500 dark:text-slate-400",
+    bg: "bg-slate-50 dark:bg-slate-800/60",
+    border: "border-slate-200 dark:border-slate-700",
     minScore: 1000,
     maxScore: 2999,
     benefits: ["골드 드롭 +10%", "일반 던전 입장 가능", "주간 보상 +1회"],
@@ -54,7 +54,7 @@ const GRADES = [
     name: "다이아몬드",
     icon: Crown,
     color: "text-indigo-500",
-    bg: "bg-indigo-50",
+    bg: "bg-indigo-50 dark:bg-indigo-950/40",
     border: "border-indigo-200",
     minScore: 10000,
     maxScore: null,
@@ -75,8 +75,8 @@ export default function GradeTab() {
   return (
     <div className="space-y-8">
       <div className="space-y-1">
-        <h2 className="text-lg font-bold text-slate-800">등급</h2>
-        <p className="text-sm text-slate-500">전투 점수에 따라 등급이 결정됩니다.</p>
+        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">등급</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">전투 점수에 따라 등급이 결정됩니다.</p>
       </div>
 
       {/* 현재 등급 요약 */}
@@ -84,18 +84,18 @@ export default function GradeTab() {
         <div className="flex items-center gap-3">
           <Trophy size={24} className="text-yellow-500" />
           <div>
-            <p className="text-xs text-slate-500 font-medium">현재 등급</p>
-            <p className="text-xl font-bold text-slate-800">{CURRENT_GRADE.name}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">현재 등급</p>
+            <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{CURRENT_GRADE.name}</p>
           </div>
           <div className="ml-auto text-right">
-            <p className="text-xs text-slate-500 font-medium">전투 점수</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">전투 점수</p>
             <p className="text-xl font-bold text-yellow-600">{CURRENT_SCORE.toLocaleString()}</p>
           </div>
         </div>
 
         {NEXT_GRADE && (
           <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-slate-500">
+            <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
               <span>{NEXT_GRADE.name}까지 {(NEXT_GRADE.minScore - CURRENT_SCORE).toLocaleString()}점 남음</span>
               <span>{Math.round(progress)}%</span>
             </div>
@@ -117,17 +117,17 @@ export default function GradeTab() {
             className={`border rounded-xl p-5 ${bg} ${border} ${current ? "ring-2 ring-yellow-300" : ""} transition`}
           >
             <div className="flex items-start gap-4">
-              <div className={`w-10 h-10 rounded-lg bg-white border ${border} flex items-center justify-center shrink-0`}>
+              <div className={`w-10 h-10 rounded-lg bg-white dark:bg-slate-900 border ${border} flex items-center justify-center shrink-0`}>
                 <Icon size={20} className={color} />
               </div>
 
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className={`font-bold text-slate-800`}>{name}</span>
+                  <span className={`font-bold text-slate-800 dark:text-slate-100`}>{name}</span>
                   {current && (
                     <span className="text-[10px] bg-yellow-400 text-white px-2 py-0.5 rounded-full font-bold">현재</span>
                   )}
-                  <span className="ml-auto text-xs text-slate-400">
+                  <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
                     {minScore.toLocaleString()}
                     {maxScore ? ` ~ ${maxScore.toLocaleString()}점` : "점 이상"}
                   </span>
@@ -135,7 +135,7 @@ export default function GradeTab() {
 
                 <div className="flex flex-wrap gap-1.5">
                   {benefits.map((b) => (
-                    <span key={b} className="text-[11px] bg-white/70 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full">
+                    <span key={b} className="text-[11px] bg-white/70 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full">
                       {b}
                     </span>
                   ))}

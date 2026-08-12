@@ -22,15 +22,15 @@ export default function AdminPage() {
   return (
     <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-3">
-        <p className="text-sm font-semibold tracking-[0.18em] text-slate-500 uppercase">
+        <p className="text-sm font-semibold tracking-[0.18em] text-slate-500 dark:text-slate-400 uppercase">
           Admin
         </p>
         <div className="flex flex-col gap-2">
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
-            <Settings size={28} className="text-slate-600" />
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
+            <Settings size={28} className="text-slate-600 dark:text-slate-300" />
             관리
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             게임 운영에 필요한 설정을 관리할 수 있습니다.
           </p>
         </div>

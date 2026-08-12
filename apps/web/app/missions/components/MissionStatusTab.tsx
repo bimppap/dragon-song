@@ -228,7 +228,7 @@ export default function MissionStatusTab() {
               </Select>
             </div>
           ) : (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-500">
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-2 text-sm text-slate-500 dark:text-slate-400">
               챕터 없음
             </div>
           )}
@@ -236,7 +236,7 @@ export default function MissionStatusTab() {
       </Card>
 
       {loadingMissions ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500">
+        <div className="rounded-xl border border-dashed border-slate-200 dark:border-slate-700 px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
           임무 데이터를 불러오는 중입니다.
         </div>
       ) : (
@@ -256,14 +256,14 @@ export default function MissionStatusTab() {
                     className={cn(
                       "rounded-2xl border px-4 py-4 text-left transition-colors",
                       selectedMission?.id === mission.id
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
+                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300 hover:bg-slate-50",
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-col gap-1">
-                        <p className="font-semibold text-slate-900">{mission.name}</p>
-                        <p className="text-sm text-slate-500">{mission.description}</p>
+                        <p className="font-semibold text-slate-900 dark:text-slate-100">{mission.name}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{mission.description}</p>
                       </div>
                       <div className="flex flex-col items-end gap-1 shrink-0">
                         <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type as MissionType] ?? "secondary"}>
@@ -274,7 +274,7 @@ export default function MissionStatusTab() {
                         </Badge>
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                       <Gift size={14} />
                       {mission.reward}
                     </div>
@@ -300,13 +300,13 @@ export default function MissionStatusTab() {
               </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 px-4 py-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex items-center gap-2 text-sm text-slate-500">
+              <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                   <Target size={15} className="text-indigo-500" />
                   완료 {achievedCount} / {activeProgress.length}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+                  <label className="flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
                     <Checkbox
                       checked={showAchievedOnly}
                       onCheckedChange={(checked) => setShowAchievedOnly(checked === true)}
@@ -331,15 +331,15 @@ export default function MissionStatusTab() {
               ) : visibleProgress.length > 0 ? (
                 <div className="flex flex-col gap-3">
                   {visibleProgress.map((entry) => (
-                    <div key={entry.character_id} className="rounded-2xl border border-slate-200 px-4 py-4">
+                    <div key={entry.character_id} className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4">
                       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                         <div className="flex flex-col gap-1">
-                          <p className="text-base font-semibold text-slate-900">{entry.character_name}</p>
+                          <p className="text-base font-semibold text-slate-900 dark:text-slate-100">{entry.character_name}</p>
                           <div className="flex items-center gap-2">
                             <Badge variant={entry.achieved ? "success" : "secondary"}>
                               {entry.achieved ? "달성" : "미달성"}
                             </Badge>
-                            <span className="flex items-center gap-1 text-xs text-slate-400">
+                            <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
                               {entry.achieved ? <Eye size={13} /> : <EyeOff size={13} />}
                               {entry.achieved ? "보상 대상" : "진행 필요"}
                             </span>
@@ -348,7 +348,7 @@ export default function MissionStatusTab() {
 
                         {isEditing ? (
                           <div className="flex w-full flex-col gap-3 lg:max-w-md">
-                            <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                               <Checkbox
                                 checked={entry.achieved}
                                 onCheckedChange={(checked) =>
@@ -364,7 +364,7 @@ export default function MissionStatusTab() {
                             />
                           </div>
                         ) : (
-                          <div className="w-full rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 lg:max-w-md">
+                          <div className="w-full rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 lg:max-w-md">
                             {entry.memo || "메모 없음"}
                           </div>
                         )}

@@ -112,12 +112,12 @@ export default function CharacterOnboardingPage() {
             )}
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">캐릭터 이름</label>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">캐릭터 이름</label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="캐릭터 이름" required />
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">진영</label>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">진영</label>
               <RadioGroup
                 value={faction}
                 onValueChange={(value) => setFaction(value as Faction)}
@@ -129,35 +129,35 @@ export default function CharacterOnboardingPage() {
                     className={cn(
                       "flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors",
                       faction === f.value
-                        ? "border-indigo-500 bg-indigo-50"
-                        : "border-slate-200 hover:border-slate-300",
+                        ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                        : "border-slate-200 dark:border-slate-700 hover:border-slate-300",
                     )}
                   >
                     <div className="flex items-center gap-2">
                       <RadioGroupItem value={f.value} />
-                      <span className="font-semibold text-slate-800">{f.label}</span>
+                      <span className="font-semibold text-slate-800 dark:text-slate-100">{f.label}</span>
                     </div>
-                    <span className="text-xs text-slate-500">{f.description}</span>
+                    <span className="text-xs text-slate-500 dark:text-slate-400">{f.description}</span>
                   </label>
                 ))}
               </RadioGroup>
             </div>
 
-            <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+            <div className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-4">
               <div className="flex items-center justify-between">
-                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                   <Sparkles size={12} className="text-indigo-500" />
                   AP 포인트 투자
                 </label>
-                <span className="text-xs font-semibold text-slate-600">남은 포인트 {remainingPoints}</span>
+                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">남은 포인트 {remainingPoints}</span>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {STAT_CONFIG.map(({ key, label }) => (
                   <div
                     key={key}
-                    className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2"
+                    className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2"
                   >
-                    <span className="text-sm font-medium text-slate-700">{label}</span>
+                    <span className="text-sm font-medium text-slate-700 dark:text-slate-200">{label}</span>
                     <div className="flex items-center gap-2">
                       <Button
                         type="button"
@@ -169,7 +169,7 @@ export default function CharacterOnboardingPage() {
                       >
                         <Minus size={12} />
                       </Button>
-                      <span className="w-4 text-center text-sm font-semibold text-slate-900">{stats[key]}</span>
+                      <span className="w-4 text-center text-sm font-semibold text-slate-900 dark:text-slate-100">{stats[key]}</span>
                       <Button
                         type="button"
                         variant="outline"

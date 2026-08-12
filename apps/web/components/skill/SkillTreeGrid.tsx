@@ -62,7 +62,7 @@ export function SkillTooltipContent({ name, effects }: { name: string; effects: 
           ))}
         </ul>
       ) : (
-        <div className="mt-1 text-slate-400">효과 없음</div>
+        <div className="mt-1 text-slate-400 dark:text-slate-500">효과 없음</div>
       )}
     </div>
   );
@@ -150,10 +150,10 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
             >
               <span
                 className={cn(
-                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-white transition-colors",
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-white dark:bg-slate-900 transition-colors",
                   highlighted
-                    ? "border-indigo-600 bg-indigo-50 text-indigo-600 shadow-[0_0_0_3px_rgba(79,70,229,0.18)]"
-                    : "border-slate-200 text-slate-400",
+                    ? "border-indigo-600 bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 shadow-[0_0_0_3px_rgba(79,70,229,0.18)]"
+                    : "border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500",
                   clickable && !highlighted ? "hover:border-indigo-400" : "",
                 )}
               >
@@ -167,7 +167,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
               <span
                 className={cn(
                   "line-clamp-2 text-[10px] font-semibold leading-tight",
-                  highlighted ? "text-indigo-700" : "text-slate-600",
+                  highlighted ? "text-indigo-700" : "text-slate-600 dark:text-slate-300",
                 )}
               >
                 {getLabel(node)}

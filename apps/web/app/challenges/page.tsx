@@ -80,11 +80,11 @@ function RunnerChallengeList() {
   return (
     <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-2">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
           <Trophy size={24} className="text-indigo-600" />
           도전과제
         </h1>
-        <p className="text-sm text-slate-500">현재 공개된 도전과제 목록입니다.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">현재 공개된 도전과제 목록입니다.</p>
       </section>
 
       {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
@@ -105,12 +105,12 @@ function RunnerChallengeList() {
               {challenges
                 .filter((c) => c.chapter === chapter)
                 .map((challenge) => (
-                  <div key={challenge.id} className="rounded-2xl border border-slate-200 px-4 py-4">
+                  <div key={challenge.id} className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4">
                     <div className="flex flex-col gap-1">
-                      <p className="font-semibold text-slate-900">{challenge.name}</p>
-                      <p className="text-sm text-slate-500">{challenge.description}</p>
+                      <p className="font-semibold text-slate-900 dark:text-slate-100">{challenge.name}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{challenge.description}</p>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                       <Gift size={14} />
                       {challenge.reward}
                     </div>
@@ -469,10 +469,10 @@ function AdminChallengesPage() {
           Challenge Desk
         </p>
         <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
             도전과제
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             도전과제 등록, 챕터별 진행 현황, 캐릭터별 달성 메모를 백엔드 데이터와 연결해 관리할 수
             있습니다.
           </p>
@@ -494,8 +494,8 @@ function AdminChallengesPage() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-slate-500">
+              <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                   <Trophy size={16} className="text-indigo-500" />
                   등록된 도전과제 {challenges.length}개
                 </div>
@@ -507,9 +507,9 @@ function AdminChallengesPage() {
                   도전과제 목록을 불러오는 중입니다.
                 </EmptyState>
               ) : challenges.length > 0 ? (
-                <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 text-slate-500">
+                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold">챕터</th>
                         <th className="px-4 py-3 text-left font-semibold">이름</th>
@@ -522,16 +522,16 @@ function AdminChallengesPage() {
                       {challenges.map((challenge) => (
                         <tr
                           key={challenge.id}
-                          className="border-t border-slate-200 align-top"
+                          className="border-t border-slate-200 dark:border-slate-700 align-top"
                         >
-                          <td className="px-4 py-4 font-medium text-slate-700">
+                          <td className="px-4 py-4 font-medium text-slate-700 dark:text-slate-200">
                             {challenge.chapter}
                           </td>
-                          <td className="px-4 py-4 text-slate-900">{challenge.name}</td>
-                          <td className="px-4 py-4 text-slate-500">
+                          <td className="px-4 py-4 text-slate-900 dark:text-slate-100">{challenge.name}</td>
+                          <td className="px-4 py-4 text-slate-500 dark:text-slate-400">
                             {challenge.description}
                           </td>
-                          <td className="px-4 py-4 text-slate-700">{challenge.reward}</td>
+                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">{challenge.reward}</td>
                           <td className="px-4 py-4">
                             <Badge
                               variant={
@@ -564,7 +564,7 @@ function AdminChallengesPage() {
             <CardContent>
               <form className="flex flex-col gap-4" onSubmit={handleAddChallenge}>
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700">챕터</label>
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">챕터</label>
                   <Select
                     value={form.chapter}
                     onValueChange={(value) => handleFormChange("chapter", value)}
@@ -583,7 +583,7 @@ function AdminChallengesPage() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700">이름</label>
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">이름</label>
                   <Input
                     value={form.name}
                     onChange={(event) => handleFormChange("name", event.target.value)}
@@ -593,7 +593,7 @@ function AdminChallengesPage() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700">내용</label>
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">내용</label>
                   <Textarea
                     value={form.description}
                     onChange={(event) =>
@@ -606,7 +606,7 @@ function AdminChallengesPage() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700">보상 설명</label>
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">보상 설명</label>
                   <Input
                     value={form.reward}
                     onChange={(event) => handleFormChange("reward", event.target.value)}
@@ -626,7 +626,7 @@ function AdminChallengesPage() {
                 />
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700">상태</label>
+                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">상태</label>
                   <Select
                     value={form.visibility}
                     onValueChange={(value: ChallengeVisibility) =>
@@ -681,7 +681,7 @@ function AdminChallengesPage() {
                   </Select>
                 </div>
               ) : (
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-500">
+                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-2 text-sm text-slate-500 dark:text-slate-400">
                   챕터 없음
                 </div>
               )}
@@ -706,14 +706,14 @@ function AdminChallengesPage() {
                       className={cn(
                         "rounded-2xl border px-4 py-4 text-left transition-colors",
                         selectedChallenge?.id === challenge.id
-                          ? "border-indigo-500 bg-indigo-50"
-                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50",
+                          ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                          : "border-slate-200 dark:border-slate-700 hover:border-slate-300 hover:bg-slate-50",
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900">{challenge.name}</p>
-                          <p className="text-sm text-slate-500">{challenge.description}</p>
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">{challenge.name}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">{challenge.description}</p>
                         </div>
                         <Badge
                           variant={challenge.is_public ? "outline" : "secondary"}
@@ -721,7 +721,7 @@ function AdminChallengesPage() {
                           {toVisibilityText(challenge.is_public)}
                         </Badge>
                       </div>
-                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                         <Gift size={14} />
                         {challenge.reward}
                       </div>
@@ -754,13 +754,13 @@ function AdminChallengesPage() {
                 </Button>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 px-4 py-4 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-center gap-2 text-sm text-slate-500">
+                <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 px-4 py-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                     <Target size={15} className="text-indigo-500" />
                     완료 {achievedCount} / {activeProgress.length}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
+                    <label className="flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
                       <Checkbox
                         checked={showAchievedOnly}
                         onCheckedChange={(checked) =>
@@ -793,11 +793,11 @@ function AdminChallengesPage() {
                     {visibleProgress.map((entry) => (
                       <div
                         key={entry.character_id}
-                        className="rounded-2xl border border-slate-200 px-4 py-4"
+                        className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
                       >
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div className="flex flex-col gap-1">
-                            <p className="text-base font-semibold text-slate-900">
+                            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
                               {entry.character_name}
                             </p>
                             <div className="flex items-center gap-2">
@@ -806,7 +806,7 @@ function AdminChallengesPage() {
                               >
                                 {entry.achieved ? "달성" : "미달성"}
                               </Badge>
-                              <span className="flex items-center gap-1 text-xs text-slate-400">
+                              <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
                                 {entry.achieved ? <Eye size={13} /> : <EyeOff size={13} />}
                                 {entry.achieved ? "보상 대상" : "진행 필요"}
                               </span>
@@ -815,7 +815,7 @@ function AdminChallengesPage() {
 
                           {isEditingProgress ? (
                             <div className="flex w-full flex-col gap-3 lg:max-w-md">
-                              <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+                              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
                                 <Checkbox
                                   checked={entry.achieved}
                                   onCheckedChange={(checked) =>
@@ -837,7 +837,7 @@ function AdminChallengesPage() {
                               />
                             </div>
                           ) : (
-                            <div className="w-full rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 lg:max-w-md">
+                            <div className="w-full rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 lg:max-w-md">
                               {entry.memo || "메모 없음"}
                             </div>
                           )}

@@ -41,9 +41,9 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
+    <div className="flex flex-col gap-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-4">
       <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold uppercase tracking-wide text-slate-600">효과</label>
+        <label className="text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">효과</label>
         <Button type="button" variant="outline" onClick={handleAdd} className="h-7 px-3 text-xs">
           <Plus size={12} />
           효과 추가
@@ -85,7 +85,7 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
                   type="button"
                   variant="ghost"
                   onClick={() => handleRemove(index)}
-                  className="h-8 px-2 text-slate-400 hover:text-red-500"
+                  className="h-8 px-2 text-slate-400 dark:text-slate-500 hover:text-red-500"
                 >
                   <X size={14} />
                 </Button>
@@ -94,7 +94,7 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
           })}
         </div>
       ) : (
-        <p className="text-xs text-slate-400">효과 없음</p>
+        <p className="text-xs text-slate-400 dark:text-slate-500">효과 없음</p>
       )}
     </div>
   );

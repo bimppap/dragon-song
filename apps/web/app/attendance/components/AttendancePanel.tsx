@@ -188,7 +188,7 @@ export default function AttendancePanel() {
   if (loadingCharacters) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500">
+        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
           캐릭터 목록을 불러오는 중입니다.
         </CardContent>
       </Card>
@@ -198,7 +198,7 @@ export default function AttendancePanel() {
   if (characters.length === 0) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500">
+        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
           출석을 기록할 캐릭터가 없습니다.
         </CardContent>
       </Card>
@@ -224,7 +224,7 @@ export default function AttendancePanel() {
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
             <div className="w-full sm:w-56">
-              <p className="mb-1.5 text-xs font-semibold tracking-[0.18em] text-slate-500 uppercase">
+              <p className="mb-1.5 text-xs font-semibold tracking-[0.18em] text-slate-500 dark:text-slate-400 uppercase">
                 출석 날짜
               </p>
               <Input
@@ -250,9 +250,9 @@ export default function AttendancePanel() {
         </CardHeader>
 
         <CardContent className="flex flex-col gap-4">
-          <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <div className="flex items-center gap-2 text-sm font-semibold text-slate-700 dark:text-slate-200">
                 <CalendarDays size={16} className="text-indigo-600" />
                 {formatDateLabel(selectedDate)}
               </div>
@@ -270,7 +270,7 @@ export default function AttendancePanel() {
               </div>
             </div>
 
-            <label className="inline-flex items-center gap-3 rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700">
+            <label className="inline-flex items-center gap-3 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-4 py-2 text-sm font-medium text-slate-700 dark:text-slate-200">
               <Checkbox
                 checked={showAttendedOnly}
                 onCheckedChange={(checked) => setShowAttendedOnly(checked === true)}
@@ -280,15 +280,15 @@ export default function AttendancePanel() {
           </div>
 
           {savingAttendance && (
-            <p className="text-sm text-slate-500">출석 데이터를 저장하는 중입니다.</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">출석 데이터를 저장하는 중입니다.</p>
           )}
 
           {loadingAttendance ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
               선택한 날짜의 출석 데이터를 불러오는 중입니다.
             </div>
           ) : visibleCharacters.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-12 text-center text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-slate-200 dark:border-slate-700 px-4 py-12 text-center text-sm text-slate-500 dark:text-slate-400">
               {showAttendedOnly
                 ? "선택한 날짜에 출석한 캐릭터가 없습니다."
                 : "표시할 캐릭터가 없습니다."}
@@ -305,24 +305,24 @@ export default function AttendancePanel() {
                       "flex flex-col gap-4 rounded-2xl border px-4 py-4 md:flex-row md:items-center md:justify-between",
                       checked
                         ? "border-emerald-200 bg-emerald-50"
-                        : "border-slate-200 bg-white",
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900",
                     )}
                   >
                     <div className="flex flex-col gap-1">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-slate-900">{character.name}</p>
+                        <p className="font-semibold text-slate-900 dark:text-slate-100">{character.name}</p>
                         <Badge variant={checked ? "success" : "outline"}>
                           {checked ? "출석 완료" : "미출석"}
                         </Badge>
                       </div>
-                      <p className="text-sm text-slate-500">캐릭터 ID {character.id}</p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">캐릭터 ID {character.id}</p>
                     </div>
 
                     <label className={cn(
                       "inline-flex items-center gap-3 self-start rounded-full border px-4 py-2 text-sm font-medium md:self-auto",
                       checked
                         ? "border-emerald-200 bg-emerald-100 text-emerald-700 cursor-not-allowed"
-                        : "border-slate-200 bg-white text-slate-700",
+                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200",
                     )}>
                       <Checkbox
                         checked={checked}

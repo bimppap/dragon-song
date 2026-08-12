@@ -171,8 +171,8 @@ export default function MissionManageTab() {
           <CardDescription>등록된 모든 임무를 확인할 수 있습니다.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
-          <div className="flex items-center justify-between rounded-xl bg-slate-50 px-4 py-3">
-            <div className="flex items-center gap-2 text-sm text-slate-500">
+          <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
+            <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
               <ScrollText size={16} className="text-indigo-500" />
               등록된 임무 {missions.length}개
             </div>
@@ -184,9 +184,9 @@ export default function MissionManageTab() {
               임무 목록을 불러오는 중입니다.
             </EmptyState>
           ) : missions.length > 0 ? (
-            <div className="overflow-x-auto rounded-xl border border-slate-200">
+            <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
               <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-slate-500">
+                <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold">챕터</th>
                     <th className="px-4 py-3 text-left font-semibold">유형</th>
@@ -198,16 +198,16 @@ export default function MissionManageTab() {
                 </thead>
                 <tbody>
                   {missions.map((mission) => (
-                    <tr key={mission.id} className="border-t border-slate-200 align-top">
-                      <td className="px-4 py-4 font-medium text-slate-700">{mission.chapter}</td>
+                    <tr key={mission.id} className="border-t border-slate-200 dark:border-slate-700 align-top">
+                      <td className="px-4 py-4 font-medium text-slate-700 dark:text-slate-200">{mission.chapter}</td>
                       <td className="px-4 py-4">
                         <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type as MissionType] ?? "secondary"}>
                           {mission.mission_type}
                         </Badge>
                       </td>
-                      <td className="px-4 py-4 text-slate-900">{mission.name}</td>
-                      <td className="px-4 py-4 text-slate-500">{mission.description}</td>
-                      <td className="px-4 py-4 text-slate-700">{mission.reward}</td>
+                      <td className="px-4 py-4 text-slate-900 dark:text-slate-100">{mission.name}</td>
+                      <td className="px-4 py-4 text-slate-500 dark:text-slate-400">{mission.description}</td>
+                      <td className="px-4 py-4 text-slate-700 dark:text-slate-200">{mission.reward}</td>
                       <td className="px-4 py-4">
                         <Badge variant={mission.is_public ? "success" : "secondary"}>
                           {mission.is_public ? "공개" : "비공개"}
@@ -234,7 +234,7 @@ export default function MissionManageTab() {
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-700">챕터</label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">챕터</label>
               <Select value={form.chapter} onValueChange={(v) => set("chapter", v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="챕터 선택" />
@@ -250,7 +250,7 @@ export default function MissionManageTab() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-700">유형</label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">유형</label>
               <Select value={form.mission_type} onValueChange={(v: MissionType) => set("mission_type", v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="유형 선택" />
@@ -265,7 +265,7 @@ export default function MissionManageTab() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-700">이름</label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">이름</label>
               <Input
                 value={form.name}
                 onChange={(e) => set("name", e.target.value)}
@@ -275,7 +275,7 @@ export default function MissionManageTab() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-700">내용</label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">내용</label>
               <Textarea
                 value={form.description}
                 onChange={(e) => set("description", e.target.value)}
@@ -286,7 +286,7 @@ export default function MissionManageTab() {
             </div>
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-700">보상 설명</label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">보상 설명</label>
               <Input
                 value={form.reward}
                 onChange={(e) => set("reward", e.target.value)}
@@ -306,7 +306,7 @@ export default function MissionManageTab() {
               />
 
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-slate-700">상태</label>
+              <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">상태</label>
               <Select value={form.visibility} onValueChange={(v: MissionVisibility) => set("visibility", v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="상태 선택" />

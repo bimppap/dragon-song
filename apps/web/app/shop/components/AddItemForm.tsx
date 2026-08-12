@@ -65,7 +65,7 @@ interface Props {
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">
+      <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
         {label}
         {required && <span className="ml-1 text-red-400">*</span>}
       </label>
@@ -140,10 +140,10 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
     <form onSubmit={handleSubmit} className="max-w-lg space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-slate-900">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
             {isEditMode ? "아이템 수정" : "아이템 추가"}
           </h2>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             {editingItemId != null
               ? `아이템 #${editingItemId}의 정보를 수정합니다.`
               : "상점에 새 아이템을 등록합니다."}
@@ -188,7 +188,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
           />
         </Field>
       </div>
-      <p className="text-xs text-slate-400 -mt-3">골드 또는 CP 중 하나 이상은 반드시 입력해야 합니다.</p>
+      <p className="text-xs text-slate-400 dark:text-slate-500 -mt-3">골드 또는 CP 중 하나 이상은 반드시 입력해야 합니다.</p>
 
       <Field label="유저용 설명">
         <Textarea
@@ -202,7 +202,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
 
       <Field label="아이템 이미지">
         <div className="flex items-center gap-4">
-          <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+          <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
             {imagePreview ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={imagePreview} alt="아이템 이미지 미리보기" className="size-full object-cover" />
@@ -215,9 +215,9 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
               type="file"
               accept="image/*"
               onChange={handleImageChange}
-              className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+              className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
             />
-            <p className="text-xs text-slate-400">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
+            <p className="text-xs text-slate-400 dark:text-slate-500">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
           </div>
         </div>
       </Field>
@@ -229,8 +229,8 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
               key={option.value}
               className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors ${
                 form.item_type === option.value
-                  ? "border-indigo-500 bg-indigo-50"
-                  : "border-slate-200 hover:border-slate-300"
+                  ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40"
+                  : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
               }`}
             >
               <div className="flex items-center gap-2">
@@ -240,9 +240,9 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
                   checked={form.item_type === option.value}
                   onChange={() => setForm((prev) => ({ ...prev, item_type: option.value }))}
                 />
-                <span className="font-semibold text-slate-800">{option.label}</span>
+                <span className="font-semibold text-slate-800 dark:text-slate-100">{option.label}</span>
               </div>
-              <span className="text-xs text-slate-500">{option.description}</span>
+              <span className="text-xs text-slate-500 dark:text-slate-400">{option.description}</span>
             </label>
           ))}
         </div>
@@ -325,7 +325,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
           </Select>
         </Field>
       </div>
-      <p className="text-xs text-slate-400 -mt-3">
+      <p className="text-xs text-slate-400 dark:text-slate-500 -mt-3">
         둘 다 제한 없음이면 항상 구매 가능. 시작 챕터만 지정하면 해당 챕터부터, 둘 다 같은 챕터로 지정하면 그 챕터에서만 구매 가능합니다.
       </p>
 

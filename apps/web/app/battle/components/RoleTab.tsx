@@ -58,35 +58,35 @@ export default function RoleTab() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-bold text-slate-800">전투 역할</h2>
-        <p className="text-sm text-slate-500">캐릭터의 전투 포지션을 확인하세요.</p>
+        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">전투 역할</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">캐릭터의 전투 포지션을 확인하세요.</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {ROLES.map(({ id, name, icon: Icon, description, traits, strengths, weaknesses, active }) => (
           <div
             key={id}
-            className={`border rounded-xl p-5 bg-white space-y-4 transition ${
+            className={`border rounded-xl p-5 bg-white dark:bg-slate-900 space-y-4 transition ${
               active
                 ? "border-indigo-400 ring-2 ring-indigo-100 shadow-sm"
-                : "border-slate-200 hover:border-slate-300"
+                : "border-slate-200 dark:border-slate-700 hover:border-slate-300"
             }`}
           >
             <div className="flex items-center gap-3">
-              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${active ? "bg-indigo-100" : "bg-slate-100"}`}>
-                <Icon size={20} className={active ? "text-indigo-600" : "text-slate-400"} />
+              <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${active ? "bg-indigo-100" : "bg-slate-100 dark:bg-slate-800"}`}>
+                <Icon size={20} className={active ? "text-indigo-600" : "text-slate-400 dark:text-slate-500"} />
               </div>
               <div className="flex-1">
-                <p className="font-bold text-slate-800">{name}</p>
+                <p className="font-bold text-slate-800 dark:text-slate-100">{name}</p>
               </div>
               {active && <Badge variant="default">현재 역할</Badge>}
             </div>
 
-            <p className="text-xs text-slate-500 leading-relaxed">{description}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{description}</p>
 
             <div className="flex flex-wrap gap-1.5">
               {traits.map((t) => (
-                <span key={t} className="text-[11px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full font-medium">
+                <span key={t} className="text-[11px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 px-2 py-0.5 rounded-full font-medium">
                   {t}
                 </span>
               ))}
@@ -95,11 +95,11 @@ export default function RoleTab() {
             <div className="space-y-1.5 text-xs">
               <div className="flex gap-2">
                 <span className="text-emerald-600 font-semibold shrink-0">강점</span>
-                <span className="text-slate-500">{strengths}</span>
+                <span className="text-slate-500 dark:text-slate-400">{strengths}</span>
               </div>
               <div className="flex gap-2">
                 <span className="text-red-500 font-semibold shrink-0">약점</span>
-                <span className="text-slate-500">{weaknesses}</span>
+                <span className="text-slate-500 dark:text-slate-400">{weaknesses}</span>
               </div>
             </div>
           </div>

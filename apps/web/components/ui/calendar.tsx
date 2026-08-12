@@ -17,7 +17,7 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         months: "flex flex-col sm:flex-row gap-4",
         month: "flex flex-col gap-4",
         caption: "flex justify-center pt-1 relative items-center w-full",
-        caption_label: "text-sm font-semibold text-slate-800",
+        caption_label: "text-sm font-semibold text-slate-800 dark:text-slate-100",
         nav: "flex items-center gap-1",
         nav_button: cn(
           buttonVariants({ variant: "outline", size: "icon" }),
@@ -28,7 +28,7 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         chevron: "size-4",
         table: "w-full border-collapse space-x-1",
         head_row: "flex",
-        head_cell: "text-slate-400 rounded-md w-9 font-normal text-xs",
+        head_cell: "text-slate-400 dark:text-slate-500 rounded-md w-9 font-normal text-xs",
         row: "flex w-full mt-2",
         cell: cn(
           "relative p-0 text-center text-sm focus-within:relative focus-within:z-20",
@@ -44,7 +44,7 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
         day_range_end: "day-range-end",
         day_selected:
           "bg-indigo-600 text-white hover:bg-indigo-600 hover:text-white focus:bg-indigo-600 focus:text-white rounded-md",
-        day_today: "bg-slate-100 text-slate-900 font-semibold",
+        day_today: "bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 font-semibold",
         day_outside:
           "day-outside text-slate-300 aria-selected:bg-indigo-50/50 aria-selected:text-slate-400",
         day_disabled: "text-slate-300 opacity-50",

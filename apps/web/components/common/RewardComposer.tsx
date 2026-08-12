@@ -55,13 +55,13 @@ export default function RewardComposer({
   onRemoveItem,
 }: Props) {
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-4">
-      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500">보상 구성</p>
+    <div className="flex flex-col gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-4">
+      <p className="text-xs font-semibold uppercase tracking-widest text-slate-500 dark:text-slate-400">보상 구성</p>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {REWARD_FIELDS.map(({ key, label }) => (
           <div key={key} className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-slate-600">{label}</label>
+            <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">{label}</label>
             <Input
               type="number"
               min={0}
@@ -75,7 +75,7 @@ export default function RewardComposer({
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <label className="text-xs font-semibold text-slate-600">지급 아이템</label>
+          <label className="text-xs font-semibold text-slate-600 dark:text-slate-300">지급 아이템</label>
           <Button type="button" variant="outline" onClick={onAddItem} className="h-7 px-3 text-xs">
             + 추가
           </Button>
@@ -110,7 +110,7 @@ export default function RewardComposer({
                   type="button"
                   variant="ghost"
                   onClick={() => onRemoveItem(index)}
-                  className="h-8 px-2 text-slate-400 hover:text-red-500"
+                  className="h-8 px-2 text-slate-400 dark:text-slate-500 hover:text-red-500"
                 >
                   ✕
                 </Button>
@@ -118,7 +118,7 @@ export default function RewardComposer({
             ))}
           </div>
         ) : (
-          <p className="text-xs text-slate-400">아이템 없음</p>
+          <p className="text-xs text-slate-400 dark:text-slate-500">아이템 없음</p>
         )}
       </div>
     </div>

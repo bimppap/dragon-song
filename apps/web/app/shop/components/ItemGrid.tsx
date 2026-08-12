@@ -9,6 +9,7 @@ import { fetchItems, ITEM_EFFECT_STAT_OPTIONS } from "@/lib/api";
 import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useIsDark } from "@/lib/theme";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -70,6 +71,7 @@ export default function ItemGrid({
   onEditItem,
 }: Props) {
   const cartIds = cartItemIds ?? new Set<number>();
+  const isDark = useIsDark();
   const [items, setItems] = useState<Item[]>([]);
 
   useEffect(() => {
@@ -118,7 +120,7 @@ export default function ItemGrid({
       filter: false,
       cellRenderer: (p: ICellRendererParams<Item>) => (
         <div className="flex items-center gap-1.5">
-          <span className={p.data!.purchasable ? "text-slate-600" : "text-slate-400"}>
+          <span className={p.data!.purchasable ? "text-slate-600 dark:text-slate-300" : "text-slate-400 dark:text-slate-500"}>
             {formatAvailability(p.data!)}
           </span>
           {!p.data!.purchasable && <Badge variant="secondary">비활성</Badge>}
@@ -156,7 +158,7 @@ export default function ItemGrid({
       sortable: false,
       filter: false,
       cellRenderer: (p: ICellRendererParams<Item>) => (
-        <span className="font-num text-sm text-slate-600">{formatEffects(p.data!)}</span>
+        <span className="font-num text-sm text-slate-600 dark:text-slate-300">{formatEffects(p.data!)}</span>
       ),
       ...textColDef,
     },
@@ -177,7 +179,7 @@ export default function ItemGrid({
             type="button"
             size="icon"
             variant="ghost"
-            className="h-8 w-8 text-slate-500 hover:text-slate-900"
+            className="h-8 w-8 text-slate-500 dark:text-slate-400 hover:text-slate-900"
             onClick={(event) => {
               event.stopPropagation();
               onEditItem(p.data!);
@@ -231,7 +233,7 @@ export default function ItemGrid({
             <span className="text-yellow-600">{p.data!.price_gold.toLocaleString()} G</span>
           )}
           {p.data!.price_gold != null && p.data!.price_cp != null && (
-            <span className="text-slate-400"> + </span>
+            <span className="text-slate-400 dark:text-slate-500"> + </span>
           )}
           {p.data!.price_cp != null && (
             <span className="text-cyan-600">{p.data!.price_cp.toLocaleString()} CP</span>
@@ -276,7 +278,7 @@ export default function ItemGrid({
   ];
 
   return (
-    <div className="ag-theme-quartz rounded-lg overflow-hidden" style={{ height: 480 }}>
+    <div className={`${isDark ? "ag-theme-quartz-dark" : "ag-theme-quartz"} rounded-lg overflow-hidden`} style={{ height: 480 }}>
       <AgGridReact
         rowData={items}
         columnDefs={colDefs}

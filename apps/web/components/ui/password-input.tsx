@@ -22,7 +22,7 @@ const PasswordInput = React.forwardRef<HTMLInputElement, InputProps>(
           onClick={() => setVisible((prev) => !prev)}
           tabIndex={-1}
           aria-label={visible ? "비밀번호 숨기기" : "비밀번호 표시"}
-          className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 transition-colors hover:text-slate-600"
+          className="absolute inset-y-0 right-0 flex items-center px-3 text-slate-400 dark:text-slate-500 transition-colors hover:text-slate-600"
         >
           {visible ? <EyeOff size={15} /> : <Eye size={15} />}
         </button>

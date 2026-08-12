@@ -101,7 +101,7 @@ export default function CharacterCreate({ onCreated }: Props) {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">이름</label>
+          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">이름</label>
           <Input
             name="name"
             placeholder="캐릭터 이름"
@@ -114,7 +114,7 @@ export default function CharacterCreate({ onCreated }: Props) {
         <div className="grid grid-cols-2 gap-3">
           {STAT_CONFIG.map(({ name, label, icon: Icon, color }) => (
             <div key={name} className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-1 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              <label className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
                 <Icon size={11} className={color} />
                 {label}
               </label>
@@ -130,7 +130,7 @@ export default function CharacterCreate({ onCreated }: Props) {
             </div>
           ))}
         </div>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-400 dark:text-slate-500">
           위 항목 외의 상세 능력치(공격력 증폭, 방어 효율, 기술 관련 등)는 0으로 생성되며, 상세정보에서 확인할 수 있습니다.
         </p>
 

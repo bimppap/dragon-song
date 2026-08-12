@@ -4,6 +4,7 @@ import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams, RowClickedEvent } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Card, CardContent } from "@/components/ui/card";
+import { useIsDark } from "@/lib/theme";
 import type { Character } from "@/lib/api";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -27,7 +28,7 @@ const colDefs: ColDef<Character>[] = [
     field: "id",
     width: 80,
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-mono text-xs text-slate-400">{p.value}</span>
+      <span className="font-num font-mono text-xs text-slate-400 dark:text-slate-500">{p.value}</span>
     ),
   },
   { headerName: "이름", field: "name", flex: 1, minWidth: 140, filter: true },
@@ -107,10 +108,12 @@ const colDefs: ColDef<Character>[] = [
 ];
 
 export default function CharacterList({ characters, loading, onSelectCharacter }: Props) {
+  const isDark = useIsDark();
+
   if (loading) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500">
+        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
           캐릭터 목록을 불러오는 중입니다.
         </CardContent>
       </Card>
@@ -120,7 +123,7 @@ export default function CharacterList({ characters, loading, onSelectCharacter }
   if (characters.length === 0) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500">
+        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
           등록된 캐릭터가 없습니다.
         </CardContent>
       </Card>
@@ -132,7 +135,7 @@ export default function CharacterList({ characters, loading, onSelectCharacter }
   }
 
   return (
-    <div className="ag-theme-quartz h-120 rounded-lg overflow-hidden">
+    <div className={`${isDark ? "ag-theme-quartz-dark" : "ag-theme-quartz"} h-120 rounded-lg overflow-hidden`}>
       <AgGridReact
         rowData={characters}
         columnDefs={colDefs}

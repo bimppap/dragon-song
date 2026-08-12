@@ -103,7 +103,7 @@ const RANK_GRADES = [
   {
     name: "은",
     description: "기본 전투를 안정적으로 수행할 수 있는 숙련 등급입니다.",
-    badgeClass: "border-slate-400 bg-slate-200 text-slate-700",
+    badgeClass: "border-slate-400 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200",
   },
   {
     name: "금",
@@ -215,16 +215,16 @@ function StatBar({
   const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between text-sm font-semibold text-slate-600">
+      <div className="flex items-center justify-between text-sm font-semibold text-slate-600 dark:text-slate-300">
         <span className="flex items-center gap-2">
           <Icon size={15} className={iconAccent} />
           {label}
         </span>
-        <span className="font-num text-slate-700">
+        <span className="font-num text-slate-700 dark:text-slate-200">
           {numberFormatter.format(value)} / {numberFormatter.format(max)}
         </span>
       </div>
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
         <div
           className={cn("h-full rounded-full transition-all", barColor)}
           style={{ width: `${pct}%` }}
@@ -246,12 +246,12 @@ function CoreStatLine({
   accent: string;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-slate-200 py-2 last:border-b-0">
-      <span className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 py-2 last:border-b-0">
+      <span className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
         <Icon size={15} className={accent} />
         {label}
       </span>
-      <span className="font-num text-base font-semibold text-slate-900">
+      <span className="font-num text-base font-semibold text-slate-900 dark:text-slate-100">
         {numberFormatter.format(value)}
       </span>
     </div>
@@ -274,7 +274,7 @@ function ExperienceBar({
   return (
     <InfoTooltip content={`경험치 ${numberFormatter.format(value)} / ${numberFormatter.format(max)}`}>
       <span className="inline-flex w-40 items-center">
-        <span className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+        <span className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
           <span
             className="block h-full rounded-full bg-violet-500 transition-all"
             style={{ width: `${pct}%` }}
@@ -318,12 +318,12 @@ function OwnedItemTile({
       >
         <div
           className={cn(
-            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600",
+            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600",
             item.equipped && "ring-2 ring-indigo-500",
           )}
         >
           <Package size={22} />
-          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 text-sm font-bold text-slate-900 [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
+          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 text-sm font-bold text-slate-900 dark:text-slate-100 [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
             {badgeCount}
           </span>
         </div>
@@ -434,7 +434,7 @@ export default function CharacterInfo({
   if (loading) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500">
+        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
           캐릭터 정보를 준비하는 중입니다.
         </CardContent>
       </Card>
@@ -444,7 +444,7 @@ export default function CharacterInfo({
   if (characters.length === 0) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500">
+        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
           조회할 캐릭터가 없습니다.
         </CardContent>
       </Card>
@@ -491,13 +491,13 @@ export default function CharacterInfo({
 
       {detailLoading ? (
         <Card>
-          <CardContent className="py-16 text-center text-sm text-slate-500">
+          <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
             캐릭터 상세 정보를 불러오는 중입니다.
           </CardContent>
         </Card>
       ) : selectedDetail == null ? (
         <Card>
-          <CardContent className="py-16 text-center text-sm text-slate-500">
+          <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
             표시할 캐릭터 정보가 없습니다.
           </CardContent>
         </Card>
@@ -506,7 +506,7 @@ export default function CharacterInfo({
           <Card>
             <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row sm:items-start">
               {/* 명함 좌측: 캐릭터 이미지 자리 (상세정보 펼침과 무관하게 고정 크기) */}
-              <div className="flex aspect-3/4 w-full shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50 sm:w-40">
+              <div className="flex aspect-3/4 w-full shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 sm:w-40">
                 <div className="flex flex-col items-center gap-1 text-slate-300">
                   <ImageIcon size={30} />
                   <span className="text-xs font-medium">이미지</span>
@@ -603,12 +603,12 @@ export default function CharacterInfo({
                 </div>
 
                 {/* 상세정보 (테두리 없는 펼치기 버튼) */}
-                <div className="border-t border-slate-200 pt-3">
+                <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowDetails((prev) => !prev)}
-                    className="h-auto px-0 text-slate-500 hover:bg-transparent hover:text-slate-800"
+                    className="h-auto px-0 text-slate-500 dark:text-slate-400 hover:bg-transparent hover:text-slate-800"
                   >
                     {showDetails ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                     상세정보 {showDetails ? "접기" : "펼치기"}
@@ -618,9 +618,9 @@ export default function CharacterInfo({
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                         {DETAIL_STATS.map(({ key, label, isFloat, description }) => (
                           <InfoTooltip key={key} side="top" content={description}>
-                            <div className="flex cursor-help items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                              <span className="text-slate-500">{label}</span>
-                              <span className="font-num font-semibold text-slate-800">
+                            <div className="flex cursor-help items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm">
+                              <span className="text-slate-500 dark:text-slate-400">{label}</span>
+                              <span className="font-num font-semibold text-slate-800 dark:text-slate-100">
                                 {isFloat
                                   ? `${(Number(selectedDetail[key]) * 100).toFixed(1)}%`
                                   : numberFormatter.format(selectedDetail[key])}
@@ -631,8 +631,8 @@ export default function CharacterInfo({
                       </div>
 
                       {selectedDetail.start_sh != null && (
-                        <div className="flex flex-col gap-3 border-t border-slate-200 pt-4">
-                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                        <div className="flex flex-col gap-3 border-t border-slate-200 dark:border-slate-700 pt-4">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500">
                             <Lock size={12} />
                             관리자 전용 능력치
                           </div>
@@ -710,16 +710,16 @@ export default function CharacterInfo({
                   selectedDetail.achieved_challenges.map((challenge) => (
                     <div
                       key={challenge.challenge_id}
-                      className="rounded-2xl border border-slate-200 px-4 py-4"
+                      className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900">{challenge.name}</p>
-                          <p className="text-sm text-slate-500">{challenge.description}</p>
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">{challenge.name}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">{challenge.description}</p>
                         </div>
                         <Badge variant="outline">{challenge.chapter}</Badge>
                       </div>
-                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                         <Trophy size={14} className="text-indigo-500" />
                         {challenge.reward}
                       </div>
@@ -747,17 +747,17 @@ export default function CharacterInfo({
                   selectedDetail.reward_history.map((reward) => (
                     <div
                       key={reward.id}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-4"
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
                     >
                       <div className="flex items-center gap-3">
                         <span className="flex size-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
                           <Gift size={18} />
                         </span>
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900">
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">
                             {formatRewardItems(reward)}
                           </p>
-                          <p className="text-sm text-slate-500">
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
                             {reward.rewarded_at} ·{" "}
                             <Badge variant="secondary" className="text-xs">
                               {REWARD_TYPE_LABELS[reward.type] ?? reward.type}
@@ -765,7 +765,7 @@ export default function CharacterInfo({
                           </p>
                         </div>
                       </div>
-                      <span className="flex items-center gap-1 text-xs text-slate-400">
+                      <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
                         <Receipt size={12} />
                         #{reward.id}
                       </span>
@@ -791,22 +791,22 @@ export default function CharacterInfo({
                   selectedDetail.purchase_history.map((purchase) => (
                     <div
                       key={purchase.id}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-4"
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
                     >
                       <div className="flex items-center gap-3">
                         <span className="flex size-10 items-center justify-center rounded-full bg-amber-50 text-amber-600">
                           <Backpack size={18} />
                         </span>
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900">{purchase.item_name}</p>
-                          <p className="text-sm text-slate-500">
+                          <p className="font-semibold text-slate-900 dark:text-slate-100">{purchase.item_name}</p>
+                          <p className="text-sm text-slate-500 dark:text-slate-400">
                             {new Date(purchase.created_at).toLocaleString("ko-KR")}
                           </p>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <Badge variant="secondary">{purchase.quantity}개 구매</Badge>
-                        <span className="flex items-center gap-1 text-xs text-slate-400">
+                        <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
                           <Receipt size={12} />
                           구매 ID {purchase.id}
                         </span>

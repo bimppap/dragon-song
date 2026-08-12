@@ -48,11 +48,11 @@ function RunnerMissionList() {
   return (
     <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-2">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
           <ScrollText size={24} className="text-indigo-600" />
           임무
         </h1>
-        <p className="text-sm text-slate-500">현재 공개된 임무 목록입니다.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">현재 공개된 임무 목록입니다.</p>
       </section>
 
       {errorMessage && (
@@ -77,17 +77,17 @@ function RunnerMissionList() {
               {missions
                 .filter((m) => m.chapter === chapter)
                 .map((mission) => (
-                  <div key={mission.id} className="rounded-2xl border border-slate-200 px-4 py-4">
+                  <div key={mission.id} className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-col gap-1">
-                        <p className="font-semibold text-slate-900">{mission.name}</p>
-                        <p className="text-sm text-slate-500">{mission.description}</p>
+                        <p className="font-semibold text-slate-900 dark:text-slate-100">{mission.name}</p>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">{mission.description}</p>
                       </div>
                       <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type] ?? "default"}>
                         {mission.mission_type}
                       </Badge>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500">
+                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
                       <Gift size={14} />
                       {mission.reward}
                     </div>
@@ -111,11 +111,11 @@ function AdminMissionsPage() {
           Mission Board
         </p>
         <div className="flex flex-col gap-2">
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
             <ScrollText size={28} className="text-indigo-600" />
             임무
           </h1>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 dark:text-slate-400">
             일일·중요 임무를 등록하고 챕터별 달성 현황과 보상 지급을 관리할 수 있습니다.
           </p>
         </div>

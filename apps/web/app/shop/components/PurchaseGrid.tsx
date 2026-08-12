@@ -16,6 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useIsDark } from "@/lib/theme";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -27,6 +28,7 @@ const ALL_CHARACTERS = "all-characters";
 const ALL_ITEMS = "all-items";
 
 export default function PurchaseGrid({ refreshKey }: Props) {
+  const isDark = useIsDark();
   const [purchases, setPurchases] = useState<Purchase[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -160,7 +162,7 @@ export default function PurchaseGrid({ refreshKey }: Props) {
         </Button>
       </div>
 
-      <div className="ag-theme-quartz rounded-lg overflow-hidden" style={{ height: 440 }}>
+      <div className={`${isDark ? "ag-theme-quartz-dark" : "ag-theme-quartz"} rounded-lg overflow-hidden`} style={{ height: 440 }}>
         <AgGridReact rowData={purchases} columnDefs={colDefs} rowHeight={44} />
       </div>
     </div>

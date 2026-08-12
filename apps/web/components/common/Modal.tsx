@@ -33,16 +33,16 @@ export default function Modal({ open, onClose, title, children, className }: Pro
       <div
         role="dialog"
         aria-modal="true"
-        className={cn("max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-xl", className)}
+        className={cn("max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-xl", className)}
         onClick={(e) => e.stopPropagation()}
       >
         {title && (
           <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-base font-bold text-slate-900">{title}</h2>
+            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{title}</h2>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700"
+              className="rounded-lg p-1 text-slate-400 dark:text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-700"
               aria-label="닫기"
             >
               <X size={18} />

@@ -95,8 +95,8 @@ export default function AdminSkillEditor() {
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-bold text-slate-800">기술트리 관리</h2>
-        <p className="text-sm text-slate-500">
+        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">기술트리 관리</h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400">
           진영별 기술트리 구조를 한 페이지에서 확인하고 각 기술을 클릭해 이름·효과·이미지를 편집할 수 있습니다. 기술
           아이콘에 마우스를 올리면 이름과 효과가 표시됩니다. 기본 기술(맨 아래)에서 시작해 1분기(계열) 하나, 2분기(세부
           경로) 하나를 골라 I~IV 단계로 강화하는 구조입니다.
@@ -106,13 +106,13 @@ export default function AdminSkillEditor() {
       {error && <p className="text-sm text-red-500">{error}</p>}
 
       {loading || !nodesByFaction ? (
-        <p className="text-sm text-slate-400">불러오는 중...</p>
+        <p className="text-sm text-slate-400 dark:text-slate-500">불러오는 중...</p>
       ) : (
         <div className="flex gap-6 overflow-x-auto pb-2">
           {FACTIONS.map((faction) => (
             <div key={faction} className="flex flex-col items-center gap-3">
-              <h3 className="text-sm font-semibold text-slate-700">{faction} 계열</h3>
-              <div className="rounded-xl border border-slate-200 bg-white p-4">
+              <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{faction} 계열</h3>
+              <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-4">
                 <SkillTreeGrid
                   nodes={nodesByFaction[faction]}
                   getLabel={(n) => n.default_name}
@@ -132,7 +132,7 @@ export default function AdminSkillEditor() {
       >
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">기술 이름</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">기술 이름</label>
             <Input
               value={draft.name}
               onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
@@ -141,9 +141,9 @@ export default function AdminSkillEditor() {
           </div>
 
           <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">기술 이미지</label>
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">기술 이미지</label>
             <div className="flex items-center gap-4">
-              <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+              <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
                 {imagePreview ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={imagePreview} alt="기술 이미지 미리보기" className="size-full object-cover" />
@@ -156,9 +156,9 @@ export default function AdminSkillEditor() {
                   type="file"
                   accept="image/*"
                   onChange={handleImageChange}
-                  className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+                  className="block text-sm text-slate-600 dark:text-slate-300 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
                 />
-                <p className="text-xs text-slate-400">업로드 시 WebP로 변환되며(5MB 이하), 없으면 기본 아이콘이 표시됩니다.</p>
+                <p className="text-xs text-slate-400 dark:text-slate-500">업로드 시 WebP로 변환되며(5MB 이하), 없으면 기본 아이콘이 표시됩니다.</p>
               </div>
             </div>
           </div>

@@ -120,10 +120,10 @@ function HpBar({ hp, max, color }: { hp: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, Math.max(0, (hp / max) * 100)) : 0;
   return (
     <div className="flex items-center gap-2">
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
         <div className={cn("h-full rounded-full transition-all", color)} style={{ width: `${pct}%` }} />
       </div>
-      <span className="font-num w-24 shrink-0 text-right text-xs text-slate-500">
+      <span className="font-num w-24 shrink-0 text-right text-xs text-slate-500 dark:text-slate-400">
         {fmt(hp)} / {fmt(max)}
       </span>
     </div>
@@ -343,21 +343,21 @@ export default function BattleArena({ enemy, onExit }: Props) {
             <Button variant="ghost" size="sm" onClick={onExit} className="px-2">
               <ArrowLeft size={15} />
             </Button>
-            <h2 className="text-lg font-bold text-slate-800">{enemy.name} 전투 준비</h2>
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{enemy.name} 전투 준비</h2>
           </div>
           <Badge variant="outline" className="font-num">
             에너미 예상 HP {fmt(previewEnemyHp)}
           </Badge>
         </div>
 
-        <p className="text-sm text-slate-500">전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</p>
 
         {loadError && (
           <AlertBanner>{loadError}</AlertBanner>
         )}
 
         {loading ? (
-          <p className="text-sm text-slate-400">캐릭터 목록을 불러오는 중...</p>
+          <p className="text-sm text-slate-400 dark:text-slate-500">캐릭터 목록을 불러오는 중...</p>
         ) : (
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
             {characters.map((c) => {
@@ -367,16 +367,16 @@ export default function BattleArena({ enemy, onExit }: Props) {
                   key={c.id}
                   className={cn(
                     "flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors",
-                    checked ? "border-indigo-500 bg-indigo-50" : "border-slate-200 hover:border-slate-300",
+                    checked ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-950/40" : "border-slate-200 dark:border-slate-700 hover:border-slate-300",
                   )}
                 >
                   <Checkbox checked={checked} onCheckedChange={() => toggleSelect(c.id)} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="truncate font-semibold text-slate-800">{c.name}</span>
+                      <span className="truncate font-semibold text-slate-800 dark:text-slate-100">{c.name}</span>
                       {c.faction && <Badge variant="secondary" className="text-[10px]">{c.faction}</Badge>}
                     </div>
-                    <div className="font-num mt-0.5 flex gap-3 text-xs text-slate-500">
+                    <div className="font-num mt-0.5 flex gap-3 text-xs text-slate-500 dark:text-slate-400">
                       <span>공 {c.atk}</span>
                       <span>방 {c.def}</span>
                       <span>HP {Math.max(Math.round(c.hp_max * (1 + c.hp_max_p)), c.hp, 1)}</span>
@@ -404,7 +404,7 @@ export default function BattleArena({ enemy, onExit }: Props) {
           <Button variant="ghost" size="sm" onClick={onExit} className="px-2">
             <ArrowLeft size={15} />
           </Button>
-          <h2 className="text-lg font-bold text-slate-800">{enemy.name} 전투</h2>
+          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">{enemy.name} 전투</h2>
           <Badge>라운드 {round}</Badge>
         </div>
         <Button variant="outline" size="sm" onClick={reset}>
@@ -417,13 +417,13 @@ export default function BattleArena({ enemy, onExit }: Props) {
       <div className="rounded-xl border border-red-200 bg-red-50/40 p-4">
         <div className="mb-2 flex items-center gap-2">
           <Skull size={16} className="text-red-500" />
-          <span className="font-semibold text-slate-800">{enemy.name}</span>
-          <span className="font-num text-xs text-slate-500">공격력 {enemy.attack}</span>
+          <span className="font-semibold text-slate-800 dark:text-slate-100">{enemy.name}</span>
+          <span className="font-num text-xs text-slate-500 dark:text-slate-400">공격력 {enemy.attack}</span>
         </div>
         <HpBar hp={enemyHp} max={enemyMax} color="bg-red-500" />
         {!result && (
           <div className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-slate-500">에너미 행동</span>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">에너미 행동</span>
             <Select
               value={enemyAction.kind === "attack" ? String(enemyAction.skillIndex) : "none"}
               onValueChange={(v) =>
@@ -457,15 +457,15 @@ export default function BattleArena({ enemy, onExit }: Props) {
               key={c.id}
               className={cn(
                 "rounded-xl border px-4 py-3",
-                c.downed ? "border-slate-200 bg-slate-100 opacity-60" : "border-slate-200 bg-white",
+                c.downed ? "border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 opacity-60" : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900",
               )}
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-slate-800">{c.name}</span>
+                  <span className="font-semibold text-slate-800 dark:text-slate-100">{c.name}</span>
                   {c.faction && <Badge variant="secondary" className="text-[10px]">{c.faction}</Badge>}
                   {c.downed && <Badge variant="destructive" className="text-[10px]">전투불능</Badge>}
-                  <span className="font-num text-xs text-slate-400">
+                  <span className="font-num text-xs text-slate-400 dark:text-slate-500">
                     공 {c.atk} · 방 {c.def} · 주목 {c.attn}
                     {c.maxMp > 0 && ` · 마나 ${fmt(c.mp)}/${fmt(c.maxMp)}`}
                     {c.shield > 0 && ` · 보호막 ${fmt(c.shield)}`}
@@ -544,13 +544,13 @@ export default function BattleArena({ enemy, onExit }: Props) {
 
       {/* 전투 로그 */}
       {log.length > 0 && (
-        <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4">
-          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">전투 로그</span>
+        <div className="space-y-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 p-4">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">전투 로그</span>
           {[...log].reverse().map((entry) => (
             <div key={entry.round} className="space-y-1">
-              <div className="text-xs font-bold text-slate-600">라운드 {entry.round}</div>
+              <div className="text-xs font-bold text-slate-600 dark:text-slate-300">라운드 {entry.round}</div>
               {entry.events.map((e, i) => (
-                <div key={i} className="text-sm text-slate-600">{e}</div>
+                <div key={i} className="text-sm text-slate-600 dark:text-slate-300">{e}</div>
               ))}
             </div>
           ))}

@@ -79,12 +79,12 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           <div
             role="dialog"
             aria-modal="true"
-            className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-xl"
+            className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {dialog.title && <h2 className="text-base font-bold text-slate-900">{dialog.title}</h2>}
+            {dialog.title && <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">{dialog.title}</h2>}
             {dialog.description && (
-              <p className={cn("text-sm text-slate-600", dialog.title ? "mt-2" : "")}>{dialog.description}</p>
+              <p className={cn("text-sm text-slate-600 dark:text-slate-300", dialog.title ? "mt-2" : "")}>{dialog.description}</p>
             )}
             <div className="mt-6 flex justify-end gap-2">
               {dialog.mode === "confirm" && (

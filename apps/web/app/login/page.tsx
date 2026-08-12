@@ -58,12 +58,12 @@ export default function LoginPage() {
             )}
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">아이디</label>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">아이디</label>
               <Input value={loginId} onChange={(e) => setLoginId(e.target.value)} autoFocus required />
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 uppercase tracking-wide">비밀번호</label>
+              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">비밀번호</label>
               <PasswordInput
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -77,7 +77,7 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-4 text-center text-sm text-slate-500">
+          <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
             계정이 없으신가요?{" "}
             <Link href="/signup" className="font-semibold text-indigo-600 hover:underline">
               회원가입

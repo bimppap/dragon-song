@@ -95,8 +95,8 @@ function RunnerShop({ characterId }: { characterId: number }) {
   return (
     <PageContainer className="space-y-8">
       <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">상점</h1>
-        <p className="text-sm text-slate-500">보유 골드로 아이템을 구매할 수 있습니다.</p>
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">상점</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">보유 골드로 아이템을 구매할 수 있습니다.</p>
       </div>
 
       <div className="flex flex-col items-start gap-6 lg:flex-row">
@@ -155,7 +155,7 @@ function AdminShop() {
     <PageContainer className="space-y-8">
       {/* 캐릭터 선택 */}
       <div className="flex flex-wrap items-center gap-3">
-        <span className="whitespace-nowrap text-sm font-semibold text-slate-600">
+        <span className="whitespace-nowrap text-sm font-semibold text-slate-600 dark:text-slate-300">
           아이템을 구매할 캐릭터
         </span>
         <Select
@@ -178,7 +178,7 @@ function AdminShop() {
           </SelectContent>
         </Select>
         {characterId != null && (
-          <span className="text-xs text-slate-400">ID: {characterId}</span>
+          <span className="text-xs text-slate-400 dark:text-slate-500">ID: {characterId}</span>
         )}
       </div>
 
@@ -194,7 +194,7 @@ function AdminShop() {
       {/* 탭 컨텐츠 */}
       <div>
         {tab === "items" && characterId == null && (
-          <p className="py-12 text-center text-sm text-slate-400">
+          <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
             캐릭터를 선택해 주세요.
           </p>
         )}
@@ -220,7 +220,7 @@ function AdminShop() {
           </div>
         )}
         {tab === "manage" && characterId == null && (
-          <p className="py-12 text-center text-sm text-slate-400">캐릭터를 선택해 주세요.</p>
+          <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">캐릭터를 선택해 주세요.</p>
         )}
         {tab === "manage" && characterId != null && (
           <ItemGrid
