@@ -31,11 +31,19 @@
     height: 100%;
     max-width: 100vw;
     overflow-x: hidden;
-    /* 도트/픽셀 컨셉 (한글 지원 픽셀 폰트 Galmuri) */
-    font-family: "Galmuri11", "Galmuri14", "Courier New", monospace;
+    /* 도트/픽셀 컨셉 (한글 지원 픽셀 폰트 Galmuri) — 본문은 Galmuri11 */
+    font-family: "Galmuri11", "Courier New", monospace;
     -webkit-font-smoothing: none;
     -moz-osx-font-smoothing: unset;
     font-smooth: never;
+  }
+
+  /* 제목/헤딩(CardTitle=h3 포함)은 큰 판형 Galmuri14 */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: "Galmuri14", "Galmuri11", monospace;
   }
 
   *,
@@ -53,8 +61,15 @@
 }
 
 @layer utilities {
+  /* 숫자/수치는 고정폭 픽셀 폰트 GalmuriMono */
   .font-num {
+    font-family: "GalmuriMono11", "Courier New", monospace;
     font-variant-numeric: tabular-nums;
+  }
+
+  /* 작고 촘촘한 픽셀 폰트 (배지 등) */
+  .font-pixel-sm {
+    font-family: "Galmuri9", "Galmuri11", monospace;
   }
 
   /* 스크롤 기능은 유지하되 스크롤바만 숨김 */
