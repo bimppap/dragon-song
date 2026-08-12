@@ -281,7 +281,7 @@ export default function EnemyTab() {
                 </div>
               </div>
               <p className="text-xs font-semibold text-slate-500">인원당 증가 체력</p>
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                 {[
                   { key: "hp_per_attacker" as const, label: "공격 인원" },
                   { key: "hp_per_defender" as const, label: "수비 인원" },
@@ -381,7 +381,7 @@ export default function EnemyTab() {
                             placeholder="소환수 이름"
                           />
                         </div>
-                        <div className="grid grid-cols-3 gap-2">
+                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                           <div className="flex flex-col gap-1.5">
                             <label className="text-xs font-semibold text-slate-600">소환수 체력</label>
                             <Input

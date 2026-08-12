@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Header from "./components/Header";
 import { AuthProvider } from "@/lib/auth";
@@ -7,6 +7,11 @@ import { DialogProvider } from "@/components/common/DialogProvider";
 export const metadata: Metadata = {
   title: "Dragon Song",
   description: "Dragon Song Game Admin",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({

@@ -96,7 +96,7 @@ export default function CharacterOnboardingPage() {
   }
 
   return (
-    <main className="mx-auto max-w-lg px-6 py-16">
+    <main className="mx-auto max-w-lg px-4 py-10 sm:px-6 sm:py-16">
       <Card>
         <CardHeader>
           <CardTitle>캐릭터 생성</CardTitle>
@@ -122,7 +122,7 @@ export default function CharacterOnboardingPage() {
               <RadioGroup
                 value={faction}
                 onValueChange={(value) => setFaction(value as Faction)}
-                className="grid grid-cols-3 gap-2"
+                className="grid grid-cols-1 gap-2 sm:grid-cols-3"
               >
                 {FACTIONS.map((f) => (
                   <label

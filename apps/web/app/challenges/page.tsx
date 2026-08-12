@@ -52,6 +52,10 @@ import type {
 } from "@/lib/api";
 import { cn, parsePositiveInt } from "@/lib/utils";
 import { useRequireMember } from "@/lib/auth";
+import PageContainer from "@/components/common/PageContainer";
+import TabBar from "@/components/common/TabBar";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 function RunnerChallengeList() {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
@@ -73,25 +77,19 @@ function RunnerChallengeList() {
   const chapters = [...new Set(challenges.map((c) => c.chapter))];
 
   return (
-    <main className="max-w-4xl mx-auto px-6 py-10 flex flex-col gap-8">
+    <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900">
           <Trophy size={24} className="text-indigo-600" />
           도전과제
         </h1>
         <p className="text-sm text-slate-500">현재 공개된 도전과제 목록입니다.</p>
       </section>
 
-      {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
-      )}
+      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
 
       {loading ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
-          도전과제 목록을 불러오는 중입니다.
-        </div>
+        <EmptyState>도전과제 목록을 불러오는 중입니다.</EmptyState>
       ) : challenges.length === 0 ? (
         <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
           공개된 도전과제가 없습니다.
@@ -121,7 +119,7 @@ function RunnerChallengeList() {
           </Card>
         ))
       )}
-    </main>
+    </PageContainer>
   );
 }
 
@@ -464,13 +462,13 @@ function AdminChallengesPage() {
   }
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-10 flex flex-col gap-8">
+    <PageContainer className="flex flex-col gap-8">
       <section className="flex flex-col gap-3">
         <p className="text-sm font-semibold tracking-[0.18em] text-indigo-600 uppercase">
           Challenge Desk
         </p>
         <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-bold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
             도전과제
           </h1>
           <p className="text-sm text-slate-500">
@@ -480,35 +478,10 @@ function AdminChallengesPage() {
         </div>
       </section>
 
-      {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
-      )}
-      {rewardMessage && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {rewardMessage}
-        </div>
-      )}
+      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
+      {rewardMessage && <AlertBanner tone="success">{rewardMessage}</AlertBanner>}
 
-      <div className="flex items-center gap-1 border-b border-slate-200">
-        {PAGE_TABS.map(({ id, label, icon: Icon }) => (
-          <Button
-            key={id}
-            variant="ghost"
-            onClick={() => setTab(id)}
-            className={cn(
-              "gap-2 rounded-none border-b-2 -mb-px h-11 px-5 font-semibold",
-              tab === id
-                ? "border-indigo-600 text-indigo-600 bg-transparent hover:bg-transparent hover:text-indigo-600"
-                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-transparent",
-            )}
-          >
-            <Icon size={15} />
-            {label}
-          </Button>
-        ))}
-      </div>
+      <TabBar tabs={PAGE_TABS} active={tab} onChange={setTab} />
 
       {tab === "manage" ? (
         <section className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
@@ -992,7 +965,7 @@ function AdminChallengesPage() {
           </div>
         </section>
       )}
-    </main>
+    </PageContainer>
   );
 }
 

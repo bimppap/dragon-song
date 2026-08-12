@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { List, User, UserPlus } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import PageContainer from "@/components/common/PageContainer";
+import TabBar from "@/components/common/TabBar";
 import { useRequireMember } from "@/lib/auth";
 import CharacterList from "./components/character/CharacterList";
 import CharacterInfo from "./components/character/CharacterInfo";
@@ -70,32 +70,14 @@ function AdminCharacterConsole() {
   }
 
   return (
-    <main className="max-w-4xl mx-auto px-6 py-10 space-y-8">
+    <PageContainer max="4xl" className="space-y-8">
       {errorMessage && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           {errorMessage}
         </div>
       )}
 
-      {/* 탭 바 */}
-      <div className="flex items-center gap-1 border-b border-slate-200">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <Button
-            key={id}
-            variant="ghost"
-            onClick={() => setTab(id)}
-            className={cn(
-              "gap-2 rounded-none border-b-2 -mb-px h-11 px-5 font-semibold",
-              tab === id
-                ? "border-indigo-600 text-indigo-600 bg-transparent hover:bg-transparent hover:text-indigo-600"
-                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-transparent",
-            )}
-          >
-            <Icon size={15} />
-            {label}
-          </Button>
-        ))}
-      </div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab} />
 
       {/* 탭 컨텐츠 */}
       <div>
@@ -116,7 +98,7 @@ function AdminCharacterConsole() {
         )}
         {tab === "create" && <CharacterCreate onCreated={handleCreated} />}
       </div>
-    </main>
+    </PageContainer>
   );
 }
 
@@ -149,7 +131,7 @@ function MyCharacterConsole() {
   }, []);
 
   return (
-    <main className="max-w-4xl mx-auto px-6 py-10 space-y-8">
+    <PageContainer max="4xl" className="space-y-8">
       {errorMessage && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
           {errorMessage}
@@ -161,7 +143,7 @@ function MyCharacterConsole() {
         showSelector={false}
         showId={false}
       />
-    </main>
+    </PageContainer>
   );
 }
 

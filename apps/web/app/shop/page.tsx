@@ -17,8 +17,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import PageContainer from "@/components/common/PageContainer";
+import TabBar from "@/components/common/TabBar";
 import { useRequireMember } from "@/lib/auth";
 import { useDialog } from "@/components/common/DialogProvider";
 
@@ -93,14 +93,14 @@ function RunnerShop({ characterId }: { characterId: number }) {
   const cartItemIds = new Set(cart.map((e) => e.item.id));
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">
+    <PageContainer className="space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">상점</h1>
         <p className="text-sm text-slate-500">보유 골드로 아이템을 구매할 수 있습니다.</p>
       </div>
 
-      <div className={cn("flex gap-6 items-start", cart.length > 0 ? "flex-row" : "")}>
-        <div className="flex-1 min-w-0">
+      <div className="flex flex-col items-start gap-6 lg:flex-row">
+        <div className="w-full min-w-0 flex-1">
           <ShopGrid
             characterId={characterId}
             cartItemIds={cartItemIds}
@@ -118,7 +118,7 @@ function RunnerShop({ characterId }: { characterId: number }) {
           />
         )}
       </div>
-    </main>
+    </PageContainer>
   );
 }
 
@@ -152,10 +152,10 @@ function AdminShop() {
   const cartItemIds = new Set(cart.map((e) => e.item.id));
 
   return (
-    <main className="max-w-6xl mx-auto px-6 py-10 space-y-8">
+    <PageContainer className="space-y-8">
       {/* 캐릭터 선택 */}
-      <div className="flex items-center gap-3">
-        <span className="text-sm font-semibold text-slate-600 whitespace-nowrap">
+      <div className="flex flex-wrap items-center gap-3">
+        <span className="whitespace-nowrap text-sm font-semibold text-slate-600">
           아이템을 구매할 캐릭터
         </span>
         <Select
@@ -182,30 +182,14 @@ function AdminShop() {
         )}
       </div>
 
-      {/* 탭 바 */}
-      <div className="flex items-center gap-1 border-b border-slate-200">
-        {TABS.map(({ id, label, icon: Icon }) => (
-          <Button
-            key={id}
-            variant="ghost"
-            onClick={() => {
-              if (id === "add") {
-                setEditingItem(null);
-              }
-              setTab(id);
-            }}
-            className={cn(
-              "gap-2 rounded-none border-b-2 -mb-px h-11 px-5 font-semibold",
-              tab === id
-                ? "border-indigo-600 text-indigo-600 bg-transparent hover:bg-transparent hover:text-indigo-600"
-                : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-transparent",
-            )}
-          >
-            <Icon size={15} />
-            {label}
-          </Button>
-        ))}
-      </div>
+      <TabBar
+        tabs={TABS}
+        active={tab}
+        onChange={(id) => {
+          if (id === "add") setEditingItem(null);
+          setTab(id);
+        }}
+      />
 
       {/* 탭 컨텐츠 */}
       <div>
@@ -215,13 +199,8 @@ function AdminShop() {
           </p>
         )}
         {tab === "items" && characterId != null && (
-          <div
-            className={cn(
-              "flex gap-6 items-start",
-              cart.length > 0 ? "flex-row" : "",
-            )}
-          >
-            <div className="flex-1 min-w-0">
+          <div className="flex flex-col items-start gap-6 lg:flex-row">
+            <div className="w-full min-w-0 flex-1">
               <ShopGrid
                 characterId={characterId}
                 cartItemIds={cartItemIds}
@@ -271,7 +250,7 @@ function AdminShop() {
           />
         )}
       </div>
-    </main>
+    </PageContainer>
   );
 }
 

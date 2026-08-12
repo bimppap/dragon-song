@@ -30,7 +30,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
   const totalQty = entries.reduce((sum, e) => sum + e.qty, 0);
 
   return (
-    <aside className="w-72 shrink-0 border border-slate-200 rounded-xl bg-white overflow-hidden flex flex-col">
+    <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white lg:w-72">
       {/* 헤더 */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 bg-slate-50">
         <ShoppingCart size={16} className="text-indigo-500" />

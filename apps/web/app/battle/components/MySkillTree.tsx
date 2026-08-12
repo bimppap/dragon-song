@@ -149,7 +149,7 @@ export default function MySkillTree({ characterId }: Props) {
       )}
 
       {editingId !== null && (
-        <div className="flex items-center gap-2 border border-indigo-200 bg-indigo-50 rounded-xl p-4">
+        <div className="flex flex-wrap items-center gap-2 border border-indigo-200 bg-indigo-50 rounded-xl p-4">
           <Pencil size={15} className="text-indigo-500 shrink-0" />
           <Input
             value={editingName}

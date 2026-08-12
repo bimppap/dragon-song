@@ -51,7 +51,7 @@ export default function SignupPage() {
   }
 
   return (
-    <main className="mx-auto max-w-sm px-6 py-20">
+    <main className="mx-auto max-w-sm px-4 py-12 sm:px-6 sm:py-20">
       <Card>
         <CardHeader>
           <CardTitle>회원가입</CardTitle>

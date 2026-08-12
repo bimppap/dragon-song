@@ -5,8 +5,15 @@
   우선순위가 낮아진다. 밖에 쓰면 px-4, mx-auto 같은 유틸 클래스를 덮어씀.
 */
 @layer base {
+  /* 모바일은 기본 크기, sm 이상에서 112%로 확대 (좁은 화면 여백 확보) */
   html {
-    font-size: 112%;
+    font-size: 100%;
+  }
+
+  @media (min-width: 640px) {
+    html {
+      font-size: 112%;
+    }
   }
 
   html,
