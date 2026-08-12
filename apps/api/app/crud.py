@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException
 from sqlalchemy import func
@@ -222,6 +222,7 @@ def _character_read_kwargs(character: Character) -> dict:
         revive_hp=character.revive_hp,
         act_time=character.act_time,
         over_heal=character.over_heal,
+        image_url=character.image_url,
     )
 
 
@@ -404,7 +405,22 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         ],
         purchase_history=get_purchases(db, character.id, None),
         reward_history=get_rewards_by_character(db, character.id),
+        attendance_streak=_attendance_streak(db, character.id),
     )
+
+
+def _attendance_streak(db: Session, character_id: int) -> int:
+    """오늘부터 거슬러 올라가며 연속으로 출석한 일수. 오늘 미출석이면 0."""
+    records = db.query(AttendanceRecord).all()
+    present_dates = {
+        rec.attendance_date for rec in records if character_id in (rec.character_ids or [])
+    }
+    streak = 0
+    day = _today()
+    while day in present_dates:
+        streak += 1
+        day = day - timedelta(days=1)
+    return streak
 
 
 def _chapters_by_name(db: Session) -> dict[str, Chapter]:

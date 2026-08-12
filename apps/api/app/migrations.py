@@ -82,6 +82,8 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN act_time INTEGER NOT NULL DEFAULT 1")
     if "over_heal" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN over_heal BOOLEAN NOT NULL DEFAULT false")
+    if "image_url" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN image_url VARCHAR")
 
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}

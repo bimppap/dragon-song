@@ -242,6 +242,8 @@ class CharacterRead(BaseModel):
     act_time: int | None
     over_heal: bool | None
 
+    image_url: str | None = None
+
 
 class ItemCreate(BaseModel):
     name: str
@@ -344,6 +346,7 @@ class CharacterDetailRead(CharacterRead):
     achieved_challenges: list[CharacterAchievedChallengeRead]
     purchase_history: list[PurchaseRead]
     reward_history: list[RewardRead]
+    attendance_streak: int = 0
 
 
 class ChallengeCreate(BaseModel):

@@ -121,6 +121,8 @@ class Character(Base):
     act_time: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     over_heal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
 
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL
+
 
 class Item(Base):
     __tablename__ = "items"

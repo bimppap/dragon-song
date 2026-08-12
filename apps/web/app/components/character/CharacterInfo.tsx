@@ -69,7 +69,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { equipItem, fetchCharacterDetail, unequipItem, useItem } from "@/lib/api";
+import { equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage, useItem } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem, Reward } from "@/lib/api";
 
 interface Props {
@@ -368,6 +368,8 @@ export default function CharacterInfo({
   const [showDetails, setShowDetails] = useState(false);
   const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(null);
   const [itemActionError, setItemActionError] = useState<string | null>(null);
+  const [imageUploading, setImageUploading] = useState(false);
+  const [imageError, setImageError] = useState<string | null>(null);
 
   const selectedCharacterId = characters.some(
     (character) => character.id === selectedCharacterIdState,
@@ -428,6 +430,22 @@ export default function CharacterInfo({
       setItemActionError(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.");
     } finally {
       setItemActionLoadingId(null);
+    }
+  }
+
+  async function handleImageUpload(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || selectedDetail == null) return;
+    setImageUploading(true);
+    setImageError(null);
+    try {
+      const next = await uploadCharacterImage(selectedDetail.id, file);
+      setDetail(next);
+    } catch (error) {
+      setImageError(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
+    } finally {
+      setImageUploading(false);
     }
   }
 
@@ -505,12 +523,28 @@ export default function CharacterInfo({
         <>
           <Card>
             <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row sm:items-start">
-              {/* 명함 좌측: 캐릭터 이미지 자리 (상세정보 펼침과 무관하게 고정 크기) */}
-              <div className="flex aspect-3/4 w-full shrink-0 items-center justify-center rounded-xl border border-dashed border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 sm:w-40">
-                <div className="flex flex-col items-center gap-1 text-slate-300">
-                  <ImageIcon size={30} />
-                  <span className="text-xs font-medium">이미지</span>
+              {/* 명함 좌측: 캐릭터 이미지 (정사각형 고정, 편집 가능) */}
+              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-40">
+                <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+                  {selectedDetail.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} className="size-full object-cover" />
+                  ) : (
+                    <div className="flex size-full flex-col items-center justify-center gap-1 text-slate-300">
+                      <ImageIcon size={30} />
+                      <span className="text-xs font-medium">이미지</span>
+                    </div>
+                  )}
+                  <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-slate-900/60 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-900/75">
+                    <ImageIcon size={12} />
+                    {imageUploading ? "업로드 중..." : selectedDetail.image_url ? "이미지 변경" : "이미지 등록"}
+                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
+                  </label>
                 </div>
+                <p className="text-[11px] leading-tight text-slate-400 dark:text-slate-500">
+                  정사각형 이미지를 권장합니다. 업로드 시 WebP로 변환되며 5MB를 넘으면 실패합니다.
+                </p>
+                {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
               </div>
 
               {/* 명함 우측: 정보 */}
@@ -562,6 +596,12 @@ export default function CharacterInfo({
                     <Gauge size={12} className="text-indigo-500" />
                     AP {numberFormatter.format(selectedDetail.ap)}
                   </Badge>
+                  {selectedDetail.attendance_streak > 0 && (
+                    <Badge className="gap-1 border border-orange-300 bg-orange-100 font-num text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
+                      <Flame size={12} />
+                      연속 {selectedDetail.attendance_streak}일 출석!
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">

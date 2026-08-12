@@ -257,6 +257,8 @@ export interface Character {
   revive_hp: number | null;
   act_time: number | null;
   over_heal: boolean | null;
+
+  image_url: string | null;
 }
 
 export type CharacterCreate = Partial<Omit<Character, "id">> & { name: string };
@@ -285,6 +287,7 @@ export interface CharacterDetail extends Character {
   achieved_challenges: CharacterAchievedChallenge[];
   purchase_history: Purchase[];
   reward_history: Reward[];
+  attendance_streak: number;
 }
 
 export interface ChallengeRewardItemGrant {
@@ -376,6 +379,22 @@ export async function fetchCharacters(): Promise<Character[]> {
 
 export async function fetchCharacterDetail(characterId: number): Promise<CharacterDetail> {
   return request<CharacterDetail>(`/characters/${characterId}`, undefined, "캐릭터 상세 조회 실패");
+}
+
+export async function uploadCharacterImage(characterId: number, file: File): Promise<CharacterDetail> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/characters/${characterId}/image`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "캐릭터 이미지 업로드 실패");
+  }
+  return res.json();
 }
 
 export async function createCharacter(data: CharacterCreate): Promise<Character> {

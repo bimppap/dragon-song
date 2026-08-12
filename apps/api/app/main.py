@@ -129,6 +129,39 @@ def get_character(
     return detail
 
 
+@app.post("/characters/{character_id}/image", response_model=CharacterDetailRead)
+async def upload_character_image(
+    character_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """캐릭터 이미지를 WebP로 변환해 버킷 character/ 디렉토리에 업로드하고, 기존 이미지는 삭제한다.
+
+    본인 캐릭터 또는 관리자만 편집할 수 있다.
+    """
+    _require_own_character_or_admin(db, member, character_id)
+    character = db.get(Character, character_id)
+    if not character:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+
+    data = await file.read()
+    slug = re.sub(r"\s+", "_", character.name.strip())
+    result = await storage.upload_image_to_bucket(f"character/{character.id}_{slug}", data)
+
+    old_path = storage.public_url_to_path(character.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    character.image_url = result["public_url"]
+    db.commit()
+
+    detail = crud.get_character_detail(db, character_id)
+    if member.role != "ADMIN":
+        detail = crud.scrub_admin_only_stats(detail)
+    return detail
+
+
 @app.get("/attendance", response_model=AttendanceRecordRead)
 def get_attendance(attendance_date: date, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_attendance_record(db, attendance_date)
