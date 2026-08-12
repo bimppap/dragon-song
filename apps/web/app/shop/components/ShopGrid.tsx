@@ -83,27 +83,28 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
     return <p className="py-12 text-center text-sm text-muted">판매 중인 아이템이 없습니다.</p>;
 
   return (
-    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+    <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
       {items.map((item) => {
         const stock = remainingStock(item);
         const soldOut = stock === 0;
         const inCart = cartItemIds.has(item.id);
         return (
           <InfoTooltip key={item.id} side="top" content={<ItemTooltip item={item} />}>
-            <div className="flex cursor-default gap-3 rounded-xl border border-line bg-surface p-3 transition hover:border-gold hover:shadow-sm">
+            <div className="flex min-h-24 min-w-0 cursor-default gap-3 rounded-xl border border-line bg-surface p-3 transition hover:border-gold hover:shadow-sm">
               <ItemImage url={item.image_url} className="size-16 shrink-0 rounded-lg" />
               <div className="flex min-w-0 flex-1 flex-col justify-between gap-1.5">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-ivory">{item.name}</p>
+                  <p className="whitespace-nowrap text-sm font-semibold text-ivory">{item.name}</p>
                   <PriceText item={item} />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   {stock !== null ? (
-                    <span className="font-num text-xs text-muted">{soldOut ? "품절" : `${stock}개 남음`}</span>
+                    <span className="shrink-0 whitespace-nowrap font-num text-xs text-muted">{soldOut ? "품절" : `${stock}개 남음`}</span>
                   ) : (
                     <span />
                   )}
                   <Button
+                    className="shrink-0"
                     size="sm"
                     variant={inCart ? "secondary" : soldOut ? "outline" : "default"}
                     disabled={soldOut}

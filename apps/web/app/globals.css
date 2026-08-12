@@ -170,6 +170,11 @@
     opacity: 0.76;
   }
 
+  .music-dot-playing {
+    transform-origin: top;
+    animation: music-dot-fall 0.72s steps(3, end) infinite alternate;
+  }
+
   /* 스크롤 기능은 유지하되 스크롤바만 숨김 */
   .no-scrollbar {
     -ms-overflow-style: none;
@@ -178,6 +183,11 @@
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
+}
+
+@keyframes music-dot-fall {
+  from { transform: translateY(0); opacity: 0.38; }
+  to { transform: translateY(5px); opacity: 1; }
 }
 
 /*

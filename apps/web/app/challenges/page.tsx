@@ -47,16 +47,16 @@ import type {
   ChallengeCreate,
   ChallengeProgress,
   ChallengeProgressUpdate,
-  ChallengeRewardItemGrant,
+  RewardGrant,
   Item,
 } from "@/lib/api";
-import { cn, parsePositiveInt } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { useRequireMember } from "@/lib/auth";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
-import RewardComposer from "@/components/common/RewardComposer";
+import RewardComposer, { type RewardFormEntry } from "@/components/common/RewardComposer";
 
 function RunnerChallengeList() {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
@@ -127,20 +127,12 @@ function RunnerChallengeList() {
 type PageTab = "manage" | "status";
 type ChallengeVisibility = "공개" | "비공개";
 
-type RewardItemFormEntry = { item_id: string; quantity: string };
-
 type ChallengeFormState = {
   chapter: string;
   name: string;
   description: string;
   reward: string;
-  reward_gold: string;
-  reward_experience: string;
-  reward_ap: string;
-  reward_hp: string;
-  reward_attack: string;
-  reward_defense: string;
-  reward_items: RewardItemFormEntry[];
+  reward_entries: RewardFormEntry[];
   visibility: ChallengeVisibility;
 };
 
@@ -154,13 +146,7 @@ const DEFAULT_FORM: ChallengeFormState = {
   name: "",
   description: "",
   reward: "",
-  reward_gold: "0",
-  reward_experience: "0",
-  reward_ap: "0",
-  reward_hp: "0",
-  reward_attack: "0",
-  reward_defense: "0",
-  reward_items: [],
+  reward_entries: [],
   visibility: "공개",
 };
 
@@ -169,24 +155,26 @@ function toVisibilityText(isPublic: boolean): ChallengeVisibility {
 }
 
 function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
-  const rewardItems: ChallengeRewardItemGrant[] = form.reward_items
-    .map((entry) => ({
-      item_id: parseInt(entry.item_id, 10) || 0,
-      quantity: Math.max(1, parseInt(entry.quantity, 10) || 1),
-    }))
-    .filter((entry) => entry.item_id > 0);
+  const rewardItems = form.reward_entries.flatMap<RewardGrant>((entry) => {
+    if (entry.type === "item") {
+      const itemId = parseInt(entry.item_id, 10) || 0;
+      return itemId > 0 ? [{ type: "item" as const, item_id: itemId, quantity: Math.max(1, parseInt(entry.quantity, 10) || 1) }] : [];
+    }
+    const amount = Number(entry.amount);
+    return amount > 0 ? [{ type: "stat" as const, stat: entry.stat, amount }] : [];
+  });
 
   return {
     chapter: form.chapter.trim(),
     name: form.name.trim(),
     description: form.description.trim(),
     reward: form.reward.trim(),
-    reward_gold: parsePositiveInt(form.reward_gold),
-    reward_experience: parsePositiveInt(form.reward_experience),
-    reward_ap: parsePositiveInt(form.reward_ap),
-    reward_hp: parsePositiveInt(form.reward_hp),
-    reward_attack: parsePositiveInt(form.reward_attack),
-    reward_defense: parsePositiveInt(form.reward_defense),
+    reward_gold: 0,
+    reward_experience: 0,
+    reward_ap: 0,
+    reward_hp: 0,
+    reward_attack: 0,
+    reward_defense: 0,
     reward_items: rewardItems,
     is_public: form.visibility === "공개",
   };
@@ -330,13 +318,7 @@ export function ChallengeAdmin() {
         name: "",
         description: "",
         reward: "",
-        reward_gold: "0",
-        reward_experience: "0",
-        reward_ap: "0",
-        reward_hp: "0",
-        reward_attack: "0",
-        reward_defense: "0",
-        reward_items: [],
+        reward_entries: [],
         visibility: "공개",
       });
       setErrorMessage(null);
@@ -367,7 +349,7 @@ export function ChallengeAdmin() {
         if (c.reward_hp > 0) parts.push(`HP +${c.reward_hp}`);
         if (c.reward_attack > 0) parts.push(`공격력 +${c.reward_attack}`);
         if (c.reward_defense > 0) parts.push(`방어력 +${c.reward_defense}`);
-        if (c.reward_items?.length > 0) parts.push(`아이템 ${c.reward_items.length}종`);
+        if (c.reward_items?.length > 0) parts.push(`구성 보상 ${c.reward_items.length}종`);
         const rewardDesc = parts.length > 0 ? `(${parts.join(", ")})` : "";
         setRewardMessage(`${result.paid_count}명에게 도전과제 보상${rewardDesc}이 지급되었습니다.`);
       }
@@ -376,29 +358,6 @@ export function ChallengeAdmin() {
     } finally {
       setPayingReward(false);
     }
-  }
-
-  function handleAddRewardItem() {
-    setForm((prev) => ({
-      ...prev,
-      reward_items: [...prev.reward_items, { item_id: "", quantity: "1" }],
-    }));
-  }
-
-  function handleUpdateRewardItem(index: number, key: keyof RewardItemFormEntry, value: string) {
-    setForm((prev) => ({
-      ...prev,
-      reward_items: prev.reward_items.map((entry, i) =>
-        i === index ? { ...entry, [key]: value } : entry,
-      ),
-    }));
-  }
-
-  function handleRemoveRewardItem(index: number) {
-    setForm((prev) => ({
-      ...prev,
-      reward_items: prev.reward_items.filter((_, i) => i !== index),
-    }));
   }
 
   function handleSelectChapter(value: string) {
@@ -601,13 +560,9 @@ export function ChallengeAdmin() {
                 </div>
 
                 <RewardComposer
-                  rewards={form}
-                  onRewardChange={handleFormChange}
+                  entries={form.reward_entries}
                   items={items}
-                  rewardItems={form.reward_items}
-                  onAddItem={handleAddRewardItem}
-                  onUpdateItem={handleUpdateRewardItem}
-                  onRemoveItem={handleRemoveRewardItem}
+                  onChange={(entries) => handleFormChange("reward_entries", entries)}
                 />
 
                 <div className="flex flex-col gap-2">

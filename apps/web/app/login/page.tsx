@@ -10,9 +10,6 @@ import { PasswordInput } from "@/components/ui/password-input";
 import {
   Card,
   CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
 import AlertBanner from "@/components/common/AlertBanner";
@@ -45,19 +42,15 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-md flex-col items-center justify-center gap-8 px-4 py-10 sm:px-6">
+    <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center justify-center gap-6 px-4 py-10 sm:px-6">
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src="/dragonsong_title.png"
         alt="Dragon Song"
-        className="w-full max-w-md [image-rendering:pixelated]"
+        className="w-full max-w-3xl [image-rendering:pixelated]"
       />
-      <Card className="w-full max-w-sm">
-        <CardHeader>
-          <CardTitle>로그인</CardTitle>
-          <CardDescription>아이디와 비밀번호를 입력해 주세요.</CardDescription>
-        </CardHeader>
-        <CardContent>
+      <Card className="w-full max-w-xs">
+        <CardContent className="pt-5 pb-5">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {errorMessage && (
               <AlertBanner>{errorMessage}</AlertBanner>
@@ -91,6 +84,9 @@ export default function LoginPage() {
           </p>
         </CardContent>
       </Card>
+      <p className="text-center text-xs leading-relaxed text-muted">
+        원활한 플레이와 전체 UI 이용을 위해 PC 환경 접속을 권장합니다.
+      </p>
     </main>
   );
 }

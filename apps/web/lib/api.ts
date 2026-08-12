@@ -261,7 +261,10 @@ export interface Character {
   image_url: string | null;
 }
 
-export type CharacterCreate = Partial<Omit<Character, "id">> & { name: string };
+export type CharacterCreate = Partial<Omit<Character, "id">> & {
+  name: string;
+  skill_node_ids?: number[];
+};
 
 export interface CharacterOwnedItem {
   item_id: number;
@@ -290,10 +293,11 @@ export interface CharacterDetail extends Character {
   attendance_streak: number;
 }
 
-export interface ChallengeRewardItemGrant {
-  item_id: number;
-  quantity: number;
-}
+export type RewardGrant =
+  | { type: "item"; item_id: number; quantity: number }
+  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset">; amount: number };
+
+export type ChallengeRewardItemGrant = RewardGrant;
 
 export interface Challenge {
   id: number;
@@ -332,6 +336,7 @@ export interface RewardItemEntry {
   amount: number | null;
   item_id: number | null;
   quantity: number | null;
+  stat?: string | null;
 }
 
 export interface Reward {
@@ -530,10 +535,7 @@ export async function payAttendanceRewards(attendanceDate: string): Promise<Rewa
   }, "출석 보상 지급 실패");
 }
 
-export interface MissionRewardItemGrant {
-  item_id: number;
-  quantity: number;
-}
+export type MissionRewardItemGrant = RewardGrant;
 
 export interface Mission {
   id: number;
@@ -628,6 +630,7 @@ export interface Chapter {
   start_date: string;
   end_date: string;
   image_url: string | null;
+  music_url: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -636,6 +639,7 @@ export interface ChapterCreate {
   name: string;
   start_date: string;
   end_date: string;
+  music_url?: string | null;
 }
 
 export async function fetchChapters(): Promise<Chapter[]> {
@@ -668,6 +672,22 @@ export async function uploadChapterImage(chapterId: number, file: File): Promise
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? "챕터 이미지 업로드 실패");
+  }
+  return res.json();
+}
+
+export async function uploadChapterMusic(chapterId: number, file: File): Promise<Chapter> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/chapters/${chapterId}/music`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "챕터 음원 업로드 실패");
   }
   return res.json();
 }

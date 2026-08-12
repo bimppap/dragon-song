@@ -40,6 +40,11 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
 
       {/* 아이템 목록 */}
       <ul className="flex-1 overflow-y-auto divide-y divide-line">
+        {entries.length === 0 && (
+          <li className="px-4 py-10 text-center text-sm text-muted">
+            장바구니가 비어있습니다.
+          </li>
+        )}
         {entries.map(({ item, qty }) => (
           <li key={item.id} className="px-4 py-3 space-y-2">
             <div className="flex items-start justify-between gap-2">

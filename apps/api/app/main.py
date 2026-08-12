@@ -412,13 +412,19 @@ def create_chapter(data: ChapterCreate, member: Member = Depends(require_admin),
 
 
 @app.put("/chapters/{chapter_id}", response_model=ChapterRead)
-def update_chapter(
+async def update_chapter(
     chapter_id: int,
     data: ChapterCreate,
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return crud.update_chapter(db, chapter_id, data)
+    chapter = db.get(Chapter, chapter_id)
+    old_music_url = chapter.music_url if chapter else None
+    old_music_path = storage.public_url_to_path(chapter.music_url) if chapter else None
+    updated = crud.update_chapter(db, chapter_id, data)
+    if old_music_path and updated.music_url != old_music_url:
+        await storage.delete_from_bucket(old_music_path)
+    return updated
 
 
 @app.post("/chapters/{chapter_id}/image", response_model=ChapterRead)
@@ -450,6 +456,45 @@ async def upload_chapter_image(
         start_date=chapter.start_date,
         end_date=chapter.end_date,
         image_url=chapter.image_url,
+        music_url=chapter.music_url,
+        is_active=chapter.start_date <= today <= chapter.end_date,
+        created_at=chapter.created_at,
+    )
+
+
+@app.post("/chapters/{chapter_id}/music", response_model=ChapterRead)
+async def upload_chapter_music(
+    chapter_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """챕터 음원을 chapter/ 디렉토리에 저장하고 기존 첨부 음원을 교체한다."""
+    chapter = db.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
+
+    result = await storage.upload_audio_to_bucket(
+        f"chapter/{chapter.id}_music",
+        await file.read(),
+        content_type=file.content_type,
+        filename=file.filename,
+    )
+    old_path = storage.public_url_to_path(chapter.music_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    chapter.music_url = result["public_url"]
+    db.commit()
+    db.refresh(chapter)
+    today = crud._today()
+    return ChapterRead(
+        id=chapter.id,
+        name=chapter.name,
+        start_date=chapter.start_date,
+        end_date=chapter.end_date,
+        image_url=chapter.image_url,
+        music_url=chapter.music_url,
         is_active=chapter.start_date <= today <= chapter.end_date,
         created_at=chapter.created_at,
     )

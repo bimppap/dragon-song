@@ -145,17 +145,17 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 height: CELL_H,
               }}
               className={cn(
-                "flex flex-col items-center gap-1 pt-1 text-center",
+                "z-10 flex flex-col items-center gap-1 pt-1 text-center",
                 clickable ? "cursor-pointer" : "cursor-default",
-                disabled && !highlighted ? "opacity-45" : "",
+                disabled && !highlighted ? "grayscale" : "",
               )}
             >
               <span
                 className={cn(
                   "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-surface transition-colors",
                   highlighted
-                    ? "border-gold bg-gold/10 text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
-                    : "border-line text-muted",
+                    ? "border-gold bg-[#3b321f] text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
+                    : disabled ? "border-line bg-inset text-muted" : "border-line text-muted",
                   clickable && !highlighted ? "hover:border-gold" : "",
                 )}
               >

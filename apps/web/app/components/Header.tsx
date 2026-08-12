@@ -6,6 +6,7 @@ import { House, LogIn, LogOut, Menu, Settings, Sparkles, Store, Swords, Trophy, 
 import { useState } from "react";
 import type { MemberRole } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import ChapterMusicBar from "@/components/common/ChapterMusicBar";
 
 const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: MemberRole[] }[] = [
   { href: "/", label: "홈", icon: House, roles: ["RUNNER", "ADMIN"] },
@@ -29,9 +30,12 @@ export default function Header() {
   function signOut() { logout(); router.replace("/login"); }
 
   return <>
-    {pathname !== "/" && <Link href="/" className="fixed left-5 top-5 z-50 block" aria-label="홈으로 이동">
-      <img src="/light.png" alt="Dragon Song 홈" className="h-9 w-auto object-contain" />
-    </Link>}
+    <div className="fixed left-5 top-5 z-50 flex items-start gap-3">
+      {pathname !== "/" && <Link href="/" className="block shrink-0" aria-label="홈으로 이동">
+        <img src="/light.png" alt="Dragon Song 홈" className="h-9 w-auto object-contain" />
+      </Link>}
+      <ChapterMusicBar />
+    </div>
 
     <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
       {pathname !== "/" && member && <div className="relative">

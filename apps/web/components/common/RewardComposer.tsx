@@ -1,5 +1,6 @@
 "use client";
 
+import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,117 +11,120 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ITEM_EFFECT_STAT_OPTIONS, type ItemEffectStat } from "@/lib/api";
 
-export interface RewardValues {
-  reward_gold: string;
-  reward_experience: string;
-  reward_ap: string;
-  reward_hp: string;
-  reward_attack: string;
-  reward_defense: string;
-}
-
-export interface RewardItemEntry {
-  item_id: string;
-  quantity: string;
-}
-
-const REWARD_FIELDS: { key: keyof RewardValues; label: string }[] = [
-  { key: "reward_gold", label: "골드 (G)" },
-  { key: "reward_experience", label: "경험치" },
-  { key: "reward_ap", label: "AP" },
-  { key: "reward_hp", label: "HP 증가" },
-  { key: "reward_attack", label: "공격력 증가" },
-  { key: "reward_defense", label: "방어력 증가" },
-];
+export type RewardFormEntry =
+  | { id: string; type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset">; amount: string }
+  | { id: string; type: "item"; item_id: string; quantity: string };
 
 interface Props {
-  rewards: RewardValues;
-  onRewardChange: (key: keyof RewardValues, value: string) => void;
+  entries: RewardFormEntry[];
   items: { id: number; name: string }[];
-  rewardItems: RewardItemEntry[];
-  onAddItem: () => void;
-  onUpdateItem: (index: number, key: keyof RewardItemEntry, value: string) => void;
-  onRemoveItem: (index: number) => void;
+  onChange: (entries: RewardFormEntry[]) => void;
 }
 
-/** 도전과제·임무 등에서 공용으로 쓰는 보상 구성(수치 + 지급 아이템) 편집 UI. */
-export default function RewardComposer({
-  rewards,
-  onRewardChange,
-  items,
-  rewardItems,
-  onAddItem,
-  onUpdateItem,
-  onRemoveItem,
-}: Props) {
+const STAT_OPTIONS = ITEM_EFFECT_STAT_OPTIONS.filter((option) => option.value !== "ap_reset");
+
+function createEntry(type: RewardFormEntry["type"]): RewardFormEntry {
+  const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  return type === "item"
+    ? { id, type, item_id: "", quantity: "1" }
+    : { id, type, stat: "gold", amount: "1" };
+}
+
+/** 임무·도전과제에서 아이템과 모든 캐릭터 능력치를 동일한 행 추가 방식으로 구성한다. */
+export default function RewardComposer({ entries, items, onChange }: Props) {
+  function replace(index: number, entry: RewardFormEntry) {
+    onChange(entries.map((current, currentIndex) => currentIndex === index ? entry : current));
+  }
+
+  function changeType(index: number, type: RewardFormEntry["type"]) {
+    replace(index, { ...createEntry(type), id: entries[index].id });
+  }
+
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-line bg-inset px-4 py-4">
-      <p className="text-xs font-semibold uppercase tracking-widest text-muted">보상 구성</p>
-
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {REWARD_FIELDS.map(({ key, label }) => (
-          <div key={key} className="flex flex-col gap-1.5">
-            <label className="text-xs font-semibold text-ivory/85">{label}</label>
-            <Input
-              type="number"
-              min={0}
-              value={rewards[key]}
-              onChange={(e) => onRewardChange(key, e.target.value)}
-              placeholder="0"
-            />
-          </div>
-        ))}
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex flex-col gap-1">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted">보상 구성</p>
+          <p className="text-xs text-muted">아이템과 능력치를 필요한 만큼 추가할 수 있습니다.</p>
+        </div>
+        <Button type="button" variant="outline" size="sm" onClick={() => onChange([...entries, createEntry("stat")])}>
+          <Plus data-icon="inline-start" />
+          보상 추가
+        </Button>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-semibold text-ivory/85">지급 아이템</label>
-          <Button type="button" variant="outline" onClick={onAddItem} className="h-7 px-3 text-xs">
-            + 추가
-          </Button>
-        </div>
-        {rewardItems.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {rewardItems.map((entry, index) => (
-              <div key={index} className="flex items-center gap-2">
-                <Select value={entry.item_id} onValueChange={(v) => onUpdateItem(index, "item_id", v)}>
-                  <SelectTrigger className="flex-1">
-                    <SelectValue placeholder="아이템 선택" />
-                  </SelectTrigger>
+      {entries.length === 0 ? (
+        <p className="py-3 text-center text-xs text-muted">구성된 보상이 없습니다.</p>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {entries.map((entry, index) => (
+            <div key={entry.id} className="grid grid-cols-[110px_minmax(0,1fr)_88px_36px] items-center gap-2">
+              <Select value={entry.type} onValueChange={(value: RewardFormEntry["type"]) => changeType(index, value)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value="stat">능력치</SelectItem>
+                    <SelectItem value="item">아이템</SelectItem>
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+
+              {entry.type === "stat" ? (
+                <Select
+                  value={entry.stat}
+                  onValueChange={(stat: Exclude<ItemEffectStat, "ap_reset">) => replace(index, { ...entry, stat })}
+                >
+                  <SelectTrigger><SelectValue placeholder="능력치 선택" /></SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {items.map((item) => (
-                        <SelectItem key={item.id} value={String(item.id)}>
-                          {item.name}
-                        </SelectItem>
+                      {STAT_OPTIONS.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
                       ))}
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <Input
-                  type="number"
-                  min={1}
-                  value={entry.quantity}
-                  onChange={(e) => onUpdateItem(index, "quantity", e.target.value)}
-                  placeholder="수량"
-                  className="w-20"
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => onRemoveItem(index)}
-                  className="h-8 px-2 text-muted hover:text-red-500"
+              ) : (
+                <Select
+                  value={entry.item_id}
+                  onValueChange={(item_id) => replace(index, { ...entry, item_id })}
                 >
-                  ✕
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted">아이템 없음</p>
-        )}
-      </div>
+                  <SelectTrigger><SelectValue placeholder="아이템 선택" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {items.map((item) => (
+                        <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              )}
+
+              <Input
+                type="number"
+                min={entry.type === "item" ? 1 : 0.0001}
+                step={entry.type === "item" ? 1 : "any"}
+                value={entry.type === "item" ? entry.quantity : entry.amount}
+                onChange={(event) => entry.type === "item"
+                  ? replace(index, { ...entry, quantity: event.target.value })
+                  : replace(index, { ...entry, amount: event.target.value })}
+                placeholder={entry.type === "item" ? "수량" : "수치"}
+              />
+
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                aria-label="보상 삭제"
+                onClick={() => onChange(entries.filter((_, currentIndex) => currentIndex !== index))}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

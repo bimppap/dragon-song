@@ -44,6 +44,30 @@ class ItemEffect(BaseModel):
     delta: float
 
 
+def _validate_reward_entries(entries: list[dict]) -> list[dict]:
+    """아이템 지급과 능력치 증가를 한 목록으로 검증한다. 구형 아이템 형식도 허용한다."""
+    validated: list[dict] = []
+    for entry in entries:
+        entry_type = entry.get("type", "item")
+        if entry_type == "item":
+            item_id = int(entry.get("item_id", 0))
+            quantity = int(entry.get("quantity", 1))
+            if item_id <= 0 or quantity <= 0:
+                raise ValueError("아이템과 수량을 올바르게 선택해 주세요.")
+            validated.append({"type": "item", "item_id": item_id, "quantity": quantity})
+            continue
+        if entry_type == "stat":
+            effect = ItemEffect(stat=entry.get("stat"), delta=entry.get("amount", 0))
+            if effect.stat in ITEM_EFFECT_SPECIAL_STATS:
+                raise ValueError("보상으로 지급할 수 없는 특수 효과입니다.")
+            if effect.delta <= 0:
+                raise ValueError("능력치 보상 수치는 0보다 커야 합니다.")
+            validated.append({"type": "stat", "stat": effect.stat, "amount": effect.delta})
+            continue
+        raise ValueError("지원하지 않는 보상 유형입니다.")
+    return validated
+
+
 class SignupRequest(BaseModel):
     login_id: str = Field(min_length=3, max_length=50)
     password: str = Field(min_length=4, max_length=100)
@@ -96,6 +120,7 @@ class ChapterCreate(BaseModel):
     name: str
     start_date: date
     end_date: date
+    music_url: str | None = None
 
 
 class ChapterRead(BaseModel):
@@ -104,6 +129,7 @@ class ChapterRead(BaseModel):
     start_date: date
     end_date: date
     image_url: str | None = None
+    music_url: str | None = None
     is_active: bool
     created_at: datetime
 
@@ -112,9 +138,10 @@ class ChapterRead(BaseModel):
 
 class RewardItemEntry(BaseModel):
     type: str  # "gold" | "item"
-    amount: int | None = None
+    amount: float | None = None
     item_id: int | None = None
     quantity: int | None = None
+    stat: str | None = None
 
 
 class RewardRead(BaseModel):
@@ -139,6 +166,7 @@ class CharacterCreate(BaseModel):
 
     name: str
     faction: Faction | None = None
+    skill_node_ids: list[int] = Field(default_factory=list)
     gold: int = Field(default=1000, ge=0)
     cp: int = Field(default=0, ge=0)
     ap: int = Field(default=10, ge=0)
@@ -149,25 +177,25 @@ class CharacterCreate(BaseModel):
     exp: int = Field(default=0, ge=0)
 
     # 적게 변하는 능력치
-    stat_courage: int = Field(default=0, ge=0)
-    stat_endurance: int = Field(default=0, ge=0)
-    stat_charity: int = Field(default=0, ge=0)
-    stat_wisdom: int = Field(default=0, ge=0)
+    stat_courage: int = Field(default=0)
+    stat_endurance: int = Field(default=0)
+    stat_charity: int = Field(default=0)
+    stat_wisdom: int = Field(default=0)
 
     # 체력 / 마나
-    hp: int = Field(default=0, ge=0)
-    hp_max: int = Field(default=0, ge=0)
+    hp: int = Field(default=0)
+    hp_max: int = Field(default=0)
     hp_max_p: float = Field(default=0)
     hp_regen_true: int = Field(default=0)
     hp_regen_fixed: float = Field(default=0)
-    mp: int = Field(default=0, ge=0)
-    mp_max: int = Field(default=0, ge=0)
+    mp: int = Field(default=0)
+    mp_max: int = Field(default=0)
     mp_regen: int = Field(default=0)
 
     # 상세 능력치
-    atk: int = Field(default=0, ge=0)
+    atk: int = Field(default=0)
     atk_p: float = Field(default=0)
-    def_: int = Field(default=0, ge=0, alias="def")
+    def_: int = Field(default=0, alias="def")
     def_p: float = Field(default=0)
     def_eff: float = Field(default=0)
     attn: int = Field(default=0)
@@ -364,6 +392,11 @@ class ChallengeCreate(BaseModel):
     reward_items: list[dict] = Field(default_factory=list)
     is_public: bool = True
 
+    @field_validator("reward_items")
+    @classmethod
+    def validate_reward_entries(cls, entries: list[dict]) -> list[dict]:
+        return _validate_reward_entries(entries)
+
 
 class ChallengeRead(BaseModel):
     id: int
@@ -422,6 +455,11 @@ class MissionCreate(BaseModel):
     reward_defense: int = Field(default=0, ge=0)
     reward_items: list[dict] = Field(default_factory=list)
     is_public: bool = True
+
+    @field_validator("reward_items")
+    @classmethod
+    def validate_reward_entries(cls, entries: list[dict]) -> list[dict]:
+        return _validate_reward_entries(entries)
 
 
 class MissionRead(BaseModel):

@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 
 interface DialogOptions {
@@ -15,8 +16,9 @@ interface DialogOptions {
 type DialogInput = string | DialogOptions;
 
 interface DialogState extends DialogOptions {
-  mode: "confirm" | "alert";
-  resolve: (value: boolean) => void;
+  mode: "confirm" | "alert" | "prompt";
+  initialValue?: string;
+  resolve: (value: boolean | string | null) => void;
 }
 
 interface DialogContextValue {
@@ -24,6 +26,8 @@ interface DialogContextValue {
   confirm: (input: DialogInput) => Promise<boolean>;
   /** 안내 팝업. 확인 버튼만 있으며 항상 닫힌다. */
   alert: (input: DialogInput) => Promise<void>;
+  /** 텍스트 입력 팝업. 확인 시 입력값, 취소 시 null. */
+  prompt: (input: DialogInput, initialValue?: string) => Promise<string | null>;
 }
 
 const DialogContext = createContext<DialogContextValue | null>(null);
@@ -34,11 +38,12 @@ function normalize(input: DialogInput): DialogOptions {
 
 export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [dialog, setDialog] = useState<DialogState | null>(null);
+  const [promptValue, setPromptValue] = useState("");
 
   const confirm = useCallback(
     (input: DialogInput) =>
       new Promise<boolean>((resolve) => {
-        setDialog({ mode: "confirm", ...normalize(input), resolve });
+        setDialog({ mode: "confirm", ...normalize(input), resolve: (value) => resolve(Boolean(value)) });
       }),
     [],
   );
@@ -51,7 +56,21 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
     [],
   );
 
-  const close = useCallback((value: boolean) => {
+  const prompt = useCallback(
+    (input: DialogInput, initialValue = "") =>
+      new Promise<string | null>((resolve) => {
+        setPromptValue(initialValue);
+        setDialog({
+          mode: "prompt",
+          initialValue,
+          ...normalize(input),
+          resolve: (value) => resolve(typeof value === "string" ? value : null),
+        });
+      }),
+    [],
+  );
+
+  const close = useCallback((value: boolean | string | null) => {
     setDialog((prev) => {
       prev?.resolve(value);
       return null;
@@ -60,16 +79,17 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!dialog) return;
+    const isPrompt = dialog.mode === "prompt";
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") close(false);
-      else if (e.key === "Enter") close(true);
+      else if (e.key === "Enter") close(isPrompt ? promptValue : true);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dialog, close]);
+  }, [dialog, close, promptValue]);
 
   return (
-    <DialogContext.Provider value={{ confirm, alert }}>
+    <DialogContext.Provider value={{ confirm, alert, prompt }}>
       {children}
       {dialog && (
         <div
@@ -84,19 +104,27 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           >
             {dialog.title && <h2 className="text-base font-bold text-ivory">{dialog.title}</h2>}
             {dialog.description && (
-              <p className={cn("text-sm text-ivory/85", dialog.title ? "mt-2" : "")}>{dialog.description}</p>
+              <p className={cn("whitespace-pre-line text-sm text-ivory/85", dialog.title ? "mt-2" : "")}>{dialog.description}</p>
+            )}
+            {dialog.mode === "prompt" && (
+              <Input
+                className="mt-4"
+                value={promptValue}
+                onChange={(event) => setPromptValue(event.target.value)}
+                autoFocus
+              />
             )}
             <div className="mt-6 flex justify-end gap-2">
-              {dialog.mode === "confirm" && (
-                <Button variant="outline" size="sm" onClick={() => close(false)}>
+              {(dialog.mode === "confirm" || dialog.mode === "prompt") && (
+                <Button variant="outline" size="sm" onClick={() => close(dialog.mode === "prompt" ? null : false)}>
                   {dialog.cancelText ?? "취소"}
                 </Button>
               )}
               <Button
                 size="sm"
                 variant={dialog.tone === "danger" ? "destructive" : "default"}
-                onClick={() => close(true)}
-                autoFocus
+                onClick={() => close(dialog.mode === "prompt" ? promptValue : true)}
+                autoFocus={dialog.mode !== "prompt"}
               >
                 {dialog.confirmText ?? "확인"}
               </Button>

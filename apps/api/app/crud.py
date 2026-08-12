@@ -106,11 +106,27 @@ def _apply_item_grants(
     reward_items: list[dict],
 ) -> None:
     for grant in item_grant_list:
+        if grant.get("type", "item") != "item":
+            continue
         item_id = grant.get("item_id")
         quantity = grant.get("quantity", 1)
         if item_id and item_id in items_map:
             db.add(Purchase(character_id=character_id, item_id=item_id, quantity=quantity))
             reward_items.append({"type": "item", "item_id": item_id, "quantity": quantity})
+
+
+def _apply_reward_stat_grants(
+    reward_grants: list[dict],
+    character: Character,
+    reward_items: list[dict],
+) -> None:
+    for grant in reward_grants:
+        if grant.get("type") != "stat":
+            continue
+        stat = grant.get("stat")
+        amount = grant.get("amount", 0)
+        _apply_item_effects(character, [{"stat": stat, "delta": amount}], sign=1)
+        reward_items.append({"type": "stat", "stat": stat, "amount": amount})
 
 
 def _create_progress_rows(
@@ -319,6 +335,23 @@ def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
     )
     db.add(character)
     db.flush()
+
+    if data.skill_node_ids:
+        if not data.faction:
+            raise HTTPException(status_code=400, detail="기술을 선택하려면 진영을 먼저 선택해야 합니다.")
+        node_ids = sorted(set(data.skill_node_ids))
+        nodes = db.query(SkillNode).filter(SkillNode.id.in_(node_ids)).all()
+        if len(nodes) != len(node_ids) or any(node.faction != data.faction for node in nodes):
+            raise HTTPException(status_code=400, detail="선택한 진영에 속하지 않는 기술이 포함되어 있습니다.")
+        for node in nodes:
+            applied_effects = [dict(effect) for effect in (node.effects or [])]
+            _apply_item_effects(character, applied_effects, sign=1)
+            db.add(CharacterSkillUnlock(
+                character_id=character.id,
+                node_id=node.id,
+                ap_spent=0,
+                applied_effects=applied_effects,
+            ))
 
     challenge_ids = [challenge_id for challenge_id, in db.query(Challenge.id).all()]
     _create_progress_rows(db, challenge_ids, [character.id])
@@ -950,7 +983,7 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
     }
 
     item_grant_list = challenge.reward_items or []
-    item_ids = [g["item_id"] for g in item_grant_list if "item_id" in g]
+    item_ids = [g["item_id"] for g in item_grant_list if g.get("type", "item") == "item" and "item_id" in g]
     items_map = (
         {item.id: item for item in db.query(Item).filter(Item.id.in_(item_ids)).all()}
         if item_ids else {}
@@ -964,6 +997,7 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
 
         reward_items: list[dict] = []
         _apply_stat_rewards(challenge, character, reward_items)
+        _apply_reward_stat_grants(item_grant_list, character, reward_items)
         _apply_item_grants(db, item_grant_list, items_map, character_id, reward_items)
 
         reward = Reward(
@@ -1184,7 +1218,7 @@ def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
     }
 
     item_grant_list = mission.reward_items or []
-    item_ids = [g["item_id"] for g in item_grant_list if "item_id" in g]
+    item_ids = [g["item_id"] for g in item_grant_list if g.get("type", "item") == "item" and "item_id" in g]
     items_map = (
         {item.id: item for item in db.query(Item).filter(Item.id.in_(item_ids)).all()}
         if item_ids else {}
@@ -1198,6 +1232,7 @@ def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
 
         reward_items: list[dict] = []
         _apply_stat_rewards(mission, character, reward_items)
+        _apply_reward_stat_grants(item_grant_list, character, reward_items)
         _apply_item_grants(db, item_grant_list, items_map, character_id, reward_items)
 
         reward = Reward(
@@ -1228,6 +1263,7 @@ def get_chapters(db: Session) -> list[ChapterRead]:
             start_date=c.start_date,
             end_date=c.end_date,
             image_url=c.image_url,
+            music_url=c.music_url,
             is_active=c.start_date <= today <= c.end_date,
             created_at=c.created_at,
         )
@@ -1240,6 +1276,7 @@ def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
         name=data.name.strip(),
         start_date=data.start_date,
         end_date=data.end_date,
+        music_url=data.music_url.strip() if data.music_url else None,
     )
     db.add(chapter)
     db.commit()
@@ -1251,6 +1288,7 @@ def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
         start_date=chapter.start_date,
         end_date=chapter.end_date,
         image_url=chapter.image_url,
+        music_url=chapter.music_url,
         is_active=chapter.start_date <= today <= chapter.end_date,
         created_at=chapter.created_at,
     )
@@ -1263,6 +1301,7 @@ def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> Chapter
     chapter.name = data.name.strip()
     chapter.start_date = data.start_date
     chapter.end_date = data.end_date
+    chapter.music_url = data.music_url.strip() if data.music_url else None
     db.commit()
     db.refresh(chapter)
     today = _today()
@@ -1272,6 +1311,7 @@ def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> Chapter
         start_date=chapter.start_date,
         end_date=chapter.end_date,
         image_url=chapter.image_url,
+        music_url=chapter.music_url,
         is_active=chapter.start_date <= today <= chapter.end_date,
         created_at=chapter.created_at,
     )
@@ -1292,6 +1332,7 @@ def get_active_chapter(db: Session) -> ChapterRead | None:
         start_date=chapter.start_date,
         end_date=chapter.end_date,
         image_url=chapter.image_url,
+        music_url=chapter.music_url,
         is_active=True,
         created_at=chapter.created_at,
     )

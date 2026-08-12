@@ -1,34 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { CalendarDays, Settings, ShoppingBag, Swords, Users } from "lucide-react";
-import { Calendar } from "@/components/ui/calendar";
 import { fetchChapters, type Chapter } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import HomeFlamefall from "@/components/common/HomeFlamefall";
+import HomeChapterCalendar from "@/components/common/HomeChapterCalendar";
 
 const SHORTCUTS = [
   { href: "/character", label: "캐릭터", icon: Users },
   { href: "/shop", label: "상점", icon: ShoppingBag },
   { href: "/battle", label: "전투", icon: Swords },
 ];
-const CALENDAR_TONES = [
-  "[&>button]:bg-primary/80 [&>button]:text-ivory",
-  "[&>button]:bg-primary-light/75 [&>button]:text-ivory",
-  "[&>button]:bg-gold/65 [&>button]:text-ground",
-];
-
-function chapterModifiers(chapters: Chapter[]) {
-  return Object.fromEntries(chapters.map((chapter) => {
-    const start = new Date(`${chapter.start_date}T00:00:00`);
-    const end = new Date(`${chapter.end_date}T00:00:00`);
-    const days: Date[] = [];
-    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
-    return [`chapter-${chapter.id}`, days];
-  }));
-}
-
 export default function HomePage() {
   const { member } = useAuth();
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -43,11 +27,6 @@ export default function HomePage() {
   const quickLinks = member?.role === "ADMIN"
     ? [...SHORTCUTS, { href: "/admin", label: "관리", icon: Settings }]
     : SHORTCUTS;
-  const chapterDates = useMemo(() => chapterModifiers(chapters), [chapters]);
-  const chapterDateClasses = useMemo(() => Object.fromEntries(chapters.map((chapter, index) => [
-    `chapter-${chapter.id}`,
-    `${CALENDAR_TONES[index % CALENDAR_TONES.length]} hover:brightness-110`,
-  ])), [chapters]);
   const calendarMonth = activeChapter ? new Date(`${activeChapter.start_date}T00:00:00`) : new Date();
 
   return (
@@ -81,12 +60,7 @@ export default function HomePage() {
               <CalendarDays size={11} />
               <h1 className="font-pixel-sm text-[10px] tracking-[0.14em]">SCHEDULE</h1>
             </div>
-            <Calendar
-              month={calendarMonth}
-              modifiers={chapterDates}
-              modifiersClassNames={chapterDateClasses}
-              className="bg-transparent"
-            />
+            <HomeChapterCalendar chapters={chapters} initialMonth={calendarMonth} />
           </section>
 
           <div className="flex min-h-0 flex-[2] items-center justify-center">
@@ -96,7 +70,6 @@ export default function HomePage() {
               className="block max-h-full w-full object-contain"
             />
           </div>
-          {activeChapter && <p className="text-center text-xs text-muted">{activeChapter.name}</p>}
         </div>
       </section>
 

@@ -45,6 +45,7 @@ function formatRewardItems(reward: Reward): string {
         case "stat_hp": return `HP +${item.amount ?? 0}`;
         case "stat_attack": return `공격력 +${item.amount ?? 0}`;
         case "stat_defense": return `방어력 +${item.amount ?? 0}`;
+        case "stat": return `${EFFECT_STAT_LABELS[item.stat ?? ""] ?? item.stat ?? "능력치"} +${item.amount ?? 0}`;
         case "item": return `아이템 ID${item.item_id} ×${item.quantity ?? 1}`;
         default: return item.type;
       }
@@ -69,7 +70,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage, useItem } from "@/lib/api";
+import { EFFECT_STAT_LABELS, equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage, useItem } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem, Reward } from "@/lib/api";
 
 interface Props {
@@ -81,6 +82,7 @@ interface Props {
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
+const percentageFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
 
 const CORE_STATS: {
   key: keyof Pick<CharacterDetail, "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom">;
@@ -655,14 +657,14 @@ export default function CharacterInfo({
                   </Button>
                   {showDetails && (
                     <div className="mt-4 flex flex-col gap-4">
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
                         {DETAIL_STATS.map(({ key, label, isFloat, description }) => (
                           <InfoTooltip key={key} side="top" content={description}>
-                            <div className="flex cursor-help items-center justify-between rounded-lg bg-inset px-3 py-2 text-sm">
-                              <span className="text-muted">{label}</span>
-                              <span className="font-num font-semibold text-ivory">
+                            <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
+                              <span className="shrink-0 whitespace-nowrap text-muted">{label}</span>
+                              <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-ivory">
                                 {isFloat
-                                  ? `${(Number(selectedDetail[key]) * 100).toFixed(1)}%`
+                                  ? `${percentageFormatter.format((1 + Number(selectedDetail[key])) * 100)}%`
                                   : numberFormatter.format(selectedDetail[key])}
                               </span>
                             </div>
@@ -676,15 +678,15 @@ export default function CharacterInfo({
                             <Lock size={12} />
                             관리자 전용 능력치
                           </div>
-                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
                             {ADMIN_ONLY_STATS.map(({ key, label, description, type }) => {
                               const value = selectedDetail[key];
                               if (value == null) return null;
                               return (
                                 <InfoTooltip key={key} side="top" content={description}>
-                                  <div className="flex cursor-help items-center justify-between rounded-lg bg-gold/10 px-3 py-2 text-sm">
-                                    <span className="text-gold">{label}</span>
-                                    <span className="font-num font-semibold text-gold">
+                                  <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-gold/10 px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
+                                    <span className="shrink-0 whitespace-nowrap text-gold">{label}</span>
+                                    <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-gold">
                                       {formatAdminOnlyStat(type, value)}
                                     </span>
                                   </div>

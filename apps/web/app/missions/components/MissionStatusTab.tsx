@@ -184,7 +184,7 @@ export default function MissionStatusTab() {
         if (m.reward_hp > 0) parts.push(`HP +${m.reward_hp}`);
         if (m.reward_attack > 0) parts.push(`공격력 +${m.reward_attack}`);
         if (m.reward_defense > 0) parts.push(`방어력 +${m.reward_defense}`);
-        if (m.reward_items?.length > 0) parts.push(`아이템 ${m.reward_items.length}종`);
+        if (m.reward_items?.length > 0) parts.push(`구성 보상 ${m.reward_items.length}종`);
         const desc = parts.length > 0 ? `(${parts.join(", ")})` : "";
         setRewardMessage(`${result.paid_count}명에게 임무 보상${desc}이 지급되었습니다.`);
       }

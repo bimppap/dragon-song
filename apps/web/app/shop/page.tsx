@@ -103,15 +103,13 @@ function RunnerShop({ characterId }: { characterId: number }) {
             refreshKey={refreshKey}
           />
         </div>
-        {cart.length > 0 && (
-          <Cart
-            entries={cart}
-            loading={cartLoading}
-            onUpdateQty={handleUpdateQty}
-            onRemove={handleRemove}
-            onPurchase={handlePurchase}
-          />
-        )}
+        <Cart
+          entries={cart}
+          loading={cartLoading}
+          onUpdateQty={handleUpdateQty}
+          onRemove={handleRemove}
+          onPurchase={handlePurchase}
+        />
       </div>
     </PageContainer>
   );
@@ -179,15 +177,13 @@ function AdminShop() {
               refreshKey={refreshKey}
             />
           </div>
-          {cart.length > 0 && (
-            <Cart
-              entries={cart}
-              loading={cartLoading}
-              onUpdateQty={handleUpdateQty}
-              onRemove={handleRemove}
-              onPurchase={handlePurchase}
-            />
-          )}
+          <Cart
+            entries={cart}
+            loading={cartLoading}
+            onUpdateQty={handleUpdateQty}
+            onRemove={handleRemove}
+            onPurchase={handlePurchase}
+          />
         </div>
       )}
     </PageContainer>

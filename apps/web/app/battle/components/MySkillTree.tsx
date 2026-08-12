@@ -1,14 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Pencil, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import {
   fetchCharacterSkillTree,
   fetchSkillNodes,
+  formatEffect,
   renameCharacterSkill,
   unlockCharacterSkill,
   type CharacterSkillNode,
@@ -17,6 +15,7 @@ import {
   type SkillNode,
 } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
+import { useDialog } from "@/components/common/DialogProvider";
 
 const FACTIONS: Faction[] = ["공격", "수비", "치유"];
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -26,13 +25,12 @@ interface Props {
 }
 
 export default function MySkillTree({ characterId }: Props) {
+  const { confirm, prompt } = useDialog();
   const [tree, setTree] = useState<CharacterSkillTree | null>(null);
   const [otherNodes, setOtherNodes] = useState<Record<string, SkillNode[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyNodeId, setBusyNodeId] = useState<number | null>(null);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editingName, setEditingName] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -64,18 +62,16 @@ export default function MySkillTree({ characterId }: Props) {
     }
   }
 
-  function startRename(node: CharacterSkillNode) {
-    setEditingId(node.id);
-    setEditingName(node.custom_name ?? node.default_name);
-  }
-
-  async function saveRename() {
-    if (editingId === null) return;
-    setBusyNodeId(editingId);
+  async function renameNode(node: CharacterSkillNode) {
+    const nextName = await prompt(
+      { title: "기술 이름 수정", description: "새로운 기술 이름을 입력해 주세요." },
+      node.custom_name ?? node.default_name,
+    );
+    if (nextName === null) return;
+    setBusyNodeId(node.id);
     setError(null);
     try {
-      setTree(await renameCharacterSkill(characterId, editingId, editingName));
-      setEditingId(null);
+      setTree(await renameCharacterSkill(characterId, node.id, nextName));
     } catch (e) {
       setError(e instanceof Error ? e.message : "기술 이름 설정 실패");
     } finally {
@@ -83,12 +79,35 @@ export default function MySkillTree({ characterId }: Props) {
     }
   }
 
-  function handleNodeClick(node: CharacterSkillNode) {
+  function canUnlock(node: CharacterSkillNode): boolean {
+    if (!tree || node.unlocked || node.tier === 0 || tree.character_ap < tree.ap_cost_to_unlock) return false;
+    if (node.tier === 1) {
+      return !tree.nodes.some((candidate) => candidate.unlocked && candidate.tier === 1 && candidate.branch !== node.branch);
+    }
+    const parentUnlocked = tree.nodes.some((candidate) =>
+      candidate.unlocked
+      && candidate.branch === node.branch
+      && candidate.tier === node.tier - 1
+      && (node.tier === 2 || candidate.col === node.col),
+    );
+    if (!parentUnlocked) return false;
+    return !tree.nodes.some((candidate) =>
+      candidate.unlocked && candidate.branch === node.branch && candidate.tier >= 2 && candidate.col !== node.col,
+    );
+  }
+
+  async function handleNodeClick(node: CharacterSkillNode) {
     if (node.unlocked) {
-      startRename(node);
+      await renameNode(node);
       return;
     }
-    handleUnlock(node);
+    if (!canUnlock(node)) return;
+    const effectDescription = node.effects.length > 0 ? node.effects.map(formatEffect).join(", ") : "효과 없음";
+    const accepted = await confirm({
+      title: "기술 선택",
+      description: `정말 '${node.display_name}'을 선택하시겠습니까?\n${effectDescription}`,
+    });
+    if (accepted) await handleUnlock(node);
   }
 
   return (
@@ -136,37 +155,18 @@ export default function MySkillTree({ characterId }: Props) {
                       nodes={tree.nodes}
                       getLabel={(n) => n.display_name}
                       isHighlighted={(n) => n.unlocked}
-                      isDisabled={() => busyNodeId !== null}
+                      isDisabled={(node) => busyNodeId !== null || (!node.unlocked && !canUnlock(node))}
                       onNodeClick={handleNodeClick}
+                      showLabels={false}
                     />
                   ) : (
-                    <SkillTreeGrid nodes={otherNodes[faction] ?? []} getLabel={(n) => n.default_name} />
+                    <SkillTreeGrid nodes={otherNodes[faction] ?? []} getLabel={(n) => n.default_name} showLabels={false} />
                   )}
                 </div>
               </div>
             );
           })}
         </div></div>
-      )}
-
-      {editingId !== null && (
-        <div className="flex flex-wrap items-center gap-2 border border-gold bg-gold/10 rounded-xl p-4">
-          <Pencil size={15} className="text-gold shrink-0" />
-          <Input
-            value={editingName}
-            onChange={(e) => setEditingName(e.target.value)}
-            placeholder="기술 커스텀 이름"
-            className="max-w-xs"
-          />
-          <Button size="sm" onClick={saveRename} disabled={busyNodeId !== null}>
-            <Check size={14} />
-            저장
-          </Button>
-          <Button size="sm" variant="ghost" onClick={() => setEditingId(null)} disabled={busyNodeId !== null}>
-            <X size={14} />
-            취소
-          </Button>
-        </div>
       )}
     </div>
   );

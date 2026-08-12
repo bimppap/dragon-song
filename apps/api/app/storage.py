@@ -15,6 +15,11 @@
 import io
 import os
 import re
+import asyncio
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
 import httpx
 from fastapi import HTTPException
@@ -22,6 +27,7 @@ from PIL import Image, UnidentifiedImageError
 
 MAX_WEBP_BYTES = 5 * 1024 * 1024  # 5MB
 DEFAULT_QUALITY = 90
+MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
 
 def _secret_key() -> str | None:
@@ -109,6 +115,69 @@ async def upload_image_to_bucket(
 
     public_url = f"{base_url}/storage/v1/object/public/{bucket}/{key}"
     return {"path": key, "public_url": public_url}
+
+
+def _compress_audio(data: bytes, suffix: str) -> tuple[bytes, str, str]:
+    """FFmpeg가 있으면 64kbps Opus로 변환한다. 없으면 검증된 원본을 반환한다."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        mime_by_suffix = {
+            ".mp3": "audio/mpeg", ".ogg": "audio/ogg", ".opus": "audio/ogg",
+            ".m4a": "audio/mp4", ".aac": "audio/aac", ".wav": "audio/wav",
+        }
+        return data, suffix, mime_by_suffix.get(suffix, "application/octet-stream")
+
+    with tempfile.TemporaryDirectory(prefix="dragon-song-audio-") as temp_dir:
+        input_path = Path(temp_dir) / f"input{suffix}"
+        output_path = Path(temp_dir) / "output.ogg"
+        input_path.write_bytes(data)
+        result = subprocess.run(
+            [ffmpeg, "-y", "-i", str(input_path), "-vn", "-c:a", "libopus", "-b:a", "64k", str(output_path)],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+        if result.returncode != 0 or not output_path.exists():
+            raise HTTPException(status_code=400, detail="음원 파일을 변환할 수 없습니다.")
+        return output_path.read_bytes(), ".ogg", "audio/ogg"
+
+
+async def upload_audio_to_bucket(
+    path: str,
+    data: bytes,
+    *,
+    content_type: str | None,
+    filename: str | None,
+) -> dict:
+    """음원을 가능하면 저용량 Opus로 변환해 업로드한다."""
+    if not data:
+        raise HTTPException(status_code=400, detail="빈 음원 파일입니다.")
+    if len(data) > MAX_AUDIO_BYTES:
+        raise HTTPException(status_code=400, detail="음원 파일은 25MB 이하여야 합니다.")
+
+    suffix = Path(filename or "").suffix.lower()
+    allowed = {".mp3", ".ogg", ".opus", ".m4a", ".aac", ".wav"}
+    if suffix not in allowed or not (content_type or "").startswith("audio/"):
+        raise HTTPException(status_code=400, detail="지원하지 않는 음원 형식입니다.")
+
+    audio, output_suffix, output_type = await asyncio.to_thread(_compress_audio, data, suffix)
+    base_url, secret_key, bucket = _env()
+    key = f"{path}{output_suffix}"
+    endpoint = f"{base_url}/storage/v1/object/{bucket}/{key}"
+    headers = {
+        "apikey": secret_key,
+        "Authorization": f"Bearer {secret_key}",
+        "Content-Type": output_type,
+        "x-upsert": "true",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=60) as client:
+            response = await client.post(endpoint, content=audio, headers=headers)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"음원 업로드 요청 실패: {exc}")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"음원 업로드 실패: {response.text}")
+    return {"path": key, "public_url": f"{base_url}/storage/v1/object/public/{bucket}/{key}"}
 
 
 def make_key(prefix: str, entity_id: int, name: str) -> str:
