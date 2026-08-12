@@ -1,4 +1,6 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { ClipboardList, Gift, PlusSquare, ScrollText } from "lucide-react";
@@ -54,19 +56,17 @@ function RunnerMissionList() {
       </section>
 
       {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner>{errorMessage}</AlertBanner>
       )}
 
       {loading ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+        <EmptyState>
           임무 목록을 불러오는 중입니다.
-        </div>
+        </EmptyState>
       ) : missions.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+        <EmptyState>
           공개된 임무가 없습니다.
-        </div>
+        </EmptyState>
       ) : (
         chapters.map((chapter) => (
           <Card key={chapter}>

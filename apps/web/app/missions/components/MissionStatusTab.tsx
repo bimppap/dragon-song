@@ -1,4 +1,6 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -196,14 +198,10 @@ export default function MissionStatusTab() {
   return (
     <section className="flex flex-col gap-6">
       {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner>{errorMessage}</AlertBanner>
       )}
       {rewardMessage && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {rewardMessage}
-        </div>
+        <AlertBanner tone="success">{rewardMessage}</AlertBanner>
       )}
 
       <Card>
@@ -283,9 +281,9 @@ export default function MissionStatusTab() {
                   </button>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                <EmptyState className="rounded-2xl">
                   선택한 챕터에 등록된 임무가 없습니다.
-                </div>
+                </EmptyState>
               )}
             </CardContent>
           </Card>
@@ -327,9 +325,9 @@ export default function MissionStatusTab() {
               </div>
 
               {loadingProgress ? (
-                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                <EmptyState className="rounded-2xl">
                   임무 현황을 불러오는 중입니다.
-                </div>
+                </EmptyState>
               ) : visibleProgress.length > 0 ? (
                 <div className="flex flex-col gap-3">
                   {visibleProgress.map((entry) => (
@@ -375,9 +373,9 @@ export default function MissionStatusTab() {
                   ))}
                 </div>
               ) : (
-                <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                <EmptyState className="rounded-2xl">
                   {selectedMission ? "조건에 맞는 캐릭터가 없습니다." : "임무를 선택하면 캐릭터 현황이 표시됩니다."}
-                </div>
+                </EmptyState>
               )}
             </CardContent>
           </Card>

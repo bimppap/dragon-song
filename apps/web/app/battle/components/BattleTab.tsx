@@ -1,4 +1,6 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { Heart, Shield, Skull, Swords, Zap } from "lucide-react";
@@ -103,15 +105,15 @@ function BattleList({ enemies, loading, error, numberFormatter, onStart }: Battl
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</div>
+        <AlertBanner>{error}</AlertBanner>
       )}
 
       {loading ? (
         <p className="text-sm text-slate-400">에너미 목록을 불러오는 중...</p>
       ) : enemies.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+        <EmptyState>
           등록된 에너미가 없습니다. 에너미 탭에서 먼저 등록하세요.
-        </div>
+        </EmptyState>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           {enemies.map((enemy) => (

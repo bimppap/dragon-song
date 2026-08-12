@@ -1,4 +1,6 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { PlusSquare, ScrollText } from "lucide-react";
@@ -159,9 +161,7 @@ export default function MissionManageTab() {
   return (
     <section className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
       {errorMessage && (
-        <div className="xl:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner className="xl:col-span-2">{errorMessage}</AlertBanner>
       )}
 
       <Card>
@@ -179,9 +179,9 @@ export default function MissionManageTab() {
           </div>
 
           {loading ? (
-            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+            <EmptyState>
               임무 목록을 불러오는 중입니다.
-            </div>
+            </EmptyState>
           ) : missions.length > 0 ? (
             <div className="overflow-x-auto rounded-xl border border-slate-200">
               <table className="min-w-full text-sm">
@@ -218,9 +218,9 @@ export default function MissionManageTab() {
               </table>
             </div>
           ) : (
-            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+            <EmptyState>
               등록된 임무가 없습니다. 우측 폼에서 첫 임무를 추가해 주세요.
-            </div>
+            </EmptyState>
           )}
         </CardContent>
       </Card>

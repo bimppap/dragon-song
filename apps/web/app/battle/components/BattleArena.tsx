@@ -1,4 +1,5 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Ban, Heart, Play, RotateCcw, Shield, Skull, Swords } from "lucide-react";
@@ -352,7 +353,7 @@ export default function BattleArena({ enemy, onExit }: Props) {
         <p className="text-sm text-slate-500">전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</p>
 
         {loadError && (
-          <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{loadError}</div>
+          <AlertBanner>{loadError}</AlertBanner>
         )}
 
         {loading ? (

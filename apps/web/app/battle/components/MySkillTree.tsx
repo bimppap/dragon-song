@@ -1,4 +1,5 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { Check, Pencil, X } from "lucide-react";
@@ -110,7 +111,7 @@ export default function MySkillTree({ characterId }: Props) {
       </div>
 
       {error && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</div>
+        <AlertBanner>{error}</AlertBanner>
       )}
 
       {loading || !tree ? (

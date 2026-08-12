@@ -1,4 +1,6 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
@@ -164,9 +166,7 @@ export default function EnemyTab() {
   return (
     <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
       {error && (
-        <div className="xl:col-span-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {error}
-        </div>
+        <AlertBanner className="xl:col-span-2">{error}</AlertBanner>
       )}
 
       {/* 에너미 리스트 */}
@@ -177,13 +177,13 @@ export default function EnemyTab() {
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {loading ? (
-            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+            <EmptyState>
               에너미 목록을 불러오는 중입니다.
-            </div>
+            </EmptyState>
           ) : enemies.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+            <EmptyState>
               등록된 에너미가 없습니다.
-            </div>
+            </EmptyState>
           ) : (
             enemies.map((enemy) => (
               <div key={enemy.id} className="rounded-xl border border-slate-200 px-4 py-4 flex flex-col gap-3">

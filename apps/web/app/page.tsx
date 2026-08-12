@@ -1,4 +1,5 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { List, User, UserPlus } from "lucide-react";
@@ -72,9 +73,7 @@ function AdminCharacterConsole() {
   return (
     <PageContainer max="4xl" className="space-y-8">
       {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner>{errorMessage}</AlertBanner>
       )}
 
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
@@ -133,9 +132,7 @@ function MyCharacterConsole() {
   return (
     <PageContainer max="4xl" className="space-y-8">
       {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner>{errorMessage}</AlertBanner>
       )}
       <CharacterInfo
         characters={character ? [character] : []}

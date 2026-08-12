@@ -1,4 +1,6 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
 
 import { useEffect, useState } from "react";
 import {
@@ -484,9 +486,7 @@ export default function CharacterInfo({
       )}
 
       {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner>{errorMessage}</AlertBanner>
       )}
 
       {detailLoading ? (
@@ -672,9 +672,7 @@ export default function CharacterInfo({
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {itemActionError && (
-                  <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
-                    {itemActionError}
-                  </div>
+                  <AlertBanner>{itemActionError}</AlertBanner>
                 )}
                 {selectedDetail.owned_items.length > 0 ? (
                   <div className="flex flex-wrap gap-4">
@@ -690,9 +688,9 @@ export default function CharacterInfo({
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                  <EmptyState className="rounded-2xl">
                     보유 중인 아이템이 없습니다.
-                  </div>
+                  </EmptyState>
                 )}
               </CardContent>
             </Card>
@@ -728,9 +726,9 @@ export default function CharacterInfo({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                  <EmptyState className="rounded-2xl">
                     아직 달성한 도전과제가 없습니다.
-                  </div>
+                  </EmptyState>
                 )}
               </CardContent>
             </Card>
@@ -774,9 +772,9 @@ export default function CharacterInfo({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                  <EmptyState className="rounded-2xl">
                     지급된 보상이 없습니다.
-                  </div>
+                  </EmptyState>
                 )}
               </CardContent>
             </Card>
@@ -816,9 +814,9 @@ export default function CharacterInfo({
                     </div>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                  <EmptyState className="rounded-2xl">
                     구매 이력이 없습니다.
-                  </div>
+                  </EmptyState>
                 )}
               </CardContent>
             </Card>

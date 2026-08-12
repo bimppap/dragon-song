@@ -1,4 +1,5 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
 
 import { useState } from "react";
 import { Coins, Flame, Gem, Heart, Shield, Sparkles, Sword, Trophy, UserPlus, Zap } from "lucide-react";
@@ -95,9 +96,7 @@ export default function CharacterCreate({ onCreated }: Props) {
   return (
     <section className="max-w-lg flex flex-col gap-5">
       {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner>{errorMessage}</AlertBanner>
       )}
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">

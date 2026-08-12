@@ -1,4 +1,5 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { CalendarDays, Gift, Users } from "lucide-react";
@@ -207,14 +208,10 @@ export default function AttendancePanel() {
   return (
     <div className="flex flex-col gap-6">
       {errorMessage && (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {errorMessage}
-        </div>
+        <AlertBanner>{errorMessage}</AlertBanner>
       )}
       {rewardMessage && (
-        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {rewardMessage}
-        </div>
+        <AlertBanner tone="success">{rewardMessage}</AlertBanner>
       )}
 
       <Card>

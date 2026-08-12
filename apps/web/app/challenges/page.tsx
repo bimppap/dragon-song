@@ -91,9 +91,9 @@ function RunnerChallengeList() {
       {loading ? (
         <EmptyState>도전과제 목록을 불러오는 중입니다.</EmptyState>
       ) : challenges.length === 0 ? (
-        <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+        <EmptyState>
           공개된 도전과제가 없습니다.
-        </div>
+        </EmptyState>
       ) : (
         chapters.map((chapter) => (
           <Card key={chapter}>
@@ -502,9 +502,9 @@ function AdminChallengesPage() {
               </div>
 
               {loadingChallenges ? (
-                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                <EmptyState>
                   도전과제 목록을 불러오는 중입니다.
-                </div>
+                </EmptyState>
               ) : challenges.length > 0 ? (
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
                   <table className="min-w-full text-sm">
@@ -546,9 +546,9 @@ function AdminChallengesPage() {
                   </table>
                 </div>
               ) : (
-                <div className="rounded-xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                <EmptyState>
                   등록된 도전과제가 없습니다. 우측 폼에서 첫 도전과제를 추가해 주세요.
-                </div>
+                </EmptyState>
               )}
             </CardContent>
           </Card>
@@ -836,9 +836,9 @@ function AdminChallengesPage() {
                     </button>
                   ))
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                  <EmptyState className="rounded-2xl">
                     선택한 챕터에 등록된 도전과제가 없습니다.
-                  </div>
+                  </EmptyState>
                 )}
               </CardContent>
             </Card>
@@ -893,9 +893,9 @@ function AdminChallengesPage() {
                 </div>
 
                 {loadingProgress ? (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                  <EmptyState className="rounded-2xl">
                     도전과제 현황을 불러오는 중입니다.
-                  </div>
+                  </EmptyState>
                 ) : visibleProgress.length > 0 ? (
                   <div className="flex flex-col gap-3">
                     {visibleProgress.map((entry) => (
@@ -954,11 +954,11 @@ function AdminChallengesPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-10 text-center text-sm text-slate-500">
+                  <EmptyState className="rounded-2xl">
                     {selectedChallenge
                       ? "조건에 맞는 캐릭터가 없습니다."
                       : "도전과제를 선택하면 캐릭터 현황이 표시됩니다."}
-                  </div>
+                  </EmptyState>
                 )}
               </CardContent>
             </Card>

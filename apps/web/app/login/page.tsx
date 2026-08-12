@@ -1,4 +1,5 @@
 "use client";
+import AlertBanner from "@/components/common/AlertBanner";
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -53,9 +54,7 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             {errorMessage && (
-              <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-                {errorMessage}
-              </div>
+              <AlertBanner>{errorMessage}</AlertBanner>
             )}
 
             <div className="flex flex-col gap-1.5">
