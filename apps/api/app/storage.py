@@ -5,8 +5,11 @@
 
 필요한 환경변수(.env):
     SUPABASE_URL=https://<project-ref>.supabase.co
-    SUPABASE_SERVICE_ROLE_KEY=<service_role key>   # 서버 전용, 절대 노출 금지
-    SUPABASE_BUCKET=images                          # (선택) 기본값 "images"
+    SUPABASE_SECRET_KEY=sb_secret_...   # 서버 전용 secret 키, 절대 노출 금지
+    SUPABASE_BUCKET=images              # (선택) 기본값 "images"
+
+* 새 키 체계: 백엔드는 secret 키(sb_secret_...), 브라우저는 publishable 키(sb_publishable_...).
+  legacy service_role 키를 아직 쓰는 프로젝트는 SUPABASE_SERVICE_ROLE_KEY로도 인식한다.
 """
 
 import io
@@ -20,20 +23,25 @@ MAX_WEBP_BYTES = 5 * 1024 * 1024  # 5MB
 DEFAULT_QUALITY = 90
 
 
+def _secret_key() -> str | None:
+    # 새 secret 키를 우선하고, 레거시 service_role 키도 허용한다.
+    return os.getenv("SUPABASE_SECRET_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+
+
 def _env() -> tuple[str, str, str]:
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    key = _secret_key()
     bucket = os.getenv("SUPABASE_BUCKET", "images")
     if not url or not key:
         raise HTTPException(
             status_code=500,
-            detail="Supabase 환경변수(SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY)가 설정되지 않았습니다.",
+            detail="Supabase 환경변수(SUPABASE_URL / SUPABASE_SECRET_KEY)가 설정되지 않았습니다.",
         )
     return url.rstrip("/"), key, bucket
 
 
 def is_configured() -> bool:
-    return bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_SERVICE_ROLE_KEY"))
+    return bool(os.getenv("SUPABASE_URL") and _secret_key())
 
 
 def convert_to_webp(data: bytes, quality: int = DEFAULT_QUALITY) -> bytes:
@@ -70,7 +78,7 @@ async def upload_image_to_bucket(
 
     반환: {"path": 버킷 내 경로, "public_url": 공개 URL}
     """
-    base_url, service_key, bucket = _env()
+    base_url, secret_key, bucket = _env()
 
     webp = convert_to_webp(data, quality)
     if len(webp) > MAX_WEBP_BYTES:
@@ -83,7 +91,8 @@ async def upload_image_to_bucket(
     key = _to_webp_key(path)
     endpoint = f"{base_url}/storage/v1/object/{bucket}/{key}"
     headers = {
-        "Authorization": f"Bearer {service_key}",
+        "apikey": secret_key,
+        "Authorization": f"Bearer {secret_key}",
         "Content-Type": "image/webp",
         "x-upsert": "true" if upsert else "false",
     }
