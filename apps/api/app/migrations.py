@@ -106,6 +106,11 @@ def ensure_schema(engine: Engine) -> None:
         if "image_url" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN image_url VARCHAR")
 
+    if "chapters" in table_names:
+        chapter_columns = {col["name"] for col in inspector.get_columns("chapters")}
+        if "image_url" not in chapter_columns:
+            statements.append("ALTER TABLE chapters ADD COLUMN image_url VARCHAR")
+
     if "challenges" in table_names:
         challenge_columns = {col["name"] for col in inspector.get_columns("challenges")}
         if "reward_gold" not in challenge_columns:

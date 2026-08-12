@@ -8,7 +8,7 @@ from app import storage
 from app.auth import create_access_token, get_current_member, require_admin
 from app.db import engine, get_db
 from app.migrations import ensure_schema
-from app.models import Character, Item, Member, SkillNode
+from app.models import Chapter, Character, Item, Member, SkillNode
 from app.schemas import (
     AttendanceRecordRead,
     AttendanceRecordUpdate,
@@ -409,6 +409,50 @@ def list_chapters(db: Session = Depends(get_db)):
 @app.post("/chapters", response_model=ChapterRead)
 def create_chapter(data: ChapterCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_chapter(db, data)
+
+
+@app.put("/chapters/{chapter_id}", response_model=ChapterRead)
+def update_chapter(
+    chapter_id: int,
+    data: ChapterCreate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_chapter(db, chapter_id, data)
+
+
+@app.post("/chapters/{chapter_id}/image", response_model=ChapterRead)
+async def upload_chapter_image(
+    chapter_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """챕터 이미지를 chapter/ 디렉토리에 저장하고 기존 이미지는 교체한다."""
+    chapter = db.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
+
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("chapter", chapter.id, chapter.name), await file.read()
+    )
+    old_path = storage.public_url_to_path(chapter.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    chapter.image_url = result["public_url"]
+    db.commit()
+    db.refresh(chapter)
+    today = crud._today()
+    return ChapterRead(
+        id=chapter.id,
+        name=chapter.name,
+        start_date=chapter.start_date,
+        end_date=chapter.end_date,
+        image_url=chapter.image_url,
+        is_active=chapter.start_date <= today <= chapter.end_date,
+        created_at=chapter.created_at,
+    )
 
 
 @app.get("/chapters/active", response_model=ChapterRead | None)

@@ -1227,6 +1227,7 @@ def get_chapters(db: Session) -> list[ChapterRead]:
             name=c.name,
             start_date=c.start_date,
             end_date=c.end_date,
+            image_url=c.image_url,
             is_active=c.start_date <= today <= c.end_date,
             created_at=c.created_at,
         )
@@ -1249,6 +1250,28 @@ def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
         name=chapter.name,
         start_date=chapter.start_date,
         end_date=chapter.end_date,
+        image_url=chapter.image_url,
+        is_active=chapter.start_date <= today <= chapter.end_date,
+        created_at=chapter.created_at,
+    )
+
+
+def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> ChapterRead:
+    chapter = db.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
+    chapter.name = data.name.strip()
+    chapter.start_date = data.start_date
+    chapter.end_date = data.end_date
+    db.commit()
+    db.refresh(chapter)
+    today = _today()
+    return ChapterRead(
+        id=chapter.id,
+        name=chapter.name,
+        start_date=chapter.start_date,
+        end_date=chapter.end_date,
+        image_url=chapter.image_url,
         is_active=chapter.start_date <= today <= chapter.end_date,
         created_at=chapter.created_at,
     )
@@ -1268,6 +1291,7 @@ def get_active_chapter(db: Session) -> ChapterRead | None:
         name=chapter.name,
         start_date=chapter.start_date,
         end_date=chapter.end_date,
+        image_url=chapter.image_url,
         is_active=True,
         created_at=chapter.created_at,
     )

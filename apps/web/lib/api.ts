@@ -627,6 +627,7 @@ export interface Chapter {
   name: string;
   start_date: string;
   end_date: string;
+  image_url: string | null;
   is_active: boolean;
   created_at: string;
 }
@@ -646,6 +647,29 @@ export async function createChapter(data: ChapterCreate): Promise<Chapter> {
     method: "POST",
     body: JSON.stringify(data),
   }, "챕터 생성 실패");
+}
+
+export async function updateChapter(chapterId: number, data: ChapterCreate): Promise<Chapter> {
+  return request<Chapter>(`/chapters/${chapterId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }, "챕터 수정 실패");
+}
+
+export async function uploadChapterImage(chapterId: number, file: File): Promise<Chapter> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/chapters/${chapterId}/image`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "챕터 이미지 업로드 실패");
+  }
+  return res.json();
 }
 
 export async function fetchActiveChapter(): Promise<Chapter | null> {

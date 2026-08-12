@@ -323,7 +323,7 @@ export default function AttendancePanel() {
                       <Checkbox
                         checked={checked}
                         onCheckedChange={(nextChecked) => handleToggleAttendance(character.id, nextChecked)}
-                        disabled={savingAttendance || checked}
+                        disabled={savingAttendance}
                       />
                     </span>
 

@@ -1,153 +1,105 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { List, User, UserPlus } from "lucide-react";
-import { useRequireMember } from "@/lib/auth";
-import CharacterList from "./components/character/CharacterList";
-import CharacterInfo from "./components/character/CharacterInfo";
-import CharacterCreate from "./components/character/CharacterCreate";
-import { fetchCharacters, fetchMyCharacter } from "@/lib/api";
-import type { Character } from "@/lib/api";
-import AlertBanner from "@/components/common/AlertBanner";
-import PageContainer from "@/components/common/PageContainer";
-import TabBar from "@/components/common/TabBar";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarDays, Settings, ShoppingBag, Swords, Users } from "lucide-react";
+import { Calendar } from "@/components/ui/calendar";
+import { fetchChapters, type Chapter } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import HomeFlamefall from "@/components/common/HomeFlamefall";
 
-type Tab = "list" | "info" | "create";
-
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "list",   label: "캐릭터 목록", icon: List },
-  { id: "info",   label: "캐릭터 정보", icon: User },
-  { id: "create", label: "캐릭터 생성", icon: UserPlus },
+const SHORTCUTS = [
+  { href: "/character", label: "캐릭터", icon: Users },
+  { href: "/shop", label: "상점", icon: ShoppingBag },
+  { href: "/battle", label: "전투", icon: Swords },
+];
+const CALENDAR_TONES = [
+  "[&>button]:bg-primary/80 [&>button]:text-ivory",
+  "[&>button]:bg-primary-light/75 [&>button]:text-ivory",
+  "[&>button]:bg-gold/65 [&>button]:text-ground",
 ];
 
-function AdminCharacterConsole() {
-  const [tab, setTab] = useState<Tab>("list");
-  const [characters, setCharacters] = useState<Character[]>([]);
-  const [loadingCharacters, setLoadingCharacters] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [focusCharacterId, setFocusCharacterId] = useState<number | null>(null);
+function chapterModifiers(chapters: Chapter[]) {
+  return Object.fromEntries(chapters.map((chapter) => {
+    const start = new Date(`${chapter.start_date}T00:00:00`);
+    const end = new Date(`${chapter.end_date}T00:00:00`);
+    const days: Date[] = [];
+    for (const day = new Date(start); day <= end; day.setDate(day.getDate() + 1)) days.push(new Date(day));
+    return [`chapter-${chapter.id}`, days];
+  }));
+}
+
+export default function HomePage() {
+  const { member } = useAuth();
+  const [chapters, setChapters] = useState<Chapter[]>([]);
 
   useEffect(() => {
     let cancelled = false;
-
-    async function loadCharacters() {
-      try {
-        setLoadingCharacters(true);
-        const list = await fetchCharacters();
-
-        if (cancelled) return;
-
-        setCharacters(list);
-        setErrorMessage(null);
-      } catch (error) {
-        if (cancelled) return;
-        console.error(error);
-        setErrorMessage(
-          error instanceof Error ? error.message : "캐릭터 목록을 불러오지 못했습니다.",
-        );
-      } finally {
-        if (!cancelled) {
-          setLoadingCharacters(false);
-        }
-      }
-    }
-
-    loadCharacters();
-
-    return () => {
-      cancelled = true;
-    };
+    fetchChapters().then((data) => { if (!cancelled) setChapters(data); }).catch(() => {});
+    return () => { cancelled = true; };
   }, []);
 
-  function handleCreated(character: Character) {
-    setCharacters((prev) => [...prev, character].toSorted((a, b) => a.id - b.id));
-    setErrorMessage(null);
-    setTab("list");
-  }
-
-  function handleSelectCharacter(character: Character) {
-    setFocusCharacterId(character.id);
-    setTab("info");
-  }
-
-  return (
-    <PageContainer max="4xl" className="space-y-8">
-      {errorMessage && (
-        <AlertBanner>{errorMessage}</AlertBanner>
-      )}
-
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-
-      {/* 탭 컨텐츠 */}
-      <div>
-        {tab === "list" && (
-          <CharacterList
-            characters={characters}
-            loading={loadingCharacters}
-            onSelectCharacter={handleSelectCharacter}
-          />
-        )}
-        {tab === "info" && (
-          <CharacterInfo
-            key={focusCharacterId ?? "info"}
-            characters={characters}
-            loading={loadingCharacters}
-            focusCharacterId={focusCharacterId}
-          />
-        )}
-        {tab === "create" && <CharacterCreate onCreated={handleCreated} />}
-      </div>
-    </PageContainer>
-  );
-}
-
-function MyCharacterConsole() {
-  const [character, setCharacter] = useState<Character | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchMyCharacter()
-      .then((detail) => {
-        if (cancelled) return;
-        setCharacter(detail);
-        setErrorMessage(null);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error(error);
-        setErrorMessage(error instanceof Error ? error.message : "캐릭터 정보를 불러오지 못했습니다.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const activeChapter = chapters.find((chapter) => chapter.is_active);
+  const quickLinks = member?.role === "ADMIN"
+    ? [...SHORTCUTS, { href: "/admin", label: "관리", icon: Settings }]
+    : SHORTCUTS;
+  const chapterDates = useMemo(() => chapterModifiers(chapters), [chapters]);
+  const chapterDateClasses = useMemo(() => Object.fromEntries(chapters.map((chapter, index) => [
+    `chapter-${chapter.id}`,
+    `${CALENDAR_TONES[index % CALENDAR_TONES.length]} hover:brightness-110`,
+  ])), [chapters]);
+  const calendarMonth = activeChapter ? new Date(`${activeChapter.start_date}T00:00:00`) : new Date();
 
   return (
-    <PageContainer max="4xl" className="space-y-8">
-      {errorMessage && (
-        <AlertBanner>{errorMessage}</AlertBanner>
-      )}
-      <CharacterInfo
-        characters={character ? [character] : []}
-        loading={loading}
-        showSelector={false}
-        showId={false}
-      />
-    </PageContainer>
+    <main className="home-adventure-bg relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center gap-10 px-4 py-8 sm:px-6 sm:py-12">
+      <HomeFlamefall />
+      <div aria-hidden className="home-dragon-watermark home-dragon-watermark-left" />
+      <img aria-hidden src="/dragon-dots-moss.png" alt="" className="home-dragon-watermark home-dragon-watermark-right" />
+      <img src="/dragonsong_title.png" alt="Dragon Song" className="-mb-8 mx-auto w-full max-w-4xl select-none object-contain" />
+
+      <section className="grid w-full gap-4 lg:h-[28rem] lg:grid-cols-[minmax(0,1.7fr)_minmax(240px,1fr)] lg:items-stretch">
+        <div className="order-1 flex min-h-[18rem] flex-col gap-0.5 overflow-hidden lg:h-full lg:min-h-0">
+          <nav aria-label="빠른 메뉴" className="flex shrink-0 items-center justify-center gap-14 pb-0.5 sm:gap-20">
+            {quickLinks.map(({ href, label, icon: Icon }) => (
+              <Link key={href} href={href} className="flex flex-col items-center justify-center gap-1 text-xs font-semibold text-ivory transition-colors hover:text-gold">
+                <Icon size={25} className="text-gold" />
+                {label}
+              </Link>
+            ))}
+          </nav>
+          <div className="group relative min-h-0 flex-1">
+            <img src="/map.png" alt="Dragon Song 지도" className="absolute inset-0 size-full object-contain" />
+            <img src="/map2.png" alt="" aria-hidden="true" className="absolute inset-0 size-full object-contain opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+          </div>
+        </div>
+
+        <div className="order-2 flex min-h-[18rem] flex-col gap-2 lg:min-h-0 lg:translate-y-14">
+          <section className="pixel-frame relative w-full shrink-0 bg-surface/75 p-1.5">
+            <span aria-hidden className="absolute left-1 top-1 size-1 bg-gold" />
+            <span aria-hidden className="absolute bottom-1 right-1 size-1 bg-gold" />
+            <div className="mb-0.5 flex items-center gap-1 px-1 text-gold">
+              <CalendarDays size={11} />
+              <h1 className="font-pixel-sm text-[10px] tracking-[0.14em]">SCHEDULE</h1>
+            </div>
+            <Calendar
+              month={calendarMonth}
+              modifiers={chapterDates}
+              modifiersClassNames={chapterDateClasses}
+              className="bg-transparent"
+            />
+          </section>
+
+          <div className="flex min-h-0 flex-[2] items-center justify-center">
+            <img
+              src={activeChapter?.image_url ?? "/title_0.png"}
+              alt={activeChapter ? `${activeChapter.name} 챕터 이미지` : "진행 중인 챕터 없음"}
+              className="block max-h-full w-full object-contain"
+            />
+          </div>
+          {activeChapter && <p className="text-center text-xs text-muted">{activeChapter.name}</p>}
+        </div>
+      </section>
+
+    </main>
   );
-}
-
-export default function CharacterPage() {
-  const member = useRequireMember();
-
-  if (!member) return null;
-
-  return member.role === "ADMIN" ? <AdminCharacterConsole /> : <MyCharacterConsole />;
 }

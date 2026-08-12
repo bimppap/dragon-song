@@ -103,6 +103,7 @@ class ChapterRead(BaseModel):
     name: str
     start_date: date
     end_date: date
+    image_url: str | None = None
     is_active: bool
     created_at: datetime
 

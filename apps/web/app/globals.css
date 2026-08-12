@@ -102,6 +102,74 @@
       0 0 20px -5px color-mix(in oklab, var(--color-gold) 45%, transparent);
   }
 
+  /* 달력 셀의 작은 사각 점들을 연결해 게임 내 월간 일정판처럼 보이게 한다. */
+  .pixel-calendar [class*="rdp-day"] {
+    image-rendering: pixelated;
+  }
+
+  /* 홈 전용: 오래된 모험 지도와 룬 문양을 연상시키는 아주 은은한 도트 배경. */
+  .home-adventure-bg::before {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    content: "";
+    background-image:
+      radial-gradient(circle, color-mix(in oklab, var(--color-primary-light) 28%, transparent) 1px, transparent 1.5px);
+    background-position: center;
+    background-repeat: repeat;
+    background-size: 12px 12px;
+    opacity: 0.55;
+  }
+
+  .home-adventure-bg::after {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+    content: "";
+    background:
+      radial-gradient(ellipse at 50% 35%, transparent 20%, color-mix(in oklab, var(--color-ground) 18%, transparent) 65%, var(--color-ground) 100%),
+      radial-gradient(circle at 14% 22%, color-mix(in oklab, var(--color-gold) 10%, transparent) 0 2px, transparent 2.5px),
+      radial-gradient(circle at 86% 72%, color-mix(in oklab, var(--color-gold) 8%, transparent) 0 2px, transparent 2.5px);
+    background-size: auto, 160px 160px, 190px 190px;
+  }
+
+  .home-adventure-bg > :not(canvas, .home-dragon-watermark) {
+    position: relative;
+    z-index: 3;
+  }
+
+  .home-dragon-watermark {
+    position: fixed;
+    z-index: 2;
+    pointer-events: none;
+    width: min(54rem, 68vw);
+    aspect-ratio: 1;
+    background-color: var(--dragon-watermark-color);
+    -webkit-mask: url("/dragon-dots.png") center / contain no-repeat;
+    mask: url("/dragon-dots.png") center / contain no-repeat;
+    opacity: 0.9;
+  }
+
+  .home-dragon-watermark-left {
+    top: 5rem;
+    left: -17rem;
+    --dragon-watermark-color: #050807;
+    opacity: 0.78;
+  }
+
+  .home-dragon-watermark-right {
+    right: -18rem;
+    bottom: -1rem;
+    width: min(48rem, 61vw);
+    transform: scaleX(-1);
+    background: none;
+    -webkit-mask: none;
+    mask: none;
+    opacity: 0.76;
+  }
+
   /* 스크롤 기능은 유지하되 스크롤바만 숨김 */
   .no-scrollbar {
     -ms-overflow-style: none;

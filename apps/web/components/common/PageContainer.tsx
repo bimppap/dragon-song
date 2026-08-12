@@ -16,7 +16,7 @@ interface Props {
 /** 페이지 공통 래퍼: 모바일은 여백을 줄이고, 데스크톱에서 넓힌다. */
 export default function PageContainer({ children, max = "6xl", className }: Props) {
   return (
-    <main className={cn("mx-auto w-full px-4 py-6 sm:px-6 sm:py-10", MAX_WIDTHS[max], className)}>
+    <main className={cn("mx-auto w-full px-4 pb-6 pt-20 sm:px-6 sm:pb-10 sm:pt-20", MAX_WIDTHS[max], className)}>
       {children}
     </main>
   );

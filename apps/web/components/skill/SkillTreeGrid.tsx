@@ -74,6 +74,7 @@ interface SkillTreeGridProps<T extends SkillTreeGridNode> {
   isHighlighted?: (node: T) => boolean;
   isDisabled?: (node: T) => boolean;
   onNodeClick?: (node: T) => void;
+  showLabels?: boolean;
 }
 
 export default function SkillTreeGrid<T extends SkillTreeGridNode>({
@@ -82,6 +83,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
   isHighlighted,
   isDisabled,
   onNodeClick,
+  showLabels = true,
 }: SkillTreeGridProps<T>) {
   const width = COLS * CELL_W;
   const height = ROWS * CELL_H;
@@ -164,14 +166,16 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                   <Sparkles size={18} />
                 )}
               </span>
-              <span
-                className={cn(
-                  "line-clamp-2 text-[10px] font-semibold leading-tight",
-                  highlighted ? "text-gold" : "text-ivory/85",
-                )}
-              >
-                {getLabel(node)}
-              </span>
+              {showLabels && (
+                <span
+                  className={cn(
+                    "line-clamp-2 text-[10px] font-semibold leading-tight",
+                    highlighted ? "text-gold" : "text-ivory/85",
+                  )}
+                >
+                  {getLabel(node)}
+                </span>
+              )}
             </button>
           </InfoTooltip>
         );

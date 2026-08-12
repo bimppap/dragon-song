@@ -118,6 +118,7 @@ export default function AdminSkillEditor() {
                   getLabel={(n) => n.default_name}
                   isHighlighted={(n) => editing?.id === n.id}
                   onNodeClick={startEdit}
+                  showLabels={false}
                 />
               </div>
             </div>
