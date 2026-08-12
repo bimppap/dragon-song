@@ -56,6 +56,7 @@ import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
+import RewardComposer from "@/components/common/RewardComposer";
 
 function RunnerChallengeList() {
   const [challenges, setChallenges] = useState<Challenge[]>([]);
@@ -614,124 +615,15 @@ function AdminChallengesPage() {
                   />
                 </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-4 flex flex-col gap-3">
-                  <p className="text-xs font-semibold tracking-widest text-slate-500 uppercase">보상 구성</p>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600">골드 (G)</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={form.reward_gold}
-                        onChange={(e) => handleFormChange("reward_gold", e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600">경험치</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={form.reward_experience}
-                        onChange={(e) => handleFormChange("reward_experience", e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600">AP</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={form.reward_ap}
-                        onChange={(e) => handleFormChange("reward_ap", e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600">HP 증가</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={form.reward_hp}
-                        onChange={(e) => handleFormChange("reward_hp", e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600">공격력 증가</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={form.reward_attack}
-                        onChange={(e) => handleFormChange("reward_attack", e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold text-slate-600">방어력 증가</label>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={form.reward_defense}
-                        onChange={(e) => handleFormChange("reward_defense", e.target.value)}
-                        placeholder="0"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-2">
-                    <div className="flex items-center justify-between">
-                      <label className="text-xs font-semibold text-slate-600">지급 아이템</label>
-                      <Button type="button" variant="outline" onClick={handleAddRewardItem} className="h-7 px-3 text-xs">
-                        + 추가
-                      </Button>
-                    </div>
-                    {form.reward_items.length > 0 ? (
-                      <div className="flex flex-col gap-2">
-                        {form.reward_items.map((entry, index) => (
-                          <div key={index} className="flex items-center gap-2">
-                            <Select
-                              value={entry.item_id}
-                              onValueChange={(value) => handleUpdateRewardItem(index, "item_id", value)}
-                            >
-                              <SelectTrigger className="flex-1">
-                                <SelectValue placeholder="아이템 선택" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectGroup>
-                                  {items.map((item) => (
-                                    <SelectItem key={item.id} value={String(item.id)}>
-                                      {item.name}
-                                    </SelectItem>
-                                  ))}
-                                </SelectGroup>
-                              </SelectContent>
-                            </Select>
-                            <Input
-                              type="number"
-                              min={1}
-                              value={entry.quantity}
-                              onChange={(e) => handleUpdateRewardItem(index, "quantity", e.target.value)}
-                              placeholder="수량"
-                              className="w-20"
-                            />
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              onClick={() => handleRemoveRewardItem(index)}
-                              className="h-8 px-2 text-slate-400 hover:text-red-500"
-                            >
-                              ✕
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-slate-400">아이템 없음</p>
-                    )}
-                  </div>
-                </div>
+                <RewardComposer
+                  rewards={form}
+                  onRewardChange={handleFormChange}
+                  items={items}
+                  rewardItems={form.reward_items}
+                  onAddItem={handleAddRewardItem}
+                  onUpdateItem={handleUpdateRewardItem}
+                  onRemoveItem={handleRemoveRewardItem}
+                />
 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-semibold text-slate-700">상태</label>
