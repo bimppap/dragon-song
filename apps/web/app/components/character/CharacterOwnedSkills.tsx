@@ -46,11 +46,11 @@ export default function CharacterOwnedSkills({ characterId, faction }: Props) {
 
   return (
     <div className="flex flex-col gap-2">
-      <span className="text-xs font-semibold uppercase tracking-wide text-slate-400 dark:text-slate-500">기술</span>
+      <span className="text-xs font-semibold uppercase tracking-wide text-muted">기술</span>
       {error ? (
         <span className="text-xs text-red-500">{error}</span>
       ) : !loaded ? (
-        <span className="text-xs text-slate-400 dark:text-slate-500">불러오는 중...</span>
+        <span className="text-xs text-muted">불러오는 중...</span>
       ) : latestSkill ? (
         <InfoTooltip
           side="top"
@@ -61,7 +61,7 @@ export default function CharacterOwnedSkills({ characterId, faction }: Props) {
             onClick={() => router.push("/battle?tab=skill")}
             className="flex w-16 cursor-pointer flex-col items-center gap-1.5 text-center"
           >
-            <span className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border-2 border-amber-500 bg-amber-50 dark:bg-amber-950/40 text-amber-600 transition-colors hover:bg-amber-100">
+            <span className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border-2 border-gold bg-gold/10 text-gold transition-colors hover:bg-gold/15">
               {latestSkill.image_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={latestSkill.image_url} alt="" className="size-full object-cover" />
@@ -69,11 +69,11 @@ export default function CharacterOwnedSkills({ characterId, faction }: Props) {
                 <Sparkles size={22} />
               )}
             </span>
-            <span className="text-xs font-semibold leading-tight text-slate-700 dark:text-slate-200">{latestSkill.display_name}</span>
+            <span className="text-xs font-semibold leading-tight text-ivory">{latestSkill.display_name}</span>
           </button>
         </InfoTooltip>
       ) : (
-        <span className="text-xs text-slate-400 dark:text-slate-500">습득한 기술 없음</span>
+        <span className="text-xs text-muted">습득한 기술 없음</span>
       )}
     </div>
   );

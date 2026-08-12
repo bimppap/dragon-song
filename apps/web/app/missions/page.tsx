@@ -48,11 +48,11 @@ function RunnerMissionList() {
   return (
     <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-2">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          <ScrollText size={24} className="text-amber-600" />
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-ivory">
+          <ScrollText size={24} className="text-gold" />
           임무
         </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">현재 공개된 임무 목록입니다.</p>
+        <p className="text-sm text-muted">현재 공개된 임무 목록입니다.</p>
       </section>
 
       {errorMessage && (
@@ -77,17 +77,17 @@ function RunnerMissionList() {
               {missions
                 .filter((m) => m.chapter === chapter)
                 .map((mission) => (
-                  <div key={mission.id} className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4">
+                  <div key={mission.id} className="rounded-2xl border border-line px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex flex-col gap-1">
-                        <p className="font-semibold text-slate-900 dark:text-slate-100">{mission.name}</p>
-                        <p className="text-sm text-slate-500 dark:text-slate-400">{mission.description}</p>
+                        <p className="font-semibold text-ivory">{mission.name}</p>
+                        <p className="text-sm text-muted">{mission.description}</p>
                       </div>
                       <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type] ?? "default"}>
                         {mission.mission_type}
                       </Badge>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                    <div className="mt-3 flex items-center gap-2 text-sm text-muted">
                       <Gift size={14} />
                       {mission.reward}
                     </div>

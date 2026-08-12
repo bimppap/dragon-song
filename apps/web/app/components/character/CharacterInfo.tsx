@@ -91,24 +91,24 @@ const CORE_STATS: {
   { key: "stat_courage", label: "용기", icon: Flame, accent: "text-red-500" },
   { key: "stat_endurance", label: "인내", icon: Shield, accent: "text-blue-500" },
   { key: "stat_charity", label: "자애", icon: HeartHandshake, accent: "text-pink-500" },
-  { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-amber-500" },
+  { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-gold" },
 ];
 
 const RANK_GRADES = [
   {
     name: "동",
     description: "기본적인 전투 감각을 익히는 입문 등급입니다.",
-    badgeClass: "border-amber-800 bg-amber-100 text-amber-900",
+    badgeClass: "border-gold bg-gold/15 text-gold",
   },
   {
     name: "은",
     description: "기본 전투를 안정적으로 수행할 수 있는 숙련 등급입니다.",
-    badgeClass: "border-slate-400 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200",
+    badgeClass: "border-line bg-white/10 text-ivory",
   },
   {
     name: "금",
     description: "전투와 파티 운영에서 중심 역할을 맡는 상위 등급입니다.",
-    badgeClass: "border-yellow-500 bg-yellow-100 text-yellow-800",
+    badgeClass: "border-yellow-500 bg-yellow-500/20 text-yellow-300",
   },
 ] as const;
 
@@ -215,16 +215,16 @@ function StatBar({
   const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex items-center justify-between text-sm font-semibold text-slate-600 dark:text-slate-300">
+      <div className="flex items-center justify-between text-sm font-semibold text-ivory/85">
         <span className="flex items-center gap-2">
           <Icon size={15} className={iconAccent} />
           {label}
         </span>
-        <span className="font-num text-slate-700 dark:text-slate-200">
+        <span className="font-num text-ivory">
           {numberFormatter.format(value)} / {numberFormatter.format(max)}
         </span>
       </div>
-      <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+      <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
         <div
           className={cn("h-full rounded-full transition-all", barColor)}
           style={{ width: `${pct}%` }}
@@ -246,12 +246,12 @@ function CoreStatLine({
   accent: string;
 }) {
   return (
-    <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 py-2 last:border-b-0">
-      <span className="flex items-center gap-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+    <div className="flex items-center justify-between border-b border-line py-2 last:border-b-0">
+      <span className="flex items-center gap-2 text-sm font-semibold text-ivory/85">
         <Icon size={15} className={accent} />
         {label}
       </span>
-      <span className="font-num text-base font-semibold text-slate-900 dark:text-slate-100">
+      <span className="font-num text-base font-semibold text-ivory">
         {numberFormatter.format(value)}
       </span>
     </div>
@@ -274,9 +274,9 @@ function ExperienceBar({
   return (
     <InfoTooltip content={`경험치 ${numberFormatter.format(value)} / ${numberFormatter.format(max)}`}>
       <span className="inline-flex w-40 items-center">
-        <span className="h-2.5 w-full overflow-hidden rounded-full bg-slate-200 dark:bg-slate-700">
+        <span className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
           <span
-            className="block h-full rounded-full bg-amber-500 transition-all"
+            className="block h-full rounded-full bg-gold/100 transition-all"
             style={{ width: `${pct}%` }}
           />
         </span>
@@ -311,19 +311,19 @@ function OwnedItemTile({
           <div className="max-w-56 text-left">
             <div className="font-semibold">{item.item_name}</div>
             {item.item_description && (
-              <div className="mt-1 text-slate-300">{item.item_description}</div>
+              <div className="mt-1 text-muted">{item.item_description}</div>
             )}
           </div>
         }
       >
         <div
           className={cn(
-            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-amber-50 dark:bg-amber-950/40 text-amber-600",
-            item.equipped && "ring-2 ring-amber-500",
+            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-gold/10 text-gold",
+            item.equipped && "ring-2 ring-gold",
           )}
         >
           <Package size={22} />
-          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 text-sm font-bold text-slate-900 dark:text-slate-100 [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
+          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 text-sm font-bold text-ivory [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
             {badgeCount}
           </span>
         </div>
@@ -452,7 +452,7 @@ export default function CharacterInfo({
   if (loading) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+        <CardContent className="py-16 text-center text-sm text-muted">
           캐릭터 정보를 준비하는 중입니다.
         </CardContent>
       </Card>
@@ -462,7 +462,7 @@ export default function CharacterInfo({
   if (characters.length === 0) {
     return (
       <Card>
-        <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+        <CardContent className="py-16 text-center text-sm text-muted">
           조회할 캐릭터가 없습니다.
         </CardContent>
       </Card>
@@ -509,13 +509,13 @@ export default function CharacterInfo({
 
       {detailLoading ? (
         <Card>
-          <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+          <CardContent className="py-16 text-center text-sm text-muted">
             캐릭터 상세 정보를 불러오는 중입니다.
           </CardContent>
         </Card>
       ) : selectedDetail == null ? (
         <Card>
-          <CardContent className="py-16 text-center text-sm text-slate-500 dark:text-slate-400">
+          <CardContent className="py-16 text-center text-sm text-muted">
             표시할 캐릭터 정보가 없습니다.
           </CardContent>
         </Card>
@@ -525,23 +525,23 @@ export default function CharacterInfo({
             <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row sm:items-start">
               {/* 명함 좌측: 캐릭터 이미지 (정사각형 고정, 편집 가능) */}
               <div className="flex w-full shrink-0 flex-col gap-2 sm:w-40">
-                <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
+                <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-line bg-inset">
                   {selectedDetail.image_url ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} className="size-full object-cover" />
                   ) : (
-                    <div className="flex size-full flex-col items-center justify-center gap-1 text-slate-300">
+                    <div className="flex size-full flex-col items-center justify-center gap-1 text-muted">
                       <ImageIcon size={30} />
                       <span className="text-xs font-medium">이미지</span>
                     </div>
                   )}
-                  <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-slate-900/60 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-slate-900/75">
+                  <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-base/60 py-1.5 text-xs font-semibold text-ivory transition-colors hover:bg-base/75">
                     <ImageIcon size={12} />
                     {imageUploading ? "업로드 중..." : selectedDetail.image_url ? "이미지 변경" : "이미지 등록"}
                     <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
                   </label>
                 </div>
-                <p className="text-[11px] leading-tight text-slate-400 dark:text-slate-500">
+                <p className="text-[11px] leading-tight text-muted">
                   정사각형 이미지를 권장합니다. 업로드 시 WebP로 변환되며 5MB를 넘으면 실패합니다.
                 </p>
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
@@ -555,7 +555,7 @@ export default function CharacterInfo({
                     {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
                     {selectedDetail.faction && <Badge variant="secondary">{selectedDetail.faction}</Badge>}
                     <Badge variant="outline" className="gap-1 font-num">
-                      <Coins size={12} className="text-amber-500" />
+                      <Coins size={12} className="text-gold" />
                       {numberFormatter.format(selectedDetail.gold)} G
                     </Badge>
                     <Badge variant="outline" className="gap-1 font-num">
@@ -577,7 +577,7 @@ export default function CharacterInfo({
                         <div className="font-semibold">
                           {getRankGrade(selectedDetail.rank).name}
                         </div>
-                        <div className="mt-1 text-slate-300">
+                        <div className="mt-1 text-muted">
                           {getRankGrade(selectedDetail.rank).description}
                         </div>
                       </div>
@@ -593,11 +593,11 @@ export default function CharacterInfo({
                     max={getExperienceCap(selectedDetail.lv, selectedDetail.exp)}
                   />
                   <Badge variant="outline" className="gap-1 font-num">
-                    <Gauge size={12} className="text-amber-500" />
+                    <Gauge size={12} className="text-gold" />
                     AP {numberFormatter.format(selectedDetail.ap)}
                   </Badge>
                   {selectedDetail.attendance_streak > 0 && (
-                    <Badge className="gap-1 border border-orange-300 bg-orange-100 font-num text-orange-700 dark:border-orange-800 dark:bg-orange-950/40 dark:text-orange-300">
+                    <Badge className="gap-1 border border-orange-300 bg-orange-500/20 font-num text-orange-300">
                       <Flame size={12} />
                       연속 {selectedDetail.attendance_streak}일 출석!
                     </Badge>
@@ -643,12 +643,12 @@ export default function CharacterInfo({
                 </div>
 
                 {/* 상세정보 (테두리 없는 펼치기 버튼) */}
-                <div className="border-t border-slate-200 dark:border-slate-700 pt-3">
+                <div className="border-t border-line pt-3">
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => setShowDetails((prev) => !prev)}
-                    className="h-auto px-0 text-slate-500 dark:text-slate-400 hover:bg-transparent hover:text-slate-800"
+                    className="h-auto px-0 text-muted hover:bg-transparent hover:text-ivory"
                   >
                     {showDetails ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
                     상세정보 {showDetails ? "접기" : "펼치기"}
@@ -658,9 +658,9 @@ export default function CharacterInfo({
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                         {DETAIL_STATS.map(({ key, label, isFloat, description }) => (
                           <InfoTooltip key={key} side="top" content={description}>
-                            <div className="flex cursor-help items-center justify-between rounded-lg bg-slate-50 dark:bg-slate-800/60 px-3 py-2 text-sm">
-                              <span className="text-slate-500 dark:text-slate-400">{label}</span>
-                              <span className="font-num font-semibold text-slate-800 dark:text-slate-100">
+                            <div className="flex cursor-help items-center justify-between rounded-lg bg-inset px-3 py-2 text-sm">
+                              <span className="text-muted">{label}</span>
+                              <span className="font-num font-semibold text-ivory">
                                 {isFloat
                                   ? `${(Number(selectedDetail[key]) * 100).toFixed(1)}%`
                                   : numberFormatter.format(selectedDetail[key])}
@@ -671,8 +671,8 @@ export default function CharacterInfo({
                       </div>
 
                       {selectedDetail.start_sh != null && (
-                        <div className="flex flex-col gap-3 border-t border-slate-200 dark:border-slate-700 pt-4">
-                          <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-400 dark:text-slate-500">
+                        <div className="flex flex-col gap-3 border-t border-line pt-4">
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-muted">
                             <Lock size={12} />
                             관리자 전용 능력치
                           </div>
@@ -682,9 +682,9 @@ export default function CharacterInfo({
                               if (value == null) return null;
                               return (
                                 <InfoTooltip key={key} side="top" content={description}>
-                                  <div className="flex cursor-help items-center justify-between rounded-lg bg-amber-50 px-3 py-2 text-sm">
-                                    <span className="text-amber-700">{label}</span>
-                                    <span className="font-num font-semibold text-amber-900">
+                                  <div className="flex cursor-help items-center justify-between rounded-lg bg-gold/10 px-3 py-2 text-sm">
+                                    <span className="text-gold">{label}</span>
+                                    <span className="font-num font-semibold text-gold">
                                       {formatAdminOnlyStat(type, value)}
                                     </span>
                                   </div>
@@ -750,17 +750,17 @@ export default function CharacterInfo({
                   selectedDetail.achieved_challenges.map((challenge) => (
                     <div
                       key={challenge.challenge_id}
-                      className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
+                      className="rounded-2xl border border-line px-4 py-4"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900 dark:text-slate-100">{challenge.name}</p>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">{challenge.description}</p>
+                          <p className="font-semibold text-ivory">{challenge.name}</p>
+                          <p className="text-sm text-muted">{challenge.description}</p>
                         </div>
                         <Badge variant="outline">{challenge.chapter}</Badge>
                       </div>
-                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                        <Trophy size={14} className="text-amber-500" />
+                      <div className="mt-3 flex items-center gap-2 text-sm text-muted">
+                        <Trophy size={14} className="text-gold" />
                         {challenge.reward}
                       </div>
                     </div>
@@ -787,17 +787,17 @@ export default function CharacterInfo({
                   selectedDetail.reward_history.map((reward) => (
                     <div
                       key={reward.id}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
+                      className="flex items-center justify-between rounded-2xl border border-line px-4 py-4"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="flex size-10 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                        <span className="flex size-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600">
                           <Gift size={18} />
                         </span>
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900 dark:text-slate-100">
+                          <p className="font-semibold text-ivory">
                             {formatRewardItems(reward)}
                           </p>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                          <p className="text-sm text-muted">
                             {reward.rewarded_at} ·{" "}
                             <Badge variant="secondary" className="text-xs">
                               {REWARD_TYPE_LABELS[reward.type] ?? reward.type}
@@ -805,7 +805,7 @@ export default function CharacterInfo({
                           </p>
                         </div>
                       </div>
-                      <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
+                      <span className="flex items-center gap-1 text-xs text-muted">
                         <Receipt size={12} />
                         #{reward.id}
                       </span>
@@ -831,22 +831,22 @@ export default function CharacterInfo({
                   selectedDetail.purchase_history.map((purchase) => (
                     <div
                       key={purchase.id}
-                      className="flex items-center justify-between rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
+                      className="flex items-center justify-between rounded-2xl border border-line px-4 py-4"
                     >
                       <div className="flex items-center gap-3">
-                        <span className="flex size-10 items-center justify-center rounded-full bg-amber-50 text-amber-600">
+                        <span className="flex size-10 items-center justify-center rounded-full bg-gold/10 text-gold">
                           <Backpack size={18} />
                         </span>
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900 dark:text-slate-100">{purchase.item_name}</p>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">
+                          <p className="font-semibold text-ivory">{purchase.item_name}</p>
+                          <p className="text-sm text-muted">
                             {new Date(purchase.created_at).toLocaleString("ko-KR")}
                           </p>
                         </div>
                       </div>
                       <div className="flex flex-col items-end gap-1">
                         <Badge variant="secondary">{purchase.quantity}개 구매</Badge>
-                        <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
+                        <span className="flex items-center gap-1 text-xs text-muted">
                           <Receipt size={12} />
                           구매 ID {purchase.id}
                         </span>

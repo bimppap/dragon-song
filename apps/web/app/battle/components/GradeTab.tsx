@@ -5,9 +5,9 @@ const GRADES = [
     id: "bronze",
     name: "브론즈",
     icon: Medal,
-    color: "text-amber-700",
-    bg: "bg-amber-50",
-    border: "border-amber-200",
+    color: "text-gold",
+    bg: "bg-gold/10",
+    border: "border-gold",
     minScore: 0,
     maxScore: 999,
     benefits: ["기본 골드 드롭 +5%", "일반 던전 입장 가능"],
@@ -17,9 +17,9 @@ const GRADES = [
     id: "silver",
     name: "실버",
     icon: Award,
-    color: "text-slate-500 dark:text-slate-400",
-    bg: "bg-slate-50 dark:bg-slate-800/60",
-    border: "border-slate-200 dark:border-slate-700",
+    color: "text-muted",
+    bg: "bg-inset",
+    border: "border-line",
     minScore: 1000,
     maxScore: 2999,
     benefits: ["골드 드롭 +10%", "일반 던전 입장 가능", "주간 보상 +1회"],
@@ -30,8 +30,8 @@ const GRADES = [
     name: "골드",
     icon: Trophy,
     color: "text-yellow-500",
-    bg: "bg-yellow-50",
-    border: "border-yellow-200",
+    bg: "bg-yellow-500/15",
+    border: "border-yellow-500/40",
     minScore: 3000,
     maxScore: 5999,
     benefits: ["골드 드롭 +20%", "고급 던전 입장 가능", "주간 보상 +2회", "전용 칭호 지급"],
@@ -42,8 +42,8 @@ const GRADES = [
     name: "플래티넘",
     icon: Star,
     color: "text-cyan-500",
-    bg: "bg-cyan-50",
-    border: "border-cyan-200",
+    bg: "bg-cyan-500/15",
+    border: "border-cyan-500/40",
     minScore: 6000,
     maxScore: 9999,
     benefits: ["골드 드롭 +35%", "전설 던전 입장 가능", "주간 보상 +3회", "전용 장비 해금"],
@@ -53,9 +53,9 @@ const GRADES = [
     id: "diamond",
     name: "다이아몬드",
     icon: Crown,
-    color: "text-amber-500",
-    bg: "bg-amber-50 dark:bg-amber-950/40",
-    border: "border-amber-200",
+    color: "text-gold",
+    bg: "bg-gold/10",
+    border: "border-gold",
     minScore: 10000,
     maxScore: null,
     benefits: ["골드 드롭 +50%", "모든 던전 입장 가능", "무제한 주간 보상", "전용 외형 해금", "시즌 랭킹 참가"],
@@ -75,31 +75,31 @@ export default function GradeTab() {
   return (
     <div className="space-y-8">
       <div className="space-y-1">
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">등급</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">전투 점수에 따라 등급이 결정됩니다.</p>
+        <h2 className="text-lg font-bold text-ivory">등급</h2>
+        <p className="text-sm text-muted">전투 점수에 따라 등급이 결정됩니다.</p>
       </div>
 
       {/* 현재 등급 요약 */}
-      <div className="border border-yellow-200 bg-yellow-50 rounded-xl p-6 space-y-4">
+      <div className="border border-yellow-500/40 bg-yellow-500/15 rounded-xl p-6 space-y-4">
         <div className="flex items-center gap-3">
           <Trophy size={24} className="text-yellow-500" />
           <div>
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">현재 등급</p>
-            <p className="text-xl font-bold text-slate-800 dark:text-slate-100">{CURRENT_GRADE.name}</p>
+            <p className="text-xs text-muted font-medium">현재 등급</p>
+            <p className="text-xl font-bold text-ivory">{CURRENT_GRADE.name}</p>
           </div>
           <div className="ml-auto text-right">
-            <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">전투 점수</p>
+            <p className="text-xs text-muted font-medium">전투 점수</p>
             <p className="text-xl font-bold text-yellow-600">{CURRENT_SCORE.toLocaleString()}</p>
           </div>
         </div>
 
         {NEXT_GRADE && (
           <div className="space-y-1.5">
-            <div className="flex justify-between text-xs text-slate-500 dark:text-slate-400">
+            <div className="flex justify-between text-xs text-muted">
               <span>{NEXT_GRADE.name}까지 {(NEXT_GRADE.minScore - CURRENT_SCORE).toLocaleString()}점 남음</span>
               <span>{Math.round(progress)}%</span>
             </div>
-            <div className="h-2 bg-yellow-100 rounded-full overflow-hidden">
+            <div className="h-2 bg-yellow-500/20 rounded-full overflow-hidden">
               <div
                 className="h-full bg-yellow-400 rounded-full transition-all"
                 style={{ width: `${progress}%` }}
@@ -117,17 +117,17 @@ export default function GradeTab() {
             className={`border rounded-xl p-5 ${bg} ${border} ${current ? "ring-2 ring-yellow-300" : ""} transition`}
           >
             <div className="flex items-start gap-4">
-              <div className={`w-10 h-10 rounded-lg bg-white dark:bg-slate-900 border ${border} flex items-center justify-center shrink-0`}>
+              <div className={`w-10 h-10 rounded-lg bg-surface border ${border} flex items-center justify-center shrink-0`}>
                 <Icon size={20} className={color} />
               </div>
 
               <div className="flex-1 space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className={`font-bold text-slate-800 dark:text-slate-100`}>{name}</span>
+                  <span className={`font-bold text-ivory`}>{name}</span>
                   {current && (
-                    <span className="text-[10px] bg-yellow-400 text-white px-2 py-0.5 rounded-full font-bold">현재</span>
+                    <span className="text-[10px] bg-yellow-400 text-ivory px-2 py-0.5 rounded-full font-bold">현재</span>
                   )}
-                  <span className="ml-auto text-xs text-slate-400 dark:text-slate-500">
+                  <span className="ml-auto text-xs text-muted">
                     {minScore.toLocaleString()}
                     {maxScore ? ` ~ ${maxScore.toLocaleString()}점` : "점 이상"}
                   </span>
@@ -135,7 +135,7 @@ export default function GradeTab() {
 
                 <div className="flex flex-wrap gap-1.5">
                   {benefits.map((b) => (
-                    <span key={b} className="text-[11px] bg-white/70 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 px-2 py-0.5 rounded-full">
+                    <span key={b} className="text-[11px] bg-surface/70 text-ivory/85 border border-line px-2 py-0.5 rounded-full">
                       {b}
                     </span>
                   ))}

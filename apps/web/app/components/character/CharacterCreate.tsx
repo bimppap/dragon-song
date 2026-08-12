@@ -43,10 +43,10 @@ const STAT_CONFIG = [
   { name: "def",     label: "방어력",   icon: Shield,   color: "text-blue-500" },
   { name: "gold",    label: "골드",     icon: Coins,    color: "text-yellow-500" },
   { name: "cp",      label: "CP",       icon: Gem,      color: "text-cyan-500" },
-  { name: "ap",      label: "AP",       icon: Flame,    color: "text-amber-500" },
+  { name: "ap",      label: "AP",       icon: Flame,    color: "text-gold" },
   { name: "lv",      label: "성장 등급", icon: Trophy,   color: "text-emerald-500" },
-  { name: "rank",    label: "모험가 등급", icon: Trophy, color: "text-amber-500" },
-  { name: "exp",     label: "경험치",   icon: Sparkles, color: "text-amber-500" },
+  { name: "rank",    label: "모험가 등급", icon: Trophy, color: "text-gold" },
+  { name: "exp",     label: "경험치",   icon: Sparkles, color: "text-gold" },
 ] as const;
 
 interface Props {
@@ -101,7 +101,7 @@ export default function CharacterCreate({ onCreated }: Props) {
 
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
-          <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">이름</label>
+          <label className="block text-xs font-semibold text-muted uppercase tracking-wide">이름</label>
           <Input
             name="name"
             placeholder="캐릭터 이름"
@@ -114,7 +114,7 @@ export default function CharacterCreate({ onCreated }: Props) {
         <div className="grid grid-cols-2 gap-3">
           {STAT_CONFIG.map(({ name, label, icon: Icon, color }) => (
             <div key={name} className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-1 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">
+              <label className="flex items-center gap-1 text-xs font-semibold text-muted uppercase tracking-wide">
                 <Icon size={11} className={color} />
                 {label}
               </label>
@@ -130,7 +130,7 @@ export default function CharacterCreate({ onCreated }: Props) {
             </div>
           ))}
         </div>
-        <p className="text-xs text-slate-400 dark:text-slate-500">
+        <p className="text-xs text-muted">
           위 항목 외의 상세 능력치(공격력 증폭, 방어 효율, 기술 관련 등)는 0으로 생성되며, 상세정보에서 확인할 수 있습니다.
         </p>
 

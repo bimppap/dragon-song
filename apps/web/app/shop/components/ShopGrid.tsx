@@ -27,7 +27,7 @@ function PriceText({ item }: { item: Item }) {
   return (
     <span className="font-num text-sm font-semibold">
       {item.price_gold != null && <span className="text-yellow-600">{item.price_gold.toLocaleString()} G</span>}
-      {item.price_gold != null && item.price_cp != null && <span className="text-slate-400 dark:text-slate-500"> + </span>}
+      {item.price_gold != null && item.price_cp != null && <span className="text-muted"> + </span>}
       {item.price_cp != null && <span className="text-cyan-600">{item.price_cp.toLocaleString()} CP</span>}
     </span>
   );
@@ -39,7 +39,7 @@ function ItemImage({ url, className }: { url: string | null; className: string }
     return <img src={url} alt="" className={`${className} object-cover`} />;
   }
   return (
-    <div className={`${className} flex items-center justify-center bg-amber-50 dark:bg-amber-950/40 text-amber-300`}>
+    <div className={`${className} flex items-center justify-center bg-gold/10 text-gold`}>
       <Package size={26} />
     </div>
   );
@@ -50,14 +50,14 @@ function ItemTooltip({ item }: { item: Item }) {
     <div className="max-w-64 space-y-2 text-left">
       <ItemImage url={item.image_url} className="h-28 w-full rounded-lg" />
       <div className="flex items-center gap-2">
-        <span className="font-semibold text-white">{item.name}</span>
+        <span className="font-semibold text-ivory">{item.name}</span>
         <Badge variant={item.item_type === "equipment" ? "secondary" : "outline"} className="text-[10px]">
           {item.item_type === "equipment" ? "장착형" : "소모형"}
         </Badge>
       </div>
-      {item.description_user && <p className="text-xs text-slate-300">{item.description_user}</p>}
-      <div className="text-xs text-slate-300">
-        <span className="font-semibold text-slate-200">효과 </span>
+      {item.description_user && <p className="text-xs text-muted">{item.description_user}</p>}
+      <div className="text-xs text-muted">
+        <span className="font-semibold text-ivory">효과 </span>
         {item.effects.length > 0 ? item.effects.map(formatEffect).join(", ") : "효과 없음"}
       </div>
     </div>
@@ -78,9 +78,9 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
     return () => { cancelled = true; };
   }, [characterId, refreshKey]);
 
-  if (loading) return <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">아이템을 불러오는 중...</p>;
+  if (loading) return <p className="py-12 text-center text-sm text-muted">아이템을 불러오는 중...</p>;
   if (items.length === 0)
-    return <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">판매 중인 아이템이 없습니다.</p>;
+    return <p className="py-12 text-center text-sm text-muted">판매 중인 아이템이 없습니다.</p>;
 
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
@@ -90,16 +90,16 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
         const inCart = cartItemIds.has(item.id);
         return (
           <InfoTooltip key={item.id} side="top" content={<ItemTooltip item={item} />}>
-            <div className="flex cursor-default gap-3 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-3 transition hover:border-amber-300 hover:shadow-sm">
+            <div className="flex cursor-default gap-3 rounded-xl border border-line bg-surface p-3 transition hover:border-gold hover:shadow-sm">
               <ItemImage url={item.image_url} className="size-16 shrink-0 rounded-lg" />
               <div className="flex min-w-0 flex-1 flex-col justify-between gap-1.5">
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-semibold text-slate-800 dark:text-slate-100">{item.name}</p>
+                  <p className="truncate text-sm font-semibold text-ivory">{item.name}</p>
                   <PriceText item={item} />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   {stock !== null ? (
-                    <span className="font-num text-xs text-slate-400 dark:text-slate-500">{soldOut ? "품절" : `${stock}개 남음`}</span>
+                    <span className="font-num text-xs text-muted">{soldOut ? "품절" : `${stock}개 남음`}</span>
                   ) : (
                     <span />
                   )}

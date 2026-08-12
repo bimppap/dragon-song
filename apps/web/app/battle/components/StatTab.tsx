@@ -4,9 +4,9 @@ const BASE_STATS = [
   { label: "HP", icon: Heart, value: 1250, max: 2000, color: "bg-red-400", textColor: "text-red-500" },
   { label: "MP", icon: Star, value: 430, max: 600, color: "bg-blue-400", textColor: "text-blue-500" },
   { label: "공격력", icon: Zap, value: 184, max: 400, color: "bg-orange-400", textColor: "text-orange-500" },
-  { label: "방어력", icon: Shield, value: 97, max: 300, color: "bg-amber-400", textColor: "text-amber-500" },
+  { label: "방어력", icon: Shield, value: 97, max: 300, color: "bg-gold", textColor: "text-gold" },
   { label: "민첩성", icon: Wind, value: 145, max: 300, color: "bg-emerald-400", textColor: "text-emerald-500" },
-  { label: "명중률", icon: Eye, value: 88, max: 100, color: "bg-amber-400", textColor: "text-amber-500" },
+  { label: "명중률", icon: Eye, value: 88, max: 100, color: "bg-gold", textColor: "text-gold" },
 ];
 
 const ADDITIONAL_STATS = [
@@ -22,27 +22,27 @@ export default function StatTab() {
   return (
     <div className="space-y-8">
       <div className="space-y-1">
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">캐릭터 스탯</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">현재 장비 및 버프가 적용된 최종 스탯입니다.</p>
+        <h2 className="text-lg font-bold text-ivory">캐릭터 스탯</h2>
+        <p className="text-sm text-muted">현재 장비 및 버프가 적용된 최종 스탯입니다.</p>
       </div>
 
       {/* 기본 스탯 */}
       <div className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">기본 스탯</h3>
+        <h3 className="text-sm font-semibold text-ivory/85 uppercase tracking-wide">기본 스탯</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           {BASE_STATS.map(({ label, icon: Icon, value, max, color, textColor }) => (
-            <div key={label} className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 bg-white dark:bg-slate-900 space-y-3">
+            <div key={label} className="border border-line rounded-xl p-4 bg-surface space-y-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Icon size={15} className={textColor} />
-                  <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">{label}</span>
+                  <span className="text-sm font-semibold text-ivory">{label}</span>
                 </div>
                 <span className={`text-sm font-bold ${textColor}`}>
                   {value.toLocaleString()}
-                  <span className="text-slate-300 font-normal"> / {max.toLocaleString()}</span>
+                  <span className="text-muted font-normal"> / {max.toLocaleString()}</span>
                 </span>
               </div>
-              <div className="h-2 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+              <div className="h-2 bg-primary-light/20 rounded-full overflow-hidden">
                 <div
                   className={`h-full ${color} rounded-full transition-all`}
                   style={{ width: `${Math.min((value / max) * 100, 100)}%` }}
@@ -55,12 +55,12 @@ export default function StatTab() {
 
       {/* 세부 스탯 */}
       <div className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-600 dark:text-slate-300 uppercase tracking-wide">세부 스탯</h3>
-        <div className="border border-slate-200 dark:border-slate-700 rounded-xl bg-white dark:bg-slate-900 divide-y divide-slate-50">
+        <h3 className="text-sm font-semibold text-ivory/85 uppercase tracking-wide">세부 스탯</h3>
+        <div className="border border-line rounded-xl bg-surface divide-y divide-line">
           {ADDITIONAL_STATS.map(({ label, value }) => (
             <div key={label} className="flex items-center justify-between px-5 py-3">
-              <span className="text-sm text-slate-500 dark:text-slate-400">{label}</span>
-              <span className="text-sm font-bold text-slate-800 dark:text-slate-100">{value}</span>
+              <span className="text-sm text-muted">{label}</span>
+              <span className="text-sm font-bold text-ivory">{value}</span>
             </div>
           ))}
         </div>

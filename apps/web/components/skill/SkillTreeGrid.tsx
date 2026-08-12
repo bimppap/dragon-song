@@ -56,13 +56,13 @@ export function SkillTooltipContent({ name, effects }: { name: string; effects: 
     <div className="max-w-56 text-left">
       <div className="font-semibold">{name}</div>
       {effects.length > 0 ? (
-        <ul className="mt-1 space-y-0.5 text-slate-300">
+        <ul className="mt-1 space-y-0.5 text-muted">
           {effects.map((effect, index) => (
             <li key={index}>{formatEffect(effect)}</li>
           ))}
         </ul>
       ) : (
-        <div className="mt-1 text-slate-400 dark:text-slate-500">효과 없음</div>
+        <div className="mt-1 text-muted">효과 없음</div>
       )}
     </div>
   );
@@ -150,11 +150,11 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
             >
               <span
                 className={cn(
-                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-white dark:bg-slate-900 transition-colors",
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-surface transition-colors",
                   highlighted
-                    ? "border-amber-600 bg-amber-50 dark:bg-amber-950/40 text-amber-600 shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
-                    : "border-slate-200 dark:border-slate-700 text-slate-400 dark:text-slate-500",
-                  clickable && !highlighted ? "hover:border-amber-400" : "",
+                    ? "border-gold bg-gold/10 text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
+                    : "border-line text-muted",
+                  clickable && !highlighted ? "hover:border-gold" : "",
                 )}
               >
                 {node.image_url ? (
@@ -167,7 +167,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
               <span
                 className={cn(
                   "line-clamp-2 text-[10px] font-semibold leading-tight",
-                  highlighted ? "text-amber-700" : "text-slate-600 dark:text-slate-300",
+                  highlighted ? "text-gold" : "text-ivory/85",
                 )}
               >
                 {getLabel(node)}

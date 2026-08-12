@@ -1,7 +1,17 @@
 @import "tailwindcss";
 
-/* data-theme="dark" (또는 그 하위)에 dark: 유틸을 적용한다. */
-@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+/* 모험·판타지·게임·픽셀 다크 팔레트 */
+@theme {
+  --color-base: #171e1e;          /* 페이지/헤더 배경 */
+  --color-surface: #222b28;       /* 카드·모달·입력·팝업 */
+  --color-inset: #1b2321;         /* 카드 내부 패널·트랙(더 어두운 인셋) */
+  --color-primary: #3e5845;       /* 주요 패널·버튼·선택 영역 */
+  --color-primary-light: #526f59; /* hover·활성 메뉴·보조 버튼 */
+  --color-gold: #e8c936;          /* CTA·선택 강조·중요 수치·아이콘 */
+  --color-ivory: #f1eedc;         /* 제목·본문 텍스트 */
+  --color-muted: #9ca69e;         /* 설명·placeholder·비활성 */
+  --color-line: #313d37;          /* 테두리 */
+}
 
 /*
   @layer base 안에 작성해야 @layer utilities(Tailwind 유틸 클래스)보다
@@ -11,13 +21,8 @@
   /* 모바일은 기본 크기, sm 이상에서 112%로 확대 (좁은 화면 여백 확보) */
   html {
     font-size: 100%;
-    color-scheme: light;
-    background-color: #f8fafc; /* slate-50 */
-  }
-
-  html[data-theme="dark"] {
     color-scheme: dark;
-    background-color: #020617; /* slate-950 */
+    background-color: var(--color-base);
   }
 
   @media (min-width: 640px) {
@@ -90,6 +95,18 @@
 .ag-theme-quartz,
 .ag-theme-quartz-dark {
   --ag-font-family: "Galmuri11", "Courier New", monospace;
+  --ag-background-color: #222b28;
+  --ag-foreground-color: #f1eedc;
+  --ag-header-background-color: #1b2321;
+  --ag-header-foreground-color: #f1eedc;
+  --ag-border-color: #313d37;
+  --ag-row-border-color: #313d37;
+  --ag-odd-row-background-color: #1f2825;
+  --ag-row-hover-color: #2b3a31;
+  --ag-input-border-color: #313d37;
+  --ag-secondary-foreground-color: #9ca69e;
+  --ag-disabled-foreground-color: #9ca69e;
+  --ag-selected-row-background-color: #2b3a31;
 }
 .ag-root-wrapper,
 .ag-root-wrapper .ag-header-cell-text,

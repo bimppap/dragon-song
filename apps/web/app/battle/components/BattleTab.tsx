@@ -22,7 +22,7 @@ const BATTLE_FORMULAS: { label: string; icon: React.ElementType; accent: string;
   {
     label: "수비",
     icon: Shield,
-    accent: "text-amber-500",
+    accent: "text-gold",
     formula:
       "받는 피해 = max(0, 에너미 피해 × (1 − 피해 감소) − 방어력 × (1 + 방어력 증폭) × 방어 효율), 남은 피해는 보호막(보호막 + 시작 보호막)이 먼저 흡수",
   },
@@ -53,20 +53,20 @@ export default function BattleTab() {
   return (
     <div className="space-y-6">
       {/* 전투 계산식 (상단, 카드 아님) */}
-      <div className="space-y-2 border-b border-slate-200 dark:border-slate-700 pb-5">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">전투 계산식</h2>
+      <div className="space-y-2 border-b border-line pb-5">
+        <h2 className="text-sm font-bold uppercase tracking-wide text-muted">전투 계산식</h2>
         <div className="space-y-1.5">
           {BATTLE_FORMULAS.map(({ label, icon: Icon, accent, formula }) => (
             <div key={label} className="flex flex-wrap items-baseline gap-2 text-sm">
-              <span className="flex shrink-0 items-center gap-1 font-semibold text-slate-700 dark:text-slate-200">
+              <span className="flex shrink-0 items-center gap-1 font-semibold text-ivory">
                 <Icon size={13} className={accent} />
                 {label}
               </span>
-              <span className="text-slate-500 dark:text-slate-400">{formula}</span>
+              <span className="text-muted">{formula}</span>
             </div>
           ))}
         </div>
-        <p className="text-xs text-slate-400 dark:text-slate-500">
+        <p className="text-xs text-muted">
           마나계수는 마나가 기술 비용 이상이면 1(기술 비용만큼 마나 소모), 미만이면 0.5입니다. 매 라운드 시작 시
           체력 재생력(고정) + 최대 체력 × 체력 재생력(비례)만큼 회복하고 마나 재생력만큼 마나가 회복됩니다. 최대 체력 =
           최대 체력 × (1 + 체력 증폭)이며, 에너미 지정 공격은 주목도 + 존재감이 높은 캐릭터부터 노립니다. (부활 후 체력·행동횟수는 적군 전용 능력치입니다.)
@@ -100,8 +100,8 @@ function BattleList({ enemies, loading, error, numberFormatter, onStart }: Battl
   return (
     <div className="space-y-6">
       <div className="space-y-1">
-        <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">전투 목록</h2>
-        <p className="text-sm text-slate-500 dark:text-slate-400">적을 선택해 전투를 시작하세요.</p>
+        <h2 className="text-lg font-bold text-ivory">전투 목록</h2>
+        <p className="text-sm text-muted">적을 선택해 전투를 시작하세요.</p>
       </div>
 
       {error && (
@@ -109,7 +109,7 @@ function BattleList({ enemies, loading, error, numberFormatter, onStart }: Battl
       )}
 
       {loading ? (
-        <p className="text-sm text-slate-400 dark:text-slate-500">에너미 목록을 불러오는 중...</p>
+        <p className="text-sm text-muted">에너미 목록을 불러오는 중...</p>
       ) : enemies.length === 0 ? (
         <EmptyState>
           등록된 에너미가 없습니다. 에너미 탭에서 먼저 등록하세요.
@@ -119,26 +119,26 @@ function BattleList({ enemies, loading, error, numberFormatter, onStart }: Battl
           {enemies.map((enemy) => (
             <div
               key={enemy.id}
-              className="space-y-4 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 transition hover:border-amber-300 hover:shadow-sm"
+              className="space-y-4 rounded-xl border border-line bg-surface p-5 transition hover:border-gold hover:shadow-sm"
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Skull size={18} className="text-red-500" />
                   <div>
-                    <p className="font-bold text-slate-800 dark:text-slate-100">{enemy.name}</p>
-                    {enemy.chapter && <p className="mt-0.5 text-xs text-slate-400 dark:text-slate-500">{enemy.chapter}</p>}
+                    <p className="font-bold text-ivory">{enemy.name}</p>
+                    {enemy.chapter && <p className="mt-0.5 text-xs text-muted">{enemy.chapter}</p>}
                   </div>
                 </div>
                 <Badge variant="outline" className="font-num">스킬 {enemy.skills.length}</Badge>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 py-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">기본 HP</p>
-                  <p className="font-num text-sm font-bold text-slate-700 dark:text-slate-200">{numberFormatter.format(enemy.base_hp)}</p>
+                <div className="rounded-lg bg-inset py-2">
+                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted">기본 HP</p>
+                  <p className="font-num text-sm font-bold text-ivory">{numberFormatter.format(enemy.base_hp)}</p>
                 </div>
-                <div className="rounded-lg bg-slate-50 dark:bg-slate-800/60 py-2">
-                  <p className="flex items-center justify-center gap-1 text-[10px] font-medium uppercase tracking-wide text-slate-400 dark:text-slate-500">
+                <div className="rounded-lg bg-inset py-2">
+                  <p className="flex items-center justify-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted">
                     <Zap size={10} />공격
                   </p>
                   <p className="font-num text-sm font-bold text-red-500">{numberFormatter.format(enemy.attack)}</p>
@@ -146,7 +146,7 @@ function BattleList({ enemies, loading, error, numberFormatter, onStart }: Battl
               </div>
 
               {(enemy.hp_per_attacker > 0 || enemy.hp_per_defender > 0 || enemy.hp_per_healer > 0) && (
-                <div className="flex flex-wrap gap-2 text-xs text-slate-500 dark:text-slate-400">
+                <div className="flex flex-wrap gap-2 text-xs text-muted">
                   {enemy.hp_per_attacker > 0 && <span>공격 인원당 +{enemy.hp_per_attacker}</span>}
                   {enemy.hp_per_defender > 0 && <span>수비 인원당 +{enemy.hp_per_defender}</span>}
                   {enemy.hp_per_healer > 0 && <span>치유 인원당 +{enemy.hp_per_healer}</span>}

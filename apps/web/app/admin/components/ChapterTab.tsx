@@ -51,11 +51,11 @@ export default function ChapterTab() {
 
   return (
     <div className="flex flex-col gap-8">
-      <section className="border border-slate-200 dark:border-slate-700 rounded-xl p-6 flex flex-col gap-4">
-        <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">챕터 추가</h2>
+      <section className="border border-line rounded-xl p-6 flex flex-col gap-4">
+        <h2 className="text-base font-semibold text-ivory">챕터 추가</h2>
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="text-sm font-medium text-slate-700 dark:text-slate-200">챕터명</label>
+            <label className="text-sm font-medium text-ivory">챕터명</label>
             <Input
               placeholder="예: 1챕터 — 어둠의 시작"
               value={form.name}
@@ -64,7 +64,7 @@ export default function ChapterTab() {
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">시작 날짜</label>
+              <label className="text-sm font-medium text-ivory">시작 날짜</label>
               <Input
                 type="date"
                 value={form.start_date}
@@ -72,7 +72,7 @@ export default function ChapterTab() {
               />
             </div>
             <div className="flex flex-col gap-1.5">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">종료 날짜</label>
+              <label className="text-sm font-medium text-ivory">종료 날짜</label>
               <Input
                 type="date"
                 value={form.end_date}
@@ -89,25 +89,25 @@ export default function ChapterTab() {
       </section>
 
       <section className="flex flex-col gap-3">
-        <h2 className="text-base font-semibold text-slate-800 dark:text-slate-100">챕터 목록</h2>
+        <h2 className="text-base font-semibold text-ivory">챕터 목록</h2>
         {chapters.length === 0 ? (
-          <p className="text-sm text-slate-400 dark:text-slate-500">등록된 챕터가 없습니다.</p>
+          <p className="text-sm text-muted">등록된 챕터가 없습니다.</p>
         ) : (
           <div className="flex flex-col gap-2">
             {chapters.map((chapter) => (
               <div
                 key={chapter.id}
-                className="flex items-center justify-between border border-slate-200 dark:border-slate-700 rounded-lg px-4 py-3 bg-white dark:bg-slate-900"
+                className="flex items-center justify-between border border-line rounded-lg px-4 py-3 bg-surface"
               >
                 <div className="flex items-center gap-3">
                   {chapter.is_active && (
-                    <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs font-semibold">
+                    <Badge className="bg-gold/15 text-gold border-gold text-xs font-semibold">
                       진행 중
                     </Badge>
                   )}
-                  <span className="text-sm font-semibold text-slate-800 dark:text-slate-100">{chapter.name}</span>
+                  <span className="text-sm font-semibold text-ivory">{chapter.name}</span>
                 </div>
-                <span className="text-xs text-slate-400 dark:text-slate-500">
+                <span className="text-xs text-muted">
                   {chapter.start_date} ~ {chapter.end_date}
                 </span>
               </div>

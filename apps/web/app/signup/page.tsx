@@ -65,7 +65,7 @@ export default function SignupPage() {
             )}
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">아이디</label>
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide">아이디</label>
               <Input
                 value={loginId}
                 onChange={(e) => setLoginId(e.target.value)}
@@ -76,7 +76,7 @@ export default function SignupPage() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">비밀번호</label>
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide">비밀번호</label>
               <PasswordInput
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -86,7 +86,7 @@ export default function SignupPage() {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wide">비밀번호 확인</label>
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide">비밀번호 확인</label>
               <PasswordInput
                 value={passwordConfirm}
                 onChange={(e) => setPasswordConfirm(e.target.value)}
@@ -101,9 +101,9 @@ export default function SignupPage() {
             </Button>
           </form>
 
-          <p className="mt-4 text-center text-sm text-slate-500 dark:text-slate-400">
+          <p className="mt-4 text-center text-sm text-muted">
             이미 계정이 있으신가요?{" "}
-            <Link href="/login" className="font-semibold text-amber-600 hover:underline">
+            <Link href="/login" className="font-semibold text-gold hover:underline">
               로그인
             </Link>
           </p>

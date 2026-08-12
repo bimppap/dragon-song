@@ -80,11 +80,11 @@ function RunnerChallengeList() {
   return (
     <PageContainer max="4xl" className="flex flex-col gap-8">
       <section className="flex flex-col gap-2">
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">
-          <Trophy size={24} className="text-amber-600" />
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-ivory">
+          <Trophy size={24} className="text-gold" />
           도전과제
         </h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400">현재 공개된 도전과제 목록입니다.</p>
+        <p className="text-sm text-muted">현재 공개된 도전과제 목록입니다.</p>
       </section>
 
       {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
@@ -105,12 +105,12 @@ function RunnerChallengeList() {
               {challenges
                 .filter((c) => c.chapter === chapter)
                 .map((challenge) => (
-                  <div key={challenge.id} className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4">
+                  <div key={challenge.id} className="rounded-2xl border border-line px-4 py-4">
                     <div className="flex flex-col gap-1">
-                      <p className="font-semibold text-slate-900 dark:text-slate-100">{challenge.name}</p>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">{challenge.description}</p>
+                      <p className="font-semibold text-ivory">{challenge.name}</p>
+                      <p className="text-sm text-muted">{challenge.description}</p>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                    <div className="mt-3 flex items-center gap-2 text-sm text-muted">
                       <Gift size={14} />
                       {challenge.reward}
                     </div>
@@ -479,9 +479,9 @@ export function ChallengeAdmin() {
               </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex items-center justify-between rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                  <Trophy size={16} className="text-amber-500" />
+              <div className="flex items-center justify-between rounded-xl bg-inset px-4 py-3">
+                <div className="flex items-center gap-2 text-sm text-muted">
+                  <Trophy size={16} className="text-gold" />
                   등록된 도전과제 {challenges.length}개
                 </div>
                 <Badge variant="secondary">관리 탭</Badge>
@@ -492,9 +492,9 @@ export function ChallengeAdmin() {
                   도전과제 목록을 불러오는 중입니다.
                 </EmptyState>
               ) : challenges.length > 0 ? (
-                <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
+                <div className="overflow-x-auto rounded-xl border border-line">
                   <table className="min-w-full text-sm">
-                    <thead className="bg-slate-50 dark:bg-slate-800/60 text-slate-500 dark:text-slate-400">
+                    <thead className="bg-inset text-muted">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold">챕터</th>
                         <th className="px-4 py-3 text-left font-semibold">이름</th>
@@ -507,16 +507,16 @@ export function ChallengeAdmin() {
                       {challenges.map((challenge) => (
                         <tr
                           key={challenge.id}
-                          className="border-t border-slate-200 dark:border-slate-700 align-top"
+                          className="border-t border-line align-top"
                         >
-                          <td className="px-4 py-4 font-medium text-slate-700 dark:text-slate-200">
+                          <td className="px-4 py-4 font-medium text-ivory">
                             {challenge.chapter}
                           </td>
-                          <td className="px-4 py-4 text-slate-900 dark:text-slate-100">{challenge.name}</td>
-                          <td className="px-4 py-4 text-slate-500 dark:text-slate-400">
+                          <td className="px-4 py-4 text-ivory">{challenge.name}</td>
+                          <td className="px-4 py-4 text-muted">
                             {challenge.description}
                           </td>
-                          <td className="px-4 py-4 text-slate-700 dark:text-slate-200">{challenge.reward}</td>
+                          <td className="px-4 py-4 text-ivory">{challenge.reward}</td>
                           <td className="px-4 py-4">
                             <Badge
                               variant={
@@ -549,7 +549,7 @@ export function ChallengeAdmin() {
             <CardContent>
               <form className="flex flex-col gap-4" onSubmit={handleAddChallenge}>
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">챕터</label>
+                  <label className="text-sm font-semibold text-ivory">챕터</label>
                   <Select
                     value={form.chapter}
                     onValueChange={(value) => handleFormChange("chapter", value)}
@@ -568,7 +568,7 @@ export function ChallengeAdmin() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">이름</label>
+                  <label className="text-sm font-semibold text-ivory">이름</label>
                   <Input
                     value={form.name}
                     onChange={(event) => handleFormChange("name", event.target.value)}
@@ -578,7 +578,7 @@ export function ChallengeAdmin() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">내용</label>
+                  <label className="text-sm font-semibold text-ivory">내용</label>
                   <Textarea
                     value={form.description}
                     onChange={(event) =>
@@ -591,7 +591,7 @@ export function ChallengeAdmin() {
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">보상 설명</label>
+                  <label className="text-sm font-semibold text-ivory">보상 설명</label>
                   <Input
                     value={form.reward}
                     onChange={(event) => handleFormChange("reward", event.target.value)}
@@ -611,7 +611,7 @@ export function ChallengeAdmin() {
                 />
 
                 <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-200">상태</label>
+                  <label className="text-sm font-semibold text-ivory">상태</label>
                   <Select
                     value={form.visibility}
                     onValueChange={(value: ChallengeVisibility) =>
@@ -666,7 +666,7 @@ export function ChallengeAdmin() {
                   </Select>
                 </div>
               ) : (
-                <div className="rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60 px-4 py-2 text-sm text-slate-500 dark:text-slate-400">
+                <div className="rounded-lg border border-line bg-inset px-4 py-2 text-sm text-muted">
                   챕터 없음
                 </div>
               )}
@@ -691,14 +691,14 @@ export function ChallengeAdmin() {
                       className={cn(
                         "rounded-2xl border px-4 py-4 text-left transition-colors",
                         selectedChallenge?.id === challenge.id
-                          ? "border-amber-500 bg-amber-50 dark:bg-amber-950/40"
-                          : "border-slate-200 dark:border-slate-700 hover:border-slate-300 hover:bg-slate-50",
+                          ? "border-gold bg-gold/10"
+                          : "border-line hover:border-line hover:bg-inset",
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-slate-900 dark:text-slate-100">{challenge.name}</p>
-                          <p className="text-sm text-slate-500 dark:text-slate-400">{challenge.description}</p>
+                          <p className="font-semibold text-ivory">{challenge.name}</p>
+                          <p className="text-sm text-muted">{challenge.description}</p>
                         </div>
                         <Badge
                           variant={challenge.is_public ? "outline" : "secondary"}
@@ -706,7 +706,7 @@ export function ChallengeAdmin() {
                           {toVisibilityText(challenge.is_public)}
                         </Badge>
                       </div>
-                      <div className="mt-3 flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
+                      <div className="mt-3 flex items-center gap-2 text-sm text-muted">
                         <Gift size={14} />
                         {challenge.reward}
                       </div>
@@ -739,13 +739,13 @@ export function ChallengeAdmin() {
                 </Button>
               </CardHeader>
               <CardContent className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 rounded-2xl bg-slate-50 dark:bg-slate-800/60 px-4 py-4 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400">
-                    <Target size={15} className="text-amber-500" />
+                <div className="flex flex-col gap-3 rounded-2xl bg-inset px-4 py-4 md:flex-row md:items-center md:justify-between">
+                  <div className="flex items-center gap-2 text-sm text-muted">
+                    <Target size={15} className="text-gold" />
                     완료 {achievedCount} / {activeProgress.length}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="flex items-center gap-2 rounded-full border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-3 py-2 text-sm text-slate-600 dark:text-slate-300">
+                    <label className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-2 text-sm text-ivory/85">
                       <Checkbox
                         checked={showAchievedOnly}
                         onCheckedChange={(checked) =>
@@ -778,11 +778,11 @@ export function ChallengeAdmin() {
                     {visibleProgress.map((entry) => (
                       <div
                         key={entry.character_id}
-                        className="rounded-2xl border border-slate-200 dark:border-slate-700 px-4 py-4"
+                        className="rounded-2xl border border-line px-4 py-4"
                       >
                         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                           <div className="flex flex-col gap-1">
-                            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
+                            <p className="text-base font-semibold text-ivory">
                               {entry.character_name}
                             </p>
                             <div className="flex items-center gap-2">
@@ -791,7 +791,7 @@ export function ChallengeAdmin() {
                               >
                                 {entry.achieved ? "달성" : "미달성"}
                               </Badge>
-                              <span className="flex items-center gap-1 text-xs text-slate-400 dark:text-slate-500">
+                              <span className="flex items-center gap-1 text-xs text-muted">
                                 {entry.achieved ? <Eye size={13} /> : <EyeOff size={13} />}
                                 {entry.achieved ? "보상 대상" : "진행 필요"}
                               </span>
@@ -800,7 +800,7 @@ export function ChallengeAdmin() {
 
                           {isEditingProgress ? (
                             <div className="flex w-full flex-col gap-3 lg:max-w-md">
-                              <label className="flex items-center gap-2 text-sm font-medium text-slate-700 dark:text-slate-200">
+                              <label className="flex items-center gap-2 text-sm font-medium text-ivory">
                                 <Checkbox
                                   checked={entry.achieved}
                                   onCheckedChange={(checked) =>
@@ -822,7 +822,7 @@ export function ChallengeAdmin() {
                               />
                             </div>
                           ) : (
-                            <div className="w-full rounded-xl bg-slate-50 dark:bg-slate-800/60 px-4 py-3 text-sm text-slate-600 dark:text-slate-300 lg:max-w-md">
+                            <div className="w-full rounded-xl bg-inset px-4 py-3 text-sm text-ivory/85 lg:max-w-md">
                               {entry.memo || "메모 없음"}
                             </div>
                           )}

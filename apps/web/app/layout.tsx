@@ -22,17 +22,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" suppressHydrationWarning>
-      <head>
-        {/* FOUC 방지: 하이드레이션 전에 저장된 테마를 적용 */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html:
-              "try{var t=localStorage.getItem('theme')||'light';document.documentElement.setAttribute('data-theme',t);}catch(e){}",
-          }}
-        />
-      </head>
-      <body className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <html lang="ko">
+      <body className="min-h-screen bg-base text-ivory">
         <AuthProvider>
           <DialogProvider>
             <Header />

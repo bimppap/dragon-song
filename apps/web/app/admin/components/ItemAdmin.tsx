@@ -45,7 +45,7 @@ export default function ItemAdmin() {
     <div className="flex flex-col gap-6">
       {tab === "manage" && (
         <div className="flex flex-wrap items-center gap-3">
-          <span className="whitespace-nowrap text-sm font-semibold text-slate-600">재고 기준 캐릭터</span>
+          <span className="whitespace-nowrap text-sm font-semibold text-ivory/85">재고 기준 캐릭터</span>
           <Select
             value={characterId?.toString() ?? ""}
             onValueChange={(v) => setCharacterId(Number(v))}
@@ -76,7 +76,7 @@ export default function ItemAdmin() {
 
       {tab === "manage" &&
         (characterId == null ? (
-          <p className="py-12 text-center text-sm text-slate-400">캐릭터를 선택해 주세요.</p>
+          <p className="py-12 text-center text-sm text-muted">캐릭터를 선택해 주세요.</p>
         ) : (
           <ItemGrid
             characterId={characterId}

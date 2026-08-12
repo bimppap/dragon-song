@@ -30,23 +30,23 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
   const totalQty = entries.reduce((sum, e) => sum + e.qty, 0);
 
   return (
-    <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 lg:w-72">
+    <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-line bg-surface lg:w-72">
       {/* 헤더 */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/60">
-        <ShoppingCart size={16} className="text-amber-500" />
-        <span className="text-sm font-semibold text-slate-700 dark:text-slate-200">장바구니</span>
-        <span className="font-num ml-auto text-xs text-slate-400 dark:text-slate-500 font-medium">{totalQty}개</span>
+      <div className="flex items-center gap-2 px-4 py-3 border-b border-line bg-inset">
+        <ShoppingCart size={16} className="text-gold" />
+        <span className="text-sm font-semibold text-ivory">장바구니</span>
+        <span className="font-num ml-auto text-xs text-muted font-medium">{totalQty}개</span>
       </div>
 
       {/* 아이템 목록 */}
-      <ul className="flex-1 overflow-y-auto divide-y divide-slate-50">
+      <ul className="flex-1 overflow-y-auto divide-y divide-line">
         {entries.map(({ item, qty }) => (
           <li key={item.id} className="px-4 py-3 space-y-2">
             <div className="flex items-start justify-between gap-2">
-              <span className="text-sm font-medium text-slate-800 dark:text-slate-100 leading-tight">{item.name}</span>
+              <span className="text-sm font-medium text-ivory leading-tight">{item.name}</span>
               <button
                 onClick={() => onRemove(item.id)}
-                className="text-slate-300 hover:text-red-400 transition-colors shrink-0 mt-0.5"
+                className="text-muted hover:text-red-400 transition-colors shrink-0 mt-0.5"
                 aria-label="삭제"
               >
                 <Trash2 size={14} />
@@ -59,14 +59,14 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
                 <button
                   onClick={() => onUpdateQty(item.id, qty - 1)}
                   disabled={qty <= 1}
-                  className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 disabled:opacity-30 transition"
+                  className="w-6 h-6 flex items-center justify-center rounded border border-line text-muted hover:bg-primary-light/20 disabled:opacity-30 transition"
                 >
                   <Minus size={11} />
                 </button>
-                <span className="font-num w-7 text-center text-sm font-semibold text-slate-700 dark:text-slate-200">{qty}</span>
+                <span className="font-num w-7 text-center text-sm font-semibold text-ivory">{qty}</span>
                 <button
                   onClick={() => onUpdateQty(item.id, qty + 1)}
-                  className="w-6 h-6 flex items-center justify-center rounded border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:bg-slate-100 transition"
+                  className="w-6 h-6 flex items-center justify-center rounded border border-line text-muted hover:bg-primary-light/20 transition"
                 >
                   <Plus size={11} />
                 </button>
@@ -78,7 +78,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
               </span>
             </div>
 
-            <div className="font-num text-xs text-slate-400 dark:text-slate-500">
+            <div className="font-num text-xs text-muted">
               단가 {formatPrice(item.price_gold ?? 0, item.price_cp ?? 0)}
             </div>
           </li>
@@ -86,14 +86,15 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
       </ul>
 
       {/* 합계 + 구매 버튼 */}
-      <div className="border-t border-slate-100 dark:border-slate-800 px-4 py-4 space-y-3 bg-slate-50 dark:bg-slate-800/60">
+      <div className="border-t border-line px-4 py-4 space-y-3 bg-inset">
         <div className="flex items-center justify-between">
-          <span className="text-sm text-slate-500 dark:text-slate-400">총 금액</span>
-          <span className="font-num text-base font-bold text-amber-600">
+          <span className="text-sm text-muted">총 금액</span>
+          <span className="font-num text-base font-bold text-gold">
             {formatPrice(totalGold, totalCp)}
           </span>
         </div>
         <Button
+          variant="cta"
           className="w-full"
           disabled={loading || entries.length === 0}
           onClick={onPurchase}

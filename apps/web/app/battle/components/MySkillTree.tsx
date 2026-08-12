@@ -95,8 +95,8 @@ export default function MySkillTree({ characterId }: Props) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
-          <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">기술트리</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
+          <h2 className="text-lg font-bold text-ivory">기술트리</h2>
+          <p className="text-sm text-muted">
             {tree ? `내 진영은 ${tree.faction}입니다. ` : ""}
             내 진영 기술트리는 다음 단계를 눌러 AP로 강화하거나 습득한 기술을 눌러 이름을 바꿀 수 있고, 다른 진영 트리는
             참고용으로 확인만 할 수 있습니다. 1분기(계열)와 2분기(세부 경로)에서는 각각 하나만 선택할 수 있습니다.
@@ -115,7 +115,7 @@ export default function MySkillTree({ characterId }: Props) {
       )}
 
       {loading || !tree ? (
-        <p className="text-sm text-slate-400 dark:text-slate-500">불러오는 중...</p>
+        <p className="text-sm text-muted">불러오는 중...</p>
       ) : (
         <div className="flex gap-6 overflow-x-auto pb-2">
           {FACTIONS.map((faction) => {
@@ -123,14 +123,14 @@ export default function MySkillTree({ characterId }: Props) {
             return (
               <div key={faction} className="flex flex-col items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-200">{faction} 계열</h3>
+                  <h3 className="text-sm font-semibold text-ivory">{faction} 계열</h3>
                   {isOwn ? (
                     <Badge className="text-[10px]">내 진영</Badge>
                   ) : (
-                    <Badge variant="outline" className="text-[10px] text-slate-400 dark:text-slate-500">참고용</Badge>
+                    <Badge variant="outline" className="text-[10px] text-muted">참고용</Badge>
                   )}
                 </div>
-                <div className={isOwn ? "rounded-xl border border-amber-200 bg-white dark:bg-slate-900 p-4" : "rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50/60 p-4"}>
+                <div className={isOwn ? "rounded-xl border border-gold bg-surface p-4" : "rounded-xl border border-line bg-inset/60 p-4"}>
                   {isOwn ? (
                     <SkillTreeGrid
                       nodes={tree.nodes}
@@ -150,8 +150,8 @@ export default function MySkillTree({ characterId }: Props) {
       )}
 
       {editingId !== null && (
-        <div className="flex flex-wrap items-center gap-2 border border-amber-200 bg-amber-50 dark:bg-amber-950/40 rounded-xl p-4">
-          <Pencil size={15} className="text-amber-500 shrink-0" />
+        <div className="flex flex-wrap items-center gap-2 border border-gold bg-gold/10 rounded-xl p-4">
+          <Pencil size={15} className="text-gold shrink-0" />
           <Input
             value={editingName}
             onChange={(e) => setEditingName(e.target.value)}
