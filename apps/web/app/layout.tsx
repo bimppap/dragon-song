@@ -3,6 +3,7 @@ import "./globals.css";
 import Header from "./components/Header";
 import { AuthProvider } from "@/lib/auth";
 import { DialogProvider } from "@/components/common/DialogProvider";
+import CursorEffect from "@/components/common/CursorEffect";
 
 export const metadata: Metadata = {
   title: "Dragon Song",
@@ -37,6 +38,7 @@ export default function RootLayout({
             {children}
           </DialogProvider>
         </AuthProvider>
+        <CursorEffect />
       </body>
     </html>
   );
