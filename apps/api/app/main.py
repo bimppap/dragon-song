@@ -1,9 +1,10 @@
 from datetime import date
 
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
+from app import storage
 from app.auth import create_access_token, get_current_member, require_admin
 from app.db import engine, get_db
 from app.migrations import ensure_schema
@@ -363,6 +364,17 @@ def list_enemies(chapter: str | None = None, member: Member = Depends(require_ad
 @app.post("/enemies", response_model=EnemyRead)
 def create_enemy(data: EnemyCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_enemy(db, data)
+
+
+@app.post("/uploads/image")
+async def upload_image(
+    file: UploadFile = File(...),
+    path: str = Form(...),
+    member: Member = Depends(require_admin),
+):
+    """이미지를 WebP로 변환해 Supabase 버킷에 업로드하고 공개 URL을 반환한다."""
+    data = await file.read()
+    return await storage.upload_image_to_bucket(path, data)
 
 
 @app.get("/skills", response_model=list[SkillNodeRead])
