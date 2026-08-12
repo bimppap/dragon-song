@@ -150,14 +150,19 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
             >
               <span
                 className={cn(
-                  "flex size-10 shrink-0 items-center justify-center rounded-xl border-2 bg-white transition-colors",
+                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-white transition-colors",
                   highlighted
                     ? "border-indigo-600 bg-indigo-50 text-indigo-600 shadow-[0_0_0_3px_rgba(79,70,229,0.18)]"
                     : "border-slate-200 text-slate-400",
                   clickable && !highlighted ? "hover:border-indigo-400" : "",
                 )}
               >
-                <Sparkles size={18} />
+                {node.image_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={node.image_url} alt="" className="size-full object-cover" />
+                ) : (
+                  <Sparkles size={18} />
+                )}
               </span>
               <span
                 className={cn(

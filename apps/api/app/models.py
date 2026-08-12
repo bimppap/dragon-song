@@ -178,6 +178,7 @@ class SkillNode(Base):
     col: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0,1 (tier 0,1은 None)
     tier: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=기본, 1=계열선택, 2~5=I~IV
     default_name: Mapped[str] = mapped_column(String, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL (없으면 기본 아이콘)
     effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -530,6 +530,7 @@ class SkillNodeRead(BaseModel):
     tier: int
     tier_label: str
     default_name: str
+    image_url: str | None = None
     effects: list[ItemEffect] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}

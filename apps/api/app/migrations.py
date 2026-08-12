@@ -125,6 +125,8 @@ def ensure_schema(engine: Engine) -> None:
         skill_node_columns = {col["name"] for col in inspector.get_columns("skill_nodes")}
         if "effects" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN effects JSON NOT NULL DEFAULT '[]'")
+        if "image_url" not in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN image_url VARCHAR")
 
     if "character_skill_unlocks" in table_names:
         unlock_columns = {col["name"] for col in inspector.get_columns("character_skill_unlocks")}

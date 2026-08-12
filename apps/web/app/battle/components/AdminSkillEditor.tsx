@@ -1,12 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Check, Pencil, X } from "lucide-react";
+import { Check, Image as ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import EffectListEditor from "@/components/common/EffectListEditor";
+import Modal from "@/components/common/Modal";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
-import { fetchSkillNodes, updateSkillNode, type Faction, type ItemEffect, type SkillNode } from "@/lib/api";
+import {
+  fetchSkillNodes,
+  updateSkillNode,
+  uploadSkillImage,
+  type Faction,
+  type ItemEffect,
+  type SkillNode,
+} from "@/lib/api";
 
 const FACTIONS: Faction[] = ["공격", "수비", "치유"];
 
@@ -21,6 +29,8 @@ export default function AdminSkillEditor() {
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<SkillNode | null>(null);
   const [draft, setDraft] = useState<Draft>({ name: "", effects: [] });
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -40,6 +50,28 @@ export default function AdminSkillEditor() {
   function startEdit(node: SkillNode) {
     setEditing(node);
     setDraft({ name: node.default_name, effects: node.effects });
+    setImageFile(null);
+    setImagePreview(node.image_url);
+  }
+
+  function closeEdit() {
+    setEditing(null);
+    setImageFile(null);
+    setImagePreview(null);
+  }
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : editing?.image_url ?? null);
+  }
+
+  function replaceNode(updated: SkillNode) {
+    setNodesByFaction((prev) =>
+      prev
+        ? { ...prev, [updated.faction]: prev[updated.faction].map((n) => (n.id === updated.id ? updated : n)) }
+        : prev,
+    );
   }
 
   async function saveEdit() {
@@ -47,15 +79,12 @@ export default function AdminSkillEditor() {
     setSaving(true);
     setError(null);
     try {
-      const updated = await updateSkillNode(editing.id, { default_name: draft.name, effects: draft.effects });
-      setNodesByFaction((prev) => {
-        if (!prev) return prev;
-        return {
-          ...prev,
-          [updated.faction]: prev[updated.faction].map((n) => (n.id === updated.id ? updated : n)),
-        };
-      });
-      setEditing(null);
+      let updated = await updateSkillNode(editing.id, { default_name: draft.name, effects: draft.effects });
+      if (imageFile) {
+        updated = await uploadSkillImage(editing.id, imageFile);
+      }
+      replaceNode(updated);
+      closeEdit();
     } catch (e) {
       setError(e instanceof Error ? e.message : "기술 수정 실패");
     } finally {
@@ -68,9 +97,9 @@ export default function AdminSkillEditor() {
       <div className="space-y-1">
         <h2 className="text-lg font-bold text-slate-800">기술트리 관리</h2>
         <p className="text-sm text-slate-500">
-          진영별 기술트리 구조를 한 페이지에서 확인하고 각 기술의 이름과 효과를 편집할 수 있습니다. 기술 아이콘에
-          마우스를 올리면 이름과 효과가 표시됩니다. 기본 기술(맨 아래)에서 시작해 1분기(계열) 하나, 2분기(세부 경로)
-          하나를 골라 I~IV 단계로 강화하는 구조입니다.
+          진영별 기술트리 구조를 한 페이지에서 확인하고 각 기술을 클릭해 이름·효과·이미지를 편집할 수 있습니다. 기술
+          아이콘에 마우스를 올리면 이름과 효과가 표시됩니다. 기본 기술(맨 아래)에서 시작해 1분기(계열) 하나, 2분기(세부
+          경로) 하나를 골라 I~IV 단계로 강화하는 구조입니다.
         </p>
       </div>
 
@@ -96,37 +125,61 @@ export default function AdminSkillEditor() {
         </div>
       )}
 
-      {editing && (
-        <div className="max-w-lg space-y-4 border border-indigo-200 bg-indigo-50/50 rounded-xl p-5">
-          <div className="flex items-center gap-2 text-sm font-semibold text-indigo-700">
-            <Pencil size={15} />
-            {editing.faction} · {editing.tier_label} 기술 편집
-          </div>
+      <Modal
+        open={editing !== null}
+        onClose={closeEdit}
+        title={editing ? `${editing.faction} · ${editing.tier_label} 기술 편집` : undefined}
+      >
+        <div className="space-y-4">
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">기술 이름</label>
             <Input
               value={draft.name}
               onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
               placeholder="기술 이름"
-              className="max-w-xs bg-white"
             />
           </div>
+
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">기술 이미지</label>
+            <div className="flex items-center gap-4">
+              <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                {imagePreview ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={imagePreview} alt="기술 이미지 미리보기" className="size-full object-cover" />
+                ) : (
+                  <ImageIcon size={20} className="text-slate-300" />
+                )}
+              </div>
+              <div className="space-y-1">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+                />
+                <p className="text-xs text-slate-400">업로드 시 WebP로 변환되며(5MB 이하), 없으면 기본 아이콘이 표시됩니다.</p>
+              </div>
+            </div>
+          </div>
+
           <EffectListEditor
             effects={draft.effects}
             onChange={(effects) => setDraft((prev) => ({ ...prev, effects }))}
           />
-          <div className="flex items-center gap-2">
-            <Button size="sm" onClick={saveEdit} disabled={saving || !draft.name.trim()}>
-              <Check size={14} />
-              저장
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setEditing(null)} disabled={saving}>
+
+          <div className="flex items-center justify-end gap-2">
+            <Button size="sm" variant="ghost" onClick={closeEdit} disabled={saving}>
               <X size={14} />
               취소
             </Button>
+            <Button size="sm" onClick={saveEdit} disabled={saving || !draft.name.trim()}>
+              <Check size={14} />
+              {saving ? "저장 중..." : "저장"}
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

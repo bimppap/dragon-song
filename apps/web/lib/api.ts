@@ -688,6 +688,7 @@ export interface SkillNode {
   tier: number;
   tier_label: string;
   default_name: string;
+  image_url: string | null;
   effects: ItemEffect[];
 }
 
@@ -717,6 +718,22 @@ export async function updateSkillNode(
     method: "PUT",
     body: JSON.stringify(data),
   }, "기술 수정 실패");
+}
+
+export async function uploadSkillImage(nodeId: number, file: File): Promise<SkillNode> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/skills/${nodeId}/image`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "기술 이미지 업로드 실패");
+  }
+  return res.json();
 }
 
 export async function fetchCharacterSkillTree(characterId: number): Promise<CharacterSkillTree> {

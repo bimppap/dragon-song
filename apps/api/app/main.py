@@ -9,7 +9,7 @@ from app import storage
 from app.auth import create_access_token, get_current_member, require_admin
 from app.db import engine, get_db
 from app.migrations import ensure_schema
-from app.models import Character, Item, Member
+from app.models import Character, Item, Member, SkillNode
 from app.schemas import (
     AttendanceRecordRead,
     AttendanceRecordUpdate,
@@ -420,6 +420,35 @@ def update_skill_node(
     db: Session = Depends(get_db),
 ):
     return crud.update_skill_node(db, node_id, data)
+
+
+@app.post("/skills/{node_id}/image", response_model=SkillNodeRead)
+async def upload_skill_image(
+    node_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """기술 이미지를 WebP로 변환해 버킷 skill/ 디렉토리에 업로드하고, 기존 이미지는 삭제한다.
+
+    파일명은 `{id}_{기술명}`(공백은 _로 대체)으로 저장한다.
+    """
+    node = db.get(SkillNode, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
+
+    data = await file.read()
+    slug = re.sub(r"\s+", "_", node.default_name.strip())
+    result = await storage.upload_image_to_bucket(f"skill/{node.id}_{slug}", data)
+
+    old_path = storage.public_url_to_path(node.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    node.image_url = result["public_url"]
+    db.commit()
+    db.refresh(node)
+    return crud._to_skill_node_read(node)
 
 
 @app.get("/characters/{character_id}/skills", response_model=CharacterSkillTreeRead)

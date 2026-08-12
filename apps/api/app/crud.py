@@ -1320,6 +1320,7 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         tier=node.tier,
         tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
         default_name=node.default_name,
+        image_url=node.image_url,
         effects=node.effects or [],
     )
 
@@ -1431,6 +1432,7 @@ def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTr
                 tier=node.tier,
                 tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
                 default_name=node.default_name,
+                image_url=node.image_url,
                 effects=node.effects or [],
                 unlocked=unlock is not None,
                 custom_name=unlock.custom_name if unlock else None,
