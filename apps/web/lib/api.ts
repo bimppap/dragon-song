@@ -170,6 +170,7 @@ export interface Item {
   available_from_chapter: string | null;
   available_until_chapter: string | null;
   item_type: ItemType;
+  image_url: string | null;
   effects: ItemEffect[];
   created_at: string;
   purchased_by_character: number;
@@ -421,6 +422,22 @@ export async function updateItem(itemId: number, data: ItemCreate): Promise<Item
     method: "PUT",
     body: JSON.stringify(data),
   }, "아이템 수정 실패");
+}
+
+export async function uploadItemImage(itemId: number, file: File): Promise<Item> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("file", file);
+  const res = await fetch(`${API_URL}/items/${itemId}/image`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "이미지 업로드 실패");
+  }
+  return res.json();
 }
 
 export async function useItem(characterId: number, itemId: number): Promise<CharacterDetail> {

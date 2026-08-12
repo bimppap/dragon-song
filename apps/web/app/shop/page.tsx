@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Store, ClipboardList, PlusSquare } from "lucide-react";
+import { Store, ClipboardList, PlusSquare, Settings2 } from "lucide-react";
 import ItemGrid from "./components/ItemGrid";
+import ShopGrid from "./components/ShopGrid";
 import PurchaseGrid from "./components/PurchaseGrid";
 import AddItemForm from "./components/AddItemForm";
 import Cart from "./components/Cart";
@@ -100,7 +101,7 @@ function RunnerShop({ characterId }: { characterId: number }) {
 
       <div className={cn("flex gap-6 items-start", cart.length > 0 ? "flex-row" : "")}>
         <div className="flex-1 min-w-0">
-          <ItemGrid
+          <ShopGrid
             characterId={characterId}
             cartItemIds={cartItemIds}
             onAddToCart={handleAddToCart}
@@ -121,10 +122,11 @@ function RunnerShop({ characterId }: { characterId: number }) {
   );
 }
 
-type Tab = "items" | "purchases" | "add";
+type Tab = "items" | "manage" | "purchases" | "add";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "items", label: "상점", icon: Store },
+  { id: "manage", label: "관리", icon: Settings2 },
   { id: "purchases", label: "구매 내역", icon: ClipboardList },
   { id: "add", label: "아이템 추가", icon: PlusSquare },
 ];
@@ -220,17 +222,11 @@ function AdminShop() {
             )}
           >
             <div className="flex-1 min-w-0">
-              <ItemGrid
+              <ShopGrid
                 characterId={characterId}
                 cartItemIds={cartItemIds}
                 onAddToCart={handleAddToCart}
                 refreshKey={refreshKey}
-                showAvailability
-                showEffects
-                onEditItem={(item) => {
-                  setEditingItem(item);
-                  setTab("add");
-                }}
               />
             </div>
             {cart.length > 0 && (
@@ -244,6 +240,21 @@ function AdminShop() {
             )}
           </div>
         )}
+        {tab === "manage" && characterId == null && (
+          <p className="py-12 text-center text-sm text-slate-400">캐릭터를 선택해 주세요.</p>
+        )}
+        {tab === "manage" && characterId != null && (
+          <ItemGrid
+            characterId={characterId}
+            refreshKey={refreshKey}
+            showAvailability
+            showEffects
+            onEditItem={(item) => {
+              setEditingItem(item);
+              setTab("add");
+            }}
+          />
+        )}
         {tab === "purchases" && <PurchaseGrid refreshKey={refreshKey} />}
         {tab === "add" && (
           <AddItemForm
@@ -253,7 +264,7 @@ function AdminShop() {
               setRefreshKey((k) => k + 1);
               if (editingItem) {
                 setEditingItem(null);
-                setTab("items");
+                setTab("manage");
               }
             }}
             onCancelEdit={() => setEditingItem(null)}

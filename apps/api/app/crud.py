@@ -645,6 +645,7 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
             available_from_chapter=item.available_from_chapter,
             available_until_chapter=item.available_until_chapter,
             item_type=item.item_type,
+            image_url=item.image_url,
             effects=item.effects or [],
             created_at=item.created_at,
             purchased_by_character=char_purchased,

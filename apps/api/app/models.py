@@ -138,6 +138,7 @@ class Item(Base):
     item_type: Mapped[str] = mapped_column(
         String, nullable=False, default="consumable", server_default=text("'consumable'")
     )  # "consumable" | "equipment"
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL
     effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

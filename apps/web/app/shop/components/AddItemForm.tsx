@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PlusCircle } from "lucide-react";
-import { createItem, fetchChapters, updateItem } from "@/lib/api";
+import { Image as ImageIcon, PlusCircle } from "lucide-react";
+import { createItem, fetchChapters, updateItem, uploadItemImage } from "@/lib/api";
 import type { Chapter, Item, ItemCreate, ItemType } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -79,7 +79,15 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
   const [form, setForm] = useState<ItemCreate>(() => toItemForm(item));
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(false);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(item?.image_url ?? null);
   const editingItemId = item?.id ?? null;
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : item?.image_url ?? null);
+  }
 
   useEffect(() => {
     fetchChapters().then(setChapters).catch(console.error);
@@ -110,13 +118,15 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
 
     setLoading(true);
     try {
-      if (editingItemId != null) {
-        await updateItem(editingItemId, form);
-        await alert("아이템이 수정되었습니다.");
-      } else {
-        await createItem(form);
-        await alert("아이템이 생성되었습니다.");
+      const saved = editingItemId != null ? await updateItem(editingItemId, form) : await createItem(form);
+      if (imageFile) {
+        await uploadItemImage(saved.id, imageFile);
+      }
+      await alert(editingItemId != null ? "아이템이 수정되었습니다." : "아이템이 생성되었습니다.");
+      if (editingItemId == null) {
         setForm(createEmptyItemForm());
+        setImageFile(null);
+        setImagePreview(null);
       }
       onSubmitted();
     } catch (err: unknown) {
@@ -188,6 +198,28 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
           onChange={handleChange}
           rows={2}
         />
+      </Field>
+
+      <Field label="아이템 이미지">
+        <div className="flex items-center gap-4">
+          <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+            {imagePreview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={imagePreview} alt="아이템 이미지 미리보기" className="size-full object-cover" />
+            ) : (
+              <ImageIcon size={22} className="text-slate-300" />
+            )}
+          </div>
+          <div className="space-y-1">
+            <input
+              type="file"
+              accept="image/*"
+              onChange={handleImageChange}
+              className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-indigo-600 hover:file:bg-indigo-100"
+            />
+            <p className="text-xs text-slate-400">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
+          </div>
+        </div>
       </Field>
 
       <Field label="아이템 종류" required>

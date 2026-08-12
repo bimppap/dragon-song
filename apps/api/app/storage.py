@@ -108,3 +108,34 @@ async def upload_image_to_bucket(
 
     public_url = f"{base_url}/storage/v1/object/public/{bucket}/{key}"
     return {"path": key, "public_url": public_url}
+
+
+def public_url_to_path(url: str | None) -> str | None:
+    """공개 URL에서 버킷 내 경로를 추출한다. (예: .../object/public/images/item/1_x.webp → item/1_x.webp)"""
+    if not url:
+        return None
+    _, _, bucket = _env()
+    marker = f"/object/public/{bucket}/"
+    idx = url.find(marker)
+    if idx == -1:
+        return None
+    return url[idx + len(marker):]
+
+
+async def delete_from_bucket(paths: str | list[str]) -> None:
+    """버킷에서 오브젝트를 삭제한다(베스트 에포트, 실패해도 예외를 던지지 않는다)."""
+    base_url, secret_key, bucket = _env()
+    prefixes = [paths] if isinstance(paths, str) else list(paths)
+    if not prefixes:
+        return
+    endpoint = f"{base_url}/storage/v1/object/{bucket}"
+    headers = {
+        "apikey": secret_key,
+        "Authorization": f"Bearer {secret_key}",
+        "Content-Type": "application/json",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            await client.request("DELETE", endpoint, headers=headers, json={"prefixes": prefixes})
+    except httpx.HTTPError:
+        pass

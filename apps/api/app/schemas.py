@@ -273,6 +273,7 @@ class ItemRead(BaseModel):
     available_from_chapter: str | None
     available_until_chapter: str | None
     item_type: ItemType
+    image_url: str | None = None
     effects: list[ItemEffect] = Field(default_factory=list)
     created_at: datetime
 

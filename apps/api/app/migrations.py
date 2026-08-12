@@ -101,6 +101,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE items ADD COLUMN item_type VARCHAR NOT NULL DEFAULT 'consumable'")
         if "effects" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN effects JSON NOT NULL DEFAULT '[]'")
+        if "image_url" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN image_url VARCHAR")
 
     if "challenges" in table_names:
         challenge_columns = {col["name"] for col in inspector.get_columns("challenges")}

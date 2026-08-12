@@ -1,3 +1,4 @@
+import re
 from datetime import date
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
@@ -156,6 +157,35 @@ def update_item(
     db: Session = Depends(get_db),
 ):
     return crud.update_item(db, item_id, data)
+
+
+@app.post("/items/{item_id}/image", response_model=ItemRead)
+async def upload_item_image(
+    item_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """아이템 이미지를 WebP로 변환해 버킷 item/ 디렉토리에 업로드하고, 기존 이미지는 삭제한다.
+
+    파일명은 `{id}_{아이템명}`(공백은 _로 대체)으로 저장한다.
+    """
+    item = db.get(Item, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
+
+    data = await file.read()
+    slug = re.sub(r"\s+", "_", item.name.strip())
+    result = await storage.upload_image_to_bucket(f"item/{item.id}_{slug}", data)
+
+    old_path = storage.public_url_to_path(item.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    item.image_url = result["public_url"]
+    db.commit()
+    db.refresh(item)
+    return item
 
 
 @app.get("/challenges", response_model=list[ChallengeRead])

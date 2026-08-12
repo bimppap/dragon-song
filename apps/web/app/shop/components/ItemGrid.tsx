@@ -14,8 +14,8 @@ ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface Props {
   characterId: number;
-  cartItemIds: Set<number>;
-  onAddToCart: (item: Item) => void;
+  cartItemIds?: Set<number>;
+  onAddToCart?: (item: Item) => void;
   refreshKey: number;
   showAvailability?: boolean;
   showEffects?: boolean;
@@ -69,6 +69,7 @@ export default function ItemGrid({
   showEffects = false,
   onEditItem,
 }: Props) {
+  const cartIds = cartItemIds ?? new Set<number>();
   const [items, setItems] = useState<Item[]>([]);
 
   useEffect(() => {
@@ -246,27 +247,31 @@ export default function ItemGrid({
         <StockBadge value={calcStock(p.data!)} />
       ),
     },
-    {
-      headerName: "장바구니",
-      width: 110,
-      sortable: false,
-      filter: false,
-      cellRenderer: (p: ICellRendererParams<Item>) => {
-        const soldOut = calcStock(p.data!) === 0;
-        const inCart = cartItemIds.has(p.data!.id);
-        return (
-          <Button
-            size="sm"
-            variant={inCart ? "secondary" : soldOut ? "outline" : "default"}
-            disabled={soldOut}
-            onClick={() => onAddToCart(p.data!)}
-          >
-            <ShoppingCart size={13} />
-            {soldOut ? "품절" : inCart ? "추가" : "담기"}
-          </Button>
-        );
-      },
-    },
+    ...(onAddToCart
+      ? [
+          {
+            headerName: "장바구니",
+            width: 110,
+            sortable: false,
+            filter: false,
+            cellRenderer: (p: ICellRendererParams<Item>) => {
+              const soldOut = calcStock(p.data!) === 0;
+              const inCart = cartIds.has(p.data!.id);
+              return (
+                <Button
+                  size="sm"
+                  variant={inCart ? "secondary" : soldOut ? "outline" : "default"}
+                  disabled={soldOut}
+                  onClick={() => onAddToCart(p.data!)}
+                >
+                  <ShoppingCart size={13} />
+                  {soldOut ? "품절" : inCart ? "추가" : "담기"}
+                </Button>
+              );
+            },
+          } as ColDef<Item>,
+        ]
+      : []),
     ...editColDef,
   ];
 
