@@ -117,7 +117,7 @@ export default function MySkillTree({ characterId }: Props) {
       {loading || !tree ? (
         <p className="text-sm text-muted">불러오는 중...</p>
       ) : (
-        <div className="flex gap-6 overflow-x-auto pb-2">
+        <div className="no-scrollbar overflow-x-auto pb-2"><div className="mx-auto flex w-max gap-6">
           {FACTIONS.map((faction) => {
             const isOwn = faction === tree.faction;
             return (
@@ -146,7 +146,7 @@ export default function MySkillTree({ characterId }: Props) {
               </div>
             );
           })}
-        </div>
+        </div></div>
       )}
 
       {editingId !== null && (

@@ -15,81 +15,88 @@ interface Props {
 }
 
 const defaultColDef: ColDef<Character> = {
-  wrapText: true,
-  autoHeight: true,
-  wrapHeaderText: true,
-  autoHeaderHeight: true,
+  resizable: false,
+  suppressMovable: true,
+  cellClass: "whitespace-nowrap",
 };
 
 const colDefs: ColDef<Character>[] = [
   {
     headerName: "ID",
     field: "id",
-    width: 80,
+    flex: 0.6,
+    minWidth: 52,
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-mono text-xs text-muted">{p.value}</span>
+      <span className="font-num text-xs text-muted">{p.value}</span>
     ),
   },
-  { headerName: "이름", field: "name", flex: 1, minWidth: 140, filter: true },
+  { headerName: "이름", field: "name", flex: 1.8, minWidth: 96, filter: true },
   {
     headerName: "Lv",
     field: "lv",
-    width: 80,
+    flex: 0.6,
+    minWidth: 52,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-emerald-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-emerald-400">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
     headerName: "HP",
-    width: 130,
+    flex: 1.4,
+    minWidth: 116,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-rose-600">
+      <span className="font-num font-semibold text-rose-400">
         {p.data!.hp.toLocaleString()} / {p.data!.hp_max.toLocaleString()}
       </span>
     ),
   },
   {
-    headerName: "공격력",
+    headerName: "공격",
     field: "atk",
-    width: 110,
+    flex: 0.8,
+    minWidth: 66,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-orange-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-orange-400">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
-    headerName: "방어력",
+    headerName: "방어",
     field: "def",
-    width: 110,
+    flex: 0.8,
+    minWidth: 66,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-blue-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-sky-400">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
     headerName: "골드",
     field: "gold",
-    width: 130,
+    flex: 1,
+    minWidth: 84,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-yellow-600">{(p.value as number).toLocaleString()} G</span>
+      <span className="font-num font-semibold text-yellow-400">{(p.value as number).toLocaleString()} G</span>
     ),
   },
   {
     headerName: "CP",
     field: "cp",
-    width: 110,
+    flex: 0.8,
+    minWidth: 62,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num font-semibold text-cyan-600">{(p.value as number).toLocaleString()}</span>
+      <span className="font-num font-semibold text-cyan-400">{(p.value as number).toLocaleString()}</span>
     ),
   },
   {
     headerName: "AP",
     field: "ap",
-    width: 100,
+    flex: 0.6,
+    minWidth: 54,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
       <span className="font-num font-semibold text-gold">{(p.value as number).toLocaleString()}</span>
@@ -98,7 +105,8 @@ const colDefs: ColDef<Character>[] = [
   {
     headerName: "경험치",
     field: "exp",
-    width: 120,
+    flex: 0.9,
+    minWidth: 76,
     type: "numericColumn",
     cellRenderer: (p: ICellRendererParams<Character>) => (
       <span className="font-num font-semibold text-gold">{(p.value as number).toLocaleString()}</span>

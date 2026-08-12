@@ -20,7 +20,7 @@ interface Props<T extends string> {
 /** 공통 탭 바. 모바일에서는 가로 스크롤로 넘친 탭을 볼 수 있다. */
 export default function TabBar<T extends string>({ tabs, active, onChange, className }: Props<T>) {
   return (
-    <div className={cn("no-scrollbar flex items-center gap-1 overflow-x-auto border-b border-line", className)}>
+    <div className={cn("no-scrollbar flex items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-line", className)}>
       {tabs.map(({ id, label, icon: Icon }) => (
         <Button
           key={id}
