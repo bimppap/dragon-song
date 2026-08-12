@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { CalendarDays, Gift, Users } from "lucide-react";
+import { CalendarDays, Gift, Image as ImageIcon, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -294,46 +294,44 @@ export default function AttendancePanel() {
                 : "표시할 캐릭터가 없습니다."}
             </div>
           ) : (
-            <div className="grid gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {visibleCharacters.map((character) => {
                 const checked = attendedCharacterIds.has(character.id);
 
                 return (
-                  <div
+                  <label
                     key={character.id}
                     className={cn(
-                      "flex flex-col gap-4 rounded-2xl border px-4 py-4 md:flex-row md:items-center md:justify-between",
+                      "group relative aspect-square overflow-hidden rounded-xl border-2 transition-colors",
                       checked
-                        ? "border-emerald-200 bg-emerald-50"
-                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900",
+                        ? "border-emerald-500 ring-2 ring-emerald-500/30"
+                        : "cursor-pointer border-slate-200 dark:border-slate-700 hover:border-indigo-400",
                     )}
                   >
-                    <div className="flex flex-col gap-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-semibold text-slate-900 dark:text-slate-100">{character.name}</p>
-                        <Badge variant={checked ? "success" : "outline"}>
-                          {checked ? "출석 완료" : "미출석"}
-                        </Badge>
+                    {/* 캐릭터 이미지 */}
+                    {character.image_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={character.image_url} alt={character.name} className="size-full object-cover" />
+                    ) : (
+                      <div className="flex size-full items-center justify-center bg-slate-100 dark:bg-slate-800 text-slate-300 dark:text-slate-600">
+                        <ImageIcon size={28} />
                       </div>
-                      <p className="text-sm text-slate-500 dark:text-slate-400">캐릭터 ID {character.id}</p>
-                    </div>
+                    )}
 
-                    <label className={cn(
-                      "inline-flex items-center gap-3 self-start rounded-full border px-4 py-2 text-sm font-medium md:self-auto",
-                      checked
-                        ? "border-emerald-200 bg-emerald-100 text-emerald-700 cursor-not-allowed"
-                        : "border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200",
-                    )}>
+                    {/* 좌측 상단 체크박스 */}
+                    <span className="absolute left-1.5 top-1.5 rounded-md bg-white/90 p-0.5 shadow-sm dark:bg-slate-900/80">
                       <Checkbox
                         checked={checked}
-                        onCheckedChange={(nextChecked) =>
-                          handleToggleAttendance(character.id, nextChecked)
-                        }
+                        onCheckedChange={(nextChecked) => handleToggleAttendance(character.id, nextChecked)}
                         disabled={savingAttendance || checked}
                       />
-                      출석
-                    </label>
-                  </div>
+                    </span>
+
+                    {/* 하단 이름 */}
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-linear-to-t from-black/75 to-transparent px-2 py-1.5 text-center text-xs font-semibold text-white">
+                      {character.name}
+                    </span>
+                  </label>
                 );
               })}
             </div>

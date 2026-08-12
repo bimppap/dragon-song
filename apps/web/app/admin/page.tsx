@@ -1,16 +1,37 @@
 "use client";
 
 import { useState } from "react";
-import { Settings, BookMarked } from "lucide-react";
+import {
+  BookMarked,
+  CalendarCheck,
+  ScrollText,
+  Settings,
+  Skull,
+  Sparkles,
+  Store,
+  Trophy,
+} from "lucide-react";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { useRequireAdmin } from "@/lib/auth";
 import ChapterTab from "./components/ChapterTab";
+import ItemAdmin from "./components/ItemAdmin";
+import AttendancePanel from "@/app/attendance/components/AttendancePanel";
+import EnemyTab from "@/app/battle/components/EnemyTab";
+import AdminSkillEditor from "@/app/battle/components/AdminSkillEditor";
+import { ChallengeAdmin } from "@/app/challenges/page";
+import { MissionAdmin } from "@/app/missions/page";
 
-type PageTab = "chapter";
+type PageTab = "chapter" | "attendance" | "item" | "challenge" | "mission" | "enemy" | "skill";
 
 const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "chapter", label: "챕터", icon: BookMarked },
+  { id: "attendance", label: "출석부", icon: CalendarCheck },
+  { id: "item", label: "아이템", icon: Store },
+  { id: "challenge", label: "도전과제", icon: Trophy },
+  { id: "mission", label: "임무", icon: ScrollText },
+  { id: "enemy", label: "에너미", icon: Skull },
+  { id: "skill", label: "기술트리", icon: Sparkles },
 ];
 
 export default function AdminPage() {
@@ -20,9 +41,9 @@ export default function AdminPage() {
   if (!member) return null;
 
   return (
-    <PageContainer max="4xl" className="flex flex-col gap-8">
+    <PageContainer className="flex flex-col gap-8">
       <section className="flex flex-col gap-3">
-        <p className="text-sm font-semibold tracking-[0.18em] text-slate-500 dark:text-slate-400 uppercase">
+        <p className="text-sm font-semibold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">
           Admin
         </p>
         <div className="flex flex-col gap-2">
@@ -31,14 +52,22 @@ export default function AdminPage() {
             관리
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            게임 운영에 필요한 설정을 관리할 수 있습니다.
+            게임 운영에 필요한 관리 기능을 탭별로 확인·편집할 수 있습니다.
           </p>
         </div>
       </section>
 
       <TabBar tabs={PAGE_TABS} active={tab} onChange={setTab} />
 
-      {tab === "chapter" && <ChapterTab />}
+      <div>
+        {tab === "chapter" && <ChapterTab />}
+        {tab === "attendance" && <AttendancePanel />}
+        {tab === "item" && <ItemAdmin />}
+        {tab === "challenge" && <ChallengeAdmin />}
+        {tab === "mission" && <MissionAdmin />}
+        {tab === "enemy" && <EnemyTab />}
+        {tab === "skill" && <AdminSkillEditor />}
+      </div>
     </PageContainer>
   );
 }

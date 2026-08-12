@@ -192,7 +192,7 @@ function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
   };
 }
 
-function AdminChallengesPage() {
+export function ChallengeAdmin() {
   const [tab, setTab] = useState<PageTab>("manage");
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -463,22 +463,7 @@ function AdminChallengesPage() {
   }
 
   return (
-    <PageContainer className="flex flex-col gap-8">
-      <section className="flex flex-col gap-3">
-        <p className="text-sm font-semibold tracking-[0.18em] text-indigo-600 uppercase">
-          Challenge Desk
-        </p>
-        <div className="flex flex-col gap-2">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
-            도전과제
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            도전과제 등록, 챕터별 진행 현황, 캐릭터별 달성 메모를 백엔드 데이터와 연결해 관리할 수
-            있습니다.
-          </p>
-        </div>
-      </section>
-
+    <div className="flex flex-col gap-8">
       {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
       {rewardMessage && <AlertBanner tone="success">{rewardMessage}</AlertBanner>}
 
@@ -857,7 +842,7 @@ function AdminChallengesPage() {
           </div>
         </section>
       )}
-    </PageContainer>
+    </div>
   );
 }
 
@@ -866,5 +851,5 @@ export default function ChallengesPage() {
 
   if (!member) return null;
 
-  return member.role === "ADMIN" ? <AdminChallengesPage /> : <RunnerChallengeList />;
+  return <RunnerChallengeList />;
 }

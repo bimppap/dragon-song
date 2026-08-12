@@ -101,30 +101,15 @@ function RunnerMissionList() {
   );
 }
 
-function AdminMissionsPage() {
+/** /admin 페이지에 임베드되는 임무 관리 콘솔(페이지 컨테이너 없음). */
+export function MissionAdmin() {
   const [tab, setTab] = useState<PageTab>("manage");
 
   return (
-    <PageContainer className="flex flex-col gap-8">
-      <section className="flex flex-col gap-3">
-        <p className="text-sm font-semibold tracking-[0.18em] text-indigo-600 uppercase">
-          Mission Board
-        </p>
-        <div className="flex flex-col gap-2">
-          <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100 sm:text-3xl">
-            <ScrollText size={28} className="text-indigo-600" />
-            임무
-          </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            일일·중요 임무를 등록하고 챕터별 달성 현황과 보상 지급을 관리할 수 있습니다.
-          </p>
-        </div>
-      </section>
-
+    <div className="flex flex-col gap-6">
       <TabBar tabs={PAGE_TABS} active={tab} onChange={setTab} />
-
       {tab === "manage" ? <MissionManageTab /> : <MissionStatusTab />}
-    </PageContainer>
+    </div>
   );
 }
 
@@ -133,5 +118,5 @@ export default function MissionsPage() {
 
   if (!member) return null;
 
-  return member.role === "ADMIN" ? <AdminMissionsPage /> : <RunnerMissionList />;
+  return <RunnerMissionList />;
 }

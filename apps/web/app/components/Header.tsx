@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Users, Store, CalendarCheck, Swords, Sparkles, Trophy, ScrollText, Settings, LogIn, LogOut, Menu, X } from "lucide-react";
+import { Users, Store, Swords, Sparkles, Trophy, ScrollText, Settings, LogIn, LogOut, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useEffect, useState } from "react";
 import { fetchActiveChapter, type Chapter } from "@/lib/api";
@@ -14,9 +14,8 @@ import type { MemberRole } from "@/lib/api";
 const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: MemberRole[] }[] = [
   { href: "/", label: "캐릭터", icon: Users, roles: ["RUNNER", "ADMIN"] },
   { href: "/shop", label: "아이템", icon: Store, roles: ["RUNNER", "ADMIN"] },
-  { href: "/challenges", label: "도전과제", icon: Trophy, roles: ["RUNNER", "ADMIN"] },
-  { href: "/missions", label: "임무", icon: ScrollText, roles: ["RUNNER", "ADMIN"] },
-  { href: "/attendance", label: "출석부", icon: CalendarCheck, roles: ["ADMIN"] },
+  { href: "/challenges", label: "도전과제", icon: Trophy, roles: ["RUNNER"] },
+  { href: "/missions", label: "임무", icon: ScrollText, roles: ["RUNNER"] },
   { href: "/battle", label: "전투", icon: Swords, roles: ["ADMIN"] },
   { href: "/battle", label: "기술", icon: Sparkles, roles: ["RUNNER"] },
   { href: "/admin", label: "관리", icon: Settings, roles: ["ADMIN"] },

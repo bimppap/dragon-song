@@ -1,11 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Store, ClipboardList, PlusSquare, Settings2 } from "lucide-react";
-import ItemGrid from "./components/ItemGrid";
 import ShopGrid from "./components/ShopGrid";
-import PurchaseGrid from "./components/PurchaseGrid";
-import AddItemForm from "./components/AddItemForm";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
 import { fetchCharacters, bulkPurchase, equipItem, useItem } from "@/lib/api";
@@ -18,7 +14,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import PageContainer from "@/components/common/PageContainer";
-import TabBar from "@/components/common/TabBar";
 import { useRequireMember } from "@/lib/auth";
 import { useDialog } from "@/components/common/DialogProvider";
 
@@ -122,21 +117,10 @@ function RunnerShop({ characterId }: { characterId: number }) {
   );
 }
 
-type Tab = "items" | "manage" | "purchases" | "add";
-
-const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: "items", label: "상점", icon: Store },
-  { id: "manage", label: "관리", icon: Settings2 },
-  { id: "purchases", label: "구매 내역", icon: ClipboardList },
-  { id: "add", label: "아이템 추가", icon: PlusSquare },
-];
-
 function AdminShop() {
-  const [tab, setTab] = useState<Tab>("items");
   const [characters, setCharacters] = useState<Character[]>([]);
   const [characterId, setCharacterId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const { cart, setCart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
     usePurchaseCart(characterId, () => setRefreshKey((k) => k + 1));
 
@@ -153,7 +137,11 @@ function AdminShop() {
 
   return (
     <PageContainer className="space-y-8">
-      {/* 캐릭터 선택 */}
+      <div className="flex flex-col gap-2">
+        <h1 className="text-2xl font-bold tracking-tight text-slate-900 dark:text-slate-100">상점</h1>
+        <p className="text-sm text-slate-500 dark:text-slate-400">캐릭터를 선택해 아이템을 구매할 수 있습니다.</p>
+      </div>
+
       <div className="flex flex-wrap items-center gap-3">
         <span className="whitespace-nowrap text-sm font-semibold text-slate-600 dark:text-slate-300">
           아이템을 구매할 캐릭터
@@ -177,79 +165,31 @@ function AdminShop() {
             ))}
           </SelectContent>
         </Select>
-        {characterId != null && (
-          <span className="text-xs text-slate-400 dark:text-slate-500">ID: {characterId}</span>
-        )}
       </div>
 
-      <TabBar
-        tabs={TABS}
-        active={tab}
-        onChange={(id) => {
-          if (id === "add") setEditingItem(null);
-          setTab(id);
-        }}
-      />
-
-      {/* 탭 컨텐츠 */}
-      <div>
-        {tab === "items" && characterId == null && (
-          <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">
-            캐릭터를 선택해 주세요.
-          </p>
-        )}
-        {tab === "items" && characterId != null && (
-          <div className="flex flex-col items-start gap-6 lg:flex-row">
-            <div className="w-full min-w-0 flex-1">
-              <ShopGrid
-                characterId={characterId}
-                cartItemIds={cartItemIds}
-                onAddToCart={handleAddToCart}
-                refreshKey={refreshKey}
-              />
-            </div>
-            {cart.length > 0 && (
-              <Cart
-                entries={cart}
-                loading={cartLoading}
-                onUpdateQty={handleUpdateQty}
-                onRemove={handleRemove}
-                onPurchase={handlePurchase}
-              />
-            )}
+      {characterId == null ? (
+        <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">캐릭터를 선택해 주세요.</p>
+      ) : (
+        <div className="flex flex-col items-start gap-6 lg:flex-row">
+          <div className="w-full min-w-0 flex-1">
+            <ShopGrid
+              characterId={characterId}
+              cartItemIds={cartItemIds}
+              onAddToCart={handleAddToCart}
+              refreshKey={refreshKey}
+            />
           </div>
-        )}
-        {tab === "manage" && characterId == null && (
-          <p className="py-12 text-center text-sm text-slate-400 dark:text-slate-500">캐릭터를 선택해 주세요.</p>
-        )}
-        {tab === "manage" && characterId != null && (
-          <ItemGrid
-            characterId={characterId}
-            refreshKey={refreshKey}
-            showAvailability
-            showEffects
-            onEditItem={(item) => {
-              setEditingItem(item);
-              setTab("add");
-            }}
-          />
-        )}
-        {tab === "purchases" && <PurchaseGrid refreshKey={refreshKey} />}
-        {tab === "add" && (
-          <AddItemForm
-            key={editingItem?.id ?? "create"}
-            item={editingItem}
-            onSubmitted={() => {
-              setRefreshKey((k) => k + 1);
-              if (editingItem) {
-                setEditingItem(null);
-                setTab("manage");
-              }
-            }}
-            onCancelEdit={() => setEditingItem(null)}
-          />
-        )}
-      </div>
+          {cart.length > 0 && (
+            <Cart
+              entries={cart}
+              loading={cartLoading}
+              onUpdateQty={handleUpdateQty}
+              onRemove={handleRemove}
+              onPurchase={handlePurchase}
+            />
+          )}
+        </div>
+      )}
     </PageContainer>
   );
 }
