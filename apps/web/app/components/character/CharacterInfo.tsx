@@ -28,31 +28,7 @@ import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { useDialog } from "@/components/common/DialogProvider";
 
-const REWARD_TYPE_LABELS: Record<string, string> = {
-  attendance: "출석 보상",
-  challenge: "도전과제",
-  mission: "임무",
-  admin_gift: "관리자의 선물",
-};
-
-function formatRewardItems(reward: Reward): string {
-  if (!reward.reward_items || reward.reward_items.length === 0) return "보상 없음";
-  return reward.reward_items
-    .map((item) => {
-      switch (item.type) {
-        case "gold": return `골드 +${(item.amount ?? 0).toLocaleString()}G`;
-        case "experience": return `경험치 +${(item.amount ?? 0).toLocaleString()}`;
-        case "ap": return `AP +${item.amount ?? 0}`;
-        case "stat_hp": return `HP +${item.amount ?? 0}`;
-        case "stat_attack": return `공격력 +${item.amount ?? 0}`;
-        case "stat_defense": return `방어력 +${item.amount ?? 0}`;
-        case "stat": return `${EFFECT_STAT_LABELS[item.stat ?? ""] ?? item.stat ?? "능력치"} +${item.amount ?? 0}`;
-        case "item": return `아이템 ID${item.item_id} ×${item.quantity ?? 1}`;
-        default: return item.type;
-      }
-    })
-    .join("  /  ");
-}
+import { formatRewardItems, REWARD_TYPE_LABELS } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,8 +47,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { EFFECT_STAT_LABELS, equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage, useItem } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem, Reward } from "@/lib/api";
+import { equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage, useItem } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem } from "@/lib/api";
 
 interface Props {
   characters: Character[];

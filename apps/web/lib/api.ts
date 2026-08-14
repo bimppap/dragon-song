@@ -595,6 +595,75 @@ export async function bulkPurchase(
   }, "구매 실패");
 }
 
+export type SettlementType = "board" | "log";
+
+export interface Settlement {
+  id: number;
+  character_id: number;
+  character_name: string;
+  character_image_url: string | null;
+  type: SettlementType;
+  total_posts: number | null;
+  total_comments: number | null;
+  links: string[];
+  status: "pending" | "paid";
+  suggested_gold: number;
+  suggested_cp: number;
+  paid_gold: number | null;
+  paid_cp: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SettlementCreate {
+  type: SettlementType;
+  total_posts?: number | null;
+  total_comments?: number | null;
+  links?: string[];
+}
+
+export async function fetchSettlements(): Promise<Settlement[]> {
+  return request<Settlement[]>("/settlements", undefined, "정산 요청 조회 실패");
+}
+
+export async function createSettlement(data: SettlementCreate): Promise<Settlement[]> {
+  return request<Settlement[]>("/settlements", {
+    method: "POST",
+    body: JSON.stringify(data),
+  }, "정산 요청 실패");
+}
+
+export async function paySettlement(settlementId: number, gold: number, cp: number): Promise<Settlement> {
+  return request<Settlement>(`/settlements/${settlementId}/pay`, {
+    method: "POST",
+    body: JSON.stringify({ gold, cp }),
+  }, "정산 지급 실패");
+}
+
+export interface RewardWithCharacter extends Reward {
+  character_name: string;
+  revoked: boolean;
+}
+
+export async function fetchAllRewards(filters?: {
+  character_id?: number;
+  date_from?: string;
+  date_to?: string;
+}): Promise<RewardWithCharacter[]> {
+  const params = new URLSearchParams();
+  if (filters?.character_id != null) params.set("character_id", String(filters.character_id));
+  if (filters?.date_from) params.set("date_from", filters.date_from);
+  if (filters?.date_to) params.set("date_to", filters.date_to);
+  const query = params.toString() ? `?${params}` : "";
+  return request<RewardWithCharacter[]>(`/rewards${query}`, undefined, "보상 이력 조회 실패");
+}
+
+export async function revokeReward(rewardId: number): Promise<RewardWithCharacter> {
+  return request<RewardWithCharacter>(`/rewards/${rewardId}/revoke`, {
+    method: "POST",
+  }, "보상 회수 실패");
+}
+
 export interface AdminGiftRequest {
   character_id: number;
   gold: number;

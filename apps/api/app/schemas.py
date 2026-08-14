@@ -578,6 +578,59 @@ class EnemyRead(BaseModel):
         return v if v is not None else []
 
 
+SettlementType = Literal["board", "log"]
+
+
+class SettlementCreate(BaseModel):
+    type: SettlementType
+    total_posts: int | None = Field(default=None, ge=0)
+    total_comments: int | None = Field(default=None, ge=0)
+    links: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_by_type(self):
+        if self.type == "board":
+            if self.total_posts is None or self.total_comments is None:
+                raise ValueError("총 게시물 갯수와 총 댓글 갯수를 모두 입력해 주세요.")
+            self.links = []
+        else:
+            self.links = [link.strip() for link in self.links if link.strip()]
+            if not self.links:
+                raise ValueError("게시물 링크를 1개 이상 입력해 주세요.")
+            self.total_posts = None
+            self.total_comments = None
+        return self
+
+
+class SettlementRead(BaseModel):
+    id: int
+    character_id: int
+    character_name: str
+    character_image_url: str | None
+    type: SettlementType
+    total_posts: int | None
+    total_comments: int | None
+    links: list[str]
+    status: str  # "pending" | "paid"
+    # 규칙(게시글 1개=1G, 댓글 50개=1CP, 링크 1개=1CP)과 직전 지급 이력으로 계산한 제안값
+    suggested_gold: int
+    suggested_cp: int
+    paid_gold: int | None
+    paid_cp: int | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class SettlementPayRequest(BaseModel):
+    gold: int = Field(default=0, ge=0)
+    cp: int = Field(default=0, ge=0)
+
+
+class RewardWithCharacterRead(RewardRead):
+    character_name: str
+    revoked: bool = False
+
+
 class AttendanceEntryCreate(BaseModel):
     attendance_date: date
     message: str = Field(default="", max_length=200)

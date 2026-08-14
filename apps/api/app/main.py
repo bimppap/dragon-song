@@ -43,6 +43,10 @@ from app.schemas import (
     PurchaseRead,
     RewardPayResult,
     RewardRead,
+    RewardWithCharacterRead,
+    SettlementCreate,
+    SettlementPayRequest,
+    SettlementRead,
     SignupRequest,
     SkillNameUpdate,
     SkillNodeRead,
@@ -463,6 +467,54 @@ def save_mission_progress(
 @app.post("/rewards/mission/{mission_id}", response_model=RewardPayResult)
 def pay_mission_rewards(mission_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.pay_mission_rewards(db, mission_id)
+
+
+@app.get("/settlements", response_model=list[SettlementRead])
+def list_settlements(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """어드민은 전체, 러너는 본인 캐릭터의 정산 요청만 조회한다."""
+    if member.role == "ADMIN":
+        return crud.get_settlement_requests(db)
+    character_id = crud.get_member_character_id(db, member.id)
+    if character_id is None:
+        return []
+    return crud.get_settlement_requests(db, character_id)
+
+
+@app.post("/settlements", response_model=list[SettlementRead])
+def create_settlement(
+    data: SettlementCreate,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    return crud.create_settlement_request(db, member, data)
+
+
+@app.post("/settlements/{settlement_id}/pay", response_model=SettlementRead)
+def pay_settlement(
+    settlement_id: int,
+    data: SettlementPayRequest,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """정산 요청을 승인하고 골드·CP를 지급한다. 보상 이력에 '로그 정산'으로 남는다."""
+    return crud.pay_settlement(db, settlement_id, data)
+
+
+@app.get("/rewards", response_model=list[RewardWithCharacterRead])
+def list_all_rewards(
+    character_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.get_all_rewards(db, character_id, date_from, date_to)
+
+
+@app.post("/rewards/{reward_id}/revoke", response_model=RewardWithCharacterRead)
+def revoke_reward(reward_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """지급된 보상을 회수한다. 회수 내역도 보상 이력에 남는다."""
+    return crud.revoke_reward(db, reward_id)
 
 
 @app.post("/rewards/admin-gift", response_model=RewardRead)

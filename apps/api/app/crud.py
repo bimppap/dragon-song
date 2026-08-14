@@ -5,7 +5,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import hash_password, verify_password
 from app.game_data import SKILL_TREE_MOCK, get_level_grade_stats
-from app.models import AttendanceEntry, AttendanceMission, AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward, SkillNode
+from app.models import AttendanceEntry, AttendanceMission, AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward, SettlementRequest, SkillNode
 from app.schemas import (
     ITEM_EFFECT_SPECIAL_STATS,
     ITEM_EFFECT_STAT_TYPES,
@@ -48,6 +48,10 @@ from app.schemas import (
     RewardItemEntry,
     RewardPayResult,
     RewardRead,
+    RewardWithCharacterRead,
+    SettlementCreate,
+    SettlementPayRequest,
+    SettlementRead,
     SignupRequest,
     SkillNodeRead,
     SkillNodeUpdate,
@@ -1174,6 +1178,225 @@ def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]
         .all()
     )
     return [_to_reward_read(r) for r in rewards]
+
+
+# ── Settlement (정산) ────────────────────────────────────────────────────────
+
+SETTLEMENT_GOLD_PER_POST = 1        # 게시글 1개당 1골드
+SETTLEMENT_COMMENTS_PER_CP = 50     # 댓글 50개당 1CP
+SETTLEMENT_CP_PER_LINK = 1          # 로그 링크 1개당 1CP
+
+
+def _latest_paid_board_settlement(
+    db: Session, character_id: int, before_id: int | None = None
+) -> SettlementRequest | None:
+    query = (
+        db.query(SettlementRequest)
+        .filter(SettlementRequest.character_id == character_id)
+        .filter(SettlementRequest.type == "board")
+        .filter(SettlementRequest.status == "paid")
+    )
+    if before_id is not None:
+        query = query.filter(SettlementRequest.id != before_id)
+    return query.order_by(SettlementRequest.id.desc()).first()
+
+
+def _settlement_suggestion(db: Session, req: SettlementRequest) -> tuple[int, int]:
+    """규칙과 직전 지급 이력으로 지급 제안값(골드, CP)을 계산한다."""
+    if req.type == "log":
+        return 0, len(req.links or []) * SETTLEMENT_CP_PER_LINK
+
+    prev = _latest_paid_board_settlement(db, req.character_id, before_id=req.id)
+    prev_posts = prev.total_posts if prev else 0
+    prev_comments = prev.total_comments if prev else 0
+    gold = (req.total_posts or 0) - (prev_posts or 0)
+    cp = (req.total_comments or 0) // SETTLEMENT_COMMENTS_PER_CP - (prev_comments or 0) // SETTLEMENT_COMMENTS_PER_CP
+    return max(0, gold) * SETTLEMENT_GOLD_PER_POST, max(0, cp)
+
+
+def _to_settlement_read(db: Session, req: SettlementRequest, character: Character | None) -> SettlementRead:
+    suggested_gold, suggested_cp = _settlement_suggestion(db, req)
+    return SettlementRead(
+        id=req.id,
+        character_id=req.character_id,
+        character_name=character.name if character else "(삭제된 캐릭터)",
+        character_image_url=character.image_url if character else None,
+        type=req.type,
+        total_posts=req.total_posts,
+        total_comments=req.total_comments,
+        links=req.links or [],
+        status=req.status,
+        suggested_gold=suggested_gold,
+        suggested_cp=suggested_cp,
+        paid_gold=req.paid_gold,
+        paid_cp=req.paid_cp,
+        created_at=req.created_at,
+        updated_at=req.updated_at,
+    )
+
+
+def get_settlement_requests(
+    db: Session,
+    character_id: int | None = None,
+) -> list[SettlementRead]:
+    query = db.query(SettlementRequest)
+    if character_id is not None:
+        query = query.filter(SettlementRequest.character_id == character_id)
+    requests = query.order_by(SettlementRequest.id.desc()).all()
+
+    character_ids = {r.character_id for r in requests}
+    characters = {
+        c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
+    } if character_ids else {}
+    return [_to_settlement_read(db, r, characters.get(r.character_id)) for r in requests]
+
+
+def create_settlement_request(db: Session, member: Member, data: SettlementCreate) -> list[SettlementRead]:
+    character_id = get_member_character_id(db, member.id)
+    if character_id is None:
+        raise HTTPException(status_code=400, detail="정산을 요청하려면 먼저 캐릭터를 생성해야 합니다.")
+
+    db.add(SettlementRequest(
+        character_id=character_id,
+        type=data.type,
+        total_posts=data.total_posts,
+        total_comments=data.total_comments,
+        links=data.links,
+    ))
+    db.commit()
+    return get_settlement_requests(db, character_id)
+
+
+def pay_settlement(db: Session, settlement_id: int, data: SettlementPayRequest) -> SettlementRead:
+    req = db.get(SettlementRequest, settlement_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="정산 요청을 찾을 수 없습니다.")
+    if req.status == "paid":
+        raise HTTPException(status_code=400, detail="이미 지급된 정산 요청입니다.")
+
+    character = _get_character_or_404(db, req.character_id)
+    reward_items: list[dict] = []
+    if data.gold > 0:
+        character.gold += data.gold
+        reward_items.append({"type": "gold", "amount": data.gold})
+    if data.cp > 0:
+        character.cp += data.cp
+        reward_items.append({"type": "stat", "stat": "cp", "amount": data.cp})
+
+    reward = Reward(
+        type="settlement",
+        character_id=character.id,
+        source_id=req.id,
+        reward_items=reward_items,
+        rewarded_at=_today_kst(),
+    )
+    db.add(reward)
+    db.flush()
+
+    req.status = "paid"
+    req.paid_gold = data.gold
+    req.paid_cp = data.cp
+    req.reward_id = reward.id
+    db.commit()
+    return _to_settlement_read(db, req, character)
+
+
+# ── Reward admin (전체 이력 조회 / 회수) ─────────────────────────────────────
+
+def get_all_rewards(
+    db: Session,
+    character_id: int | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+) -> list[RewardWithCharacterRead]:
+    query = db.query(Reward, Character.name).join(Character, Reward.character_id == Character.id)
+    if character_id is not None:
+        query = query.filter(Reward.character_id == character_id)
+    if date_from is not None:
+        query = query.filter(Reward.rewarded_at >= date_from)
+    if date_to is not None:
+        query = query.filter(Reward.rewarded_at <= date_to)
+    rows = query.order_by(Reward.created_at.desc(), Reward.id.desc()).all()
+
+    revoked_ids = {
+        source_id
+        for source_id, in db.query(Reward.source_id).filter(Reward.type == "revoke").all()
+        if source_id is not None
+    }
+    return [
+        RewardWithCharacterRead(
+            **_to_reward_read(reward).model_dump(),
+            character_name=character_name,
+            revoked=reward.id in revoked_ids,
+        )
+        for reward, character_name in rows
+    ]
+
+
+def revoke_reward(db: Session, reward_id: int) -> RewardWithCharacterRead:
+    """지급된 보상을 되돌리고, 회수 내역을 보상 이력에 남긴다. 회수 후 값이 음수여도 허용한다."""
+    reward = db.get(Reward, reward_id)
+    if not reward:
+        raise HTTPException(status_code=404, detail="보상 내역을 찾을 수 없습니다.")
+    if reward.type == "revoke":
+        raise HTTPException(status_code=400, detail="회수 내역은 다시 회수할 수 없습니다.")
+    already = (
+        db.query(Reward.id)
+        .filter(Reward.type == "revoke")
+        .filter(Reward.source_id == reward.id)
+        .first()
+    )
+    if already:
+        raise HTTPException(status_code=400, detail="이미 회수된 보상입니다.")
+
+    character = _get_character_or_404(db, reward.character_id)
+
+    negated: list[dict] = []
+    for entry in reward.reward_items or []:
+        entry_type = entry.get("type")
+        amount = entry.get("amount", 0) or 0
+        if entry_type == "gold":
+            character.gold -= int(amount)
+        elif entry_type == "experience":
+            character.exp -= int(amount)
+        elif entry_type == "ap":
+            character.ap -= int(amount)
+        elif entry_type == "stat_attack":
+            character.atk -= int(amount)
+        elif entry_type == "stat_defense":
+            character.def_ -= int(amount)
+        elif entry_type == "stat_hp":
+            character.hp_max -= int(amount)
+            character.hp -= int(amount)
+        elif entry_type == "stat":
+            _apply_item_effects(character, [{"stat": entry.get("stat"), "delta": amount}], sign=-1)
+        elif entry_type == "item":
+            quantity = entry.get("quantity", 1) or 1
+            db.add(Purchase(
+                character_id=character.id,
+                item_id=entry.get("item_id"),
+                quantity=-quantity,
+            ))
+            negated.append({"type": "item", "item_id": entry.get("item_id"), "quantity": -quantity})
+            continue
+        negated.append({**entry, "amount": -amount})
+
+    revoke = Reward(
+        type="revoke",
+        character_id=character.id,
+        source_id=reward.id,
+        reward_items=negated,
+        rewarded_at=_today_kst(),
+    )
+    db.add(revoke)
+    db.flush()
+    result = RewardWithCharacterRead(
+        **_to_reward_read(revoke).model_dump(),
+        character_name=character.name,
+        revoked=False,
+    )
+    db.commit()
+    return result
 
 
 def send_admin_gift(db: Session, data: AdminGiftRequest) -> RewardRead:

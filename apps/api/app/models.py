@@ -349,6 +349,40 @@ class Enemy(Base):
     )
 
 
+class SettlementRequest(Base):
+    """러너가 어드민에게 보내는 정산 요청.
+
+    type="board": 게시글&댓글 정산 (누적 총 게시물/댓글 수 기입)
+    type="log":   로그잇기 정산 (게시물 링크 목록 기입)
+    """
+
+    __tablename__ = "settlement_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    type: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "board" | "log"
+    total_posts: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_comments: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    links: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="pending", server_default=text("'pending'"), index=True
+    )  # "pending" | "paid"
+    paid_gold: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    paid_cp: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reward_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("rewards.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class AttendanceEntry(Base):
     """캐릭터가 직접 남기는 출석 기록. 하루에 캐릭터당 1건."""
 
