@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import ShopGrid from "./components/ShopGrid";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
-import { fetchCharacters, bulkPurchase, equipItem, useItem } from "@/lib/api";
+import GiftCart from "./components/GiftCart";
+import { fetchCharacters, bulkPurchase, equipItem, sendAdminGift, useItem } from "@/lib/api";
 import type { Character, Item } from "@/lib/api";
 import {
   Select,
@@ -17,10 +18,8 @@ import PageContainer from "@/components/common/PageContainer";
 import { useRequireMember } from "@/lib/auth";
 import { useDialog } from "@/components/common/DialogProvider";
 
-function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
-  const { confirm, alert } = useDialog();
+function useCartEntries() {
   const [cart, setCart] = useState<CartEntry[]>([]);
-  const [cartLoading, setCartLoading] = useState(false);
 
   function handleAddToCart(item: Item) {
     setCart((prev) => {
@@ -46,6 +45,14 @@ function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
   function handleRemove(itemId: number) {
     setCart((prev) => prev.filter((e) => e.item.id !== itemId));
   }
+
+  return { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove };
+}
+
+function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
+  const { confirm, alert } = useDialog();
+  const { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove } = useCartEntries();
+  const [cartLoading, setCartLoading] = useState(false);
 
   async function handlePurchase() {
     if (!characterId || cart.length === 0) return;
@@ -78,7 +85,7 @@ function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
     }
   }
 
-  return { cart, setCart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase };
+  return { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase };
 }
 
 function RunnerShop({ characterId }: { characterId: number }) {
@@ -116,11 +123,14 @@ function RunnerShop({ characterId }: { characterId: number }) {
 }
 
 function AdminShop() {
+  const { confirm, alert } = useDialog();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [characterId, setCharacterId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
-  const { cart, setCart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
-    usePurchaseCart(characterId, () => setRefreshKey((k) => k + 1));
+  const { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove } = useCartEntries();
+  const [gold, setGold] = useState(0);
+  const [cp, setCp] = useState(0);
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     fetchCharacters()
@@ -133,16 +143,52 @@ function AdminShop() {
 
   const cartItemIds = new Set(cart.map((e) => e.item.id));
 
+  async function handleSend() {
+    if (characterId == null) return;
+    const characterName = characters.find((c) => c.id === characterId)?.name ?? "선택한 캐릭터";
+    const contents = [
+      gold > 0 ? `골드 ${gold.toLocaleString()}G` : null,
+      cp > 0 ? `CP ${cp.toLocaleString()}` : null,
+      ...cart.map((e) => `${e.item.name} ×${e.qty}`),
+    ].filter(Boolean).join(", ");
+
+    const ok = await confirm({
+      title: "선물 보내기",
+      description: `${characterName}에게 다음 선물을 보낼까요?\n${contents}`,
+      confirmText: "보내기",
+    });
+    if (!ok) return;
+
+    setSending(true);
+    try {
+      await sendAdminGift({
+        character_id: characterId,
+        gold,
+        cp,
+        items: cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })),
+      });
+      await alert(`${characterName}에게 선물을 보냈습니다. 보상 이력에 '관리자의 선물'로 기록됩니다.`);
+      setCart([]);
+      setGold(0);
+      setCp(0);
+      setRefreshKey((k) => k + 1);
+    } catch (e) {
+      await alert(e instanceof Error ? e.message : "선물 보내기 실패");
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <PageContainer className="space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-ivory">상점</h1>
-        <p className="text-sm text-muted">캐릭터를 선택해 아이템을 구매할 수 있습니다.</p>
+        <p className="text-sm text-muted">캐릭터를 선택해 골드·CP·아이템을 선물로 보낼 수 있습니다.</p>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <span className="whitespace-nowrap text-sm font-semibold text-ivory/85">
-          아이템을 구매할 캐릭터
+          선물을 받을 캐릭터
         </span>
         <Select
           value={characterId?.toString() ?? ""}
@@ -177,12 +223,16 @@ function AdminShop() {
               refreshKey={refreshKey}
             />
           </div>
-          <Cart
+          <GiftCart
             entries={cart}
-            loading={cartLoading}
+            gold={gold}
+            cp={cp}
+            loading={sending}
+            onGoldChange={setGold}
+            onCpChange={setCp}
             onUpdateQty={handleUpdateQty}
             onRemove={handleRemove}
-            onPurchase={handlePurchase}
+            onSend={handleSend}
           />
         </div>
       )}

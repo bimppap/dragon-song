@@ -16,7 +16,7 @@ import TabBar from "@/components/common/TabBar";
 import { useRequireAdmin } from "@/lib/auth";
 import ChapterTab from "./components/ChapterTab";
 import ItemAdmin from "./components/ItemAdmin";
-import AttendancePanel from "@/app/attendance/components/AttendancePanel";
+import AttendanceAdminTab from "@/app/attendance/components/AttendanceAdminTab";
 import EnemyTab from "@/app/battle/components/EnemyTab";
 import AdminSkillEditor from "@/app/battle/components/AdminSkillEditor";
 import { ChallengeAdmin } from "@/app/challenges/page";
@@ -61,7 +61,7 @@ export default function AdminPage() {
 
       <div>
         {tab === "chapter" && <ChapterTab />}
-        {tab === "attendance" && <AttendancePanel />}
+        {tab === "attendance" && <AttendanceAdminTab />}
         {tab === "item" && <ItemAdmin />}
         {tab === "challenge" && <ChallengeAdmin />}
         {tab === "mission" && <MissionAdmin />}

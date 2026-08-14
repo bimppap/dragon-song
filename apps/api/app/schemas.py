@@ -284,6 +284,7 @@ class ItemCreate(BaseModel):
     available_from_chapter: str | None = None
     available_until_chapter: str | None = None
     item_type: ItemType = "consumable"
+    restricted_mission_id: int | None = None  # 이 임무의 보상 수령자는 구매 불가
     effects: list[ItemEffect] = Field(default_factory=list)
 
     @model_validator(mode="after")
@@ -304,6 +305,7 @@ class ItemRead(BaseModel):
     available_from_chapter: str | None
     available_until_chapter: str | None
     item_type: ItemType
+    restricted_mission_id: int | None = None
     image_url: str | None = None
     effects: list[ItemEffect] = Field(default_factory=list)
     created_at: datetime
@@ -332,6 +334,23 @@ class CartItem(BaseModel):
 class BulkPurchaseRequest(BaseModel):
     character_id: int
     items: list[CartItem]
+
+
+class AdminGiftRequest(BaseModel):
+    """관리자가 캐릭터에게 보내는 선물 (골드·CP·아이템)."""
+
+    character_id: int
+    gold: int = Field(default=0, ge=0)
+    cp: int = Field(default=0, ge=0)
+    items: list[CartItem] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def check_has_content(self):
+        if self.gold <= 0 and self.cp <= 0 and not self.items:
+            raise ValueError("보낼 골드, CP 또는 아이템을 입력해 주세요.")
+        if any(item.quantity < 1 for item in self.items):
+            raise ValueError("아이템 수량은 1 이상이어야 합니다.")
+        return self
 
 
 class PurchaseRead(BaseModel):
@@ -548,17 +567,56 @@ class EnemyRead(BaseModel):
         return v if v is not None else []
 
 
-class AttendanceRecordUpdate(BaseModel):
-    character_ids: list[int] = Field(default_factory=list)
-    reward_paid: bool = False
-
-
-class AttendanceRecordRead(BaseModel):
+class AttendanceEntryCreate(BaseModel):
     attendance_date: date
-    character_ids: list[int]
-    reward_paid: bool
+    message: str = Field(default="", max_length=200)
+
+
+class AttendanceEntryUpdate(BaseModel):
+    message: str = Field(default="", max_length=200)
+
+
+class AttendanceEntryRead(BaseModel):
+    id: int
+    attendance_date: date
+    character_id: int
+    character_name: str
+    character_image_url: str | None
+    message: str
+    rank: int | None  # 그날 1~3번째 출석자에게만 1·2·3 부여
+    created_at: datetime
+    updated_at: datetime
+
+
+class AttendanceMissionRead(BaseModel):
+    mission_date: date
+    content: str
 
     model_config = {"from_attributes": True}
+
+
+class AttendanceMissionUpdate(BaseModel):
+    content: str = Field(default="", max_length=500)
+
+
+class AttendanceCharacterBrief(BaseModel):
+    id: int
+    name: str
+    image_url: str | None
+
+
+class AttendanceStreakEntry(BaseModel):
+    character_id: int
+    character_name: str
+    character_image_url: str | None
+    streak: int
+
+
+class AttendanceSummaryRead(BaseModel):
+    attendance_date: date
+    attended: list[AttendanceCharacterBrief]
+    absent: list[AttendanceCharacterBrief]
+    streaks: list[AttendanceStreakEntry]
 
 
 TIER_LABELS = {0: "기본", 1: "선택", 2: "I", 3: "II", 4: "III", 5: "IV"}

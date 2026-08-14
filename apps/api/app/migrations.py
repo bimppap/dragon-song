@@ -105,6 +105,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE items ADD COLUMN effects JSON NOT NULL DEFAULT '[]'")
         if "image_url" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN image_url VARCHAR")
+        if "restricted_mission_id" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN restricted_mission_id INTEGER REFERENCES missions(id)")
 
     if "chapters" in table_names:
         chapter_columns = {col["name"] for col in inspector.get_columns("chapters")}

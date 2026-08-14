@@ -10,8 +10,13 @@ from app.db import engine, get_db
 from app.migrations import ensure_schema
 from app.models import Chapter, Character, Item, Member, SkillNode
 from app.schemas import (
-    AttendanceRecordRead,
-    AttendanceRecordUpdate,
+    AdminGiftRequest,
+    AttendanceEntryCreate,
+    AttendanceEntryRead,
+    AttendanceEntryUpdate,
+    AttendanceMissionRead,
+    AttendanceMissionUpdate,
+    AttendanceSummaryRead,
     ChapterCreate,
     ChapterRead,
     CharacterCreate,
@@ -36,6 +41,7 @@ from app.schemas import (
     MissionRead,
     PurchaseRead,
     RewardPayResult,
+    RewardRead,
     SignupRequest,
     SkillNameUpdate,
     SkillNodeRead,
@@ -160,19 +166,70 @@ async def upload_character_image(
     return detail
 
 
-@app.get("/attendance", response_model=AttendanceRecordRead)
-def get_attendance(attendance_date: date, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    return crud.get_attendance_record(db, attendance_date)
-
-
-@app.put("/attendance", response_model=AttendanceRecordRead)
-def save_attendance(
+@app.get("/attendance/entries", response_model=list[AttendanceEntryRead])
+def list_attendance_entries(
     attendance_date: date,
-    data: AttendanceRecordUpdate,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    return crud.get_attendance_entries(db, attendance_date)
+
+
+@app.post("/attendance/entries", response_model=list[AttendanceEntryRead])
+def create_attendance_entry(
+    data: AttendanceEntryCreate,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """본인 캐릭터로 오늘 출석하고, 출석 보상(골드 1·CP 1)을 즉시 지급받는다."""
+    return crud.create_attendance_entry(db, member, data)
+
+
+@app.put("/attendance/entries/{entry_id}", response_model=list[AttendanceEntryRead])
+def update_attendance_entry(
+    entry_id: int,
+    data: AttendanceEntryUpdate,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    return crud.update_attendance_entry(db, member, entry_id, data)
+
+
+@app.delete("/attendance/entries/{entry_id}", response_model=list[AttendanceEntryRead])
+def delete_attendance_entry(
+    entry_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    return crud.delete_attendance_entry(db, member, entry_id)
+
+
+@app.get("/attendance/mission", response_model=AttendanceMissionRead | None)
+def get_attendance_mission(
+    mission_date: date,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    return crud.get_attendance_mission(db, mission_date)
+
+
+@app.put("/attendance/mission", response_model=AttendanceMissionRead | None)
+def save_attendance_mission(
+    mission_date: date,
+    data: AttendanceMissionUpdate,
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return crud.upsert_attendance_record(db, attendance_date, data)
+    return crud.upsert_attendance_mission(db, mission_date, data)
+
+
+@app.get("/attendance/summary", response_model=AttendanceSummaryRead)
+def get_attendance_summary(
+    attendance_date: date,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.get_attendance_summary(db, attendance_date)
 
 
 @app.post("/items", response_model=ItemRead)
@@ -263,6 +320,7 @@ def list_items(
                 update={
                     "available_from_chapter": None,
                     "available_until_chapter": None,
+                    "restricted_mission_id": None,
                 }
             )
             for item in items
@@ -391,9 +449,10 @@ def pay_mission_rewards(mission_id: int, member: Member = Depends(require_admin)
     return crud.pay_mission_rewards(db, mission_id)
 
 
-@app.post("/rewards/attendance", response_model=RewardPayResult)
-def pay_attendance_rewards(attendance_date: date, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    return crud.pay_attendance_rewards(db, attendance_date)
+@app.post("/rewards/admin-gift", response_model=RewardRead)
+def send_admin_gift(data: AdminGiftRequest, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """관리자가 캐릭터에게 골드·CP·아이템을 선물한다. 보상 이력에 '관리자의 선물'로 남는다."""
+    return crud.send_admin_gift(db, data)
 
 
 @app.post("/rewards/challenge/{challenge_id}", response_model=RewardPayResult)

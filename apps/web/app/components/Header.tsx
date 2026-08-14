@@ -2,10 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { House, LogIn, LogOut, Menu, Settings, Sparkles, Store, Swords, Trophy, Users, X } from "lucide-react";
-import { useState } from "react";
-import type { MemberRole } from "@/lib/api";
+import { CalendarCheck, Coins, House, LogIn, LogOut, Settings, Sparkles, Store, Swords, Trophy, Users, Wrench } from "lucide-react";
+import { useEffect, useState } from "react";
+import { fetchMyCharacter, type MemberRole } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import CharacterAvatar from "@/components/common/CharacterAvatar";
 import ChapterMusicBar from "@/components/common/ChapterMusicBar";
 
 const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: MemberRole[] }[] = [
@@ -16,6 +17,8 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: 
   { href: "/missions", label: "임무", icon: Sparkles, roles: ["RUNNER"] },
   { href: "/battle", label: "전투", icon: Swords, roles: ["ADMIN"] },
   { href: "/battle", label: "기술", icon: Sparkles, roles: ["RUNNER"] },
+  { href: "/attendance", label: "출석", icon: CalendarCheck, roles: ["RUNNER", "ADMIN"] },
+  { href: "/settlement", label: "정산", icon: Coins, roles: ["RUNNER", "ADMIN"] },
   { href: "/admin", label: "관리", icon: Settings, roles: ["ADMIN"] },
 ];
 
@@ -24,10 +27,41 @@ export default function Header() {
   const router = useRouter();
   const { member, logout } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [character, setCharacter] = useState<{ name: string; image_url: string | null } | null>(null);
+
+  const isAdmin = member?.role === "ADMIN";
+  const characterId = member?.role === "RUNNER" ? member.character_id : null;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      if (characterId == null) {
+        setCharacter(null);
+        return;
+      }
+      try {
+        const detail = await fetchMyCharacter();
+        if (!cancelled) setCharacter({ name: detail.name, image_url: detail.image_url });
+      } catch {
+        if (!cancelled) setCharacter(null);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, [characterId]);
+
   if (pathname === "/login" || pathname === "/signup") return null;
 
-  const navItems = member ? NAV_ITEMS.filter((item) => item.roles.includes(member.role) && item.href !== pathname) : [];
-  function signOut() { logout(); router.replace("/login"); }
+  const navItems = member ? NAV_ITEMS.filter((item) => item.roles.includes(member.role)) : [];
+  const displayName = isAdmin ? "관리자" : character?.name ?? member?.login_id ?? "";
+
+  function signOut() {
+    setMenuOpen(false);
+    logout();
+    router.replace("/login");
+  }
 
   return <>
     <div className="fixed left-5 top-5 z-50 flex items-start gap-3">
@@ -38,21 +72,45 @@ export default function Header() {
     </div>
 
     <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
-      {pathname !== "/" && member && <div className="relative">
-        <button type="button" onClick={() => setMenuOpen((open) => !open)} className="flex size-8 items-center justify-center rounded-full border-2 border-gold/70 bg-surface text-gold shadow-lg transition-transform hover:scale-105" aria-label="메뉴" aria-expanded={menuOpen}>
-          {menuOpen ? <X size={14} /> : <Menu size={14} />}
+      {member ? <div className="relative flex items-center gap-2">
+        <span className="rounded-full border border-line bg-surface/95 px-3 py-1.5 text-xs font-semibold text-ivory">{displayName}</span>
+        <button
+          type="button"
+          onClick={() => setMenuOpen((open) => !open)}
+          className="block shrink-0 overflow-hidden rounded-full border-2 border-gold/70 shadow-lg transition-transform hover:scale-105"
+          aria-label="메뉴 열기"
+          aria-expanded={menuOpen}
+        >
+          {isAdmin ? (
+            <span className="flex size-9 items-center justify-center bg-surface text-gold"><Wrench size={16} /></span>
+          ) : (
+            <CharacterAvatar src={character?.image_url ?? null} alt={displayName} className="size-9" iconSize={16} />
+          )}
         </button>
-        {menuOpen && <nav aria-label="메뉴" className="absolute right-0 top-10 flex flex-col items-center gap-2">
+
+        {menuOpen && <nav aria-label="메뉴" className="pixel-frame absolute right-0 top-12 flex w-36 flex-col bg-surface p-1.5 shadow-xl">
           {navItems.map(({ href, label, icon: Icon }) => (
-            <Link key={`${href}-${label}`} href={href} title={label} onClick={() => setMenuOpen(false)} className="flex size-10 flex-col items-center justify-center rounded-full border border-line bg-surface text-[8px] font-semibold text-ivory shadow-lg transition-colors hover:border-gold hover:text-gold"><Icon size={14} /><span>{label}</span></Link>
+            <Link
+              key={`${href}-${label}`}
+              href={href}
+              onClick={() => setMenuOpen(false)}
+              className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-semibold text-ivory transition-colors hover:bg-primary-light/20 hover:text-gold"
+            >
+              <Icon size={14} className="text-gold" />
+              {label}
+            </Link>
           ))}
+          <div className="mx-2 my-1 border-t border-line" />
+          <button
+            type="button"
+            onClick={signOut}
+            className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-left text-xs font-semibold text-muted transition-colors hover:bg-primary-light/20 hover:text-ivory"
+          >
+            <LogOut size={14} />
+            로그아웃
+          </button>
         </nav>}
-      </div>}
-      {member ? <>
-        <span className="rounded-full border border-line bg-surface/95 px-3 py-1.5 text-xs font-semibold text-ivory">{member.login_id}</span>
-        <span className="rounded-full border border-gold/50 bg-gold/10 px-2 py-1.5 text-[10px] font-semibold text-gold">{member.role}</span>
-        <button type="button" onClick={signOut} className="rounded-full border border-line bg-surface/95 p-2 text-muted transition-colors hover:text-ivory" aria-label="로그아웃"><LogOut size={15} /></button>
-      </> : <Link href="/login" className="rounded-full border border-line bg-surface/95 p-2 text-ivory" aria-label="로그인"><LogIn size={16} /></Link>}
+      </div> : <Link href="/login" className="rounded-full border border-line bg-surface/95 p-2 text-ivory" aria-label="로그인"><LogIn size={16} /></Link>}
     </div>
 
   </>;

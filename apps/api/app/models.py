@@ -142,6 +142,10 @@ class Item(Base):
     item_type: Mapped[str] = mapped_column(
         String, nullable=False, default="consumable", server_default=text("'consumable'")
     )  # "consumable" | "equipment"
+    # 이 임무의 보상을 받은 캐릭터는 구매할 수 없다.
+    restricted_mission_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("missions.id"), nullable=True
+    )
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL
     effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
     created_at: Mapped[datetime] = mapped_column(
@@ -341,7 +345,50 @@ class Enemy(Base):
     )
 
 
+class AttendanceEntry(Base):
+    """캐릭터가 직접 남기는 출석 기록. 하루에 캐릭터당 1건."""
+
+    __tablename__ = "attendance_entries"
+    __table_args__ = (
+        UniqueConstraint("attendance_date", "character_id", name="uq_attendance_entry"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    attendance_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    message: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class AttendanceMission(Base):
+    """관리자가 날짜별로 등록하는 출석미션 문구."""
+
+    __tablename__ = "attendance_missions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    mission_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
+    content: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class AttendanceRecord(Base):
+    """(레거시) 관리자가 일괄 체크하던 출석 기록. 과거 연속출석 계산용으로만 조회한다."""
+
     __tablename__ = "attendance_records"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)

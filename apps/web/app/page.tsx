@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { CalendarDays, Settings, ShoppingBag, Swords, Users } from "lucide-react";
+import { CalendarCheck, CalendarDays, Coins, Settings, ShoppingBag, Swords, Users } from "lucide-react";
 import { fetchChapters, type Chapter } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import HomeFlamefall from "@/components/common/HomeFlamefall";
@@ -12,6 +12,8 @@ const SHORTCUTS = [
   { href: "/character", label: "캐릭터", icon: Users },
   { href: "/shop", label: "상점", icon: ShoppingBag },
   { href: "/battle", label: "전투", icon: Swords },
+  { href: "/attendance", label: "출석", icon: CalendarCheck },
+  { href: "/settlement", label: "정산", icon: Coins },
 ];
 export default function HomePage() {
   const { member } = useAuth();
@@ -38,7 +40,7 @@ export default function HomePage() {
 
       <section className="grid w-full gap-4 lg:h-[28rem] lg:grid-cols-[minmax(0,1.7fr)_minmax(240px,1fr)] lg:items-stretch">
         <div className="order-1 flex min-h-[18rem] flex-col gap-0.5 overflow-hidden lg:h-full lg:min-h-0">
-          <nav aria-label="빠른 메뉴" className="flex shrink-0 items-center justify-center gap-14 pb-0.5 sm:gap-20">
+          <nav aria-label="빠른 메뉴" className="flex shrink-0 items-center justify-center gap-7 pb-0.5 sm:gap-12">
             {quickLinks.map(({ href, label, icon: Icon }) => (
               <Link key={href} href={href} className="flex flex-col items-center justify-center gap-1 text-xs font-semibold text-ivory transition-colors hover:text-gold">
                 <Icon size={25} className="text-gold" />

@@ -5,13 +5,20 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import hash_password, verify_password
 from app.game_data import SKILL_TREE_MOCK, get_level_grade_stats
-from app.models import AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward, SkillNode
+from app.models import AttendanceEntry, AttendanceMission, AttendanceRecord, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, Member, Mission, MissionProgress, Purchase, Reward, SkillNode
 from app.schemas import (
     ITEM_EFFECT_SPECIAL_STATS,
     ITEM_EFFECT_STAT_TYPES,
     TIER_LABELS,
-    AttendanceRecordRead,
-    AttendanceRecordUpdate,
+    AdminGiftRequest,
+    AttendanceCharacterBrief,
+    AttendanceEntryCreate,
+    AttendanceEntryRead,
+    AttendanceEntryUpdate,
+    AttendanceMissionRead,
+    AttendanceMissionUpdate,
+    AttendanceStreakEntry,
+    AttendanceSummaryRead,
     BulkPurchaseRequest,
     ChapterCreate,
     ChapterRead,
@@ -46,12 +53,16 @@ from app.schemas import (
 )
 
 
-def _normalize_character_ids(character_ids: list[int]) -> list[int]:
-    return sorted(set(character_ids))
-
-
 def _today() -> date:
     return datetime.now(timezone.utc).date()
+
+
+KST = timezone(timedelta(hours=9))
+
+
+def _today_kst() -> date:
+    """출석은 한국 시간 기준 하루 단위로 처리한다."""
+    return datetime.now(KST).date()
 
 
 def _get_character_or_404(db: Session, character_id: int) -> Character:
@@ -442,18 +453,33 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
     )
 
 
-def _attendance_streak(db: Session, character_id: int) -> int:
-    """오늘부터 거슬러 올라가며 연속으로 출석한 일수. 오늘 미출석이면 0."""
-    records = db.query(AttendanceRecord).all()
-    present_dates = {
-        rec.attendance_date for rec in records if character_id in (rec.character_ids or [])
-    }
+def _attended_dates_by_character(db: Session) -> dict[int, set[date]]:
+    """레거시 출석부 기록과 새 출석 엔트리를 합쳐 캐릭터별 출석 날짜 집합을 만든다. 쿼리 2회."""
+    dates_by_character: dict[int, set[date]] = {}
+    legacy_rows = db.query(AttendanceRecord.attendance_date, AttendanceRecord.character_ids).all()
+    for attendance_date, character_ids in legacy_rows:
+        for character_id in character_ids or []:
+            dates_by_character.setdefault(character_id, set()).add(attendance_date)
+    entry_rows = db.query(AttendanceEntry.character_id, AttendanceEntry.attendance_date).all()
+    for character_id, attendance_date in entry_rows:
+        dates_by_character.setdefault(character_id, set()).add(attendance_date)
+    return dates_by_character
+
+
+def _streak_ending_at(present_dates: set[date], end_date: date) -> int:
+    """end_date(미출석이면 그 전날)부터 거슬러 올라간 연속 출석 일수."""
+    day = end_date if end_date in present_dates else end_date - timedelta(days=1)
     streak = 0
-    day = _today()
     while day in present_dates:
         streak += 1
         day = day - timedelta(days=1)
     return streak
+
+
+def _attendance_streak(db: Session, character_id: int) -> int:
+    """오늘(미출석이면 어제)부터 거슬러 올라가며 연속으로 출석한 일수."""
+    present_dates = _attended_dates_by_character(db).get(character_id, set())
+    return _streak_ending_at(present_dates, _today_kst())
 
 
 def _chapters_by_name(db: Session) -> dict[str, Chapter]:
@@ -501,6 +527,13 @@ def _validate_item_chapter_window(db: Session, data: ItemCreate) -> None:
         raise HTTPException(status_code=400, detail="시작 챕터가 종료 챕터보다 늦을 수 없습니다.")
 
 
+def _validate_item_restricted_mission(db: Session, data: ItemCreate) -> None:
+    if data.restricted_mission_id is None:
+        return
+    if db.get(Mission, data.restricted_mission_id) is None:
+        raise HTTPException(status_code=400, detail="존재하지 않는 임무입니다.")
+
+
 def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.name = data.name
     item.price_gold = data.price_gold
@@ -511,11 +544,13 @@ def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.available_from_chapter = data.available_from_chapter
     item.available_until_chapter = data.available_until_chapter
     item.item_type = data.item_type
+    item.restricted_mission_id = data.restricted_mission_id
     item.effects = [effect.model_dump() for effect in data.effects]
 
 
 def create_item(db: Session, data: ItemCreate) -> Item:
     _validate_item_chapter_window(db, data)
+    _validate_item_restricted_mission(db, data)
     item = Item(
         name=data.name,
     )
@@ -532,6 +567,7 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
 
     _validate_item_chapter_window(db, data)
+    _validate_item_restricted_mission(db, data)
     _apply_item_data(item, data)
     db.commit()
     db.refresh(item)
@@ -665,10 +701,22 @@ def _sum_quantity(db: Session, item_id: int, character_id: int | None = None) ->
     return q.scalar()
 
 
+def _rewarded_mission_ids(db: Session, character_id: int) -> set[int]:
+    """캐릭터가 보상을 수령한 임무 ID 집합."""
+    rows = (
+        db.query(Reward.source_id)
+        .filter(Reward.type == "mission")
+        .filter(Reward.character_id == character_id)
+        .all()
+    )
+    return {source_id for source_id, in rows if source_id is not None}
+
+
 def get_items_with_stock(db: Session, character_id: int | None = None) -> list[ItemWithStock]:
     items = db.query(Item).all()
     chapters_by_name = _chapters_by_name(db)
     active_chapter = _active_chapter(chapters_by_name)
+    rewarded_mission_ids = _rewarded_mission_ids(db, character_id) if character_id is not None else set()
     result = []
     for item in items:
         total_purchased = _sum_quantity(db, item.id)
@@ -683,6 +731,10 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
             if item.purchase_limit_per_character is not None else None
         )
 
+        restricted_by_mission = (
+            item.restricted_mission_id is not None
+            and item.restricted_mission_id in rewarded_mission_ids
+        )
         result.append(ItemWithStock(
             id=item.id,
             name=item.name,
@@ -694,6 +746,7 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
             available_from_chapter=item.available_from_chapter,
             available_until_chapter=item.available_until_chapter,
             item_type=item.item_type,
+            restricted_mission_id=item.restricted_mission_id,
             image_url=item.image_url,
             effects=item.effects or [],
             created_at=item.created_at,
@@ -701,7 +754,10 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
             purchased_total=total_purchased,
             remaining_per_character=remaining_per_character,
             remaining_global=remaining_global,
-            purchasable=_is_item_purchasable(item, chapters_by_name, active_chapter),
+            purchasable=(
+                _is_item_purchasable(item, chapters_by_name, active_chapter)
+                and not restricted_by_mission
+            ),
         ))
     return result
 
@@ -718,6 +774,7 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
     validated: list[tuple[Item, int]] = []
     chapters_by_name = _chapters_by_name(db)
     active_chapter = _active_chapter(chapters_by_name)
+    rewarded_mission_ids = _rewarded_mission_ids(db, character.id)
 
     for cart_item in data.items:
         item = db.query(Item).filter(Item.id == cart_item.item_id).first()
@@ -726,6 +783,12 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
 
         if not is_admin and not _is_item_purchasable(item, chapters_by_name, active_chapter):
             raise HTTPException(status_code=400, detail=f"'{item.name}'은(는) 현재 구매할 수 없는 아이템입니다.")
+
+        if not is_admin and item.restricted_mission_id in rewarded_mission_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{item.name}'은(는) 해당 임무 보상을 받은 캐릭터는 구매할 수 없습니다.",
+            )
 
         qty = cart_item.quantity
         if qty < 1:
@@ -876,20 +939,216 @@ def update_challenge_progress(
     return get_challenge_progress(db, challenge_id)
 
 
-def get_attendance_record(db: Session, attendance_date: date) -> AttendanceRecordRead:
-    record = (
-        db.query(AttendanceRecord)
-        .filter(AttendanceRecord.attendance_date == attendance_date)
+ATTENDANCE_REWARD_GOLD = 1
+ATTENDANCE_REWARD_CP = 1
+ATTENDANCE_RANK_LIMIT = 3  # 그날 선착순으로 등수 뱃지를 다는 인원 수
+
+
+def _to_attendance_entry_read(
+    entry: AttendanceEntry,
+    character: Character | None,
+    rank: int | None,
+) -> AttendanceEntryRead:
+    return AttendanceEntryRead(
+        id=entry.id,
+        attendance_date=entry.attendance_date,
+        character_id=entry.character_id,
+        character_name=character.name if character else "(삭제된 캐릭터)",
+        character_image_url=character.image_url if character else None,
+        message=entry.message,
+        rank=rank,
+        created_at=entry.created_at,
+        updated_at=entry.updated_at,
+    )
+
+
+def get_attendance_entries(db: Session, attendance_date: date) -> list[AttendanceEntryRead]:
+    """해당 날짜의 출석 엔트리를 최신순으로 반환한다. 선착순 1~3번째에는 rank를 부여한다."""
+    entries = (
+        db.query(AttendanceEntry)
+        .filter(AttendanceEntry.attendance_date == attendance_date)
+        .order_by(AttendanceEntry.created_at.desc(), AttendanceEntry.id.desc())
+        .all()
+    )
+    character_ids = {e.character_id for e in entries}
+    characters = {
+        c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
+    } if character_ids else {}
+
+    total = len(entries)
+    return [
+        _to_attendance_entry_read(
+            entry,
+            characters.get(entry.character_id),
+            # 최신순이므로 목록 끝이 첫 출석자(1등)다.
+            total - index if total - index <= ATTENDANCE_RANK_LIMIT else None,
+        )
+        for index, entry in enumerate(entries)
+    ]
+
+
+def _get_member_character_or_400(db: Session, member: Member) -> Character:
+    character = db.query(Character).filter(Character.member_id == member.id).first()
+    if character is None:
+        raise HTTPException(status_code=400, detail="출석하려면 먼저 캐릭터를 생성해야 합니다.")
+    return character
+
+
+def create_attendance_entry(
+    db: Session,
+    member: Member,
+    data: AttendanceEntryCreate,
+) -> list[AttendanceEntryRead]:
+    today = _today_kst()
+    if data.attendance_date != today:
+        raise HTTPException(status_code=400, detail="오늘 날짜에만 출석할 수 있습니다.")
+
+    character = _get_member_character_or_400(db, member)
+
+    duplicate = (
+        db.query(AttendanceEntry)
+        .filter(AttendanceEntry.attendance_date == today)
+        .filter(AttendanceEntry.character_id == character.id)
         .first()
     )
-    if not record:
-        return AttendanceRecordRead(
-            attendance_date=attendance_date,
-            character_ids=[],
-            reward_paid=False,
-        )
+    if duplicate:
+        raise HTTPException(status_code=400, detail="오늘은 이미 출석했습니다.")
 
-    return AttendanceRecordRead.model_validate(record)
+    entry = AttendanceEntry(
+        attendance_date=today,
+        character_id=character.id,
+        message=data.message.strip(),
+    )
+    db.add(entry)
+    db.flush()
+
+    # 같은 날 삭제 후 재출석하는 경우 보상이 중복 지급되지 않도록 기존 보상 여부를 확인한다.
+    already_rewarded = (
+        db.query(Reward.id)
+        .filter(Reward.type == "attendance")
+        .filter(Reward.character_id == character.id)
+        .filter(Reward.rewarded_at == today)
+        .first()
+    )
+    if not already_rewarded:
+        character.gold += ATTENDANCE_REWARD_GOLD
+        character.cp += ATTENDANCE_REWARD_CP
+        db.add(Reward(
+            type="attendance",
+            character_id=character.id,
+            source_id=entry.id,
+            reward_items=[
+                {"type": "gold", "amount": ATTENDANCE_REWARD_GOLD},
+                {"type": "stat", "stat": "cp", "amount": ATTENDANCE_REWARD_CP},
+            ],
+            rewarded_at=today,
+        ))
+
+    db.commit()
+    return get_attendance_entries(db, today)
+
+
+def update_attendance_entry(
+    db: Session,
+    member: Member,
+    entry_id: int,
+    data: AttendanceEntryUpdate,
+) -> list[AttendanceEntryRead]:
+    entry = db.get(AttendanceEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="출석 기록을 찾을 수 없습니다.")
+    if get_member_character_id(db, member.id) != entry.character_id:
+        raise HTTPException(status_code=403, detail="본인의 출석 기록만 수정할 수 있습니다.")
+
+    entry.message = data.message.strip()
+    db.commit()
+    return get_attendance_entries(db, entry.attendance_date)
+
+
+def delete_attendance_entry(db: Session, member: Member, entry_id: int) -> list[AttendanceEntryRead]:
+    entry = db.get(AttendanceEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="출석 기록을 찾을 수 없습니다.")
+    is_owner = get_member_character_id(db, member.id) == entry.character_id
+    if member.role != "ADMIN" and not is_owner:
+        raise HTTPException(status_code=403, detail="본인의 출석 기록만 삭제할 수 있습니다.")
+
+    attendance_date = entry.attendance_date
+    db.delete(entry)
+    db.commit()
+    return get_attendance_entries(db, attendance_date)
+
+
+def get_attendance_mission(db: Session, mission_date: date) -> AttendanceMissionRead | None:
+    mission = (
+        db.query(AttendanceMission)
+        .filter(AttendanceMission.mission_date == mission_date)
+        .first()
+    )
+    return AttendanceMissionRead.model_validate(mission) if mission else None
+
+
+def upsert_attendance_mission(
+    db: Session,
+    mission_date: date,
+    data: AttendanceMissionUpdate,
+) -> AttendanceMissionRead | None:
+    """출석미션을 저장한다. 내용이 비어 있으면 해당 날짜의 미션을 삭제한다."""
+    mission = (
+        db.query(AttendanceMission)
+        .filter(AttendanceMission.mission_date == mission_date)
+        .first()
+    )
+    content = data.content.strip()
+
+    if not content:
+        if mission:
+            db.delete(mission)
+            db.commit()
+        return None
+
+    if mission is None:
+        mission = AttendanceMission(mission_date=mission_date)
+        db.add(mission)
+    mission.content = content
+    db.commit()
+    return AttendanceMissionRead.model_validate(mission)
+
+
+def get_attendance_summary(db: Session, attendance_date: date) -> AttendanceSummaryRead:
+    """관리자용: 해당 날짜의 출석/미출석 캐릭터와 연속출석 순위를 반환한다."""
+    characters = db.query(Character).order_by(Character.name.asc()).all()
+    dates_by_character = _attended_dates_by_character(db)
+
+    attended_ids = {
+        character_id
+        for character_id, dates in dates_by_character.items()
+        if attendance_date in dates
+    }
+
+    def to_brief(c: Character) -> AttendanceCharacterBrief:
+        return AttendanceCharacterBrief(id=c.id, name=c.name, image_url=c.image_url)
+
+    streaks = [
+        AttendanceStreakEntry(
+            character_id=c.id,
+            character_name=c.name,
+            character_image_url=c.image_url,
+            streak=_streak_ending_at(dates_by_character.get(c.id, set()), attendance_date),
+        )
+        for c in characters
+    ]
+    streaks = sorted(
+        (s for s in streaks if s.streak > 0),
+        key=lambda s: (-s.streak, s.character_name),
+    )
+
+    return AttendanceSummaryRead(
+        attendance_date=attendance_date,
+        attended=[to_brief(c) for c in characters if c.id in attended_ids],
+        absent=[to_brief(c) for c in characters if c.id not in attended_ids],
+        streaks=streaks,
+    )
 
 
 def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]:
@@ -902,52 +1161,45 @@ def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]
     return [_to_reward_read(r) for r in rewards]
 
 
-def pay_attendance_rewards(db: Session, attendance_date: date) -> RewardPayResult:
-    record = (
-        db.query(AttendanceRecord)
-        .filter(AttendanceRecord.attendance_date == attendance_date)
-        .first()
+def send_admin_gift(db: Session, data: AdminGiftRequest) -> RewardRead:
+    """관리자가 캐릭터에게 골드·CP·아이템을 지급하고 '관리자의 선물' 보상 이력을 남긴다."""
+    character = _get_character_or_404(db, data.character_id)
+
+    reward_items: list[dict] = []
+    if data.gold > 0:
+        character.gold += data.gold
+        reward_items.append({"type": "gold", "amount": data.gold})
+    if data.cp > 0:
+        character.cp += data.cp
+        reward_items.append({"type": "stat", "stat": "cp", "amount": data.cp})
+
+    if data.items:
+        item_ids = [cart_item.item_id for cart_item in data.items]
+        items_map = {i.id: i for i in db.query(Item).filter(Item.id.in_(item_ids)).all()}
+        missing = sorted(set(item_ids) - set(items_map))
+        if missing:
+            raise HTTPException(
+                status_code=400,
+                detail=f"존재하지 않는 아이템 ID: {', '.join(map(str, missing))}",
+            )
+        item_grants = [
+            {"type": "item", "item_id": cart_item.item_id, "quantity": cart_item.quantity}
+            for cart_item in data.items
+        ]
+        _apply_item_grants(db, item_grants, items_map, character.id, reward_items)
+
+    reward = Reward(
+        type="admin_gift",
+        character_id=character.id,
+        source_id=None,
+        reward_items=reward_items,
+        rewarded_at=_today_kst(),
     )
-    if not record or not record.character_ids:
-        return RewardPayResult(paid_count=0, rewards=[])
-
-    already_paid_ids = {
-        r.character_id
-        for r, in db.query(Reward.character_id)
-        .filter(Reward.type == "attendance")
-        .filter(Reward.rewarded_at == attendance_date)
-        .all()
-    }
-
-    to_pay = [cid for cid in record.character_ids if cid not in already_paid_ids]
-    if not to_pay:
-        return RewardPayResult(paid_count=0, rewards=[])
-
-    characters = {
-        c.id: c
-        for c in db.query(Character).filter(Character.id.in_(to_pay)).all()
-    }
-
-    created_rewards: list[Reward] = []
-    for character_id in to_pay:
-        character = characters.get(character_id)
-        if not character:
-            continue
-        character.gold += 10
-        reward = Reward(
-            type="attendance",
-            character_id=character_id,
-            source_id=record.id,
-            reward_items=[{"type": "gold", "amount": 10}],
-            rewarded_at=attendance_date,
-        )
-        db.add(reward)
-        created_rewards.append(reward)
-
+    db.add(reward)
     db.flush()
-    rewards_read = [_to_reward_read(r) for r in created_rewards]
+    reward_read = _to_reward_read(reward)
     db.commit()
-    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
+    return reward_read
 
 
 def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
@@ -1014,55 +1266,6 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
     rewards_read = [_to_reward_read(r) for r in created_rewards]
     db.commit()
     return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
-    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
-
-
-def upsert_attendance_record(
-    db: Session,
-    attendance_date: date,
-    data: AttendanceRecordUpdate,
-) -> AttendanceRecordRead:
-    character_ids = _normalize_character_ids(data.character_ids)
-
-    if character_ids:
-        existing_ids = {
-            character_id
-            for character_id, in (
-                db.query(Character.id)
-                .filter(Character.id.in_(character_ids))
-                .all()
-            )
-        }
-        missing_ids = sorted(set(character_ids) - existing_ids)
-        if missing_ids:
-            raise HTTPException(
-                status_code=400,
-                detail=f"존재하지 않는 캐릭터 ID가 포함되어 있습니다: {', '.join(map(str, missing_ids))}",
-            )
-
-    record = (
-        db.query(AttendanceRecord)
-        .filter(AttendanceRecord.attendance_date == attendance_date)
-        .first()
-    )
-
-    if record is None:
-        if not character_ids and not data.reward_paid:
-            return AttendanceRecordRead(
-                attendance_date=attendance_date,
-                character_ids=[],
-                reward_paid=False,
-            )
-        record = AttendanceRecord(attendance_date=attendance_date)
-        db.add(record)
-
-    record.character_ids = character_ids
-    record.reward_paid = data.reward_paid
-    record.updated_at = datetime.now(timezone.utc)
-
-    db.commit()
-    db.refresh(record)
-    return AttendanceRecordRead.model_validate(record)
 
 
 # ── Mission ──────────────────────────────────────────────────────────────────

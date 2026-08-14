@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import type { Chapter } from "@/lib/api";
+import { toDateValue } from "@/lib/utils";
 
 const COLORS = ["bg-primary-light", "bg-gold text-ground", "bg-primary"];
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -11,8 +12,7 @@ const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 function atMidnight(value: string) { return new Date(`${value}T00:00:00`); }
 function monthStart(value: Date) { return new Date(value.getFullYear(), value.getMonth(), 1); }
 function plusMonths(value: Date, amount: number) { return new Date(value.getFullYear(), value.getMonth() + amount, 1); }
-function keyOf(value: Date) { return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`; }
-function sameDay(a: Date, b: Date) { return keyOf(a) === keyOf(b); }
+function sameDay(a: Date, b: Date) { return toDateValue(a) === toDateValue(b); }
 
 interface Bar { chapter: Chapter; row: number; start: number; end: number; lane: number; }
 
@@ -52,9 +52,14 @@ export default function HomeChapterCalendar({ chapters, initialMonth }: { chapte
       <span className="font-pixel-sm text-[10px] font-semibold tracking-[0.16em] text-gold">{month.getFullYear()}.{String(month.getMonth() + 1).padStart(2, "0")}</span>
     </div>
     <div className="grid grid-cols-7 border-b border-line">{WEEKDAYS.map((weekday) => <div key={weekday} className="py-0.5 text-center text-[8px] font-semibold text-muted">{weekday}</div>)}</div>
-    <div className="relative grid h-42 grid-cols-7 grid-rows-6 border-l border-t border-line">
-      {days.map((day) => <div key={keyOf(day)} className="relative min-h-0 border-b border-r border-line bg-inset/50 px-0.5 pt-px text-[8px] text-muted"><span className={sameDay(day, new Date()) ? "text-gold" : day.getMonth() === month.getMonth() ? "text-ivory" : "opacity-40"}>{day.getDate()}</span></div>)}
-      {bars.map((bar, index) => <InfoTooltip key={`${bar.chapter.id}-${index}`} content={<span>{bar.chapter.name} · {bar.chapter.start_date} ~ {bar.chapter.end_date}</span>}><button type="button" className={`z-10 mx-px h-2 self-start truncate rounded-sm px-0.5 text-center text-[7px] font-semibold leading-2 shadow-sm hover:brightness-125 ${COLORS[bar.chapter.id % COLORS.length]}`} style={{ gridColumn: `${bar.start + 1} / ${bar.end + 2}`, gridRow: bar.row + 1, marginTop: `${10 + bar.lane * 8}px` }}>{bar.chapter.name}</button></InfoTooltip>)}
+    <div className="relative h-42 border-l border-t border-line">
+      {/* 날짜 셀 그리드. 챕터 바는 셀 배치에 영향을 주지 않도록 별도 오버레이 그리드에 둔다. */}
+      <div className="grid size-full grid-cols-7 grid-rows-6">
+        {days.map((day) => <div key={toDateValue(day)} className="relative min-h-0 border-b border-r border-line bg-inset/50 px-0.5 pt-px text-[8px] text-muted"><span className={sameDay(day, new Date()) ? "text-gold" : day.getMonth() === month.getMonth() ? "text-ivory" : "opacity-40"}>{day.getDate()}</span></div>)}
+      </div>
+      <div className="pointer-events-none absolute inset-0 grid grid-cols-7 grid-rows-6">
+        {bars.map((bar, index) => <InfoTooltip key={`${bar.chapter.id}-${index}`} content={<span>{bar.chapter.name} · {bar.chapter.start_date} ~ {bar.chapter.end_date}</span>}><button type="button" className={`pointer-events-auto z-10 mx-px h-2 self-start truncate rounded-sm px-0.5 text-center text-[7px] font-semibold leading-2 shadow-sm hover:brightness-125 ${COLORS[bar.chapter.id % COLORS.length]}`} style={{ gridColumn: `${bar.start + 1} / ${bar.end + 2}`, gridRow: bar.row + 1, marginTop: `${10 + bar.lane * 8}px` }}>{bar.chapter.name}</button></InfoTooltip>)}
+      </div>
     </div>
   </div>;
 }

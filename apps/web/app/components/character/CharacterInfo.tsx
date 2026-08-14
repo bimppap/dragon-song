@@ -29,9 +29,10 @@ import InfoTooltip from "@/components/common/InfoTooltip";
 import { useDialog } from "@/components/common/DialogProvider";
 
 const REWARD_TYPE_LABELS: Record<string, string> = {
-  attendance: "출석",
+  attendance: "출석 보상",
   challenge: "도전과제",
   mission: "임무",
+  admin_gift: "관리자의 선물",
 };
 
 function formatRewardItems(reward: Reward): string {

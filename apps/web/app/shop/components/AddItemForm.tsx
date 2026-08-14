@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { Image as ImageIcon, PlusCircle } from "lucide-react";
-import { createItem, fetchChapters, updateItem, uploadItemImage } from "@/lib/api";
-import type { Chapter, Item, ItemCreate, ItemType } from "@/lib/api";
+import { createItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
+import type { Chapter, Item, ItemCreate, ItemType, Mission } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 
 const NO_CHAPTER_LIMIT = "__no_limit__";
+const NO_MISSION_LIMIT = "__no_mission__";
 
 const ITEM_TYPE_OPTIONS: { value: ItemType; label: string; description: string }[] = [
   { value: "consumable", label: "소모형", description: "'사용'해야 능력치에 반영되고, 사용하면 소모됩니다." },
@@ -36,6 +37,7 @@ function createEmptyItemForm(): ItemCreate {
     available_from_chapter: null,
     available_until_chapter: null,
     item_type: "consumable",
+    restricted_mission_id: null,
     effects: [],
   };
 }
@@ -52,6 +54,7 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     available_from_chapter: item.available_from_chapter,
     available_until_chapter: item.available_until_chapter,
     item_type: item.item_type,
+    restricted_mission_id: item.restricted_mission_id,
     effects: item.effects,
   };
 }
@@ -78,6 +81,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
   const { alert } = useDialog();
   const [form, setForm] = useState<ItemCreate>(() => toItemForm(item));
   const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(item?.image_url ?? null);
@@ -91,6 +95,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
 
   useEffect(() => {
     fetchChapters().then(setChapters).catch(console.error);
+    fetchMissions().then(setMissions).catch(console.error);
   }, []);
 
   const isEditMode = editingItemId != null;
@@ -327,6 +332,35 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
       </div>
       <p className="text-xs text-muted -mt-3">
         둘 다 제한 없음이면 항상 구매 가능. 시작 챕터만 지정하면 해당 챕터부터, 둘 다 같은 챕터로 지정하면 그 챕터에서만 구매 가능합니다.
+      </p>
+
+      <Field label="구매 제한 임무">
+        <Select
+          value={form.restricted_mission_id != null ? String(form.restricted_mission_id) : NO_MISSION_LIMIT}
+          onValueChange={(value) =>
+            setForm((prev) => ({
+              ...prev,
+              restricted_mission_id: value === NO_MISSION_LIMIT ? null : Number(value),
+            }))
+          }
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="제한 없음" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value={NO_MISSION_LIMIT}>제한 없음</SelectItem>
+              {missions.map((mission) => (
+                <SelectItem key={mission.id} value={String(mission.id)}>
+                  {mission.chapter}|{mission.name}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </Field>
+      <p className="text-xs text-muted -mt-3">
+        임무를 지정하면 해당 임무의 보상을 받은 캐릭터는 이 아이템을 구매할 수 없습니다.
       </p>
 
       <Button type="submit" disabled={loading}>

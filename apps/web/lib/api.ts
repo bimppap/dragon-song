@@ -170,6 +170,7 @@ export interface Item {
   available_from_chapter: string | null;
   available_until_chapter: string | null;
   item_type: ItemType;
+  restricted_mission_id: number | null;
   image_url: string | null;
   effects: ItemEffect[];
   created_at: string;
@@ -190,6 +191,7 @@ export interface ItemCreate {
   available_from_chapter: string | null;
   available_until_chapter: string | null;
   item_type: ItemType;
+  restricted_mission_id: number | null;
   effects: ItemEffect[];
 }
 
@@ -367,10 +369,41 @@ export interface ChallengeProgressUpdate {
   memo: string;
 }
 
-export interface AttendanceRecord {
+export interface AttendanceEntry {
+  id: number;
   attendance_date: string;
-  character_ids: number[];
-  reward_paid: boolean;
+  character_id: number;
+  character_name: string;
+  character_image_url: string | null;
+  message: string;
+  rank: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AttendanceMission {
+  mission_date: string;
+  content: string;
+}
+
+export interface AttendanceCharacterBrief {
+  id: number;
+  name: string;
+  image_url: string | null;
+}
+
+export interface AttendanceStreakEntry {
+  character_id: number;
+  character_name: string;
+  character_image_url: string | null;
+  streak: number;
+}
+
+export interface AttendanceSummary {
+  attendance_date: string;
+  attended: AttendanceCharacterBrief[];
+  absent: AttendanceCharacterBrief[];
+  streaks: AttendanceStreakEntry[];
 }
 
 export interface CartItem {
@@ -409,24 +442,47 @@ export async function createCharacter(data: CharacterCreate): Promise<Character>
   }, "캐릭터 생성 실패");
 }
 
-export async function fetchAttendance(attendanceDate: string): Promise<AttendanceRecord> {
+export async function fetchAttendanceEntries(attendanceDate: string): Promise<AttendanceEntry[]> {
   const params = new URLSearchParams({ attendance_date: attendanceDate });
-  return request<AttendanceRecord>(`/attendance?${params.toString()}`, undefined, "출석 데이터 조회 실패");
+  return request<AttendanceEntry[]>(`/attendance/entries?${params}`, undefined, "출석 데이터 조회 실패");
 }
 
-export async function saveAttendance(
-  attendanceDate: string,
-  characterIds: number[],
-  rewardPaid: boolean,
-): Promise<AttendanceRecord> {
-  const params = new URLSearchParams({ attendance_date: attendanceDate });
-  return request<AttendanceRecord>(`/attendance?${params.toString()}`, {
+export async function createAttendanceEntry(attendanceDate: string, message: string): Promise<AttendanceEntry[]> {
+  return request<AttendanceEntry[]>("/attendance/entries", {
+    method: "POST",
+    body: JSON.stringify({ attendance_date: attendanceDate, message }),
+  }, "출석 실패");
+}
+
+export async function updateAttendanceEntry(entryId: number, message: string): Promise<AttendanceEntry[]> {
+  return request<AttendanceEntry[]>(`/attendance/entries/${entryId}`, {
     method: "PUT",
-    body: JSON.stringify({
-      character_ids: characterIds,
-      reward_paid: rewardPaid,
-    }),
-  }, "출석 데이터 저장 실패");
+    body: JSON.stringify({ message }),
+  }, "출석 수정 실패");
+}
+
+export async function deleteAttendanceEntry(entryId: number): Promise<AttendanceEntry[]> {
+  return request<AttendanceEntry[]>(`/attendance/entries/${entryId}`, {
+    method: "DELETE",
+  }, "출석 삭제 실패");
+}
+
+export async function fetchAttendanceMission(missionDate: string): Promise<AttendanceMission | null> {
+  const params = new URLSearchParams({ mission_date: missionDate });
+  return request<AttendanceMission | null>(`/attendance/mission?${params}`, undefined, "출석미션 조회 실패");
+}
+
+export async function saveAttendanceMission(missionDate: string, content: string): Promise<AttendanceMission | null> {
+  const params = new URLSearchParams({ mission_date: missionDate });
+  return request<AttendanceMission | null>(`/attendance/mission?${params}`, {
+    method: "PUT",
+    body: JSON.stringify({ content }),
+  }, "출석미션 저장 실패");
+}
+
+export async function fetchAttendanceSummary(attendanceDate: string): Promise<AttendanceSummary> {
+  const params = new URLSearchParams({ attendance_date: attendanceDate });
+  return request<AttendanceSummary>(`/attendance/summary?${params}`, undefined, "출석 현황 조회 실패");
 }
 
 export async function fetchItems(character_id?: number): Promise<Item[]> {
@@ -520,19 +576,26 @@ export async function bulkPurchase(
   }, "구매 실패");
 }
 
+export interface AdminGiftRequest {
+  character_id: number;
+  gold: number;
+  cp: number;
+  items: CartItem[];
+}
+
+export async function sendAdminGift(data: AdminGiftRequest): Promise<Reward> {
+  return request<Reward>("/rewards/admin-gift", {
+    method: "POST",
+    body: JSON.stringify(data),
+  }, "선물 보내기 실패");
+}
+
 export async function fetchPurchases(character_id?: number, item_id?: number): Promise<Purchase[]> {
   const params = new URLSearchParams();
   if (character_id != null) params.set("character_id", String(character_id));
   if (item_id != null) params.set("item_id", String(item_id));
   const query = params.toString() ? `?${params}` : "";
   return request<Purchase[]>(`/purchases${query}`, undefined, "구매 내역 조회 실패");
-}
-
-export async function payAttendanceRewards(attendanceDate: string): Promise<RewardPayResult> {
-  const params = new URLSearchParams({ attendance_date: attendanceDate });
-  return request<RewardPayResult>(`/rewards/attendance?${params.toString()}`, {
-    method: "POST",
-  }, "출석 보상 지급 실패");
 }
 
 export type MissionRewardItemGrant = RewardGrant;
