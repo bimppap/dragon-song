@@ -67,7 +67,7 @@ def ensure_schema(engine: Engine) -> None:
     # 상세 능력치 (실수형)
     float_stat_columns = [
         "hp_max_p", "hp_regen_fixed", "atk_p", "def_p", "def_eff", "presence",
-        "heal_eff", "heal_eff_p", "dmg_p", "dmg_r", "skill_eff_fixed",
+        "heal_eff", "dmg_p", "dmg_r", "skill_eff_fixed",
     ]
     for col in float_stat_columns:
         if col not in character_columns:
@@ -84,6 +84,14 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN over_heal BOOLEAN NOT NULL DEFAULT false")
     if "image_url" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN image_url VARCHAR")
+
+    # 관리자 전용 관리 플래그
+    if "caution" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN caution BOOLEAN NOT NULL DEFAULT false")
+    if "warning_count" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0")
+    if "mission_passed" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN mission_passed BOOLEAN NOT NULL DEFAULT false")
 
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}
@@ -151,6 +159,22 @@ def ensure_schema(engine: Engine) -> None:
             )
         if "applied_effects" not in unlock_columns:
             statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN applied_effects JSON NOT NULL DEFAULT '[]'")
+
+    # heal_eff_p(치유 효율 증폭) 제거: 컬럼을 삭제하고, 효과 JSON에 남은 항목도 걷어낸다. (최초 1회)
+    if "heal_eff_p" in character_columns:
+        statements.append("ALTER TABLE characters DROP COLUMN heal_eff_p")
+        for table, column in (
+            ("items", "effects"),
+            ("skill_nodes", "effects"),
+            ("character_skill_unlocks", "applied_effects"),
+        ):
+            if table in table_names:
+                statements.append(
+                    f"UPDATE {table} SET {column} = COALESCE("
+                    f"(SELECT json_agg(e) FROM json_array_elements({column}::json) e WHERE e->>'stat' <> 'heal_eff_p'),"
+                    f" '[]'::json) "
+                    f"WHERE {column}::text LIKE '%heal_eff_p%'"
+                )
 
     if not statements:
         return

@@ -80,6 +80,8 @@ interface Props {
   showSelector?: boolean;
   showId?: boolean;
   focusCharacterId?: number | null;
+  /** 다른 러너의 캐릭터를 열람할 때: 편집·아이템 상호작용·이력 노출을 모두 막는다. */
+  readOnly?: boolean;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -125,7 +127,7 @@ const DETAIL_STATS: {
   key: keyof Pick<
     CharacterDetail,
     "atk" | "atk_p" | "def" | "def_p" | "def_eff" | "attn" | "presence" | "hp" | "hp_max" |
-    "hp_max_p" | "hp_regen_true" | "hp_regen_fixed" | "heal_eff" | "heal_eff_p" | "mp" |
+    "hp_max_p" | "hp_regen_true" | "hp_regen_fixed" | "heal_eff" | "mp" |
     "mp_max" | "mp_regen" | "sh" | "dmg_p" | "dmg_r" | "skill_lv" | "skill_eff_true" |
     "skill_eff_fixed" | "skill_cost" | "skill_target"
   >;
@@ -146,7 +148,6 @@ const DETAIL_STATS: {
   { key: "hp_regen_true", label: "체력 재생력(고정)", description: "매 라운드 시작 시 고정으로 회복하는 체력입니다." },
   { key: "hp_regen_fixed", label: "체력 재생력(비례)", isFloat: true, description: "매 라운드 최대 체력에 비례해 회복하는 체력 배율입니다." },
   { key: "heal_eff", label: "치유 효율", isFloat: true, description: "치유 행동 시 회복량의 기준값입니다." },
-  { key: "heal_eff_p", label: "치유 효율 증폭", isFloat: true, description: "치유량에 곱해지는 증폭 배율입니다." },
   { key: "mp", label: "마나", description: "기술 사용에 소모되는 현재 자원입니다." },
   { key: "mp_max", label: "마나 최대치", description: "마나의 최대치입니다." },
   { key: "mp_regen", label: "마나 재생력", description: "매 라운드 회복하는 마나입니다." },
@@ -291,12 +292,14 @@ function ExperienceBar({
 function OwnedItemTile({
   item,
   loading,
+  readOnly = false,
   onUse,
   onEquip,
   onUnequip,
 }: {
   item: CharacterOwnedItem;
   loading: boolean;
+  readOnly?: boolean;
   onUse: () => void;
   onEquip: () => void;
   onUnequip: () => void;
@@ -331,7 +334,7 @@ function OwnedItemTile({
           </span>
         </div>
       </InfoTooltip>
-      {isConsumable ? (
+      {readOnly ? null : isConsumable ? (
         <Button
           size="sm"
           variant="outline"
@@ -363,8 +366,10 @@ export default function CharacterInfo({
   loading,
   showSelector = true,
   showId = true,
+  focusCharacterId = null,
+  readOnly = false,
 }: Props) {
-  const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(null);
+  const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -538,15 +543,19 @@ export default function CharacterInfo({
                       <span className="text-xs font-medium">이미지</span>
                     </div>
                   )}
-                  <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-ground/60 py-1.5 text-xs font-semibold text-ivory transition-colors hover:bg-ground/75">
-                    <ImageIcon size={12} />
-                    {imageUploading ? "업로드 중..." : selectedDetail.image_url ? "이미지 변경" : "이미지 등록"}
-                    <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
-                  </label>
+                  {!readOnly && (
+                    <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-ground/60 py-1.5 text-xs font-semibold text-ivory transition-colors hover:bg-ground/75">
+                      <ImageIcon size={12} />
+                      {imageUploading ? "업로드 중..." : selectedDetail.image_url ? "이미지 변경" : "이미지 등록"}
+                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
+                    </label>
+                  )}
                 </div>
-                <p className="text-[11px] leading-tight text-muted">
-                  정사각형 이미지를 권장합니다. 업로드 시 WebP로 변환되며 5MB를 넘으면 실패합니다.
-                </p>
+                {!readOnly && (
+                  <p className="text-[11px] leading-tight text-muted">
+                    정사각형 이미지를 권장합니다. 업로드 시 WebP로 변환되며 5MB를 넘으면 실패합니다.
+                  </p>
+                )}
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
               </div>
 
@@ -639,10 +648,12 @@ export default function CharacterInfo({
                       />
                     ))}
                   </div>
-                  <CharacterOwnedSkills
-                    characterId={selectedDetail.id}
-                    faction={selectedDetail.faction}
-                  />
+                  {!readOnly && (
+                    <CharacterOwnedSkills
+                      characterId={selectedDetail.id}
+                      faction={selectedDetail.faction}
+                    />
+                  )}
                 </div>
 
                 {/* 상세정보 (테두리 없는 펼치기 버튼) */}
@@ -709,8 +720,9 @@ export default function CharacterInfo({
               <CardHeader>
                 <CardTitle>보유 중인 아이템</CardTitle>
                 <CardDescription>
-                  구매 기록을 기준으로 현재 보유한 아이템 수량을 집계했습니다. 아이템에 마우스를 올리면 이름과 설명이 보입니다.
-                  소모형은 &apos;사용&apos;해야, 장착형은 &apos;장착&apos;해야 능력치에 반영됩니다.
+                  {readOnly
+                    ? "이 캐릭터가 보유한 아이템 목록입니다. 아이템에 마우스를 올리면 이름과 설명이 보입니다."
+                    : "구매 기록을 기준으로 현재 보유한 아이템 수량을 집계했습니다. 아이템에 마우스를 올리면 이름과 설명이 보입니다. 소모형은 '사용'해야, 장착형은 '장착'해야 능력치에 반영됩니다."}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
@@ -723,6 +735,7 @@ export default function CharacterInfo({
                       <OwnedItemTile
                         key={item.item_id}
                         item={item}
+                        readOnly={readOnly}
                         loading={itemActionLoadingId === item.item_id}
                         onUse={() => handleItemAction(item.item_id, useItem)}
                         onEquip={() => handleItemAction(item.item_id, equipItem)}
@@ -777,7 +790,7 @@ export default function CharacterInfo({
             </Card>
           </div>
 
-          <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          {!readOnly && <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
             <Card>
               <CardHeader>
                 <CardTitle>보상 이력</CardTitle>
@@ -863,7 +876,7 @@ export default function CharacterInfo({
                 )}
               </CardContent>
             </Card>
-          </div>
+          </div>}
         </>
       )}
     </div>

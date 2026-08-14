@@ -14,7 +14,7 @@ ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
     "hp": int, "hp_max": int, "hp_max_p": float, "hp_regen_true": int, "hp_regen_fixed": float,
     "mp": int, "mp_max": int, "mp_regen": int,
     "atk": int, "atk_p": float, "def": int, "def_p": float, "def_eff": float,
-    "attn": int, "presence": float, "heal_eff": float, "heal_eff_p": float,
+    "attn": int, "presence": float, "heal_eff": float,
     "sh": int, "dmg_p": float, "dmg_r": float,
     "skill_lv": int, "skill_eff_true": int, "skill_eff_fixed": float,
     "skill_cost": int, "skill_target": int,
@@ -29,7 +29,7 @@ ItemEffectStat = Literal[
     "hp", "hp_max", "hp_max_p", "hp_regen_true", "hp_regen_fixed",
     "mp", "mp_max", "mp_regen",
     "atk", "atk_p", "def", "def_p", "def_eff",
-    "attn", "presence", "heal_eff", "heal_eff_p",
+    "attn", "presence", "heal_eff",
     "sh", "dmg_p", "dmg_r",
     "skill_lv", "skill_eff_true", "skill_eff_fixed",
     "skill_cost", "skill_target",
@@ -201,7 +201,6 @@ class CharacterCreate(BaseModel):
     attn: int = Field(default=0)
     presence: float = Field(default=0)
     heal_eff: float = Field(default=0)
-    heal_eff_p: float = Field(default=0)
     sh: int = Field(default=0)
     dmg_p: float = Field(default=0)
     dmg_r: float = Field(default=0)
@@ -255,7 +254,6 @@ class CharacterRead(BaseModel):
     attn: int
     presence: float
     heal_eff: float
-    heal_eff_p: float
     sh: int
     dmg_p: float
     dmg_r: float
@@ -270,6 +268,11 @@ class CharacterRead(BaseModel):
     revive_hp: float | None
     act_time: int | None
     over_heal: bool | None
+
+    # 관리자 전용 관리 플래그 (RUNNER 조회 시 null 처리됨)
+    caution: bool | None = None
+    warning_count: int | None = None
+    mission_passed: bool | None = None
 
     image_url: str | None = None
 
@@ -334,6 +337,14 @@ class CartItem(BaseModel):
 class BulkPurchaseRequest(BaseModel):
     character_id: int
     items: list[CartItem]
+
+
+class CharacterFlagsUpdate(BaseModel):
+    """관리자 전용 관리 플래그 (주의·경고·합격미션여부) 수정."""
+
+    caution: bool
+    warning_count: int = Field(ge=0)
+    mission_passed: bool
 
 
 class AdminGiftRequest(BaseModel):

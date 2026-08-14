@@ -39,7 +39,6 @@ interface Combatant {
   dmgR: number;
   // 치유 계열
   healEff: number;
-  healEffP: number;
   skillTarget: number;
   overHeal: boolean;
   // 자원 / 상태
@@ -96,7 +95,6 @@ function toCombatant(c: Character): Combatant {
     defEff: c.def_eff,
     dmgR: c.dmg_r,
     healEff: c.heal_eff,
-    healEffP: c.heal_eff_p,
     skillTarget: Math.max(1, c.skill_target || 1),
     overHeal: Boolean(c.over_heal),
     attn: c.attn,
@@ -245,7 +243,7 @@ export default function BattleArena({ enemy, onExit }: Props) {
       const hasMana = c.mp >= c.skillCost;
       const manaCoef = hasMana ? 1 : 0.5;
       if (hasMana) c.mp -= c.skillCost;
-      const heal = Math.max(0, Math.round((c.healEff + c.skillEffTrue) * (1 + c.healEffP) * skillCoef(c) * manaCoef));
+      const heal = Math.max(0, Math.round((c.healEff + c.skillEffTrue) * skillCoef(c) * manaCoef));
 
       // 대상: 지정 대상 + 체력 낮은 아군 (기술 대상 수만큼)
       const chosen = a.targetId != null ? byId.get(a.targetId) : undefined;

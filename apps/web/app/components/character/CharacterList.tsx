@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import { AgGridReact } from "ag-grid-react";
-import type { ColDef, ICellRendererParams, RowClickedEvent } from "ag-grid-community";
+import type { CellClickedEvent, CellValueChangedEvent, ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Card, CardContent } from "@/components/ui/card";
+import AlertBanner from "@/components/common/AlertBanner";
+import { updateCharacterFlags } from "@/lib/api";
 import type { Character } from "@/lib/api";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -12,6 +15,8 @@ interface Props {
   characters: Character[];
   loading: boolean;
   onSelectCharacter?: (character: Character) => void;
+  /** admin 전용: 주의/경고/합격미션 편집 컬럼을 노출한다. */
+  showAdminFlags?: boolean;
 }
 
 const defaultColDef: ColDef<Character> = {
@@ -20,7 +25,7 @@ const defaultColDef: ColDef<Character> = {
   cellClass: "whitespace-nowrap",
 };
 
-const colDefs: ColDef<Character>[] = [
+const baseColDefs: ColDef<Character>[] = [
   {
     headerName: "ID",
     field: "id",
@@ -114,7 +119,46 @@ const colDefs: ColDef<Character>[] = [
   },
 ];
 
-export default function CharacterList({ characters, loading, onSelectCharacter }: Props) {
+const ADMIN_FLAG_FIELDS = new Set(["caution", "warning_count", "mission_passed"]);
+
+const adminFlagColDefs: ColDef<Character>[] = [
+  {
+    headerName: "주의",
+    field: "caution",
+    flex: 0.7,
+    minWidth: 60,
+    editable: true,
+    cellRenderer: "agCheckboxCellRenderer",
+    cellEditor: "agCheckboxCellEditor",
+  },
+  {
+    headerName: "경고",
+    field: "warning_count",
+    flex: 0.7,
+    minWidth: 62,
+    type: "numericColumn",
+    editable: true,
+    cellEditor: "agNumberCellEditor",
+    cellEditorParams: { min: 0, precision: 0 },
+    cellRenderer: (p: ICellRendererParams<Character>) => (
+      <span className={`font-num font-semibold ${Number(p.value) > 0 ? "text-red-400" : "text-muted"}`}>
+        {Number(p.value ?? 0).toLocaleString()}
+      </span>
+    ),
+  },
+  {
+    headerName: "합격미션",
+    field: "mission_passed",
+    flex: 0.8,
+    minWidth: 76,
+    editable: true,
+    cellRenderer: "agCheckboxCellRenderer",
+    cellEditor: "agCheckboxCellEditor",
+  },
+];
+
+export default function CharacterList({ characters, loading, onSelectCharacter, showAdminFlags = false }: Props) {
+  const [flagError, setFlagError] = useState<string | null>(null);
 
   if (loading) {
     return (
@@ -136,20 +180,46 @@ export default function CharacterList({ characters, loading, onSelectCharacter }
     );
   }
 
-  function handleRowClicked(event: RowClickedEvent<Character>) {
+  const colDefs = showAdminFlags ? [...baseColDefs, ...adminFlagColDefs] : baseColDefs;
+
+  function handleCellClicked(event: CellClickedEvent<Character>) {
+    // 관리 플래그 컬럼 클릭은 편집이므로 상세 이동을 막는다.
+    if (ADMIN_FLAG_FIELDS.has(event.column.getColId())) return;
     if (event.data) onSelectCharacter?.(event.data);
   }
 
+  async function handleCellValueChanged(event: CellValueChangedEvent<Character>) {
+    if (!ADMIN_FLAG_FIELDS.has(event.column.getColId()) || !event.data) return;
+    const row = event.data;
+    try {
+      const updated = await updateCharacterFlags(row.id, {
+        caution: Boolean(row.caution),
+        warning_count: Math.max(0, Number(row.warning_count ?? 0)),
+        mission_passed: Boolean(row.mission_passed),
+      });
+      event.node.setData({ ...row, ...updated });
+      setFlagError(null);
+    } catch (error) {
+      event.node.setDataValue(event.column.getColId(), event.oldValue);
+      setFlagError(error instanceof Error ? error.message : "관리 플래그 저장 실패");
+    }
+  }
+
   return (
-    <div className={`ag-theme-quartz h-120 rounded-lg overflow-hidden`}>
-      <AgGridReact
-        rowData={characters}
-        columnDefs={colDefs}
-        defaultColDef={defaultColDef}
-        rowHeight={44}
-        onRowClicked={handleRowClicked}
-        rowStyle={{ cursor: onSelectCharacter ? "pointer" : "default" }}
-      />
+    <div className="flex flex-col gap-3">
+      {flagError && <AlertBanner>{flagError}</AlertBanner>}
+      <div className={`ag-theme-quartz h-120 rounded-lg overflow-hidden`}>
+        <AgGridReact
+          rowData={characters}
+          columnDefs={colDefs}
+          defaultColDef={defaultColDef}
+          rowHeight={44}
+          singleClickEdit
+          onCellClicked={handleCellClicked}
+          onCellValueChanged={handleCellValueChanged}
+          rowStyle={{ cursor: onSelectCharacter ? "pointer" : "default" }}
+        />
+      </div>
     </div>
   );
 }

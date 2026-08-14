@@ -107,7 +107,6 @@ class Character(Base):
     attn: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     presence: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
     heal_eff: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
-    heal_eff_p: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
     sh: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     dmg_p: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
     dmg_r: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
@@ -116,6 +115,11 @@ class Character(Base):
     skill_eff_fixed: Mapped[float] = mapped_column(Float, nullable=False, default=0, server_default=text("0"))
     skill_cost: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     skill_target: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+
+    # 관리자 전용 관리 플래그 (RUNNER에게는 노출되지 않음)
+    caution: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    warning_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    mission_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     # 관리자 전용 능력치 (RUNNER에게는 노출되지 않음)
     start_sh: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))

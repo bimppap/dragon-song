@@ -24,6 +24,7 @@ from app.schemas import (
     EnemyCreate,
     EnemyRead,
     CharacterDetailRead,
+    CharacterFlagsUpdate,
     CharacterRead,
     ChallengeCreate,
     ChallengeProgressBulkUpdate,
@@ -116,8 +117,11 @@ def create_character(data: CharacterCreate, member: Member = Depends(require_adm
 
 
 @app.get("/characters", response_model=list[CharacterRead])
-def list_characters(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    return crud.get_characters(db)
+def list_characters(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    characters = crud.get_characters(db)
+    if member.role != "ADMIN":
+        characters = [crud.scrub_admin_only_stats(c) for c in characters]
+    return characters
 
 
 @app.get("/characters/{character_id}", response_model=CharacterDetailRead)
@@ -126,12 +130,24 @@ def get_character(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
-    if member.role != "ADMIN" and crud.get_member_character_id(db, member.id) != character_id:
-        raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
     detail = crud.get_character_detail(db, character_id)
     if member.role != "ADMIN":
         detail = crud.scrub_admin_only_stats(detail)
+        # 다른 캐릭터를 조회할 때는 보상·구매 이력을 숨긴다.
+        if crud.get_member_character_id(db, member.id) != character_id:
+            detail = detail.model_copy(update={"reward_history": [], "purchase_history": []})
     return detail
+
+
+@app.patch("/characters/{character_id}/flags", response_model=CharacterRead)
+def update_character_flags(
+    character_id: int,
+    data: CharacterFlagsUpdate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자 전용 관리 플래그(주의·경고·합격미션여부)를 수정한다."""
+    return crud.update_character_flags(db, character_id, data)
 
 
 @app.post("/characters/{character_id}/image", response_model=CharacterDetailRead)

@@ -28,6 +28,7 @@ from app.schemas import (
     CharacterAchievedChallengeRead,
     CharacterCreate,
     CharacterDetailRead,
+    CharacterFlagsUpdate,
     CharacterOnboardingCreate,
     CharacterOwnedItemRead,
     CharacterRead,
@@ -236,7 +237,6 @@ def _character_read_kwargs(character: Character) -> dict:
         attn=character.attn,
         presence=character.presence,
         heal_eff=character.heal_eff,
-        heal_eff_p=character.heal_eff_p,
         sh=character.sh,
         dmg_p=character.dmg_p,
         dmg_r=character.dmg_r,
@@ -249,6 +249,9 @@ def _character_read_kwargs(character: Character) -> dict:
         revive_hp=character.revive_hp,
         act_time=character.act_time,
         over_heal=character.over_heal,
+        caution=character.caution,
+        warning_count=character.warning_count,
+        mission_passed=character.mission_passed,
         image_url=character.image_url,
     )
 
@@ -259,6 +262,9 @@ def scrub_admin_only_stats(character_read: CharacterRead) -> CharacterRead:
         "revive_hp": None,
         "act_time": None,
         "over_heal": None,
+        "caution": None,
+        "warning_count": None,
+        "mission_passed": None,
     })
 
 
@@ -330,7 +336,6 @@ def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
         attn=data.attn,
         presence=data.presence,
         heal_eff=data.heal_eff,
-        heal_eff_p=data.heal_eff_p,
         sh=data.sh,
         dmg_p=data.dmg_p,
         dmg_r=data.dmg_r,
@@ -375,6 +380,16 @@ def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
 def get_characters(db: Session) -> list[CharacterRead]:
     characters = db.query(Character).order_by(Character.id.asc()).all()
     return [_to_character_read(c) for c in characters]
+
+
+def update_character_flags(db: Session, character_id: int, data: CharacterFlagsUpdate) -> CharacterRead:
+    character = _get_character_or_404(db, character_id)
+    character.caution = data.caution
+    character.warning_count = data.warning_count
+    character.mission_passed = data.mission_passed
+    db.commit()
+    db.refresh(character)
+    return _to_character_read(character)
 
 
 def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:

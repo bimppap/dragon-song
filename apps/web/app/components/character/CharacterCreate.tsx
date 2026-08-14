@@ -28,7 +28,6 @@ type CharacterCreateForm = {
   attn: string;
   presence: string;
   heal_eff: string;
-  heal_eff_p: string;
   sh: string;
   dmg_p: string;
   dmg_r: string;
@@ -73,7 +72,6 @@ const EMPTY_FORM: CharacterCreateForm = {
   attn: "0",
   presence: "100",
   heal_eff: "100",
-  heal_eff_p: "100",
   sh: "0",
   dmg_p: "100",
   dmg_r: "100",
@@ -124,7 +122,6 @@ const DETAIL_STAT_CONFIG: { name: NumericFormField; label: string; percent?: boo
   { name: "attn", label: "주목도" },
   { name: "presence", label: "존재감 (%)", percent: true },
   { name: "heal_eff", label: "치유 효율 (%)", percent: true },
-  { name: "heal_eff_p", label: "치유 효율 증폭 (%)", percent: true },
   { name: "sh", label: "보호막" },
   { name: "dmg_p", label: "피해 증폭 (%)", percent: true },
   { name: "dmg_r", label: "피해 감소 (%)", percent: true },
@@ -196,7 +193,6 @@ export default function CharacterCreate({ onCreated }: Props) {
         attn: Number(form.attn),
         presence: Number(form.presence) / 100 - 1,
         heal_eff: Number(form.heal_eff) / 100 - 1,
-        heal_eff_p: Number(form.heal_eff_p) / 100 - 1,
         sh: Number(form.sh),
         dmg_p: Number(form.dmg_p) / 100 - 1,
         dmg_r: Number(form.dmg_r) / 100 - 1,

@@ -41,15 +41,23 @@ function AdminCharacterConsole() {
   return <PageContainer max="4xl" className="space-y-8">
     {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
     <TabBar tabs={TABS} active={tab} onChange={setTab} />
-    {tab === "list" && <CharacterList characters={characters} loading={loadingCharacters} onSelectCharacter={(character) => { setFocusCharacterId(character.id); setTab("info"); }} />}
+    {tab === "list" && <CharacterList characters={characters} loading={loadingCharacters} showAdminFlags onSelectCharacter={(character) => { setFocusCharacterId(character.id); setTab("info"); }} />}
     {tab === "info" && <CharacterInfo key={focusCharacterId ?? "info"} characters={characters} loading={loadingCharacters} focusCharacterId={focusCharacterId} />}
     {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.id - b.id)); setTab("list"); }} />}
   </PageContainer>;
 }
 
+type RunnerView =
+  | { mode: "mine" }
+  | { mode: "list" }
+  | { mode: "other"; character: Character };
+
 function MyCharacterConsole() {
+  const [view, setView] = useState<RunnerView>({ mode: "mine" });
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
+  const [others, setOthers] = useState<Character[]>([]);
+  const [othersLoading, setOthersLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
@@ -64,9 +72,73 @@ function MyCharacterConsole() {
     return () => { cancelled = true; };
   }, []);
 
+  async function openList() {
+    setView({ mode: "list" });
+    if (others.length > 0) return;
+    setOthersLoading(true);
+    try {
+      setOthers(await fetchCharacters());
+      setErrorMessage(null);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "캐릭터 목록을 불러오지 못했습니다.");
+    } finally {
+      setOthersLoading(false);
+    }
+  }
+
   return <PageContainer max="4xl" className="space-y-8">
     {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-    <CharacterInfo characters={character ? [character] : []} loading={loading} showSelector={false} showId={false} />
+
+    {view.mode === "mine" && <>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          onClick={openList}
+          className="text-sm font-semibold text-muted transition-colors hover:text-gold"
+        >
+          다른 캐릭터 보러 가기 &gt;&gt;
+        </button>
+      </div>
+      <CharacterInfo characters={character ? [character] : []} loading={loading} showSelector={false} showId={false} />
+    </>}
+
+    {view.mode === "list" && <>
+      <div className="flex items-center justify-between">
+        <button
+          type="button"
+          onClick={() => setView({ mode: "mine" })}
+          className="text-sm font-semibold text-muted transition-colors hover:text-gold"
+        >
+          &lt;&lt; 내 캐릭터로 돌아가기
+        </button>
+        <p className="text-sm text-muted">캐릭터를 클릭하면 정보를 볼 수 있습니다.</p>
+      </div>
+      <CharacterList
+        characters={others}
+        loading={othersLoading}
+        onSelectCharacter={(selected) => setView({ mode: "other", character: selected })}
+      />
+    </>}
+
+    {view.mode === "other" && <>
+      <div className="flex justify-start">
+        <button
+          type="button"
+          onClick={openList}
+          className="text-sm font-semibold text-muted transition-colors hover:text-gold"
+        >
+          &lt;&lt; 캐릭터 목록으로
+        </button>
+      </div>
+      <CharacterInfo
+        key={view.character.id}
+        characters={[view.character]}
+        loading={false}
+        showSelector={false}
+        showId={false}
+        readOnly
+      />
+    </>}
   </PageContainer>;
 }
 

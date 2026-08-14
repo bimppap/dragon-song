@@ -92,7 +92,7 @@ export type ItemEffectStat =
   | "hp" | "hp_max" | "hp_max_p" | "hp_regen_true" | "hp_regen_fixed"
   | "mp" | "mp_max" | "mp_regen"
   | "atk" | "atk_p" | "def" | "def_p" | "def_eff"
-  | "attn" | "presence" | "heal_eff" | "heal_eff_p"
+  | "attn" | "presence" | "heal_eff"
   | "sh" | "dmg_p" | "dmg_r"
   | "skill_lv" | "skill_eff_true" | "skill_eff_fixed"
   | "skill_cost" | "skill_target"
@@ -126,7 +126,6 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "attn", label: "주목도" },
   { value: "presence", label: "존재감" },
   { value: "heal_eff", label: "치유 효율" },
-  { value: "heal_eff_p", label: "치유 효율 증폭" },
   { value: "sh", label: "보호막" },
   { value: "dmg_p", label: "피해 증폭" },
   { value: "dmg_r", label: "피해 감소" },
@@ -244,7 +243,6 @@ export interface Character {
   attn: number;
   presence: number;
   heal_eff: number;
-  heal_eff_p: number;
   sh: number;
   dmg_p: number;
   dmg_r: number;
@@ -260,7 +258,18 @@ export interface Character {
   act_time: number | null;
   over_heal: boolean | null;
 
+  // 관리자 전용 관리 플래그 (RUNNER 조회 시 null)
+  caution: boolean | null;
+  warning_count: number | null;
+  mission_passed: boolean | null;
+
   image_url: string | null;
+}
+
+export interface CharacterFlagsUpdate {
+  caution: boolean;
+  warning_count: number;
+  mission_passed: boolean;
 }
 
 export type CharacterCreate = Partial<Omit<Character, "id">> & {
@@ -433,6 +442,16 @@ export async function uploadCharacterImage(characterId: number, file: File): Pro
     throw new Error(err.detail ?? "캐릭터 이미지 업로드 실패");
   }
   return res.json();
+}
+
+export async function updateCharacterFlags(
+  characterId: number,
+  flags: CharacterFlagsUpdate,
+): Promise<Character> {
+  return request<Character>(`/characters/${characterId}/flags`, {
+    method: "PATCH",
+    body: JSON.stringify(flags),
+  }, "관리 플래그 저장 실패");
 }
 
 export async function createCharacter(data: CharacterCreate): Promise<Character> {
