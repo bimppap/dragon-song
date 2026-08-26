@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Image as ImageIcon, PlusCircle } from "lucide-react";
 import { createItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
 import type { Chapter, Item, ItemCreate, ItemType, Mission } from "@/lib/api";
@@ -210,10 +211,10 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
 
       <Field label="아이템 이미지">
         <div className="flex items-center gap-4">
-          <div className="flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+          <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
             {imagePreview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={imagePreview} alt="아이템 이미지 미리보기" className="size-full object-cover" />
+              // blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다.
+              <Image src={imagePreview} alt="아이템 이미지 미리보기" fill unoptimized className="object-cover" />
             ) : (
               <ImageIcon size={22} className="text-muted" />
             )}

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import Link from "next/link";
 import { LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,11 +44,13 @@ export default function LoginPage() {
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-3xl flex-col items-center justify-center gap-6 px-4 py-10 sm:px-6">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
+      <Image
         src="/dragonsong_title.png"
         alt="Dragon Song"
-        className="w-full max-w-3xl [image-rendering:pixelated]"
+        width={1080}
+        height={240}
+        priority
+        className="h-auto w-full max-w-3xl [image-rendering:pixelated]"
       />
       <Card className="w-full max-w-xs">
         <CardContent className="pt-5 pb-5">

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { CalendarCheck, Coins, House, LogIn, LogOut, Settings, Sparkles, Store, Swords, Trophy, Users, Wrench } from "lucide-react";
@@ -66,7 +67,7 @@ export default function Header() {
   return <>
     <div className="fixed left-5 top-5 z-50 flex items-start gap-3">
       {pathname !== "/" && <Link href="/" className="block shrink-0" aria-label="홈으로 이동">
-        <img src="/light.png" alt="Dragon Song 홈" className="h-9 w-auto object-contain" />
+        <Image src="/light.png" alt="Dragon Song 홈" width={200} height={200} className="h-9 w-auto object-contain" />
       </Link>}
       <ChapterMusicBar />
     </div>

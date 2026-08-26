@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
@@ -20,25 +21,31 @@ export default function CharacterOwnedSkills({ characterId, faction }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!faction) {
-      setLatestSkill(null);
-      setLoaded(true);
-      return;
-    }
     let cancelled = false;
-    setError(null);
-    setLoaded(false);
-    fetchCharacterSkillTree(characterId)
-      .then((tree) => {
+
+    async function load() {
+      if (!faction) {
+        if (!cancelled) {
+          setLatestSkill(null);
+          setLoaded(true);
+        }
+        return;
+      }
+      setError(null);
+      setLoaded(false);
+      try {
+        const tree = await fetchCharacterSkillTree(characterId);
         if (cancelled) return;
         setLatestSkill(tree.nodes.find((n) => n.id === tree.latest_unlocked_node_id) ?? null);
         setLoaded(true);
-      })
-      .catch((e) => {
+      } catch (e) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : "기술 조회 실패");
         setLoaded(true);
-      });
+      }
+    }
+
+    load();
     return () => { cancelled = true; };
   }, [characterId, faction]);
 
@@ -61,10 +68,9 @@ export default function CharacterOwnedSkills({ characterId, faction }: Props) {
             onClick={() => router.push("/battle?tab=skill")}
             className="flex w-16 cursor-pointer flex-col items-center gap-1.5 text-center"
           >
-            <span className="flex size-14 items-center justify-center overflow-hidden rounded-2xl border-2 border-gold bg-gold/10 text-gold transition-colors hover:bg-gold/15">
+            <span className="relative flex size-14 items-center justify-center overflow-hidden rounded-2xl border-2 border-gold bg-gold/10 text-gold transition-colors hover:bg-gold/15">
               {latestSkill.image_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={latestSkill.image_url} alt="" className="size-full object-cover" />
+                <Image src={latestSkill.image_url} alt="" fill sizes="56px" className="object-cover" />
               ) : (
                 <Sparkles size={22} />
               )}

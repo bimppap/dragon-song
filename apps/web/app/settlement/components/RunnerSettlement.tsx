@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { AlertTriangle, Link2, Minus, MessageSquareText, Plus, Send } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -189,11 +190,12 @@ export default function RunnerSettlement() {
                   </span>
                 </span>
               </AlertBanner>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
+              <Image
                 src="/log_example.png"
                 alt="게시물 URL 복사 위치 참고 사진"
-                className="w-full max-w-md rounded-xl border border-line"
+                width={1652}
+                height={268}
+                className="h-auto w-full max-w-md rounded-xl border border-line"
               />
 
               <div className="flex flex-col gap-2">

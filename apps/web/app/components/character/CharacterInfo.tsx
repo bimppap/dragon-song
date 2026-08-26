@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import {
   Award,
   Backpack,
@@ -47,7 +48,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage, useItem } from "@/lib/api";
+import { consumeItem, equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem } from "@/lib/api";
 
 interface Props {
@@ -511,8 +512,7 @@ export default function CharacterInfo({
               <div className="flex w-full shrink-0 flex-col gap-2 sm:w-40">
                 <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-line bg-inset">
                   {selectedDetail.image_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} className="size-full object-cover" />
+                    <Image src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} fill sizes="160px" className="object-cover" />
                   ) : (
                     <div className="flex size-full flex-col items-center justify-center gap-1 text-muted">
                       <ImageIcon size={30} />
@@ -713,7 +713,7 @@ export default function CharacterInfo({
                         item={item}
                         readOnly={readOnly}
                         loading={itemActionLoadingId === item.item_id}
-                        onUse={() => handleItemAction(item.item_id, useItem)}
+                        onUse={() => handleItemAction(item.item_id, consumeItem)}
                         onEquip={() => handleItemAction(item.item_id, equipItem)}
                         onUnequip={() => handleItemAction(item.item_id, unequipItem)}
                       />

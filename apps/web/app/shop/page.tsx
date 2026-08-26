@@ -5,7 +5,7 @@ import ShopGrid from "./components/ShopGrid";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
 import GiftCart from "./components/GiftCart";
-import { fetchCharacters, bulkPurchase, equipItem, sendAdminGift, useItem } from "@/lib/api";
+import { fetchCharacters, bulkPurchase, consumeItem, equipItem, sendAdminGift } from "@/lib/api";
 import type { Character, Item } from "@/lib/api";
 import {
   Select,
@@ -71,7 +71,7 @@ function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
           }
         } else if (item.item_type === "consumable") {
           if (await confirm({ title: "아이템 사용", description: `'${item.name}'을(를) 지금 사용하시겠습니까?` })) {
-            try { await useItem(characterId, item.id); }
+            try { await consumeItem(characterId, item.id); }
             catch (e) { await alert(e instanceof Error ? e.message : "사용 실패"); }
           }
         }

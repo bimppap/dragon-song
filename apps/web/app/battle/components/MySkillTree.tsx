@@ -34,19 +34,26 @@ export default function MySkillTree({ characterId }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchCharacterSkillTree(characterId)
-      .then(async (data) => {
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await fetchCharacterSkillTree(characterId);
         if (cancelled) return;
         setTree(data);
         const others = FACTIONS.filter((f) => f !== data.faction);
         const lists = await Promise.all(others.map((f) => fetchSkillNodes(f)));
         if (cancelled) return;
         setOtherNodes(Object.fromEntries(others.map((f, i) => [f, lists[i]])));
-      })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
     return () => { cancelled = true; };
   }, [characterId]);
 

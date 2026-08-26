@@ -553,7 +553,8 @@ export async function uploadItemImage(itemId: number, file: File): Promise<Item>
   return uploadFile<Item>(`/items/${itemId}/image`, file, "file", "이미지 업로드 실패");
 }
 
-export async function useItem(characterId: number, itemId: number): Promise<CharacterDetail> {
+// "use"로 시작하면 React Hook으로 오인되어 rules-of-hooks 린트 오탐이 발생하므로 consumeItem으로 명명한다.
+export async function consumeItem(characterId: number, itemId: number): Promise<CharacterDetail> {
   return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
     method: "POST",
   }, "아이템 사용 실패");

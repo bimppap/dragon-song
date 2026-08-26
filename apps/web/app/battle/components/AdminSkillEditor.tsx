@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Check, Image as ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,15 +36,22 @@ export default function AdminSkillEditor() {
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    Promise.all(FACTIONS.map((f) => fetchSkillNodes(f)))
-      .then((lists) => {
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const lists = await Promise.all(FACTIONS.map((f) => fetchSkillNodes(f)));
         if (cancelled) return;
         setNodesByFaction(Object.fromEntries(FACTIONS.map((f, i) => [f, lists[i]])) as Record<Faction, SkillNode[]>);
-      })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
     return () => { cancelled = true; };
   }, []);
 
@@ -144,10 +152,10 @@ export default function AdminSkillEditor() {
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 이미지</label>
             <div className="flex items-center gap-4">
-              <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+              <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
                 {imagePreview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={imagePreview} alt="기술 이미지 미리보기" className="size-full object-cover" />
+                  // blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다.
+                  <Image src={imagePreview} alt="기술 이미지 미리보기" fill unoptimized className="object-cover" />
                 ) : (
                   <ImageIcon size={20} className="text-muted" />
                 )}

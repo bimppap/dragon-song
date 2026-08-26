@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CalendarCheck, CalendarDays, Coins, Settings, ShoppingBag, Swords, Users } from "lucide-react";
@@ -37,8 +38,22 @@ export default function HomePage() {
     <main className="home-adventure-bg relative z-10 mx-auto flex min-h-screen w-full max-w-5xl flex-col items-center gap-10 px-4 py-8 sm:px-6 sm:py-12">
       <HomeFlamefall />
       <div aria-hidden className="home-dragon-watermark home-dragon-watermark-left" />
-      <img aria-hidden src="/dragon-dots-moss.png" alt="" className="home-dragon-watermark home-dragon-watermark-right" />
-      <img src="/dragonsong_title.png" alt="Dragon Song" className="-mb-8 mx-auto w-full max-w-4xl select-none object-contain" />
+      <Image
+        aria-hidden
+        src="/dragon-dots-moss.png"
+        alt=""
+        width={1254}
+        height={1254}
+        className="home-dragon-watermark home-dragon-watermark-right"
+      />
+      <Image
+        src="/dragonsong_title.png"
+        alt="Dragon Song"
+        width={1080}
+        height={240}
+        priority
+        className="-mb-8 mx-auto w-full max-w-4xl select-none object-contain"
+      />
 
       <section className="grid w-full gap-4 lg:h-[28rem] lg:grid-cols-[minmax(0,1.7fr)_minmax(240px,1fr)] lg:items-stretch">
         <div className="order-1 flex min-h-[18rem] flex-col gap-0.5 overflow-hidden lg:h-full lg:min-h-0">
@@ -51,8 +66,14 @@ export default function HomePage() {
             ))}
           </nav>
           <div className="group relative min-h-0 flex-1">
-            <img src="/map.png" alt="Dragon Song 지도" className="absolute inset-0 size-full object-contain" />
-            <img src="/map2.png" alt="" aria-hidden="true" className="absolute inset-0 size-full object-contain opacity-0 transition-opacity duration-150 group-hover:opacity-100" />
+            <Image src="/map.png" alt="Dragon Song 지도" fill className="object-contain" />
+            <Image
+              src="/map2.png"
+              alt=""
+              aria-hidden="true"
+              fill
+              className="object-contain opacity-0 transition-opacity duration-150 group-hover:opacity-100"
+            />
           </div>
         </div>
 
@@ -67,11 +88,13 @@ export default function HomePage() {
             <HomeChapterCalendar chapters={chapters} initialMonth={calendarMonth} />
           </section>
 
-          <div className="flex min-h-0 flex-[2] items-center justify-center">
-            <img
+          <div className="relative flex min-h-0 flex-[2] items-center justify-center">
+            <Image
               src={activeChapter?.image_url ?? "/title_0.png"}
               alt={activeChapter ? `${activeChapter.name} 챕터 이미지` : "진행 중인 챕터 없음"}
-              className="block max-h-full w-full object-contain"
+              fill
+              sizes="(min-width: 1024px) 30vw, 90vw"
+              className="object-contain"
             />
           </div>
         </div>

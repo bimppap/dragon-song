@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
@@ -152,7 +153,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
             >
               <span
                 className={cn(
-                  "flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-surface transition-colors",
+                  "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-surface transition-colors",
                   highlighted
                     ? "border-gold bg-[#3b321f] text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
                     : disabled ? "border-line bg-inset text-muted" : "border-line text-muted",
@@ -160,8 +161,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 )}
               >
                 {node.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={node.image_url} alt="" className="size-full object-cover" />
+                  <Image src={node.image_url} alt="" fill sizes="40px" className="object-cover" />
                 ) : (
                   <Sparkles size={18} />
                 )}

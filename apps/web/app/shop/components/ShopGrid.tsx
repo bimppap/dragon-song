@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Package, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,8 +36,11 @@ function PriceText({ item }: { item: Item }) {
 
 function ItemImage({ url, className }: { url: string | null; className: string }) {
   if (url) {
-    // eslint-disable-next-line @next/next/no-img-element
-    return <img src={url} alt="" className={`${className} object-cover`} />;
+    return (
+      <span className={`${className} relative block overflow-hidden`}>
+        <Image src={url} alt="" fill sizes="112px" className="object-cover" />
+      </span>
+    );
   }
   return (
     <div className={`${className} flex items-center justify-center bg-gold/10 text-gold`}>
@@ -70,11 +74,20 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    fetchItems(characterId)
-      .then((list) => { if (!cancelled) setItems(list); })
-      .catch(console.error)
-      .finally(() => { if (!cancelled) setLoading(false); });
+
+    async function load() {
+      setLoading(true);
+      try {
+        const list = await fetchItems(characterId);
+        if (!cancelled) setItems(list);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
     return () => { cancelled = true; };
   }, [characterId, refreshKey]);
 
