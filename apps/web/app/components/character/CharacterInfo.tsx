@@ -71,8 +71,8 @@ const CORE_STATS: {
 }[] = [
   { key: "stat_courage", label: "용기", icon: Flame, accent: "text-red-500" },
   { key: "stat_endurance", label: "인내", icon: Shield, accent: "text-blue-500" },
-  { key: "stat_charity", label: "자애", icon: HeartHandshake, accent: "text-pink-500" },
-  { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-gold" },
+  { key: "stat_charity", label: "자애", icon: HeartHandshake, accent: "text-emerald-500" },
+  { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-purple-500" },
 ];
 
 const RANK_GRADES = [

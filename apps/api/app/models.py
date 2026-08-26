@@ -55,12 +55,29 @@ class Member(Base):
     )
 
 
+class RefreshToken(Base):
+    """7일짜리 refresh token. 로그아웃/재발급 시 revoked_at을 채워 무효화한다."""
+
+    __tablename__ = "refresh_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    token: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    member_id: Mapped[int] = mapped_column(Integer, ForeignKey("members.id"), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
 class Character(Base):
     __tablename__ = "characters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
-    gold: Mapped[int] = mapped_column(Integer, nullable=False, default=1000)
+    gold: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     ap: Mapped[int] = mapped_column(
         Integer,
@@ -152,6 +169,8 @@ class Item(Base):
     )
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL
     effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
+    # 챕터·재고와 무관하게 즉시 판매를 중단한다. 러너에게는 노출 자체를 하지 않는다.
+    sale_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -384,7 +403,7 @@ class SettlementRequest(Base):
 
 
 class AttendanceEntry(Base):
-    """캐릭터가 직접 남기는 출석 기록. 하루에 캐릭터당 1건."""
+    """관리자가 캐릭터를 선택해 남기는 출석 기록. 하루에 캐릭터당 1건."""
 
     __tablename__ = "attendance_entries"
     __table_args__ = (
@@ -394,33 +413,11 @@ class AttendanceEntry(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     attendance_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
-    message: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    reward_paid: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
-    )
-
-
-class AttendanceMission(Base):
-    """관리자가 날짜별로 등록하는 출석미션 문구."""
-
-    __tablename__ = "attendance_missions"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    mission_date: Mapped[date] = mapped_column(Date, nullable=False, unique=True, index=True)
-    content: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
     )
 
 
@@ -437,6 +434,36 @@ class AttendanceRecord(Base):
         nullable=False,
         default=False,
         server_default=text("false"),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class BattleSession(Base):
+    """전투 진행 상태. 모의전/실전 모두 서버가 이 스냅샷으로 라운드를 계산한다."""
+
+    __tablename__ = "battle_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    mode: Mapped[str] = mapped_column(String, nullable=False)  # "practice" | "real"
+    chapter: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="in_progress", server_default=text("'in_progress'")
+    )  # "in_progress" | "victory" | "defeat"
+    round: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    enemies: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    summons: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    participants: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    log: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("members.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

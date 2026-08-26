@@ -3,14 +3,13 @@
 import { useEffect, useState } from "react";
 import {
   ClipboardList,
-  Eye,
-  EyeOff,
   Gift,
   Pencil,
   PlusSquare,
   Save,
   Target,
   Trophy,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,6 +39,7 @@ import {
   fetchItems,
   payChallengeRewards,
   saveChallengeProgress,
+  updateChallenge,
 } from "@/lib/api";
 import type {
   Challenge,
@@ -55,6 +55,7 @@ import { useRequireMember } from "@/lib/auth";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import AlertBanner from "@/components/common/AlertBanner";
+import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import RewardComposer, { type RewardFormEntry } from "@/components/common/RewardComposer";
 
@@ -154,6 +155,26 @@ function toVisibilityText(isPublic: boolean): ChallengeVisibility {
   return isPublic ? "공개" : "비공개";
 }
 
+function toRewardEntries(rewardItems: Challenge["reward_items"]): RewardFormEntry[] {
+  return rewardItems.map((grant, index) => {
+    const id = `edit-${index}-${Math.random().toString(36).slice(2)}`;
+    return grant.type === "item"
+      ? { id, type: "item", item_id: String(grant.item_id), quantity: String(grant.quantity) }
+      : { id, type: "stat", stat: grant.stat, amount: String(grant.amount) };
+  });
+}
+
+function toChallengeFormState(challenge: Challenge): ChallengeFormState {
+  return {
+    chapter: challenge.chapter,
+    name: challenge.name,
+    description: challenge.description,
+    reward: challenge.reward,
+    reward_entries: toRewardEntries(challenge.reward_items),
+    visibility: challenge.is_public ? "공개" : "비공개",
+  };
+}
+
 function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
   const rewardItems = form.reward_entries.flatMap<RewardGrant>((entry) => {
     if (entry.type === "item") {
@@ -186,6 +207,7 @@ export function ChallengeAdmin() {
   const [items, setItems] = useState<Item[]>([]);
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [form, setForm] = useState<ChallengeFormState>(DEFAULT_FORM);
+  const [editingChallengeId, setEditingChallengeId] = useState<number | null>(null);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
   const [progressEntries, setProgressEntries] = useState<ChallengeProgress[]>([]);
@@ -308,28 +330,36 @@ export function ChallengeAdmin() {
 
     try {
       setSubmittingChallenge(true);
-      const createdChallenge = await createChallenge(payload);
-
-      setChallenges((prev) => [...prev, createdChallenge]);
-      setSelectedChapter(createdChallenge.chapter);
-      setSelectedChallengeId(createdChallenge.id);
-      setForm({
-        chapter: createdChallenge.chapter,
-        name: "",
-        description: "",
-        reward: "",
-        reward_entries: [],
-        visibility: "공개",
-      });
+      if (editingChallengeId != null) {
+        const updated = await updateChallenge(editingChallengeId, payload);
+        setChallenges((prev) => prev.map((c) => (c.id === editingChallengeId ? updated : c)));
+        setEditingChallengeId(null);
+      } else {
+        const createdChallenge = await createChallenge(payload);
+        setChallenges((prev) => [...prev, createdChallenge]);
+        setSelectedChapter(createdChallenge.chapter);
+        setSelectedChallengeId(createdChallenge.id);
+      }
+      setForm({ ...DEFAULT_FORM, chapter: payload.chapter });
       setErrorMessage(null);
     } catch (error) {
       console.error(error);
       setErrorMessage(
-        error instanceof Error ? error.message : "도전과제 생성에 실패했습니다.",
+        error instanceof Error ? error.message : "도전과제 저장에 실패했습니다.",
       );
     } finally {
       setSubmittingChallenge(false);
     }
+  }
+
+  function handleEditChallengeClick(challenge: Challenge) {
+    setEditingChallengeId(challenge.id);
+    setForm(toChallengeFormState(challenge));
+  }
+
+  function handleCancelEditChallenge() {
+    setEditingChallengeId(null);
+    setForm(DEFAULT_FORM);
   }
 
   async function handlePayChallengeReward() {
@@ -460,6 +490,7 @@ export function ChallengeAdmin() {
                         <th className="px-4 py-3 text-left font-semibold">내용</th>
                         <th className="px-4 py-3 text-left font-semibold">보상</th>
                         <th className="px-4 py-3 text-left font-semibold">상태</th>
+                        <th className="px-4 py-3 text-left font-semibold" />
                       </tr>
                     </thead>
                     <tbody>
@@ -485,6 +516,17 @@ export function ChallengeAdmin() {
                               {toVisibilityText(challenge.is_public)}
                             </Badge>
                           </td>
+                          <td className="px-4 py-4">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEditChallengeClick(challenge)}
+                            >
+                              <Pencil size={13} />
+                              수정
+                            </Button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -499,11 +541,21 @@ export function ChallengeAdmin() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>과제 추가</CardTitle>
-              <CardDescription>
-                새 도전과제를 등록하면 현황 탭에서 즉시 조회할 수 있습니다.
-              </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>{editingChallengeId != null ? "과제 수정" : "과제 추가"}</CardTitle>
+                <CardDescription>
+                  {editingChallengeId != null
+                    ? "선택한 도전과제의 내용을 수정합니다."
+                    : "새 도전과제를 등록하면 현황 탭에서 즉시 조회할 수 있습니다."}
+                </CardDescription>
+              </div>
+              {editingChallengeId != null && (
+                <Button type="button" variant="ghost" size="sm" onClick={handleCancelEditChallenge}>
+                  <X size={13} />
+                  취소
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               <form className="flex flex-col gap-4" onSubmit={handleAddChallenge}>
@@ -587,7 +639,7 @@ export function ChallengeAdmin() {
 
                 <Button type="submit" className="w-full" disabled={submittingChallenge}>
                   <PlusSquare size={15} />
-                  {submittingChallenge ? "추가 중..." : "도전과제 추가"}
+                  {submittingChallenge ? "저장 중..." : editingChallengeId != null ? "도전과제 수정 저장" : "도전과제 추가"}
                 </Button>
               </form>
             </CardContent>
@@ -729,59 +781,51 @@ export function ChallengeAdmin() {
                     도전과제 현황을 불러오는 중입니다.
                   </EmptyState>
                 ) : visibleProgress.length > 0 ? (
-                  <div className="flex flex-col gap-3">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                     {visibleProgress.map((entry) => (
                       <div
                         key={entry.character_id}
-                        className="rounded-2xl border border-line px-4 py-4"
+                        className="flex flex-col items-center gap-2 rounded-2xl border border-line px-3 py-4"
                       >
-                        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                          <div className="flex flex-col gap-1">
-                            <p className="text-base font-semibold text-ivory">
-                              {entry.character_name}
-                            </p>
-                            <div className="flex items-center gap-2">
-                              <Badge
-                                variant={entry.achieved ? "success" : "secondary"}
-                              >
-                                {entry.achieved ? "달성" : "미달성"}
-                              </Badge>
-                              <span className="flex items-center gap-1 text-xs text-muted">
-                                {entry.achieved ? <Eye size={13} /> : <EyeOff size={13} />}
-                                {entry.achieved ? "보상 대상" : "진행 필요"}
-                              </span>
-                            </div>
+                        <div className="relative">
+                          <CharacterAvatar
+                            src={entry.character_image_url}
+                            alt={entry.character_name}
+                            className={cn(
+                              "size-16 rounded-xl transition-all",
+                              !entry.achieved && "grayscale opacity-60",
+                            )}
+                            iconSize={24}
+                          />
+                          <div className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 shadow-sm">
+                            <Checkbox
+                              checked={entry.achieved}
+                              disabled={!isEditingProgress}
+                              onCheckedChange={(checked) =>
+                                updateProgressDraft(entry.character_id, {
+                                  achieved: checked === true,
+                                })
+                              }
+                            />
                           </div>
-
-                          {isEditingProgress ? (
-                            <div className="flex w-full flex-col gap-3 lg:max-w-md">
-                              <label className="flex items-center gap-2 text-sm font-medium text-ivory">
-                                <Checkbox
-                                  checked={entry.achieved}
-                                  onCheckedChange={(checked) =>
-                                    updateProgressDraft(entry.character_id, {
-                                      achieved: checked === true,
-                                    })
-                                  }
-                                />
-                                달성 여부
-                              </label>
-                              <Input
-                                value={entry.memo}
-                                onChange={(event) =>
-                                  updateProgressDraft(entry.character_id, {
-                                    memo: event.target.value,
-                                  })
-                                }
-                                placeholder="메모를 입력하세요."
-                              />
-                            </div>
-                          ) : (
-                            <div className="w-full rounded-xl bg-inset px-4 py-3 text-sm text-ivory/85 lg:max-w-md">
-                              {entry.memo || "메모 없음"}
-                            </div>
-                          )}
                         </div>
+                        <p className="w-full truncate text-center text-sm font-semibold text-ivory">
+                          {entry.character_name}
+                        </p>
+                        {isEditingProgress ? (
+                          <Input
+                            value={entry.memo}
+                            onChange={(event) =>
+                              updateProgressDraft(entry.character_id, {
+                                memo: event.target.value,
+                              })
+                            }
+                            placeholder="메모"
+                            className="h-7 text-xs"
+                          />
+                        ) : entry.memo ? (
+                          <p className="w-full truncate text-center text-xs text-muted">{entry.memo}</p>
+                        ) : null}
                       </div>
                     ))}
                   </div>

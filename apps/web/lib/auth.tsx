@@ -5,12 +5,13 @@ import { useRouter } from "next/navigation";
 import {
   fetchMe,
   login as apiLogin,
+  logoutRequest,
   signup as apiSignup,
   type LoginRequest,
   type Member,
   type SignupRequest,
 } from "./api";
-import { clearToken, getToken, setToken } from "./token";
+import { clearToken, getRefreshToken, getToken, setRefreshToken, setToken } from "./token";
 
 interface AuthContextValue {
   member: Member | null | undefined; // undefined = 확인 중, null = 비로그인
@@ -39,12 +40,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    let cancelled = false;
+
+    async function loadInitialMember() {
+      if (!getToken()) {
+        if (!cancelled) setMember(null);
+        return;
+      }
+      try {
+        const me = await fetchMe();
+        if (!cancelled) setMember(me);
+      } catch {
+        if (!cancelled) {
+          clearToken();
+          setMember(null);
+        }
+      }
+    }
+
+    loadInitialMember();
+    return () => { cancelled = true; };
+  }, []);
 
   async function login(data: LoginRequest) {
     const res = await apiLogin(data);
     setToken(res.access_token);
+    setRefreshToken(res.refresh_token);
     setMember(res.member);
     return res.member;
   }
@@ -54,8 +75,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   function logout() {
+    const refreshToken = getRefreshToken();
     clearToken();
     setMember(null);
+    if (refreshToken) {
+      // 서버 쪽 refresh token도 무효화한다. 실패해도 로컬 로그아웃은 이미 끝난 상태라 무시한다.
+      logoutRequest(refreshToken).catch(() => {});
+    }
   }
 
   return (

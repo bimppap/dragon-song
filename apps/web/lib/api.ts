@@ -1,17 +1,79 @@
-import { getToken } from "./token";
+import { clearToken, getRefreshToken, getToken, setToken } from "./token";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// 액세스 토큰(1시간) 만료 시 refresh token(7일)으로 한 번 재발급을 시도한 뒤 재요청한다.
+// 동시에 여러 요청이 401을 받아도 재발급은 한 번만 일어나도록 진행 중인 시도를 공유한다.
+let refreshInFlight: Promise<boolean> | null = null;
+
+async function tryRefreshAccessToken(): Promise<boolean> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      const refreshToken = getRefreshToken();
+      if (!refreshToken) return false;
+      try {
+        const res = await fetch(`${API_URL}/auth/refresh`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+        if (!res.ok) {
+          clearToken();
+          return false;
+        }
+        const data = await res.json();
+        setToken(data.access_token);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+/** 인증 헤더를 붙여 fetch하고, 401이면 액세스 토큰을 한 번 재발급받아 재시도한다. */
+async function authorizedFetch(path: string, init?: RequestInit): Promise<Response> {
+  const attempt = () => {
+    const token = getToken();
+    return fetch(`${API_URL}${path}`, {
+      ...init,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...init?.headers,
+      },
+    });
+  };
+
+  let res = await attempt();
+  if (res.status === 401 && getRefreshToken() && (await tryRefreshAccessToken())) {
+    res = await attempt();
+  }
+  return res;
+}
+
 async function request<T>(path: string, init?: RequestInit, errorMessage = "요청 처리에 실패했습니다."): Promise<T> {
-  const token = getToken();
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await authorizedFetch(path, {
     ...init,
     headers: {
       ...(init?.body ? { "Content-Type": "application/json" } : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...init?.headers,
     },
   });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? errorMessage);
+  }
+  return res.json();
+}
+
+/** 파일 업로드 전용: FormData 본문 + 인증 헤더 재시도를 공유한다(캐릭터/아이템/챕터/기술 이미지 업로드에서 재사용). */
+async function uploadFile<T>(path: string, file: File, fieldName = "file", errorMessage = "업로드 실패"): Promise<T> {
+  const formData = new FormData();
+  formData.append(fieldName, file);
+  const res = await authorizedFetch(path, { method: "POST", body: formData });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.detail ?? errorMessage);
@@ -42,6 +104,7 @@ export interface LoginRequest {
 
 export interface TokenResponse {
   access_token: string;
+  refresh_token: string;
   token_type: string;
   member: Member;
 }
@@ -73,6 +136,13 @@ export async function fetchMe(): Promise<Member> {
   return request<Member>("/auth/me", undefined, "내 정보 조회 실패");
 }
 
+export async function logoutRequest(refreshToken: string): Promise<void> {
+  await request("/auth/logout", {
+    method: "POST",
+    body: JSON.stringify({ refresh_token: refreshToken }),
+  }, "로그아웃 실패");
+}
+
 export async function createMyCharacter(data: CharacterOnboardingCreate): Promise<Character> {
   return request<Character>("/members/me/character", {
     method: "POST",
@@ -89,7 +159,7 @@ export type ItemType = "consumable" | "equipment";
 export type ItemEffectStat =
   | "lv" | "rank" | "exp" | "gold" | "cp" | "ap"
   | "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom"
-  | "hp" | "hp_max" | "hp_max_p" | "hp_regen_true" | "hp_regen_fixed"
+  | "hp" | "hp_max" | "hp_max_p" | "hp_heal_p" | "hp_regen_true" | "hp_regen_fixed"
   | "mp" | "mp_max" | "mp_regen"
   | "atk" | "atk_p" | "def" | "def_p" | "def_eff"
   | "attn" | "presence" | "heal_eff"
@@ -113,6 +183,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "hp", label: "현재 체력" },
   { value: "hp_max", label: "최대 체력" },
   { value: "hp_max_p", label: "체력 증폭(%)" },
+  { value: "hp_heal_p", label: "체력 회복(%)" },
   { value: "hp_regen_true", label: "체력 재생력(고정)" },
   { value: "hp_regen_fixed", label: "체력 재생력(비례)" },
   { value: "mp", label: "마나" },
@@ -172,6 +243,7 @@ export interface Item {
   restricted_mission_id: number | null;
   image_url: string | null;
   effects: ItemEffect[];
+  sale_paused: boolean;
   created_at: string;
   purchased_by_character: number;
   purchased_total: number;
@@ -192,6 +264,7 @@ export interface ItemCreate {
   item_type: ItemType;
   restricted_mission_id: number | null;
   effects: ItemEffect[];
+  sale_paused: boolean;
 }
 
 export interface Purchase {
@@ -368,6 +441,7 @@ export interface RewardPayResult {
 export interface ChallengeProgress {
   character_id: number;
   character_name: string;
+  character_image_url: string | null;
   achieved: boolean;
   memo: string;
 }
@@ -384,21 +458,13 @@ export interface AttendanceEntry {
   character_id: number;
   character_name: string;
   character_image_url: string | null;
-  message: string;
-  rank: number | null;
+  reward_paid: boolean;
   created_at: string;
-  updated_at: string;
 }
 
-export interface AttendanceMission {
-  mission_date: string;
-  content: string;
-}
-
-export interface AttendanceCharacterBrief {
-  id: number;
-  name: string;
-  image_url: string | null;
+export interface AttendanceRewardPayResult {
+  paid_count: number;
+  entries: AttendanceEntry[];
 }
 
 export interface AttendanceStreakEntry {
@@ -406,13 +472,7 @@ export interface AttendanceStreakEntry {
   character_name: string;
   character_image_url: string | null;
   streak: number;
-}
-
-export interface AttendanceSummary {
-  attendance_date: string;
-  attended: AttendanceCharacterBrief[];
-  absent: AttendanceCharacterBrief[];
-  streaks: AttendanceStreakEntry[];
+  rank: number;
 }
 
 export interface CartItem {
@@ -429,19 +489,7 @@ export async function fetchCharacterDetail(characterId: number): Promise<Charact
 }
 
 export async function uploadCharacterImage(characterId: number, file: File): Promise<CharacterDetail> {
-  const token = getToken();
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${API_URL}/characters/${characterId}/image`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "캐릭터 이미지 업로드 실패");
-  }
-  return res.json();
+  return uploadFile<CharacterDetail>(`/characters/${characterId}/image`, file, "file", "캐릭터 이미지 업로드 실패");
 }
 
 export async function updateCharacterFlags(
@@ -461,47 +509,25 @@ export async function createCharacter(data: CharacterCreate): Promise<Character>
   }, "캐릭터 생성 실패");
 }
 
-export async function fetchAttendanceEntries(attendanceDate: string): Promise<AttendanceEntry[]> {
-  const params = new URLSearchParams({ attendance_date: attendanceDate });
-  return request<AttendanceEntry[]>(`/attendance/entries?${params}`, undefined, "출석 데이터 조회 실패");
+export async function fetchAttendanceEntries(): Promise<AttendanceEntry[]> {
+  return request<AttendanceEntry[]>("/attendance/entries", undefined, "출석 목록 조회 실패");
 }
 
-export async function createAttendanceEntry(attendanceDate: string, message: string): Promise<AttendanceEntry[]> {
+export async function createAttendanceEntry(characterId: number, attendanceDate: string): Promise<AttendanceEntry[]> {
   return request<AttendanceEntry[]>("/attendance/entries", {
     method: "POST",
-    body: JSON.stringify({ attendance_date: attendanceDate, message }),
-  }, "출석 실패");
+    body: JSON.stringify({ character_id: characterId, attendance_date: attendanceDate }),
+  }, "출석 처리 실패");
 }
 
-export async function updateAttendanceEntry(entryId: number, message: string): Promise<AttendanceEntry[]> {
-  return request<AttendanceEntry[]>(`/attendance/entries/${entryId}`, {
-    method: "PUT",
-    body: JSON.stringify({ message }),
-  }, "출석 수정 실패");
+export async function payAttendanceRewards(): Promise<AttendanceRewardPayResult> {
+  return request<AttendanceRewardPayResult>("/attendance/rewards/pay", {
+    method: "POST",
+  }, "출석 보상 전송 실패");
 }
 
-export async function deleteAttendanceEntry(entryId: number): Promise<AttendanceEntry[]> {
-  return request<AttendanceEntry[]>(`/attendance/entries/${entryId}`, {
-    method: "DELETE",
-  }, "출석 삭제 실패");
-}
-
-export async function fetchAttendanceMission(missionDate: string): Promise<AttendanceMission | null> {
-  const params = new URLSearchParams({ mission_date: missionDate });
-  return request<AttendanceMission | null>(`/attendance/mission?${params}`, undefined, "출석미션 조회 실패");
-}
-
-export async function saveAttendanceMission(missionDate: string, content: string): Promise<AttendanceMission | null> {
-  const params = new URLSearchParams({ mission_date: missionDate });
-  return request<AttendanceMission | null>(`/attendance/mission?${params}`, {
-    method: "PUT",
-    body: JSON.stringify({ content }),
-  }, "출석미션 저장 실패");
-}
-
-export async function fetchAttendanceSummary(attendanceDate: string): Promise<AttendanceSummary> {
-  const params = new URLSearchParams({ attendance_date: attendanceDate });
-  return request<AttendanceSummary>(`/attendance/summary?${params}`, undefined, "출석 현황 조회 실패");
+export async function fetchAttendanceStreakRanking(): Promise<AttendanceStreakEntry[]> {
+  return request<AttendanceStreakEntry[]>("/attendance/streak-ranking", undefined, "연속 출석 순위 조회 실패");
 }
 
 export async function fetchItems(character_id?: number): Promise<Item[]> {
@@ -524,19 +550,7 @@ export async function updateItem(itemId: number, data: ItemCreate): Promise<Item
 }
 
 export async function uploadItemImage(itemId: number, file: File): Promise<Item> {
-  const token = getToken();
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${API_URL}/items/${itemId}/image`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "이미지 업로드 실패");
-  }
-  return res.json();
+  return uploadFile<Item>(`/items/${itemId}/image`, file, "file", "이미지 업로드 실패");
 }
 
 export async function useItem(characterId: number, itemId: number): Promise<CharacterDetail> {
@@ -569,6 +583,13 @@ export async function createChallenge(data: ChallengeCreate): Promise<Challenge>
     method: "POST",
     body: JSON.stringify(data),
   }, "도전과제 생성 실패");
+}
+
+export async function updateChallenge(challengeId: number, data: ChallengeCreate): Promise<Challenge> {
+  return request<Challenge>(`/challenges/${challengeId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }, "도전과제 수정 실패");
 }
 
 export async function fetchChallengeProgress(challengeId: number): Promise<ChallengeProgress[]> {
@@ -725,6 +746,7 @@ export interface MissionCreate {
 export interface MissionProgress {
   character_id: number;
   character_name: string;
+  character_image_url: string | null;
   achieved: boolean;
   memo: string;
 }
@@ -747,6 +769,13 @@ export async function createMission(data: MissionCreate): Promise<Mission> {
     method: "POST",
     body: JSON.stringify(data),
   }, "임무 생성 실패");
+}
+
+export async function updateMission(missionId: number, data: MissionCreate): Promise<Mission> {
+  return request<Mission>(`/missions/${missionId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }, "임무 수정 실패");
 }
 
 export async function fetchMissionProgress(missionId: number): Promise<MissionProgress[]> {
@@ -793,54 +822,52 @@ export interface ChapterCreate {
   music_url?: string | null;
 }
 
+// 챕터 목록은 자주 조회되지만 거의 바뀌지 않으므로 짧게 캐싱해 페이지 이동마다 재조회하지 않는다.
+// 생성/수정/이미지·음원 업로드 시에는 즉시 무효화해 관리자가 바로 최신 상태를 본다.
+const CHAPTER_CACHE_TTL_MS = 60_000;
+let chapterCache: { data: Chapter[]; expiresAt: number } | null = null;
+
+function invalidateChapterCache() {
+  chapterCache = null;
+}
+
 export async function fetchChapters(): Promise<Chapter[]> {
-  return request<Chapter[]>("/chapters", undefined, "챕터 조회 실패");
+  if (chapterCache && Date.now() < chapterCache.expiresAt) {
+    return chapterCache.data;
+  }
+  const data = await request<Chapter[]>("/chapters", undefined, "챕터 조회 실패");
+  chapterCache = { data, expiresAt: Date.now() + CHAPTER_CACHE_TTL_MS };
+  return data;
 }
 
 export async function createChapter(data: ChapterCreate): Promise<Chapter> {
-  return request<Chapter>("/chapters", {
+  const created = await request<Chapter>("/chapters", {
     method: "POST",
     body: JSON.stringify(data),
   }, "챕터 생성 실패");
+  invalidateChapterCache();
+  return created;
 }
 
 export async function updateChapter(chapterId: number, data: ChapterCreate): Promise<Chapter> {
-  return request<Chapter>(`/chapters/${chapterId}`, {
+  const updated = await request<Chapter>(`/chapters/${chapterId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "챕터 수정 실패");
+  invalidateChapterCache();
+  return updated;
 }
 
 export async function uploadChapterImage(chapterId: number, file: File): Promise<Chapter> {
-  const token = getToken();
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${API_URL}/chapters/${chapterId}/image`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "챕터 이미지 업로드 실패");
-  }
-  return res.json();
+  const updated = await uploadFile<Chapter>(`/chapters/${chapterId}/image`, file, "file", "챕터 이미지 업로드 실패");
+  invalidateChapterCache();
+  return updated;
 }
 
 export async function uploadChapterMusic(chapterId: number, file: File): Promise<Chapter> {
-  const token = getToken();
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${API_URL}/chapters/${chapterId}/music`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "챕터 음원 업로드 실패");
-  }
-  return res.json();
+  const updated = await uploadFile<Chapter>(`/chapters/${chapterId}/music`, file, "file", "챕터 음원 업로드 실패");
+  invalidateChapterCache();
+  return updated;
 }
 
 export async function fetchActiveChapter(): Promise<Chapter | null> {
@@ -894,6 +921,131 @@ export async function createEnemy(data: EnemyCreate): Promise<Enemy> {
   }, "에너미 생성 실패");
 }
 
+export type BattleMode = "practice" | "real";
+export type BattleStatus = "in_progress" | "victory" | "defeat";
+export type CharacterActionKind = "attack" | "skill" | "defend" | "heal" | "item" | "none" | "retreat";
+export type EnemyActionKind = "attack" | "summon" | "none";
+
+export interface BattleEnemyState {
+  enemy_id: number;
+  name: string;
+  attack: number;
+  hp: number;
+  max_hp: number;
+  skills: EnemySkill[];
+}
+
+export interface BattleSummonState {
+  id: number;
+  name: string;
+  hp: number;
+  max_hp: number;
+  attack: number;
+}
+
+export interface BattleParticipant {
+  character_id: number;
+  name: string;
+  image_url: string | null;
+  faction: Faction | null;
+  atk: number; atk_p: number; dmg_p: number;
+  skill_lv: number; skill_eff_true: number; skill_eff_fixed: number; skill_cost: number;
+  def: number; def_p: number; def_eff: number; dmg_r: number;
+  heal_eff: number; skill_target: number; over_heal: boolean;
+  attn: number; presence: number;
+  hp: number; max_hp: number; shield: number;
+  mp: number; max_mp: number;
+  hp_regen_true: number; hp_regen_fixed: number; mp_regen: number;
+  downed: boolean; retreated: boolean; joined_round: number;
+}
+
+export interface BattleLogRound {
+  round: number;
+  events: string[];
+}
+
+export interface BattleSession {
+  id: number;
+  mode: BattleMode;
+  chapter: string | null;
+  status: BattleStatus;
+  round: number;
+  enemies: BattleEnemyState[];
+  summons: BattleSummonState[];
+  participants: BattleParticipant[];
+  log: BattleLogRound[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BattleSessionSummary {
+  id: number;
+  mode: BattleMode;
+  chapter: string | null;
+  status: BattleStatus;
+  round: number;
+  enemy_names: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BattleStartRequest {
+  mode: BattleMode;
+  enemy_ids: number[];
+  character_ids: number[];
+}
+
+export interface BattleCharacterActionInput {
+  character_id: number;
+  kind: CharacterActionKind;
+  target_enemy_id?: number | null;
+  target_character_id?: number | null;
+  item_id?: number | null;
+}
+
+export interface BattleEnemyActionInput {
+  enemy_id: number;
+  kind: EnemyActionKind;
+  skill_index?: number | null;
+}
+
+export async function fetchBattles(params?: { mode?: BattleMode; status?: BattleStatus }): Promise<BattleSessionSummary[]> {
+  const search = new URLSearchParams();
+  if (params?.mode) search.set("mode", params.mode);
+  if (params?.status) search.set("status", params.status);
+  const query = search.toString() ? `?${search}` : "";
+  return request<BattleSessionSummary[]>(`/battles${query}`, undefined, "전투 목록 조회 실패");
+}
+
+export async function fetchBattle(sessionId: number): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}`, undefined, "전투 조회 실패");
+}
+
+export async function createBattle(data: BattleStartRequest): Promise<BattleSession> {
+  return request<BattleSession>("/battles", {
+    method: "POST",
+    body: JSON.stringify(data),
+  }, "전투 시작 실패");
+}
+
+export async function submitBattleActions(
+  sessionId: number,
+  characterActions: BattleCharacterActionInput[],
+  enemyActions: BattleEnemyActionInput[],
+): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/actions`, {
+    method: "POST",
+    body: JSON.stringify({ character_actions: characterActions, enemy_actions: enemyActions }),
+  }, "라운드 진행 실패");
+}
+
+export async function joinBattle(sessionId: number, characterId: number): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/join`, {
+    method: "POST",
+    body: JSON.stringify({ character_id: characterId }),
+  }, "난입 실패");
+}
+
 export interface SkillNode {
   id: number;
   faction: Faction;
@@ -935,19 +1087,7 @@ export async function updateSkillNode(
 }
 
 export async function uploadSkillImage(nodeId: number, file: File): Promise<SkillNode> {
-  const token = getToken();
-  const formData = new FormData();
-  formData.append("file", file);
-  const res = await fetch(`${API_URL}/skills/${nodeId}/image`, {
-    method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    body: formData,
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? "기술 이미지 업로드 실패");
-  }
-  return res.json();
+  return uploadFile<SkillNode>(`/skills/${nodeId}/image`, file, "file", "기술 이미지 업로드 실패");
 }
 
 export async function fetchCharacterSkillTree(characterId: number): Promise<CharacterSkillTree> {

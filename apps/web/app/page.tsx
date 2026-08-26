@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CalendarCheck, CalendarDays, Coins, Settings, ShoppingBag, Swords, Users } from "lucide-react";
 import { fetchChapters, type Chapter } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
+import { useRequireMember } from "@/lib/auth";
 import HomeFlamefall from "@/components/common/HomeFlamefall";
 import HomeChapterCalendar from "@/components/common/HomeChapterCalendar";
 
@@ -16,7 +16,7 @@ const SHORTCUTS = [
   { href: "/settlement", label: "정산", icon: Coins },
 ];
 export default function HomePage() {
-  const { member } = useAuth();
+  const member = useRequireMember();
   const [chapters, setChapters] = useState<Chapter[]>([]);
 
   useEffect(() => {
@@ -25,8 +25,10 @@ export default function HomePage() {
     return () => { cancelled = true; };
   }, []);
 
+  if (!member) return null;
+
   const activeChapter = chapters.find((chapter) => chapter.is_active);
-  const quickLinks = member?.role === "ADMIN"
+  const quickLinks = member.role === "ADMIN"
     ? [...SHORTCUTS, { href: "/admin", label: "관리", icon: Settings }]
     : SHORTCUTS;
   const calendarMonth = activeChapter ? new Date(`${activeChapter.start_date}T00:00:00`) : new Date();

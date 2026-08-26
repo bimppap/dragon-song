@@ -3,8 +3,6 @@
 import { useEffect, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Eye,
-  EyeOff,
   Gift,
   Pencil,
   Save,
@@ -37,6 +35,7 @@ import {
 import type { Mission, MissionProgress, MissionProgressUpdate } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import AlertBanner from "@/components/common/AlertBanner";
+import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 
 type MissionType = "일일" | "중요";
@@ -329,46 +328,42 @@ export default function MissionStatusTab() {
                   임무 현황을 불러오는 중입니다.
                 </EmptyState>
               ) : visibleProgress.length > 0 ? (
-                <div className="flex flex-col gap-3">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
                   {visibleProgress.map((entry) => (
-                    <div key={entry.character_id} className="rounded-2xl border border-line px-4 py-4">
-                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="flex flex-col gap-1">
-                          <p className="text-base font-semibold text-ivory">{entry.character_name}</p>
-                          <div className="flex items-center gap-2">
-                            <Badge variant={entry.achieved ? "success" : "secondary"}>
-                              {entry.achieved ? "달성" : "미달성"}
-                            </Badge>
-                            <span className="flex items-center gap-1 text-xs text-muted">
-                              {entry.achieved ? <Eye size={13} /> : <EyeOff size={13} />}
-                              {entry.achieved ? "보상 대상" : "진행 필요"}
-                            </span>
-                          </div>
+                    <div key={entry.character_id} className="flex flex-col items-center gap-2 rounded-2xl border border-line px-3 py-4">
+                      <div className="relative">
+                        <CharacterAvatar
+                          src={entry.character_image_url}
+                          alt={entry.character_name}
+                          className={cn(
+                            "size-16 rounded-xl transition-all",
+                            !entry.achieved && "grayscale opacity-60",
+                          )}
+                          iconSize={24}
+                        />
+                        <div className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 shadow-sm">
+                          <Checkbox
+                            checked={entry.achieved}
+                            disabled={!isEditing}
+                            onCheckedChange={(checked) =>
+                              updateDraft(entry.character_id, { achieved: checked === true })
+                            }
+                          />
                         </div>
-
-                        {isEditing ? (
-                          <div className="flex w-full flex-col gap-3 lg:max-w-md">
-                            <label className="flex items-center gap-2 text-sm font-medium text-ivory">
-                              <Checkbox
-                                checked={entry.achieved}
-                                onCheckedChange={(checked) =>
-                                  updateDraft(entry.character_id, { achieved: checked === true })
-                                }
-                              />
-                              달성 여부
-                            </label>
-                            <Input
-                              value={entry.memo}
-                              onChange={(e) => updateDraft(entry.character_id, { memo: e.target.value })}
-                              placeholder="메모를 입력하세요."
-                            />
-                          </div>
-                        ) : (
-                          <div className="w-full rounded-xl bg-inset px-4 py-3 text-sm text-ivory/85 lg:max-w-md">
-                            {entry.memo || "메모 없음"}
-                          </div>
-                        )}
                       </div>
+                      <p className="w-full truncate text-center text-sm font-semibold text-ivory">
+                        {entry.character_name}
+                      </p>
+                      {isEditing ? (
+                        <Input
+                          value={entry.memo}
+                          onChange={(e) => updateDraft(entry.character_id, { memo: e.target.value })}
+                          placeholder="메모"
+                          className="h-7 text-xs"
+                        />
+                      ) : entry.memo ? (
+                        <p className="w-full truncate text-center text-xs text-muted">{entry.memo}</p>
+                      ) : null}
                     </div>
                   ))}
                 </div>

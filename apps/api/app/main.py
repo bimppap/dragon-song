@@ -10,13 +10,17 @@ from app.db import engine, get_db
 from app.migrations import ensure_schema
 from app.models import Chapter, Character, Item, Member, SkillNode
 from app.schemas import (
+    AccessTokenResponse,
     AdminGiftRequest,
     AttendanceEntryCreate,
     AttendanceEntryRead,
-    AttendanceEntryUpdate,
-    AttendanceMissionRead,
-    AttendanceMissionUpdate,
-    AttendanceSummaryRead,
+    AttendanceRewardPayResult,
+    AttendanceStreakEntry,
+    BattleActionRequest,
+    BattleJoinRequest,
+    BattleSessionRead,
+    BattleSessionSummary,
+    BattleStartRequest,
     ChapterCreate,
     ChapterRead,
     CharacterCreate,
@@ -30,6 +34,7 @@ from app.schemas import (
     ChallengeProgressBulkUpdate,
     ChallengeProgressRead,
     ChallengeRead,
+    ChallengeUpdate,
     ItemCreate,
     ItemRead,
     ItemWithStock,
@@ -40,7 +45,9 @@ from app.schemas import (
     MissionProgressBulkUpdate,
     MissionProgressRead,
     MissionRead,
+    MissionUpdate,
     PurchaseRead,
+    RefreshTokenRequest,
     RewardPayResult,
     RewardRead,
     RewardWithCharacterRead,
@@ -83,8 +90,21 @@ def signup(data: SignupRequest, db: Session = Depends(get_db)):
 @app.post("/auth/login", response_model=TokenResponse)
 def login(data: LoginRequest, db: Session = Depends(get_db)):
     member = crud.authenticate_member(db, data)
-    token = create_access_token(member.id)
-    return TokenResponse(access_token=token, member=crud.to_member_read(db, member))
+    access_token = create_access_token(member.id)
+    refresh_token = crud.issue_refresh_token(db, member.id)
+    return TokenResponse(access_token=access_token, refresh_token=refresh_token, member=crud.to_member_read(db, member))
+
+
+@app.post("/auth/refresh", response_model=AccessTokenResponse)
+def refresh_token(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+    access_token = crud.refresh_access_token(db, data.refresh_token)
+    return AccessTokenResponse(access_token=access_token)
+
+
+@app.post("/auth/logout")
+def logout(data: RefreshTokenRequest, db: Session = Depends(get_db)):
+    crud.revoke_refresh_token(db, data.refresh_token)
+    return {"ok": True}
 
 
 @app.get("/auth/me", response_model=MemberRead)
@@ -188,68 +208,38 @@ async def upload_character_image(
 
 @app.get("/attendance/entries", response_model=list[AttendanceEntryRead])
 def list_attendance_entries(
-    attendance_date: date,
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
-    return crud.get_attendance_entries(db, attendance_date)
+    """러너도 조회만 가능하다(등록/수정은 관리자 전용)."""
+    return crud.get_attendance_entries(db)
 
 
 @app.post("/attendance/entries", response_model=list[AttendanceEntryRead])
 def create_attendance_entry(
     data: AttendanceEntryCreate,
-    member: Member = Depends(get_current_member),
-    db: Session = Depends(get_db),
-):
-    """본인 캐릭터로 오늘 출석하고, 출석 보상(골드 1·CP 1)을 즉시 지급받는다."""
-    return crud.create_attendance_entry(db, member, data)
-
-
-@app.put("/attendance/entries/{entry_id}", response_model=list[AttendanceEntryRead])
-def update_attendance_entry(
-    entry_id: int,
-    data: AttendanceEntryUpdate,
-    member: Member = Depends(get_current_member),
-    db: Session = Depends(get_db),
-):
-    return crud.update_attendance_entry(db, member, entry_id, data)
-
-
-@app.delete("/attendance/entries/{entry_id}", response_model=list[AttendanceEntryRead])
-def delete_attendance_entry(
-    entry_id: int,
-    member: Member = Depends(get_current_member),
-    db: Session = Depends(get_db),
-):
-    return crud.delete_attendance_entry(db, member, entry_id)
-
-
-@app.get("/attendance/mission", response_model=AttendanceMissionRead | None)
-def get_attendance_mission(
-    mission_date: date,
-    member: Member = Depends(get_current_member),
-    db: Session = Depends(get_db),
-):
-    return crud.get_attendance_mission(db, mission_date)
-
-
-@app.put("/attendance/mission", response_model=AttendanceMissionRead | None)
-def save_attendance_mission(
-    mission_date: date,
-    data: AttendanceMissionUpdate,
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return crud.upsert_attendance_mission(db, mission_date, data)
+    """관리자가 캐릭터를 선택해 출석 처리한다. 보상은 별도 버튼으로 지급한다."""
+    return crud.create_attendance_entry(db, data)
 
 
-@app.get("/attendance/summary", response_model=AttendanceSummaryRead)
-def get_attendance_summary(
-    attendance_date: date,
+@app.post("/attendance/rewards/pay", response_model=AttendanceRewardPayResult)
+def pay_attendance_rewards(
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return crud.get_attendance_summary(db, attendance_date)
+    """출석했지만 보상을 받지 않은 모든 캐릭터에게 출석 보상을 일괄 지급한다."""
+    return crud.pay_attendance_rewards(db)
+
+
+@app.get("/attendance/streak-ranking", response_model=list[AttendanceStreakEntry])
+def get_attendance_streak_ranking(
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.get_attendance_streak_ranking(db)
 
 
 @app.post("/items", response_model=ItemRead)
@@ -310,6 +300,16 @@ def list_challenges(
 @app.post("/challenges", response_model=ChallengeRead)
 def create_challenge(data: ChallengeCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_challenge(db, data)
+
+
+@app.put("/challenges/{challenge_id}", response_model=ChallengeRead)
+def update_challenge(
+    challenge_id: int,
+    data: ChallengeUpdate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_challenge(db, challenge_id, data)
 
 
 @app.get("/challenges/{challenge_id}/progress", response_model=list[ChallengeProgressRead])
@@ -447,6 +447,16 @@ def list_missions(
 @app.post("/missions", response_model=MissionRead)
 def create_mission(data: MissionCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_mission(db, data)
+
+
+@app.put("/missions/{mission_id}", response_model=MissionRead)
+def update_mission(
+    mission_id: int,
+    data: MissionUpdate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_mission(db, mission_id, data)
 
 
 @app.get("/missions/{mission_id}/progress", response_model=list[MissionProgressRead])
@@ -640,6 +650,47 @@ def list_enemies(chapter: str | None = None, member: Member = Depends(require_ad
 @app.post("/enemies", response_model=EnemyRead)
 def create_enemy(data: EnemyCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_enemy(db, data)
+
+
+@app.get("/battles", response_model=list[BattleSessionSummary])
+def list_battles(
+    mode: str | None = None,
+    status: str | None = None,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.get_battle_sessions(db, mode, status)
+
+
+@app.post("/battles", response_model=BattleSessionRead)
+def create_battle(data: BattleStartRequest, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.start_battle(db, member, data)
+
+
+@app.get("/battles/{session_id}", response_model=BattleSessionRead)
+def get_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.get_battle_session(db, session_id)
+
+
+@app.post("/battles/{session_id}/actions", response_model=BattleSessionRead)
+def submit_battle_actions(
+    session_id: int,
+    data: BattleActionRequest,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.resolve_battle_round(db, session_id, data)
+
+
+@app.post("/battles/{session_id}/join", response_model=BattleSessionRead)
+def join_battle(
+    session_id: int,
+    data: BattleJoinRequest,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자가 전투 중간에 캐릭터를 난입시킨다. 난입한 캐릭터는 해당 라운드에 공격/치유 대상이 되지 않는다."""
+    return crud.join_battle(db, session_id, data)
 
 
 @app.post("/uploads/image")

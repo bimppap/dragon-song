@@ -1,13 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Heart, Shield, Skull, Swords, Zap } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { CalendarClock, Flag, Heart, History, PlayCircle, Shield, Swords, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { fetchEnemies, type Enemy } from "@/lib/api";
-import BattleArena from "./BattleArena";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  createBattle,
+  fetchBattles,
+  fetchCharacters,
+  fetchChapters,
+  fetchEnemies,
+  type BattleMode,
+  type BattleSessionSummary,
+  type Chapter,
+  type Character,
+  type Enemy,
+} from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
+import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
+import BattleArena from "./BattleArena";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
@@ -35,24 +49,137 @@ const BATTLE_FORMULAS: { label: string; icon: React.ElementType; accent: string;
   },
 ];
 
+interface ActiveBattle {
+  sessionId: number;
+  readOnly: boolean;
+}
+
+function groupEnemiesByChapter(enemies: Enemy[], chapters: Chapter[]): { chapter: string; enemies: Enemy[] }[] {
+  const order = chapters.map((c) => c.name);
+  const map = new Map<string, Enemy[]>();
+  for (const enemy of enemies) {
+    const key = enemy.chapter ?? "챕터 미지정";
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(enemy);
+  }
+  const keys = [...map.keys()].sort((a, b) => {
+    const ia = order.indexOf(a);
+    const ib = order.indexOf(b);
+    if (ia === -1 && ib === -1) return a.localeCompare(b);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
+  return keys.map((chapter) => ({ chapter, enemies: map.get(chapter)! }));
+}
+
+function statusBadge(status: BattleSessionSummary["status"]) {
+  if (status === "victory") return <Badge variant="success">승리</Badge>;
+  if (status === "defeat") return <Badge variant="destructive">패배</Badge>;
+  return <Badge variant="warning">진행 중</Badge>;
+}
+
 export default function BattleTab() {
   const [enemies, setEnemies] = useState<Enemy[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [resumable, setResumable] = useState<BattleSessionSummary[]>([]);
+  const [history, setHistory] = useState<BattleSessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeEnemy, setActiveEnemy] = useState<Enemy | null>(null);
+  const [starting, setStarting] = useState(false);
+
+  const [selectedEnemyIds, setSelectedEnemyIds] = useState<Set<number>>(new Set());
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<number>>(new Set());
+  const [active, setActive] = useState<ActiveBattle | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
-    fetchEnemies()
-      .then((list) => { if (!cancelled) setEnemies(list); })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "에너미 조회 실패"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+
+    async function load() {
+      try {
+        setLoading(true);
+        const [enemyList, chapterList, characterList, resumableList, historyList] = await Promise.all([
+          fetchEnemies(),
+          fetchChapters(),
+          fetchCharacters(),
+          fetchBattles({ mode: "real", status: "in_progress" }),
+          fetchBattles({ mode: "real" }),
+        ]);
+        if (cancelled) return;
+        setEnemies(enemyList);
+        setChapters(chapterList);
+        setCharacters(characterList);
+        setResumable(resumableList);
+        setHistory(historyList);
+        setError(null);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "전투 데이터 조회 실패");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
     return () => { cancelled = true; };
-  }, []);
+  }, [reloadKey]);
+
+  const grouped = useMemo(() => groupEnemiesByChapter(enemies, chapters), [enemies, chapters]);
+
+  function toggleEnemy(id: number) {
+    setSelectedEnemyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleCharacter(id: number) {
+    setSelectedCharacterIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleStart(mode: BattleMode) {
+    if (selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0) return;
+    try {
+      setStarting(true);
+      const session = await createBattle({
+        mode,
+        enemy_ids: [...selectedEnemyIds],
+        character_ids: [...selectedCharacterIds],
+      });
+      setActive({ sessionId: session.id, readOnly: false });
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "전투 시작 실패");
+    } finally {
+      setStarting(false);
+    }
+  }
+
+  if (active) {
+    return (
+      <BattleArena
+        sessionId={active.sessionId}
+        readOnly={active.readOnly}
+        onExit={() => {
+          setActive(null);
+          setSelectedEnemyIds(new Set());
+          setSelectedCharacterIds(new Set());
+          setReloadKey((k) => k + 1);
+        }}
+      />
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* 전투 계산식 (상단, 카드 아님) */}
+    <div className="space-y-8">
       <div className="space-y-2 border-b border-line pb-5">
         <h2 className="text-sm font-bold uppercase tracking-wide text-muted">전투 계산식</h2>
         <div className="space-y-1.5">
@@ -68,98 +195,167 @@ export default function BattleTab() {
         </div>
         <p className="text-xs text-muted">
           마나계수는 마나가 기술 비용 이상이면 1(기술 비용만큼 마나 소모), 미만이면 0.5입니다. 매 라운드 시작 시
-          체력 재생력(고정) + 최대 체력 × 체력 재생력(비례)만큼 회복하고 마나 재생력만큼 마나가 회복됩니다. 최대 체력 =
-          최대 체력 × (1 + 체력 증폭)이며, 에너미 지정 공격은 주목도 + 존재감이 높은 캐릭터부터 노립니다. (부활 후 체력·행동횟수는 적군 전용 능력치입니다.)
+          체력 재생력(고정) + 최대 체력 × 체력 재생력(비례)만큼 회복하고 마나 재생력만큼 마나가 회복됩니다. 소환수가
+          있으면 캐릭터의 공격은 소환수부터 소모하며, 초과 피해는 에너미에게 넘어가지 않습니다. 난입한 캐릭터는 난입한
+          라운드에는 공격/치유 대상이 되지 않습니다.
         </p>
       </div>
 
-      {activeEnemy ? (
-        <BattleArena enemy={activeEnemy} onExit={() => setActiveEnemy(null)} />
-      ) : (
-        <BattleList
-          enemies={enemies}
-          loading={loading}
-          error={error}
-          numberFormatter={numberFormatter}
-          onStart={setActiveEnemy}
-        />
-      )}
-    </div>
-  );
-}
+      {error && <AlertBanner>{error}</AlertBanner>}
 
-interface BattleListProps {
-  enemies: Enemy[];
-  loading: boolean;
-  error: string | null;
-  numberFormatter: Intl.NumberFormat;
-  onStart: (enemy: Enemy) => void;
-}
-
-function BattleList({ enemies, loading, error, numberFormatter, onStart }: BattleListProps) {
-  return (
-    <div className="space-y-6">
-      <div className="space-y-1">
-        <h2 className="text-lg font-bold text-ivory">전투 목록</h2>
-        <p className="text-sm text-muted">적을 선택해 전투를 시작하세요.</p>
-      </div>
-
-      {error && (
-        <AlertBanner>{error}</AlertBanner>
+      {resumable.length > 0 && (
+        <Card className="border-gold/40 bg-gold/5">
+          <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
+            <div className="flex items-center gap-2 text-sm text-ivory">
+              <CalendarClock size={16} className="text-gold" />
+              진행 중인 실전 전투가 {resumable.length}건 있습니다.
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {resumable.map((session) => (
+                <Button
+                  key={session.id}
+                  size="sm"
+                  onClick={() => setActive({ sessionId: session.id, readOnly: false })}
+                >
+                  <PlayCircle size={14} />
+                  {session.enemy_names.join(", ") || `전투 #${session.id}`} 이어하기 (라운드 {session.round})
+                </Button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {loading ? (
-        <p className="text-sm text-muted">에너미 목록을 불러오는 중...</p>
-      ) : enemies.length === 0 ? (
-        <EmptyState>
-          등록된 에너미가 없습니다. 에너미 탭에서 먼저 등록하세요.
-        </EmptyState>
+        <EmptyState>전투 데이터를 불러오는 중입니다.</EmptyState>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {enemies.map((enemy) => (
-            <div
-              key={enemy.id}
-              className="space-y-4 rounded-xl border border-line bg-surface p-5 transition hover:border-gold hover:shadow-sm"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <Skull size={18} className="text-red-500" />
-                  <div>
-                    <p className="font-bold text-ivory">{enemy.name}</p>
-                    {enemy.chapter && <p className="mt-0.5 text-xs text-muted">{enemy.chapter}</p>}
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle>에너미 선택</CardTitle>
+              <CardDescription>챕터별로 묶인 에너미 중 이번 전투에 등장시킬 에너미를 모두 선택하세요.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-6">
+              {grouped.length === 0 ? (
+                <EmptyState>등록된 에너미가 없습니다. 에너미 탭에서 먼저 등록하세요.</EmptyState>
+              ) : (
+                grouped.map(({ chapter, enemies: chapterEnemies }) => (
+                  <div key={chapter} className="space-y-2">
+                    <h3 className="text-sm font-bold text-ivory">{chapter}</h3>
+                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                      {chapterEnemies.map((enemy) => {
+                        const checked = selectedEnemyIds.has(enemy.id);
+                        return (
+                          <label
+                            key={enemy.id}
+                            className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
+                              checked ? "border-gold bg-gold/10" : "border-line hover:border-line"
+                            }`}
+                          >
+                            <Checkbox checked={checked} onCheckedChange={() => toggleEnemy(enemy.id)} />
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate font-semibold text-ivory">{enemy.name}</span>
+                              </div>
+                              <div className="font-num mt-0.5 flex gap-3 text-xs text-muted">
+                                <span>HP {numberFormatter.format(enemy.base_hp)}</span>
+                                <span className="flex items-center gap-0.5"><Zap size={10} />{numberFormatter.format(enemy.attack)}</span>
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
-                <Badge variant="outline" className="font-num">스킬 {enemy.skills.length}</Badge>
-              </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
 
-              <div className="grid grid-cols-2 gap-2 text-center">
-                <div className="rounded-lg bg-inset py-2">
-                  <p className="text-[10px] font-medium uppercase tracking-wide text-muted">기본 HP</p>
-                  <p className="font-num text-sm font-bold text-ivory">{numberFormatter.format(enemy.base_hp)}</p>
-                </div>
-                <div className="rounded-lg bg-inset py-2">
-                  <p className="flex items-center justify-center gap-1 text-[10px] font-medium uppercase tracking-wide text-muted">
-                    <Zap size={10} />공격
-                  </p>
-                  <p className="font-num text-sm font-bold text-red-500">{numberFormatter.format(enemy.attack)}</p>
-                </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>캐릭터 선택</CardTitle>
+              <CardDescription>전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {characters.map((c) => {
+                  const checked = selectedCharacterIds.has(c.id);
+                  return (
+                    <label
+                      key={c.id}
+                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
+                        checked ? "border-gold bg-gold/10" : "border-line hover:border-line"
+                      }`}
+                    >
+                      <Checkbox checked={checked} onCheckedChange={() => toggleCharacter(c.id)} />
+                      <CharacterAvatar src={c.image_url} alt={c.name} className="size-8 rounded-lg" iconSize={14} />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate font-semibold text-ivory">{c.name}</span>
+                          {c.faction && <Badge variant="secondary" className="text-[10px]">{c.faction}</Badge>}
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
               </div>
+            </CardContent>
+          </Card>
 
-              {(enemy.hp_per_attacker > 0 || enemy.hp_per_defender > 0 || enemy.hp_per_healer > 0) && (
-                <div className="flex flex-wrap gap-2 text-xs text-muted">
-                  {enemy.hp_per_attacker > 0 && <span>공격 인원당 +{enemy.hp_per_attacker}</span>}
-                  {enemy.hp_per_defender > 0 && <span>수비 인원당 +{enemy.hp_per_defender}</span>}
-                  {enemy.hp_per_healer > 0 && <span>치유 인원당 +{enemy.hp_per_healer}</span>}
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+            <Button
+              variant="outline"
+              disabled={selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0 || starting}
+              onClick={() => handleStart("practice")}
+            >
+              <Flag size={15} />
+              모의전 시작 ({selectedCharacterIds.size}명 · 에너미 {selectedEnemyIds.size}마리)
+            </Button>
+            <Button
+              disabled={selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0 || starting}
+              onClick={() => handleStart("real")}
+            >
+              <Swords size={15} />
+              실전 시작
+            </Button>
+            <p className="text-xs text-muted">실전은 전투 로그가 남아 이후에 다시 확인할 수 있습니다.</p>
+          </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <History size={16} className="text-gold" />
+                전투 기록
+              </CardTitle>
+              <CardDescription>완료되거나 진행 중인 실전 전투 기록입니다. 클릭하면 로그를 다시 볼 수 있습니다.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {history.length === 0 ? (
+                <EmptyState>실전 전투 기록이 없습니다.</EmptyState>
+              ) : (
+                <div className="flex flex-col divide-y divide-line">
+                  {history.map((session) => (
+                    <button
+                      key={session.id}
+                      type="button"
+                      onClick={() =>
+                        setActive({ sessionId: session.id, readOnly: session.status !== "in_progress" })
+                      }
+                      className="flex items-center justify-between gap-3 py-3 text-left hover:opacity-80"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span className="font-semibold text-ivory">{session.enemy_names.join(", ") || `전투 #${session.id}`}</span>
+                        <span className="text-xs text-muted">{session.chapter ?? "챕터 미지정"} · 라운드 {session.round}</span>
+                      </div>
+                      {statusBadge(session.status)}
+                    </button>
+                  ))}
                 </div>
               )}
-
-              <Button className="w-full" onClick={() => onStart(enemy)}>
-                <Swords size={14} />
-                전투 시작
-              </Button>
-            </div>
-          ))}
-        </div>
+            </CardContent>
+          </Card>
+        </>
       )}
     </div>
   );

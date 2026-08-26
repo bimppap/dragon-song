@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { PlusSquare, ScrollText } from "lucide-react";
+import { Pencil, PlusSquare, ScrollText, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { createMission, fetchChapters, fetchItems, fetchMissions } from "@/lib/api";
+import { createMission, fetchChapters, fetchItems, fetchMissions, updateMission } from "@/lib/api";
 import type { Chapter, Item, Mission, MissionCreate, RewardGrant } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
@@ -81,11 +81,33 @@ function toPayload(form: MissionFormState): MissionCreate {
   };
 }
 
+function toRewardEntries(rewardItems: Mission["reward_items"]): RewardFormEntry[] {
+  return rewardItems.map((grant, index) => {
+    const id = `edit-${index}-${Math.random().toString(36).slice(2)}`;
+    return grant.type === "item"
+      ? { id, type: "item", item_id: String(grant.item_id), quantity: String(grant.quantity) }
+      : { id, type: "stat", stat: grant.stat, amount: String(grant.amount) };
+  });
+}
+
+function toFormState(mission: Mission): MissionFormState {
+  return {
+    chapter: mission.chapter,
+    mission_type: mission.mission_type as MissionType,
+    name: mission.name,
+    description: mission.description,
+    reward: mission.reward,
+    reward_entries: toRewardEntries(mission.reward_items),
+    visibility: mission.is_public ? "공개" : "비공개",
+  };
+}
+
 export default function MissionManageTab() {
   const [missions, setMissions] = useState<Mission[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [form, setForm] = useState<MissionFormState>(DEFAULT_FORM);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -123,15 +145,31 @@ export default function MissionManageTab() {
     if (!payload.chapter || !payload.name || !payload.description || !payload.reward) return;
     try {
       setSubmitting(true);
-      const created = await createMission(payload);
-      setMissions((prev) => [...prev, created]);
-      setForm({ ...DEFAULT_FORM, chapter: created.chapter, mission_type: form.mission_type });
+      if (editingId != null) {
+        const updated = await updateMission(editingId, payload);
+        setMissions((prev) => prev.map((m) => (m.id === editingId ? updated : m)));
+        setEditingId(null);
+      } else {
+        const created = await createMission(payload);
+        setMissions((prev) => [...prev, created]);
+      }
+      setForm({ ...DEFAULT_FORM, chapter: payload.chapter, mission_type: form.mission_type });
       setErrorMessage(null);
     } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "임무 생성에 실패했습니다.");
+      setErrorMessage(e instanceof Error ? e.message : "임무 저장에 실패했습니다.");
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleEditClick(mission: Mission) {
+    setEditingId(mission.id);
+    setForm(toFormState(mission));
+  }
+
+  function handleCancelEdit() {
+    setEditingId(null);
+    setForm(DEFAULT_FORM);
   }
 
   return (
@@ -169,6 +207,7 @@ export default function MissionManageTab() {
                     <th className="px-4 py-3 text-left font-semibold">내용</th>
                     <th className="px-4 py-3 text-left font-semibold">보상</th>
                     <th className="px-4 py-3 text-left font-semibold">상태</th>
+                    <th className="px-4 py-3 text-left font-semibold" />
                   </tr>
                 </thead>
                 <tbody>
@@ -188,6 +227,12 @@ export default function MissionManageTab() {
                           {mission.is_public ? "공개" : "비공개"}
                         </Badge>
                       </td>
+                      <td className="px-4 py-4">
+                        <Button type="button" variant="outline" size="sm" onClick={() => handleEditClick(mission)}>
+                          <Pencil size={13} />
+                          수정
+                        </Button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -202,9 +247,19 @@ export default function MissionManageTab() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle>임무 추가</CardTitle>
-          <CardDescription>새 임무를 등록하면 현황 탭에서 즉시 조회할 수 있습니다.</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle>{editingId != null ? "임무 수정" : "임무 추가"}</CardTitle>
+            <CardDescription>
+              {editingId != null ? "선택한 임무의 내용을 수정합니다." : "새 임무를 등록하면 현황 탭에서 즉시 조회할 수 있습니다."}
+            </CardDescription>
+          </div>
+          {editingId != null && (
+            <Button type="button" variant="ghost" size="sm" onClick={handleCancelEdit}>
+              <X size={13} />
+              취소
+            </Button>
+          )}
         </CardHeader>
         <CardContent>
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
@@ -293,7 +348,7 @@ export default function MissionManageTab() {
 
             <Button type="submit" className="w-full" disabled={submitting}>
               <PlusSquare size={15} />
-              {submitting ? "추가 중..." : "임무 추가"}
+              {submitting ? "저장 중..." : editingId != null ? "임무 수정 저장" : "임무 추가"}
             </Button>
           </form>
         </CardContent>

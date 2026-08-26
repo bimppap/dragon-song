@@ -23,6 +23,7 @@
 | Input | `components/ui/input.tsx` | `Input` |
 | Textarea | `components/ui/textarea.tsx` | `Textarea` |
 | Select | `components/ui/select.tsx` | `Select`, `SelectTrigger`, `SelectContent`, `SelectItem`, `SelectValue`, `SelectGroup`, `SelectLabel` |
+| Combobox | `components/ui/combobox.tsx` | `Combobox` (검색 가능한 드롭다운) |
 | Checkbox | `components/ui/checkbox.tsx` | `Checkbox` |
 | RadioGroup | `components/ui/radio-group.tsx` | `RadioGroup`, `RadioGroupItem` |
 | Card | `components/ui/card.tsx` | `Card`, `CardHeader`, `CardTitle`, `CardDescription`, `CardContent`, `CardFooter` |

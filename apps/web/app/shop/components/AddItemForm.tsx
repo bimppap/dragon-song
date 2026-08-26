@@ -5,6 +5,7 @@ import { Image as ImageIcon, PlusCircle } from "lucide-react";
 import { createItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
 import type { Chapter, Item, ItemCreate, ItemType, Mission } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import EffectListEditor from "@/components/common/EffectListEditor";
@@ -39,6 +40,7 @@ function createEmptyItemForm(): ItemCreate {
     item_type: "consumable",
     restricted_mission_id: null,
     effects: [],
+    sale_paused: false,
   };
 }
 
@@ -56,6 +58,7 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     item_type: item.item_type,
     restricted_mission_id: item.restricted_mission_id,
     effects: item.effects,
+    sale_paused: item.sale_paused,
   };
 }
 
@@ -362,6 +365,15 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
       <p className="text-xs text-muted -mt-3">
         임무를 지정하면 해당 임무의 보상을 받은 캐릭터는 이 아이템을 구매할 수 없습니다.
       </p>
+
+      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
+        <Checkbox
+          checked={form.sale_paused}
+          onCheckedChange={(checked) => setForm((prev) => ({ ...prev, sale_paused: checked === true }))}
+        />
+        <span className="font-semibold">판매 중단</span>
+        <span className="text-xs text-muted">체크하면 시작/종료 챕터·재고와 무관하게 즉시 판매가 중단되고, 러너에게는 노출되지 않습니다.</span>
+      </label>
 
       <Button type="submit" disabled={loading}>
         <PlusCircle size={15} />

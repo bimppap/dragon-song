@@ -115,6 +115,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE items ADD COLUMN image_url VARCHAR")
         if "restricted_mission_id" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN restricted_mission_id INTEGER REFERENCES missions(id)")
+        if "sale_paused" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN sale_paused BOOLEAN NOT NULL DEFAULT false")
 
     if "chapters" in table_names:
         chapter_columns = {col["name"] for col in inspector.get_columns("chapters")}
@@ -175,6 +177,20 @@ def ensure_schema(engine: Engine) -> None:
                     f" '[]'::json) "
                     f"WHERE {column}::text LIKE '%heal_eff_p%'"
                 )
+
+    if "attendance_entries" in table_names:
+        attendance_columns = {col["name"] for col in inspector.get_columns("attendance_entries")}
+        if "reward_paid" not in attendance_columns:
+            statements.append(
+                "ALTER TABLE attendance_entries ADD COLUMN reward_paid BOOLEAN NOT NULL DEFAULT false"
+            )
+        if "message" in attendance_columns:
+            statements.append("ALTER TABLE attendance_entries DROP COLUMN message")
+        if "updated_at" in attendance_columns:
+            statements.append("ALTER TABLE attendance_entries DROP COLUMN updated_at")
+
+    if "attendance_missions" in table_names:
+        statements.append("DROP TABLE attendance_missions")
 
     if not statements:
         return

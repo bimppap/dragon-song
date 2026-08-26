@@ -11,7 +11,7 @@ MemberRole = Literal["RUNNER", "ADMIN"]
 ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
     "lv": int, "rank": int, "exp": int, "gold": int, "cp": int, "ap": int,
     "stat_courage": int, "stat_endurance": int, "stat_charity": int, "stat_wisdom": int,
-    "hp": int, "hp_max": int, "hp_max_p": float, "hp_regen_true": int, "hp_regen_fixed": float,
+    "hp": int, "hp_max": int, "hp_max_p": float, "hp_heal_p": float, "hp_regen_true": int, "hp_regen_fixed": float,
     "mp": int, "mp_max": int, "mp_regen": int,
     "atk": int, "atk_p": float, "def": int, "def_p": float, "def_eff": float,
     "attn": int, "presence": float, "heal_eff": float,
@@ -22,11 +22,12 @@ ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
 }
 # 특수 효과: 캐릭터 능력치가 아니라 별도 동작을 트리거한다(값 무시).
 # "ap_reset": 소모 시 기술을 전부 기본으로 되돌리고 소모한 AP를 환급한다.
+# "hp_heal_p": 최대 체력 대비 퍼센트만큼 현재 체력을 회복한다(_apply_item_effects에서 특수 처리).
 ITEM_EFFECT_SPECIAL_STATS = {"ap_reset"}
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap",
     "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
-    "hp", "hp_max", "hp_max_p", "hp_regen_true", "hp_regen_fixed",
+    "hp", "hp_max", "hp_max_p", "hp_heal_p", "hp_regen_true", "hp_regen_fixed",
     "mp", "mp_max", "mp_regen",
     "atk", "atk_p", "def", "def_p", "def_eff",
     "attn", "presence", "heal_eff",
@@ -96,8 +97,18 @@ class MemberRead(BaseModel):
 
 class TokenResponse(BaseModel):
     access_token: str
+    refresh_token: str
     token_type: str = "bearer"
     member: MemberRead
+
+
+class AccessTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
 
 
 class CharacterOnboardingCreate(BaseModel):
@@ -289,6 +300,7 @@ class ItemCreate(BaseModel):
     item_type: ItemType = "consumable"
     restricted_mission_id: int | None = None  # 이 임무의 보상 수령자는 구매 불가
     effects: list[ItemEffect] = Field(default_factory=list)
+    sale_paused: bool = False
 
     @model_validator(mode="after")
     def check_at_least_one_price(self):
@@ -311,6 +323,7 @@ class ItemRead(BaseModel):
     restricted_mission_id: int | None = None
     image_url: str | None = None
     effects: list[ItemEffect] = Field(default_factory=list)
+    sale_paused: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -452,6 +465,10 @@ class ChallengeRead(BaseModel):
         return v if v is not None else []
 
 
+class ChallengeUpdate(ChallengeCreate):
+    pass
+
+
 class ChallengeProgressUpdate(BaseModel):
     character_id: int
     achieved: bool
@@ -465,6 +482,7 @@ class ChallengeProgressBulkUpdate(BaseModel):
 class ChallengeProgressRead(BaseModel):
     character_id: int
     character_name: str
+    character_image_url: str | None
     achieved: bool
     memo: str
 
@@ -517,6 +535,10 @@ class MissionRead(BaseModel):
         return v if v is not None else []
 
 
+class MissionUpdate(MissionCreate):
+    pass
+
+
 class MissionProgressUpdate(BaseModel):
     character_id: int
     achieved: bool
@@ -530,6 +552,7 @@ class MissionProgressBulkUpdate(BaseModel):
 class MissionProgressRead(BaseModel):
     character_id: int
     character_name: str
+    character_image_url: str | None
     achieved: bool
     memo: str
 
@@ -576,6 +599,69 @@ class EnemyRead(BaseModel):
     @classmethod
     def coerce_skills(cls, v: object) -> list:
         return v if v is not None else []
+
+
+BattleMode = Literal["practice", "real"]
+BattleStatus = Literal["in_progress", "victory", "defeat"]
+# "skill"(기술 사용)은 현재는 "attack"과 동일하게 처리되는 자리만 갖춘 행동이다.
+CharacterActionKind = Literal["attack", "skill", "defend", "heal", "item", "none", "retreat"]
+EnemyActionKind = Literal["attack", "summon", "none"]
+
+
+class BattleStartRequest(BaseModel):
+    mode: BattleMode
+    enemy_ids: list[int] = Field(min_length=1)
+    character_ids: list[int] = Field(min_length=1)
+
+
+class CharacterActionInput(BaseModel):
+    character_id: int
+    kind: CharacterActionKind
+    target_enemy_id: int | None = None
+    target_character_id: int | None = None  # 치유 지정 대상
+    item_id: int | None = None
+
+
+class EnemyActionInput(BaseModel):
+    enemy_id: int
+    kind: EnemyActionKind
+    skill_index: int | None = None
+
+
+class BattleActionRequest(BaseModel):
+    character_actions: list[CharacterActionInput] = Field(default_factory=list)
+    enemy_actions: list[EnemyActionInput] = Field(default_factory=list)
+
+
+class BattleJoinRequest(BaseModel):
+    character_id: int
+
+
+class BattleSessionRead(BaseModel):
+    id: int
+    mode: BattleMode
+    chapter: str | None
+    status: BattleStatus
+    round: int
+    enemies: list = Field(default_factory=list)
+    summons: list = Field(default_factory=list)
+    participants: list = Field(default_factory=list)
+    log: list = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class BattleSessionSummary(BaseModel):
+    id: int
+    mode: BattleMode
+    chapter: str | None
+    status: BattleStatus
+    round: int
+    enemy_names: list[str] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
 
 
 SettlementType = Literal["board", "log"]
@@ -632,12 +718,8 @@ class RewardWithCharacterRead(RewardRead):
 
 
 class AttendanceEntryCreate(BaseModel):
+    character_id: int
     attendance_date: date
-    message: str = Field(default="", max_length=200)
-
-
-class AttendanceEntryUpdate(BaseModel):
-    message: str = Field(default="", max_length=200)
 
 
 class AttendanceEntryRead(BaseModel):
@@ -646,27 +728,13 @@ class AttendanceEntryRead(BaseModel):
     character_id: int
     character_name: str
     character_image_url: str | None
-    message: str
-    rank: int | None  # 그날 1~3번째 출석자에게만 1·2·3 부여
+    reward_paid: bool
     created_at: datetime
-    updated_at: datetime
 
 
-class AttendanceMissionRead(BaseModel):
-    mission_date: date
-    content: str
-
-    model_config = {"from_attributes": True}
-
-
-class AttendanceMissionUpdate(BaseModel):
-    content: str = Field(default="", max_length=500)
-
-
-class AttendanceCharacterBrief(BaseModel):
-    id: int
-    name: str
-    image_url: str | None
+class AttendanceRewardPayResult(BaseModel):
+    paid_count: int
+    entries: list[AttendanceEntryRead]
 
 
 class AttendanceStreakEntry(BaseModel):
@@ -674,13 +742,7 @@ class AttendanceStreakEntry(BaseModel):
     character_name: str
     character_image_url: str | None
     streak: int
-
-
-class AttendanceSummaryRead(BaseModel):
-    attendance_date: date
-    attended: list[AttendanceCharacterBrief]
-    absent: list[AttendanceCharacterBrief]
-    streaks: list[AttendanceStreakEntry]
+    rank: int  # 동률은 같은 순위를 공유한다(밀집 순위). 최대 5위까지만 반환된다.
 
 
 TIER_LABELS = {0: "기본", 1: "선택", 2: "I", 3: "II", 4: "III", 5: "IV"}

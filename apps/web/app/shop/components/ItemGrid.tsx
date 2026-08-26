@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
-import { Package, Settings2, ShoppingCart } from "lucide-react";
+import { Ban, Package, Settings2, ShoppingCart } from "lucide-react";
 import { fetchItems, ITEM_EFFECT_STAT_OPTIONS } from "@/lib/api";
 import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -121,7 +121,11 @@ export default function ItemGrid({
           <span className={p.data!.purchasable ? "text-ivory/85" : "text-muted"}>
             {formatAvailability(p.data!)}
           </span>
-          {!p.data!.purchasable && <Badge variant="secondary">비활성</Badge>}
+          {p.data!.sale_paused ? (
+            <Badge variant="destructive">판매 중단</Badge>
+          ) : (
+            !p.data!.purchasable && <Badge variant="secondary">비활성</Badge>
+          )}
         </div>
       ),
     },
@@ -197,11 +201,16 @@ export default function ItemGrid({
       width: 52,
       sortable: false,
       filter: false,
-      cellRenderer: () => (
-        <div className="flex items-center justify-center h-full">
-          <Package size={18} className="text-gold" />
-        </div>
-      ),
+      cellRenderer: (p: ICellRendererParams<Item>) =>
+        p.data!.sale_paused ? (
+          <div className="flex h-full items-center justify-center grayscale">
+            <Ban size={18} className="text-muted" />
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full">
+            <Package size={18} className="text-gold" />
+          </div>
+        ),
     },
     {
       headerName: "아이템명",

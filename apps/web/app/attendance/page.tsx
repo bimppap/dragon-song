@@ -3,7 +3,7 @@
 import { CalendarCheck } from "lucide-react";
 import PageContainer from "@/components/common/PageContainer";
 import { useRequireMember } from "@/lib/auth";
-import AttendanceBook from "./components/AttendanceBook";
+import AttendanceView from "./components/AttendanceView";
 
 export default function AttendancePage() {
   const member = useRequireMember();
@@ -18,11 +18,11 @@ export default function AttendancePage() {
           출석부
         </h1>
         <p className="text-sm text-muted">
-          하루에 한 번 출석하고 오늘의 한마디를 남겨 보세요. 출석하면 골드 1G와 CP 1이 지급됩니다.
+          날짜를 선택해 그날 출석한 캐릭터를 확인할 수 있습니다. 출석 등록은 관리자만 할 수 있습니다.
         </p>
       </section>
 
-      <AttendanceBook member={member} />
+      <AttendanceView />
     </PageContainer>
   );
 }

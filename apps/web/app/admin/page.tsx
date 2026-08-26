@@ -18,7 +18,7 @@ import { useRequireAdmin } from "@/lib/auth";
 import ChapterTab from "./components/ChapterTab";
 import ItemAdmin from "./components/ItemAdmin";
 import RewardAdminTab from "./components/RewardAdminTab";
-import AttendanceAdminTab from "@/app/attendance/components/AttendanceAdminTab";
+import AttendanceAdminTab from "./components/AttendanceAdminTab";
 import EnemyTab from "@/app/battle/components/EnemyTab";
 import AdminSkillEditor from "@/app/battle/components/AdminSkillEditor";
 import { ChallengeAdmin } from "@/app/challenges/page";
