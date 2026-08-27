@@ -61,19 +61,19 @@ export default function AttendanceView() {
           ) : entriesForDate.length === 0 ? (
             <EmptyState>해당 날짜에 출석한 캐릭터가 없습니다.</EmptyState>
           ) : (
-            <div className="flex flex-wrap gap-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
               {entriesForDate.map((entry) => (
                 <div
                   key={entry.id}
-                  className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-1.5"
+                  className="flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface pb-3"
                 >
                   <CharacterAvatar
                     src={entry.character_image_url}
                     alt={entry.character_name}
-                    className="size-6 rounded-full"
-                    iconSize={12}
+                    className="aspect-square w-full rounded-none"
+                    iconSize={28}
                   />
-                  <span className="text-sm font-medium text-ivory">{entry.character_name}</span>
+                  <span className="truncate px-3 text-sm font-semibold text-ivory">{entry.character_name}</span>
                 </div>
               ))}
             </div>

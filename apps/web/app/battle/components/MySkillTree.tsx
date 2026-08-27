@@ -5,19 +5,17 @@ import { Badge } from "@/components/ui/badge";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import {
   fetchCharacterSkillTree,
-  fetchSkillNodes,
   formatEffect,
   renameCharacterSkill,
   unlockCharacterSkill,
   type CharacterSkillNode,
   type CharacterSkillTree,
-  type Faction,
-  type SkillNode,
+  type SkillBook,
 } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
 import { useDialog } from "@/components/common/DialogProvider";
 
-const FACTIONS: Faction[] = ["공격", "수비", "치유"];
+const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 interface Props {
@@ -26,8 +24,7 @@ interface Props {
 
 export default function MySkillTree({ characterId }: Props) {
   const { confirm, prompt } = useDialog();
-  const [tree, setTree] = useState<CharacterSkillTree | null>(null);
-  const [otherNodes, setOtherNodes] = useState<Record<string, SkillNode[]>>({});
+  const [treesByBook, setTreesByBook] = useState<Record<SkillBook, CharacterSkillTree> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyNodeId, setBusyNodeId] = useState<number | null>(null);
@@ -39,13 +36,9 @@ export default function MySkillTree({ characterId }: Props) {
       setLoading(true);
       setError(null);
       try {
-        const data = await fetchCharacterSkillTree(characterId);
+        const lists = await Promise.all(BOOKS.map((b) => fetchCharacterSkillTree(characterId, b)));
         if (cancelled) return;
-        setTree(data);
-        const others = FACTIONS.filter((f) => f !== data.faction);
-        const lists = await Promise.all(others.map((f) => fetchSkillNodes(f)));
-        if (cancelled) return;
-        setOtherNodes(Object.fromEntries(others.map((f, i) => [f, lists[i]])));
+        setTreesByBook(Object.fromEntries(BOOKS.map((b, i) => [b, lists[i]])) as Record<SkillBook, CharacterSkillTree>);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패");
       } finally {
@@ -57,11 +50,23 @@ export default function MySkillTree({ characterId }: Props) {
     return () => { cancelled = true; };
   }, [characterId]);
 
-  async function handleUnlock(node: CharacterSkillNode) {
+  /** AP는 캐릭터 전역 값이라, 한 서에서 소모해도 나머지 서의 캐시된 표시 AP를 함께 갱신해야 어긋나지 않는다. */
+  function applyTreeUpdate(book: SkillBook, updated: CharacterSkillTree) {
+    setTreesByBook((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, [book]: updated };
+      for (const b of BOOKS) {
+        if (b !== book) next[b] = { ...next[b], character_ap: updated.character_ap };
+      }
+      return next;
+    });
+  }
+
+  async function handleUnlock(book: SkillBook, node: CharacterSkillNode) {
     setBusyNodeId(node.id);
     setError(null);
     try {
-      setTree(await unlockCharacterSkill(characterId, node.id));
+      applyTreeUpdate(book, await unlockCharacterSkill(characterId, node.id));
     } catch (e) {
       setError(e instanceof Error ? e.message : "기술 강화 실패");
     } finally {
@@ -69,7 +74,7 @@ export default function MySkillTree({ characterId }: Props) {
     }
   }
 
-  async function renameNode(node: CharacterSkillNode) {
+  async function renameNode(book: SkillBook, node: CharacterSkillNode) {
     const nextName = await prompt(
       { title: "기술 이름 수정", description: "새로운 기술 이름을 입력해 주세요." },
       node.custom_name ?? node.default_name,
@@ -78,7 +83,7 @@ export default function MySkillTree({ characterId }: Props) {
     setBusyNodeId(node.id);
     setError(null);
     try {
-      setTree(await renameCharacterSkill(characterId, node.id, nextName));
+      applyTreeUpdate(book, await renameCharacterSkill(characterId, node.id, nextName));
     } catch (e) {
       setError(e instanceof Error ? e.message : "기술 이름 설정 실패");
     } finally {
@@ -86,8 +91,8 @@ export default function MySkillTree({ characterId }: Props) {
     }
   }
 
-  function canUnlock(node: CharacterSkillNode): boolean {
-    if (!tree || node.unlocked || node.tier === 0 || tree.character_ap < tree.ap_cost_to_unlock) return false;
+  function canUnlock(tree: CharacterSkillTree, node: CharacterSkillNode): boolean {
+    if (node.unlocked || node.tier === 0 || tree.character_ap < tree.ap_cost_to_unlock) return false;
     if (node.tier === 1) {
       return !tree.nodes.some((candidate) => candidate.unlocked && candidate.tier === 1 && candidate.branch !== node.branch);
     }
@@ -103,19 +108,21 @@ export default function MySkillTree({ characterId }: Props) {
     );
   }
 
-  async function handleNodeClick(node: CharacterSkillNode) {
+  async function handleNodeClick(book: SkillBook, tree: CharacterSkillTree, node: CharacterSkillNode) {
     if (node.unlocked) {
-      await renameNode(node);
+      await renameNode(book, node);
       return;
     }
-    if (!canUnlock(node)) return;
+    if (!canUnlock(tree, node)) return;
     const effectDescription = node.effects.length > 0 ? node.effects.map(formatEffect).join(", ") : "효과 없음";
     const accepted = await confirm({
       title: "기술 선택",
       description: `정말 '${node.display_name}'을 선택하시겠습니까?\n${effectDescription}`,
     });
-    if (accepted) await handleUnlock(node);
+    if (accepted) await handleUnlock(book, node);
   }
+
+  const anyTree = treesByBook ? treesByBook[BOOKS[0]] : null;
 
   return (
     <div className="space-y-6">
@@ -123,15 +130,14 @@ export default function MySkillTree({ characterId }: Props) {
         <div className="space-y-1">
           <h2 className="text-lg font-bold text-ivory">기술트리</h2>
           <p className="text-sm text-muted">
-            {tree ? `내 진영은 ${tree.faction}입니다. ` : ""}
-            내 진영 기술트리는 다음 단계를 눌러 AP로 강화하거나 습득한 기술을 눌러 이름을 바꿀 수 있고, 다른 진영 트리는
-            참고용으로 확인만 할 수 있습니다. 1분기(계열)와 2분기(세부 경로)에서는 각각 하나만 선택할 수 있습니다.
+            용맹·불굴·헌신·탐구 4개 서 전부에서 캐릭터의 역할과 무관하게 자유롭게 기술을 강화할 수 있습니다. 각 서의 1단계
+            계열과 2단계부터의 세부 경로는 각각 하나만 선택할 수 있습니다. 습득한 기술을 누르면 이름을 바꿀 수 있습니다.
           </p>
         </div>
-        {tree && (
+        {anyTree && (
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-num">보유 AP {numberFormatter.format(tree.character_ap)}</Badge>
-            <Badge variant="secondary" className="font-num">강화 비용 {numberFormatter.format(tree.ap_cost_to_unlock)} AP</Badge>
+            <Badge variant="outline" className="font-num">보유 AP {numberFormatter.format(anyTree.character_ap)}</Badge>
+            <Badge variant="secondary" className="font-num">강화 비용 {numberFormatter.format(anyTree.ap_cost_to_unlock)} AP</Badge>
           </div>
         )}
       </div>
@@ -140,35 +146,25 @@ export default function MySkillTree({ characterId }: Props) {
         <AlertBanner>{error}</AlertBanner>
       )}
 
-      {loading || !tree ? (
+      {loading || !treesByBook ? (
         <p className="text-sm text-muted">불러오는 중...</p>
       ) : (
         <div className="no-scrollbar overflow-x-auto pb-2"><div className="mx-auto flex w-max gap-6">
-          {FACTIONS.map((faction) => {
-            const isOwn = faction === tree.faction;
+          {BOOKS.map((book) => {
+            const tree = treesByBook[book];
             return (
-              <div key={faction} className="flex flex-col items-center gap-3">
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-ivory">{faction} 계열</h3>
-                  {isOwn ? (
-                    <Badge className="text-[10px]">내 진영</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-[10px] text-muted">참고용</Badge>
-                  )}
-                </div>
-                <div className={isOwn ? "rounded-xl border border-gold bg-surface p-4" : "rounded-xl border border-line bg-inset/60 p-4"}>
-                  {isOwn ? (
-                    <SkillTreeGrid
-                      nodes={tree.nodes}
-                      getLabel={(n) => n.display_name}
-                      isHighlighted={(n) => n.unlocked}
-                      isDisabled={(node) => busyNodeId !== null || (!node.unlocked && !canUnlock(node))}
-                      onNodeClick={handleNodeClick}
-                      showLabels={false}
-                    />
-                  ) : (
-                    <SkillTreeGrid nodes={otherNodes[faction] ?? []} getLabel={(n) => n.default_name} showLabels={false} />
-                  )}
+              <div key={book} className="flex flex-col items-center gap-3">
+                <h3 className="text-sm font-semibold text-ivory">{book}</h3>
+                <div className="rounded-xl border border-gold bg-surface p-4">
+                  <SkillTreeGrid
+                    nodes={tree.nodes}
+                    getLabel={(n) => n.display_name}
+                    isHighlighted={(n) => n.unlocked}
+                    isDisabled={(node) => busyNodeId !== null || (!node.unlocked && !canUnlock(tree, node))}
+                    onNodeClick={(node) => handleNodeClick(book, tree, node)}
+                    showLabels={false}
+                    tooltipVariant="runner"
+                  />
                 </div>
               </div>
             );

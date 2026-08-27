@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Gift, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import AlertBanner from "@/components/common/AlertBanner";
+import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
 import { fetchAllRewards, fetchCharacters, revokeReward } from "@/lib/api";
@@ -135,9 +136,12 @@ export default function RewardAdminTab() {
                     className="flex items-center justify-between gap-3 rounded-2xl border border-line px-4 py-4"
                   >
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className={`flex size-10 shrink-0 items-center justify-center rounded-full ${isRevoke ? "bg-red-500/15 text-red-400" : "bg-emerald-500/15 text-emerald-500"}`}>
-                        {isRevoke ? <RotateCcw size={18} /> : <Gift size={18} />}
-                      </span>
+                      <CharacterAvatar
+                        src={reward.character_image_url}
+                        alt={reward.character_name}
+                        className="size-10 shrink-0 rounded-full"
+                        iconSize={18}
+                      />
                       <div className="flex min-w-0 flex-col gap-1">
                         <p className="truncate font-semibold text-ivory">
                           {reward.character_name}

@@ -4,9 +4,10 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, verify_password
-from app.game_data import SKILL_TREE_MOCK, get_level_grade_stats
-from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, Member, Mission, MissionProgress, Purchase, RefreshToken, Reward, SettlementRequest, SkillNode
+from app.game_data import build_skill_node_specs, calculate_stat_grade_totals, get_level_grade_stats
+from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Item, ItemUsage, Member, Mission, MissionProgress, Purchase, RefreshToken, Reward, SettlementRequest, SkillNode
 from app.schemas import (
+    GRADE_STAT_FIELDS,
     ITEM_EFFECT_SPECIAL_STATS,
     ITEM_EFFECT_STAT_TYPES,
     TIER_LABELS,
@@ -40,6 +41,7 @@ from app.schemas import (
     EnemyRead,
     EnemySkill,
     ItemCreate,
+    ItemHistoryEntry,
     ItemWithStock,
     LoginRequest,
     MemberRead,
@@ -73,6 +75,26 @@ def _today_kst() -> date:
     return datetime.now(KST).date()
 
 
+def _is_battle_day(chapter: Chapter, today: date) -> bool:
+    return chapter.battle_date == today if chapter.battle_date else False
+
+
+def _to_chapter_read(chapter: Chapter, *, today: date | None = None) -> ChapterRead:
+    current_day = today or _today()
+    return ChapterRead(
+        id=chapter.id,
+        name=chapter.name,
+        start_date=chapter.start_date,
+        end_date=chapter.end_date,
+        battle_date=chapter.battle_date,
+        image_url=chapter.image_url,
+        music_url=chapter.music_url,
+        is_active=chapter.start_date <= current_day <= chapter.end_date,
+        is_battle_day=_is_battle_day(chapter, current_day),
+        created_at=chapter.created_at,
+    )
+
+
 def _get_character_or_404(db: Session, character_id: int) -> Character:
     character = db.query(Character).filter(Character.id == character_id).first()
     if not character:
@@ -80,16 +102,50 @@ def _get_character_or_404(db: Session, character_id: int) -> Character:
     return character
 
 
-def _to_reward_read(r: Reward) -> RewardRead:
+def _to_reward_read(db: Session, r: Reward) -> RewardRead:
+    reward_items: list[RewardItemEntry] = []
+    for item in r.reward_items or []:
+        entry = RewardItemEntry(**item)
+        if entry.type == "item" and entry.item_id is not None:
+            found = db.get(Item, entry.item_id)
+            entry.item_name = found.name if found else None
+        reward_items.append(entry)
     return RewardRead(
         id=r.id,
         type=r.type,
         character_id=r.character_id,
         source_id=r.source_id,
-        reward_items=[RewardItemEntry(**item) for item in (r.reward_items or [])],
+        reward_items=reward_items,
         rewarded_at=r.rewarded_at,
         created_at=r.created_at,
     )
+
+
+GROWTH_EXP_PER_LEVEL = 20  # 경험치가 이만큼 쌓일 때마다 성장등급이 오른다.
+GROWTH_AP_PER_LEVEL = 2    # 성장등급 1당 지급되는 AP.
+
+
+def _apply_growth_from_exp(db: Session, character: Character) -> None:
+    """경험치가 20 쌓일 때마다 성장등급(lv)과 AP를 자동 지급하고, 초과분은 다음 등급으로 이월한다(경험치는 0~19로 리셋).
+
+    '성장' 보상 이력을 남긴다.
+    """
+    gained = character.exp // GROWTH_EXP_PER_LEVEL
+    if gained <= 0:
+        return
+    character.exp -= gained * GROWTH_EXP_PER_LEVEL
+    character.lv += gained
+    character.ap += gained * GROWTH_AP_PER_LEVEL
+    db.add(Reward(
+        type="growth",
+        character_id=character.id,
+        source_id=None,
+        reward_items=[
+            {"type": "lv", "amount": gained},
+            {"type": "ap", "amount": gained * GROWTH_AP_PER_LEVEL},
+        ],
+        rewarded_at=_today_kst(),
+    ))
 
 
 def _apply_stat_rewards(
@@ -320,14 +376,25 @@ def create_character_for_member(
     if get_member_character_id(db, member.id) is not None:
         raise HTTPException(status_code=400, detail="이미 캐릭터를 생성했습니다.")
 
-    starting_grade = get_level_grade_stats(1)
+    stats = calculate_stat_grade_totals(
+        data.stat_courage, data.stat_endurance, data.stat_charity, data.stat_wisdom,
+    )
     character = Character(
         name=data.name.strip(),
         lv=1,
-        hp=starting_grade["hp"],
-        hp_max=starting_grade["hp"],
-        atk=starting_grade["atk"],
-        def_=starting_grade["def"],
+        hp=stats["hp_max"],
+        hp_max=stats["hp_max"],
+        atk=stats["atk"],
+        def_=stats["def"],
+        dmg_p=stats["dmg_p"],
+        dmg_r=stats["dmg_r"],
+        presence=stats["presence"],
+        heal_eff=stats["heal_eff"],
+        skill_eff_true=stats["skill_eff_true"],
+        skill_eff_fixed=stats["skill_eff_fixed"],
+        mp=stats["mp_max"],
+        mp_max=stats["mp_max"],
+        mp_regen=stats["mp_regen"],
         member_id=member.id,
         faction=data.faction,
         stat_courage=data.stat_courage,
@@ -393,12 +460,10 @@ def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
     db.flush()
 
     if data.skill_node_ids:
-        if not data.faction:
-            raise HTTPException(status_code=400, detail="기술을 선택하려면 진영을 먼저 선택해야 합니다.")
         node_ids = sorted(set(data.skill_node_ids))
         nodes = db.query(SkillNode).filter(SkillNode.id.in_(node_ids)).all()
-        if len(nodes) != len(node_ids) or any(node.faction != data.faction for node in nodes):
-            raise HTTPException(status_code=400, detail="선택한 진영에 속하지 않는 기술이 포함되어 있습니다.")
+        if len(nodes) != len(node_ids):
+            raise HTTPException(status_code=400, detail="존재하지 않는 기술이 포함되어 있습니다.")
         for node in nodes:
             applied_effects = [dict(effect) for effect in (node.effects or [])]
             _apply_item_effects(character, applied_effects, sign=1)
@@ -477,6 +542,12 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         .all()
     )
 
+    def _remaining_owned(row) -> int:
+        used_quantity = item_states_by_id[row.item_id].used_quantity if row.item_id in item_states_by_id else 0
+        if items_by_id[row.item_id].item_type == "consumable":
+            return row.quantity - used_quantity
+        return row.quantity
+
     return CharacterDetailRead(
         **_character_read_kwargs(character),
         owned_items=[
@@ -484,6 +555,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
                 item_id=row.item_id,
                 item_name=row.item_name,
                 item_description=row.item_description,
+                item_image_url=items_by_id[row.item_id].image_url,
                 item_type=items_by_id[row.item_id].item_type,
                 effects=items_by_id[row.item_id].effects or [],
                 quantity=row.quantity,
@@ -491,6 +563,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
                 equipped=item_states_by_id[row.item_id].equipped if row.item_id in item_states_by_id else False,
             )
             for row in owned_item_rows
+            if _remaining_owned(row) > 0
         ],
         achieved_challenges=[
             CharacterAchievedChallengeRead(
@@ -502,7 +575,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             )
             for row in achieved_challenge_rows
         ],
-        purchase_history=get_purchases(db, character.id, None),
+        item_history=get_item_history(db, character.id),
         reward_history=get_rewards_by_character(db, character.id),
         attendance_streak=_attendance_streak(db, character.id),
     )
@@ -657,6 +730,36 @@ def _apply_item_effects(character: Character, effects: list[dict], sign: int) ->
         setattr(character, attr, next_value)
 
 
+# calculate_stat_grade_totals()의 결과 키 → Character 속성명 매핑 ("def"는 예약어 회피용 def_에 대응).
+_GRADE_TOTAL_TO_ATTR = {
+    "atk": "atk", "def": "def_", "hp_max": "hp_max", "dmg_p": "dmg_p", "dmg_r": "dmg_r",
+    "presence": "presence", "heal_eff": "heal_eff", "skill_eff_fixed": "skill_eff_fixed",
+    "skill_eff_true": "skill_eff_true", "mp_max": "mp_max", "mp_regen": "mp_regen",
+}
+
+
+def _apply_grade_choice(character: Character, chosen_stats: list[str], required_count: int) -> None:
+    """가능성/잠재성의 메달: 선택한 능력치의 등급을 1씩 올리고, 그로 인한 파생 스탯 증가분만 더한다
+    (스킬/다른 아이템으로 이미 붙어 있는 보너스는 건드리지 않는다)."""
+    if len(chosen_stats) != required_count or len(set(chosen_stats)) != required_count:
+        raise HTTPException(status_code=400, detail=f"능력치를 정확히 {required_count}개, 중복 없이 선택해야 합니다.")
+    if any(stat not in GRADE_STAT_FIELDS for stat in chosen_stats):
+        raise HTTPException(status_code=400, detail="용기/인내/자애/지혜 중에서만 선택할 수 있습니다.")
+
+    before = calculate_stat_grade_totals(
+        character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
+    )
+    for stat in chosen_stats:
+        setattr(character, stat, getattr(character, stat) + 1)
+    after = calculate_stat_grade_totals(
+        character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
+    )
+    for key, attr in _GRADE_TOTAL_TO_ATTR.items():
+        delta = after[key] - before[key]
+        if delta:
+            setattr(character, attr, getattr(character, attr) + delta)
+
+
 def _get_or_create_item_state(db: Session, character_id: int, item_id: int) -> CharacterItemState:
     state = (
         db.query(CharacterItemState)
@@ -670,7 +773,12 @@ def _get_or_create_item_state(db: Session, character_id: int, item_id: int) -> C
     return state
 
 
-def use_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
+def use_item(
+    db: Session,
+    character_id: int,
+    item_id: int,
+    chosen_stats: list[str] | None = None,
+) -> CharacterDetailRead:
     character = _get_character_or_404(db, character_id)
     item = db.get(Item, item_id)
     if not item:
@@ -684,10 +792,17 @@ def use_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRea
         raise HTTPException(status_code=400, detail="사용 가능한 수량이 없습니다.")
 
     _apply_item_effects(character, item.effects or [], sign=1)
+    special_stats = {effect.get("stat") for effect in (item.effects or [])}
     # 특수 효과: AP 초기화(기술 리셋). 능력치 효과와 별개로 처리한다.
-    if any(effect.get("stat") == "ap_reset" for effect in (item.effects or [])):
+    if "ap_reset" in special_stats:
         _reset_character_skills(db, character)
+    # 특수 효과: 능력치 등급 선택 강화 (가능성의 메달=1개, 잠재성의 메달=2개).
+    if "grade_choice_1" in special_stats:
+        _apply_grade_choice(character, chosen_stats or [], 1)
+    elif "grade_choice_2" in special_stats:
+        _apply_grade_choice(character, chosen_stats or [], 2)
     state.used_quantity += 1
+    db.add(ItemUsage(character_id=character_id, item_id=item_id, quantity=1))
     db.commit()
     return get_character_detail(db, character_id)
 
@@ -969,6 +1084,7 @@ def get_purchases(db: Session, character_id: int | None, item_id: int | None) ->
             Purchase,
             Character.name.label("character_name"),
             Item.name.label("item_name"),
+            Item.image_url.label("item_image_url"),
         )
         .join(Character, Purchase.character_id == Character.id)
         .join(Item, Purchase.item_id == Item.id)
@@ -986,11 +1102,54 @@ def get_purchases(db: Session, character_id: int | None, item_id: int | None) ->
             character_name=row.character_name,
             item_id=row.Purchase.item_id,
             item_name=row.item_name,
+            item_image_url=row.item_image_url,
             quantity=row.Purchase.quantity,
             created_at=row.Purchase.created_at,
         )
         for row in rows
     ]
+
+
+def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
+    """구매/사용 이력을 시간순으로 병합해 반환한다."""
+    purchase_rows = (
+        db.query(Purchase, Item.name.label("item_name"), Item.image_url.label("item_image_url"))
+        .join(Item, Purchase.item_id == Item.id)
+        .filter(Purchase.character_id == character_id)
+        .all()
+    )
+    usage_rows = (
+        db.query(ItemUsage, Item.name.label("item_name"), Item.image_url.label("item_image_url"))
+        .join(Item, ItemUsage.item_id == Item.id)
+        .filter(ItemUsage.character_id == character_id)
+        .all()
+    )
+    # purchase/usage는 각각 별도 시퀀스의 id를 쓰므로, 병합 목록에서 겹치지 않도록 짝/홀수로 구분해 합성한다.
+    entries = [
+        ItemHistoryEntry(
+            id=row.Purchase.id * 2,
+            kind="purchase",
+            item_id=row.Purchase.item_id,
+            item_name=row.item_name,
+            item_image_url=row.item_image_url,
+            quantity=row.Purchase.quantity,
+            created_at=row.Purchase.created_at,
+        )
+        for row in purchase_rows
+    ] + [
+        ItemHistoryEntry(
+            id=row.ItemUsage.id * 2 + 1,
+            kind="use",
+            item_id=row.ItemUsage.item_id,
+            item_name=row.item_name,
+            item_image_url=row.item_image_url,
+            quantity=row.ItemUsage.quantity,
+            created_at=row.ItemUsage.created_at,
+        )
+        for row in usage_rows
+    ]
+    entries.sort(key=lambda e: e.created_at, reverse=True)
+    return entries
 
 
 def get_challenge_progress(db: Session, challenge_id: int) -> list[ChallengeProgressRead]:
@@ -1113,6 +1272,17 @@ def create_attendance_entry(db: Session, data: AttendanceEntryCreate) -> list[At
     return get_attendance_entries(db)
 
 
+def delete_attendance_entry(db: Session, entry_id: int) -> list[AttendanceEntryRead]:
+    """출석 등록을 잘못한 경우 관리자가 해당 기록을 삭제한다."""
+    entry = db.get(AttendanceEntry, entry_id)
+    if not entry:
+        raise HTTPException(status_code=404, detail="출석 기록을 찾을 수 없습니다.")
+
+    db.delete(entry)
+    db.commit()
+    return get_attendance_entries(db)
+
+
 def pay_attendance_rewards(db: Session) -> AttendanceRewardPayResult:
     """출석했지만 보상을 받지 않은 모든 캐릭터에게 출석 보상을 일괄 지급한다."""
     unpaid_entries = db.query(AttendanceEntry).filter(AttendanceEntry.reward_paid.is_(False)).all()
@@ -1187,7 +1357,7 @@ def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]
         .order_by(Reward.created_at.desc())
         .all()
     )
-    return [_to_reward_read(r) for r in rewards]
+    return [_to_reward_read(db, r) for r in rewards]
 
 
 # ── Settlement (정산) ────────────────────────────────────────────────────────
@@ -1322,7 +1492,7 @@ def get_all_rewards(
     date_from: date | None = None,
     date_to: date | None = None,
 ) -> list[RewardWithCharacterRead]:
-    query = db.query(Reward, Character.name).join(Character, Reward.character_id == Character.id)
+    query = db.query(Reward, Character.name, Character.image_url).join(Character, Reward.character_id == Character.id)
     if character_id is not None:
         query = query.filter(Reward.character_id == character_id)
     if date_from is not None:
@@ -1339,11 +1509,12 @@ def get_all_rewards(
     }
     return [
         RewardWithCharacterRead(
-            **_to_reward_read(reward).model_dump(),
+            **_to_reward_read(db, reward).model_dump(),
             character_name=character_name,
+            character_image_url=character_image_url,
             revoked=reward.id in revoked_ids,
         )
-        for reward, character_name in rows
+        for reward, character_name, character_image_url in rows
     ]
 
 
@@ -1405,28 +1576,22 @@ def revoke_reward(db: Session, reward_id: int) -> RewardWithCharacterRead:
     db.add(revoke)
     db.flush()
     result = RewardWithCharacterRead(
-        **_to_reward_read(revoke).model_dump(),
+        **_to_reward_read(db, revoke).model_dump(),
         character_name=character.name,
+        character_image_url=character.image_url,
         revoked=False,
     )
     db.commit()
     return result
 
 
-def send_admin_gift(db: Session, data: AdminGiftRequest) -> RewardRead:
-    """관리자가 캐릭터에게 골드·CP·아이템을 지급하고 '관리자의 선물' 보상 이력을 남긴다."""
-    character = _get_character_or_404(db, data.character_id)
+def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
+    """관리자가 하나 이상의 캐릭터에게 골드·CP·아이템을 지급하고, 캐릭터별로 '관리자의 선물' 보상 이력을 남긴다."""
+    characters = [_get_character_or_404(db, character_id) for character_id in data.character_ids]
 
-    reward_items: list[dict] = []
-    if data.gold > 0:
-        character.gold += data.gold
-        reward_items.append({"type": "gold", "amount": data.gold})
-    if data.cp > 0:
-        character.cp += data.cp
-        reward_items.append({"type": "stat", "stat": "cp", "amount": data.cp})
-
-    if data.items:
-        item_ids = [cart_item.item_id for cart_item in data.items]
+    item_ids = [cart_item.item_id for cart_item in data.items]
+    items_map: dict[int, Item] = {}
+    if item_ids:
         items_map = {i.id: i for i in db.query(Item).filter(Item.id.in_(item_ids)).all()}
         missing = sorted(set(item_ids) - set(items_map))
         if missing:
@@ -1434,24 +1599,38 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> RewardRead:
                 status_code=400,
                 detail=f"존재하지 않는 아이템 ID: {', '.join(map(str, missing))}",
             )
-        item_grants = [
-            {"type": "item", "item_id": cart_item.item_id, "quantity": cart_item.quantity}
-            for cart_item in data.items
-        ]
-        _apply_item_grants(db, item_grants, items_map, character.id, reward_items)
 
-    reward = Reward(
-        type="admin_gift",
-        character_id=character.id,
-        source_id=None,
-        reward_items=reward_items,
-        rewarded_at=_today_kst(),
-    )
-    db.add(reward)
+    rewards: list[Reward] = []
+    for character in characters:
+        reward_items: list[dict] = []
+        if data.gold > 0:
+            character.gold += data.gold
+            reward_items.append({"type": "gold", "amount": data.gold})
+        if data.cp > 0:
+            character.cp += data.cp
+            reward_items.append({"type": "stat", "stat": "cp", "amount": data.cp})
+
+        if data.items:
+            item_grants = [
+                {"type": "item", "item_id": cart_item.item_id, "quantity": cart_item.quantity}
+                for cart_item in data.items
+            ]
+            _apply_item_grants(db, item_grants, items_map, character.id, reward_items)
+
+        reward = Reward(
+            type="admin_gift",
+            character_id=character.id,
+            source_id=None,
+            reward_items=reward_items,
+            rewarded_at=_today_kst(),
+        )
+        db.add(reward)
+        rewards.append(reward)
+
     db.flush()
-    reward_read = _to_reward_read(reward)
+    reward_reads = [_to_reward_read(db, reward) for reward in rewards]
     db.commit()
-    return reward_read
+    return reward_reads
 
 
 def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
@@ -1513,9 +1692,10 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
         )
         db.add(reward)
         created_rewards.append(reward)
+        _apply_growth_from_exp(db, character)
 
     db.flush()
-    rewards_read = [_to_reward_read(r) for r in created_rewards]
+    rewards_read = [_to_reward_read(db, r) for r in created_rewards]
     db.commit()
     return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
 
@@ -1725,31 +1905,30 @@ def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
         )
         db.add(reward)
         created_rewards.append(reward)
+        _apply_growth_from_exp(db, character)
 
     db.flush()
-    rewards_read = [_to_reward_read(r) for r in created_rewards]
+    rewards_read = [_to_reward_read(db, r) for r in created_rewards]
     db.commit()
     return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
 
 
 # ── Chapter ───────────────────────────────────────────────────────────────────
 
+def _get_active_chapter_model(db: Session, *, today: date | None = None) -> Chapter | None:
+    current_day = today or _today()
+    return (
+        db.query(Chapter)
+        .filter(Chapter.start_date <= current_day, Chapter.end_date >= current_day)
+        .order_by(Chapter.start_date.desc())
+        .first()
+    )
+
+
 def get_chapters(db: Session) -> list[ChapterRead]:
     chapters = db.query(Chapter).order_by(Chapter.start_date.desc()).all()
     today = _today()
-    return [
-        ChapterRead(
-            id=c.id,
-            name=c.name,
-            start_date=c.start_date,
-            end_date=c.end_date,
-            image_url=c.image_url,
-            music_url=c.music_url,
-            is_active=c.start_date <= today <= c.end_date,
-            created_at=c.created_at,
-        )
-        for c in chapters
-    ]
+    return [_to_chapter_read(chapter, today=today) for chapter in chapters]
 
 
 def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
@@ -1757,22 +1936,13 @@ def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
         name=data.name.strip(),
         start_date=data.start_date,
         end_date=data.end_date,
+        battle_date=data.battle_date,
         music_url=data.music_url.strip() if data.music_url else None,
     )
     db.add(chapter)
     db.commit()
     db.refresh(chapter)
-    today = _today()
-    return ChapterRead(
-        id=chapter.id,
-        name=chapter.name,
-        start_date=chapter.start_date,
-        end_date=chapter.end_date,
-        image_url=chapter.image_url,
-        music_url=chapter.music_url,
-        is_active=chapter.start_date <= today <= chapter.end_date,
-        created_at=chapter.created_at,
-    )
+    return _to_chapter_read(chapter)
 
 
 def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> ChapterRead:
@@ -1782,65 +1952,58 @@ def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> Chapter
     chapter.name = data.name.strip()
     chapter.start_date = data.start_date
     chapter.end_date = data.end_date
+    chapter.battle_date = data.battle_date
     chapter.music_url = data.music_url.strip() if data.music_url else None
     db.commit()
     db.refresh(chapter)
-    today = _today()
-    return ChapterRead(
-        id=chapter.id,
-        name=chapter.name,
-        start_date=chapter.start_date,
-        end_date=chapter.end_date,
-        image_url=chapter.image_url,
-        music_url=chapter.music_url,
-        is_active=chapter.start_date <= today <= chapter.end_date,
-        created_at=chapter.created_at,
-    )
+    return _to_chapter_read(chapter)
 
 
 def get_active_chapter(db: Session) -> ChapterRead | None:
     today = _today()
-    chapter = (
-        db.query(Chapter)
-        .filter(Chapter.start_date <= today, Chapter.end_date >= today)
-        .first()
-    )
+    chapter = _get_active_chapter_model(db, today=today)
     if not chapter:
         return None
-    return ChapterRead(
-        id=chapter.id,
-        name=chapter.name,
-        start_date=chapter.start_date,
-        end_date=chapter.end_date,
-        image_url=chapter.image_url,
-        music_url=chapter.music_url,
-        is_active=True,
-        created_at=chapter.created_at,
-    )
+    return _to_chapter_read(chapter, today=today)
 
 
 # ── Enemy ─────────────────────────────────────────────────────────────────────
+
+def _to_enemy_read(enemy: Enemy) -> EnemyRead:
+    return EnemyRead(
+        id=enemy.id,
+        name=enemy.name,
+        chapter=enemy.chapter,
+        image_url=enemy.image_url,
+        base_hp=enemy.base_hp,
+        hp_per_attacker=enemy.hp_per_attacker,
+        hp_per_defender=enemy.hp_per_defender,
+        hp_per_healer=enemy.hp_per_healer,
+        attack=enemy.attack,
+        skills=[EnemySkill(**s) for s in (enemy.skills or [])],
+        created_at=enemy.created_at,
+    )
+
 
 def get_enemies(db: Session, chapter: str | None = None) -> list[EnemyRead]:
     query = db.query(Enemy)
     if chapter is not None:
         query = query.filter(Enemy.chapter == chapter)
     enemies = query.order_by(Enemy.created_at.asc()).all()
-    return [
-        EnemyRead(
-            id=e.id,
-            name=e.name,
-            chapter=e.chapter,
-            base_hp=e.base_hp,
-            hp_per_attacker=e.hp_per_attacker,
-            hp_per_defender=e.hp_per_defender,
-            hp_per_healer=e.hp_per_healer,
-            attack=e.attack,
-            skills=[EnemySkill(**s) for s in (e.skills or [])],
-            created_at=e.created_at,
-        )
-        for e in enemies
-    ]
+    return [_to_enemy_read(e) for e in enemies]
+
+
+def get_enemies_for_member(db: Session, member: Member, chapter: str | None = None) -> list[EnemyRead]:
+    if member.role == "ADMIN":
+        return get_enemies(db, chapter)
+
+    today = _today()
+    active_chapter = _get_active_chapter_model(db, today=today)
+    if not active_chapter or not _is_battle_day(active_chapter, today):
+        return []
+    if chapter is not None and chapter != active_chapter.name:
+        return []
+    return get_enemies(db, active_chapter.name)
 
 
 def create_enemy(db: Session, data: EnemyCreate) -> EnemyRead:
@@ -1857,18 +2020,26 @@ def create_enemy(db: Session, data: EnemyCreate) -> EnemyRead:
     db.add(enemy)
     db.commit()
     db.refresh(enemy)
-    return EnemyRead(
-        id=enemy.id,
-        name=enemy.name,
-        chapter=enemy.chapter,
-        base_hp=enemy.base_hp,
-        hp_per_attacker=enemy.hp_per_attacker,
-        hp_per_defender=enemy.hp_per_defender,
-        hp_per_healer=enemy.hp_per_healer,
-        attack=enemy.attack,
-        skills=[EnemySkill(**s) for s in (enemy.skills or [])],
-        created_at=enemy.created_at,
-    )
+    return _to_enemy_read(enemy)
+
+
+def update_enemy(db: Session, enemy_id: int, data: EnemyCreate) -> EnemyRead:
+    enemy = db.get(Enemy, enemy_id)
+    if not enemy:
+        raise HTTPException(status_code=404, detail="에너미를 찾을 수 없습니다.")
+
+    enemy.name = data.name.strip()
+    enemy.chapter = data.chapter.strip() if data.chapter else None
+    enemy.base_hp = data.base_hp
+    enemy.hp_per_attacker = data.hp_per_attacker
+    enemy.hp_per_defender = data.hp_per_defender
+    enemy.hp_per_healer = data.hp_per_healer
+    enemy.attack = data.attack
+    enemy.skills = [s.model_dump() for s in data.skills]
+
+    db.commit()
+    db.refresh(enemy)
+    return _to_enemy_read(enemy)
 
 
 # ── Battle ───────────────────────────────────────────────────────────────────
@@ -1992,11 +2163,25 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
     return _to_battle_session_read(session)
 
 
-def get_battle_session(db: Session, session_id: int) -> BattleSessionRead:
+def get_battle_session(db: Session, session_id: int, member: Member) -> BattleSessionRead:
     session = db.get(BattleSession, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    # 러너는 실전(real) 전투만 관전할 수 있다. 연습 전투는 관리자 전용이다.
+    if member.role != "ADMIN" and session.mode != "real":
+        raise HTTPException(status_code=403, detail="열람 권한이 없습니다.")
     return _to_battle_session_read(session)
+
+
+def get_live_real_battle(db: Session) -> BattleSessionRead | None:
+    """러너 관전용: 진행 중인 실전 전투 중 가장 최근 것을 반환한다(없으면 None)."""
+    session = (
+        db.query(BattleSession)
+        .filter(BattleSession.mode == "real", BattleSession.status == "in_progress")
+        .order_by(BattleSession.id.desc())
+        .first()
+    )
+    return _to_battle_session_read(session) if session else None
 
 
 def get_battle_sessions(
@@ -2023,6 +2208,14 @@ def get_battle_sessions(
         )
         for r in rows
     ]
+
+
+def delete_battle_session(db: Session, session_id: int) -> None:
+    session = db.get(BattleSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    db.delete(session)
+    db.commit()
 
 
 def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> BattleSessionRead:
@@ -2075,6 +2268,15 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
     summons = [dict(s) for s in session.summons]
     events: list[str] = []
 
+    # 실전은 "이전 라운드 다시 진행하기"를 위해 이 라운드의 행동이 반영되기 전 상태를 남겨둔다.
+    if session.mode == "real":
+        session.round_snapshots = list(session.round_snapshots) + [{
+            "round": round_no,
+            "participants": [dict(p) for p in participants],
+            "enemies": [dict(e) for e in enemies],
+            "summons": [dict(s) for s in summons],
+        }]
+
     by_char_id = {p["character_id"]: p for p in participants}
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
     actions_by_char = {a.character_id: a for a in data.character_actions}
@@ -2082,9 +2284,12 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
     def active(p: dict) -> bool:
         return not p["downed"] and not p["retreated"]
 
+    def just_joined(p: dict) -> bool:
+        # 이번 라운드에 난입한 캐릭터는 그 라운드에 행동할 수 없고, 공격/치유 대상도 될 수 없다.
+        return p["joined_round"] == round_no
+
     def targetable(p: dict) -> bool:
-        # 이번 라운드에 난입한 캐릭터는 에너미 공격/아군 치유의 대상이 될 수 없다.
-        return active(p) and p["joined_round"] != round_no
+        return active(p) and not just_joined(p)
 
     def eff_def(p: dict) -> int:
         return round(p["def"] * (1 + p["def_p"]) * p["def_eff"])
@@ -2093,8 +2298,9 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
         return 1 + p["skill_lv"] * p["skill_eff_fixed"]
 
     living = [p for p in participants if active(p)]
+    actable = [p for p in living if not just_joined(p)]
 
-    # 0) 라운드 시작 재생
+    # 0) 라운드 시작 재생 (난입 캐릭터도 생존해 있으므로 재생은 받는다)
     for p in living:
         hp_heal = p["hp_regen_true"] + round(p["max_hp"] * p["hp_regen_fixed"])
         mp_heal = p["mp_regen"]
@@ -2105,16 +2311,16 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
         if hp_heal > 0 or mp_heal > 0:
             events.append(f"♻️ {p['name']} 재생 (+{hp_heal} HP / +{mp_heal} MP)")
 
-    # 1) 수비 태세 표시
+    # 1) 수비 태세 표시 (난입 캐릭터는 이번 라운드 행동 불가)
     defending: set[int] = set()
-    for p in living:
+    for p in actable:
         action = actions_by_char.get(p["character_id"])
         if action and action.kind == "defend":
             defending.add(p["character_id"])
             events.append(f"🛡️ {p['name']} 수비 태세 (방어력 {eff_def(p)} 경감)")
 
-    # 2) 공격/기술 사용, 아이템, 퇴각
-    for p in living:
+    # 2) 공격/기술 사용, 아이템, 퇴각 (난입 캐릭터는 이번 라운드 행동 불가)
+    for p in actable:
         action = actions_by_char.get(p["character_id"])
         if not action:
             continue
@@ -2168,6 +2374,7 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
                     events.append(f"⚠️ {p['name']}: {item.name}을(를) 보유하고 있지 않습니다.")
                     continue
                 state.used_quantity += 1
+                db.add(ItemUsage(character_id=p["character_id"], item_id=item.id, quantity=1))
             _apply_item_effects_to_snapshot(p, item.effects or [], sign=1)
             events.append(f"🎒 {p['name']} {item.name} 사용")
 
@@ -2177,9 +2384,9 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
 
     victory = all(e["hp"] <= 0 for e in enemies)
 
-    # 3) 치유 (퇴각하지 않은 캐릭터만, 승리 확정 시 생략)
+    # 3) 치유 (퇴각하지 않은 캐릭터만, 승리 확정 시 생략, 난입 캐릭터는 이번 라운드 행동 불가)
     if not victory:
-        for p in living:
+        for p in actable:
             if p["retreated"]:
                 continue
             action = actions_by_char.get(p["character_id"])
@@ -2284,12 +2491,40 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
     return _to_battle_session_read(session)
 
 
+def undo_last_round(db: Session, session_id: int) -> BattleSessionRead:
+    """직전에 진행한 라운드를 되돌린다: 그 라운드 시작 시점 상태로 복원하고, 로그를 지우고, 다시 진행할 수 있게 한다."""
+    session = db.get(BattleSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    if session.mode != "real":
+        raise HTTPException(status_code=400, detail="실전 전투만 라운드를 되돌릴 수 있습니다.")
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="이미 종료된 전투는 되돌릴 수 없습니다.")
+
+    target_round = session.round - 1
+    snapshots = list(session.round_snapshots)
+    snapshot = next((s for s in snapshots if s["round"] == target_round), None)
+    if snapshot is None:
+        raise HTTPException(status_code=400, detail="되돌릴 이전 라운드가 없습니다.")
+
+    session.participants = snapshot["participants"]
+    session.enemies = snapshot["enemies"]
+    session.summons = snapshot["summons"]
+    session.round = target_round
+    session.log = [entry for entry in session.log if entry["round"] < target_round]
+    session.round_snapshots = [s for s in snapshots if s["round"] < target_round]
+
+    db.commit()
+    db.refresh(session)
+    return _to_battle_session_read(session)
+
+
 # ── Skill Tree ───────────────────────────────────────────────────────────────
 
 def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
     return SkillNodeRead(
         id=node.id,
-        faction=node.faction,
+        book=node.book,
         branch=node.branch,
         col=node.col,
         tier=node.tier,
@@ -2297,35 +2532,35 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         default_name=node.default_name,
         image_url=node.image_url,
         effects=node.effects or [],
+        trigger_type=node.trigger_type,
+        category=node.category,
+        stackable=node.stackable,
+        cost=node.cost,
+        power=node.power,
+        target=node.target,
+        activation_order=node.activation_order,
+        formula=node.formula,
+        description=node.description,
+        is_placeholder=node.is_placeholder,
     )
 
 
-def _seed_skill_tree_if_empty(db: Session, faction: str) -> None:
-    if db.query(SkillNode).filter(SkillNode.faction == faction).first():
+def _seed_skill_tree_if_empty(db: Session, book: str) -> None:
+    if db.query(SkillNode).filter(SkillNode.book == book).first():
         return
-    config = SKILL_TREE_MOCK.get(faction)
-    if not config:
+    specs = build_skill_node_specs(book)
+    if not specs:
         return
-    db.add(SkillNode(faction=faction, branch=None, col=None, tier=0, default_name=config["base_name"]))
-    for branch_index, branch in enumerate(config["branches"]):
-        db.add(SkillNode(faction=faction, branch=branch_index, col=None, tier=1, default_name=branch["name"]))
-        for col_index, col_name in enumerate(branch["columns"]):
-            for tier in range(2, 6):
-                db.add(SkillNode(
-                    faction=faction,
-                    branch=branch_index,
-                    col=col_index,
-                    tier=tier,
-                    default_name=f"{col_name} {TIER_LABELS[tier]}",
-                ))
+    for spec in specs:
+        db.add(SkillNode(book=book, **spec))
     db.commit()
 
 
-def get_skill_nodes(db: Session, faction: str) -> list[SkillNodeRead]:
-    _seed_skill_tree_if_empty(db, faction)
+def get_skill_nodes(db: Session, book: str) -> list[SkillNodeRead]:
+    _seed_skill_tree_if_empty(db, book)
     nodes = (
         db.query(SkillNode)
-        .filter(SkillNode.faction == faction)
+        .filter(SkillNode.book == book)
         .order_by(SkillNode.tier.asc(), SkillNode.branch.asc(), SkillNode.col.asc())
         .all()
     )
@@ -2350,11 +2585,11 @@ def _find_parent_node(db: Session, node: SkillNode) -> SkillNode | None:
     if node.tier == 0:
         return None
     if node.tier == 1:
-        return db.query(SkillNode).filter(SkillNode.faction == node.faction, SkillNode.tier == 0).first()
+        return db.query(SkillNode).filter(SkillNode.book == node.book, SkillNode.tier == 0).first()
     return (
         db.query(SkillNode)
         .filter(
-            SkillNode.faction == node.faction,
+            SkillNode.book == node.book,
             SkillNode.branch == node.branch,
             SkillNode.col == node.col,
             SkillNode.tier == node.tier - 1,
@@ -2363,45 +2598,35 @@ def _find_parent_node(db: Session, node: SkillNode) -> SkillNode | None:
     )
 
 
-def _ensure_base_unlock(db: Session, character: Character) -> None:
-    base_node = db.query(SkillNode).filter(SkillNode.faction == character.faction, SkillNode.tier == 0).first()
-    if not base_node:
-        return
-    exists = (
-        db.query(CharacterSkillUnlock)
-        .filter(CharacterSkillUnlock.character_id == character.id, CharacterSkillUnlock.node_id == base_node.id)
-        .first()
-    )
-    if not exists:
-        db.add(CharacterSkillUnlock(character_id=character.id, node_id=base_node.id))
-        db.commit()
-
-
-def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTreeRead:
+def get_character_skill_tree(db: Session, character_id: int, book: str) -> CharacterSkillTreeRead:
     character = _get_character_or_404(db, character_id)
-    if not character.faction:
-        raise HTTPException(status_code=400, detail="진영이 설정되지 않은 캐릭터입니다.")
 
-    _seed_skill_tree_if_empty(db, character.faction)
-    _ensure_base_unlock(db, character)
+    _seed_skill_tree_if_empty(db, book)
 
     nodes = (
         db.query(SkillNode)
-        .filter(SkillNode.faction == character.faction)
+        .filter(SkillNode.book == book)
         .order_by(SkillNode.tier.asc(), SkillNode.branch.asc(), SkillNode.col.asc())
         .all()
     )
-    unlocks = db.query(CharacterSkillUnlock).filter(CharacterSkillUnlock.character_id == character.id).all()
+    unlocks = (
+        db.query(CharacterSkillUnlock)
+        .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
+        .filter(CharacterSkillUnlock.character_id == character.id, SkillNode.book == book)
+        .all()
+    )
     unlock_by_node = {u.node_id: u for u in unlocks}
     latest_unlock = max(unlocks, key=lambda u: u.unlocked_at, default=None)
 
     node_reads = []
     for node in nodes:
+        # 0단계(서 아이덴티티 노드)는 역할과 무관하게 모든 캐릭터에게 항상 활성화되어 있다.
         unlock = unlock_by_node.get(node.id)
+        unlocked = node.tier == 0 or unlock is not None
         node_reads.append(
             CharacterSkillNodeRead(
                 id=node.id,
-                faction=node.faction,
+                book=node.book,
                 branch=node.branch,
                 col=node.col,
                 tier=node.tier,
@@ -2409,14 +2634,25 @@ def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTr
                 default_name=node.default_name,
                 image_url=node.image_url,
                 effects=node.effects or [],
-                unlocked=unlock is not None,
+                trigger_type=node.trigger_type,
+                category=node.category,
+                stackable=node.stackable,
+                cost=node.cost,
+                power=node.power,
+                target=node.target,
+                activation_order=node.activation_order,
+                formula=node.formula,
+                description=node.description,
+                is_placeholder=node.is_placeholder,
+                unlocked=unlocked,
                 custom_name=unlock.custom_name if unlock else None,
                 display_name=(unlock.custom_name if unlock and unlock.custom_name else node.default_name),
+                unlocked_at=unlock.unlocked_at if unlock else None,
             )
         )
 
     return CharacterSkillTreeRead(
-        faction=character.faction,
+        book=book,
         character_ap=character.ap,
         ap_cost_to_unlock=get_level_grade_stats(character.lv)["ap_cost"],
         latest_unlocked_node_id=latest_unlock.node_id if latest_unlock else None,
@@ -2427,13 +2663,12 @@ def get_character_skill_tree(db: Session, character_id: int) -> CharacterSkillTr
 def unlock_character_skill_node(db: Session, character_id: int, node_id: int) -> CharacterSkillTreeRead:
     character = _get_character_or_404(db, character_id)
     node = db.get(SkillNode, node_id)
-    if not node or node.faction != character.faction:
+    if not node:
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
     if node.tier == 0:
-        raise HTTPException(status_code=400, detail="기본 기술은 자동으로 습득됩니다.")
+        raise HTTPException(status_code=400, detail="서 아이덴티티 기술은 자동으로 활성화됩니다.")
 
-    _seed_skill_tree_if_empty(db, character.faction)
-    _ensure_base_unlock(db, character)
+    _seed_skill_tree_if_empty(db, node.book)
 
     already = (
         db.query(CharacterSkillUnlock)
@@ -2459,13 +2694,14 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
             .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
             .filter(
                 CharacterSkillUnlock.character_id == character.id,
+                SkillNode.book == node.book,
                 SkillNode.tier == 1,
                 SkillNode.branch != node.branch,
             )
             .first()
         )
         if other_branch_chosen:
-            raise HTTPException(status_code=400, detail="이미 다른 계열을 선택했습니다.")
+            raise HTTPException(status_code=400, detail="이 서에서는 이미 다른 계열을 선택했습니다.")
 
     if node.tier >= 2:
         other_column_chosen = (
@@ -2473,6 +2709,7 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
             .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
             .filter(
                 CharacterSkillUnlock.character_id == character.id,
+                SkillNode.book == node.book,
                 SkillNode.branch == node.branch,
                 SkillNode.tier >= 2,
                 SkillNode.col != node.col,
@@ -2480,7 +2717,7 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
             .first()
         )
         if other_column_chosen:
-            raise HTTPException(status_code=400, detail="이미 다른 세부 계열을 선택했습니다.")
+            raise HTTPException(status_code=400, detail="이미 다른 세부 경로를 선택했습니다.")
 
     cost = get_level_grade_stats(character.lv)["ap_cost"]
     if character.ap < cost:
@@ -2497,7 +2734,7 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
     ))
     db.commit()
 
-    return get_character_skill_tree(db, character.id)
+    return get_character_skill_tree(db, character.id, node.book)
 
 
 def _reset_character_skills(db: Session, character: Character) -> None:
@@ -2532,4 +2769,5 @@ def rename_character_skill(db: Session, character_id: int, node_id: int, custom_
         raise HTTPException(status_code=400, detail="습득하지 않은 기술입니다.")
     unlock.custom_name = custom_name.strip() or None
     db.commit()
-    return get_character_skill_tree(db, character.id)
+    node = db.get(SkillNode, node_id)
+    return get_character_skill_tree(db, character.id, node.book)

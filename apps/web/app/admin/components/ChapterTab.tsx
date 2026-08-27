@@ -8,11 +8,24 @@ import { Badge } from "@/components/ui/badge";
 import Modal from "@/components/common/Modal";
 import { createChapter, fetchChapters, updateChapter, uploadChapterImage, uploadChapterMusic, type Chapter } from "@/lib/api";
 
-interface ChapterFormState { name: string; start_date: string; end_date: string; music_url: string; }
-const EMPTY_FORM: ChapterFormState = { name: "", start_date: "", end_date: "", music_url: "" };
+interface ChapterFormState {
+  name: string;
+  start_date: string;
+  end_date: string;
+  battle_date: string;
+  music_url: string;
+}
+
+const EMPTY_FORM: ChapterFormState = { name: "", start_date: "", end_date: "", battle_date: "", music_url: "" };
 
 function chapterForm(chapter: Chapter): ChapterFormState {
-  return { name: chapter.name, start_date: chapter.start_date, end_date: chapter.end_date, music_url: chapter.music_url ?? "" };
+  return {
+    name: chapter.name,
+    start_date: chapter.start_date,
+    end_date: chapter.end_date,
+    battle_date: chapter.battle_date ?? "",
+    music_url: chapter.music_url ?? "",
+  };
 }
 
 export default function ChapterTab() {
@@ -42,7 +55,12 @@ export default function ChapterTab() {
     if (!form.name.trim() || !form.start_date || !form.end_date) return;
     setSaving(true); setError(null);
     try {
-      let created = await createChapter({ ...form, name: form.name.trim(), music_url: musicFile ? null : form.music_url.trim() || null });
+      let created = await createChapter({
+        ...form,
+        name: form.name.trim(),
+        battle_date: form.battle_date || null,
+        music_url: musicFile ? null : form.music_url.trim() || null,
+      });
       if (imageFile) created = await uploadChapterImage(created.id, imageFile);
       if (musicFile) created = await uploadChapterMusic(created.id, musicFile);
       setChapters((prev) => [created, ...prev]);
@@ -61,7 +79,12 @@ export default function ChapterTab() {
     if (!editing || !editForm.name.trim() || !editForm.start_date || !editForm.end_date) return;
     setSaving(true); setError(null);
     try {
-      let updated = await updateChapter(editing.id, { ...editForm, name: editForm.name.trim(), music_url: editMusicFile ? editing.music_url : editForm.music_url.trim() || null });
+      let updated = await updateChapter(editing.id, {
+        ...editForm,
+        name: editForm.name.trim(),
+        battle_date: editForm.battle_date || null,
+        music_url: editMusicFile ? editing.music_url : editForm.music_url.trim() || null,
+      });
       if (editImageFile) updated = await uploadChapterImage(updated.id, editImageFile);
       if (editMusicFile) updated = await uploadChapterMusic(updated.id, editMusicFile);
       replaceChapter(updated); setEditing(null);
@@ -75,10 +98,12 @@ export default function ChapterTab() {
       <h2 className="text-base font-semibold text-ivory">챕터 추가</h2>
       <form onSubmit={handleCreate} className="flex flex-col gap-4">
         <Input placeholder="예: 1챕터 — 어둠의 시작" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid gap-4 sm:grid-cols-3">
           <Input type="date" value={form.start_date} onChange={(event) => setForm((prev) => ({ ...prev, start_date: event.target.value }))} />
           <Input type="date" value={form.end_date} onChange={(event) => setForm((prev) => ({ ...prev, end_date: event.target.value }))} />
+          <Input type="date" value={form.battle_date} onChange={(event) => setForm((prev) => ({ ...prev, battle_date: event.target.value }))} />
         </div>
+        <p className="text-xs text-muted">전투 일정은 챕터 진행 기간 안의 하루를 지정합니다. 비워두면 러너 전투 페이지에 대기 문구가 표시됩니다.</p>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-muted hover:text-ivory">
           <ImagePlus size={16} />
           <span>{imageFile ? imageFile.name : "챕터 이미지 첨부"}</span>
@@ -102,7 +127,7 @@ export default function ChapterTab() {
       {chapters.length === 0 ? <p className="text-sm text-muted">등록된 챕터가 없습니다.</p> : <div className="flex flex-col gap-2">
         {chapters.map((chapter) => <button key={chapter.id} type="button" onClick={() => openEdit(chapter)} className="flex flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-gold/60 hover:bg-primary/20 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">{chapter.is_active && <Badge className="border-gold bg-gold/15 text-xs font-semibold text-gold">진행 중</Badge>}<span className="text-sm font-semibold text-ivory">{chapter.name}</span></div>
-          <span className="text-xs text-muted">{chapter.start_date} ~ {chapter.end_date}</span>
+          <span className="text-xs text-muted">{chapter.start_date} ~ {chapter.end_date} · 전투 {chapter.battle_date ?? "미정"}</span>
         </button>)}
       </div>}
     </section>
@@ -110,7 +135,12 @@ export default function ChapterTab() {
     <Modal open={editing !== null} onClose={() => setEditing(null)} title="챕터 수정">
       <form onSubmit={handleEdit} className="flex flex-col gap-4">
         <Input value={editForm.name} onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))} aria-label="챕터명" />
-        <div className="grid grid-cols-2 gap-4"><Input type="date" value={editForm.start_date} onChange={(event) => setEditForm((prev) => ({ ...prev, start_date: event.target.value }))} /><Input type="date" value={editForm.end_date} onChange={(event) => setEditForm((prev) => ({ ...prev, end_date: event.target.value }))} /></div>
+        <div className="grid gap-4 sm:grid-cols-3">
+          <Input type="date" value={editForm.start_date} onChange={(event) => setEditForm((prev) => ({ ...prev, start_date: event.target.value }))} />
+          <Input type="date" value={editForm.end_date} onChange={(event) => setEditForm((prev) => ({ ...prev, end_date: event.target.value }))} />
+          <Input type="date" value={editForm.battle_date} onChange={(event) => setEditForm((prev) => ({ ...prev, battle_date: event.target.value }))} />
+        </div>
+        <p className="text-xs text-muted">전투 일정을 비우면 이 챕터는 전투 대기 상태로 표시됩니다.</p>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-muted hover:text-ivory"><ImagePlus size={16} /><span>{editImageFile ? editImageFile.name : editing?.image_url ? "이미지 교체" : "챕터 이미지 첨부"}</span><Input type="file" accept="image/*" className="hidden" onChange={(event) => setEditImageFile(event.target.files?.[0] ?? null)} /></label>
         <div className="flex flex-col gap-2 border-t border-line pt-3">
           <label className="flex cursor-pointer items-center gap-2 text-sm text-muted hover:text-ivory"><Music size={16} /><span>{editMusicFile ? editMusicFile.name : editing?.music_url ? "첨부 음원 교체" : "챕터 음원 첨부"}</span><Input type="file" accept="audio/*,.mp3,.ogg,.opus,.m4a,.aac,.wav" className="hidden" onChange={(event) => setEditMusicFile(event.target.files?.[0] ?? null)} /></label>

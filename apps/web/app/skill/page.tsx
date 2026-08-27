@@ -1,12 +1,11 @@
 "use client";
 
-import { Swords } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import PageContainer from "@/components/common/PageContainer";
 import { useRequireMember } from "@/lib/auth";
-import BattleTab from "./components/BattleTab";
-import RunnerBattleOverview from "./components/RunnerBattleOverview";
+import SkillTab from "@/app/battle/components/SkillTab";
 
-export default function BattlePage() {
+export default function SkillPage() {
   const member = useRequireMember();
 
   if (!member) return null;
@@ -15,22 +14,20 @@ export default function BattlePage() {
     <PageContainer className="space-y-8">
       <section className="flex flex-col gap-3">
         <p className="text-sm font-semibold uppercase tracking-[0.18em] text-muted">
-          Battle
+          Skill
         </p>
         <div className="flex flex-col gap-2">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-ivory sm:text-3xl">
-            <Swords size={28} className="text-ivory/85" />
-            전투
+            <Sparkles size={28} className="text-ivory/85" />
+            기술
           </h1>
           <p className="text-sm text-muted">
-            {member.role === "ADMIN"
-              ? "실전 전투를 준비하거나 진행 중인 전투를 이어갈 수 있습니다."
-              : "현재 챕터의 전투 일정과 출현 에너미를 확인할 수 있습니다."}
+            습득한 기술을 확인하고 AP로 다음 단계를 강화할 수 있습니다.
           </p>
         </div>
       </section>
 
-      {member.role === "ADMIN" ? <BattleTab /> : <RunnerBattleOverview />}
+      <SkillTab member={member} />
     </PageContainer>
   );
 }

@@ -67,6 +67,8 @@ interface Props {
   item?: Item | null;
   onSubmitted: () => void;
   onCancelEdit?: () => void;
+  /** 모달 등 자체 제목이 있는 컨테이너 안에서 쓸 때 내부 제목/설명 블록을 숨긴다. */
+  hideHeader?: boolean;
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
@@ -81,7 +83,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: Props) {
+export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, hideHeader = false }: Props) {
   const { alert } = useDialog();
   const [form, setForm] = useState<ItemCreate>(() => toItemForm(item));
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -147,23 +149,25 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit }: 
 
   return (
     <form onSubmit={handleSubmit} className="max-w-lg space-y-5">
-      <div className="flex items-start justify-between gap-3">
-        <div className="space-y-1">
-          <h2 className="text-lg font-semibold text-ivory">
-            {isEditMode ? "아이템 수정" : "아이템 추가"}
-          </h2>
-          <p className="text-sm text-muted">
-            {editingItemId != null
-              ? `아이템 #${editingItemId}의 정보를 수정합니다.`
-              : "상점에 새 아이템을 등록합니다."}
-          </p>
+      {!hideHeader && (
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-ivory">
+              {isEditMode ? "아이템 수정" : "아이템 추가"}
+            </h2>
+            <p className="text-sm text-muted">
+              {editingItemId != null
+                ? `아이템 #${editingItemId}의 정보를 수정합니다.`
+                : "상점에 새 아이템을 등록합니다."}
+            </p>
+          </div>
+          {isEditMode && (
+            <Button type="button" variant="outline" onClick={onCancelEdit}>
+              새 아이템 입력
+            </Button>
+          )}
         </div>
-        {isEditMode && (
-          <Button type="button" variant="outline" onClick={onCancelEdit}>
-            새 아이템 입력
-          </Button>
-        )}
-      </div>
+      )}
 
       <Field label="아이템명" required>
         <Input

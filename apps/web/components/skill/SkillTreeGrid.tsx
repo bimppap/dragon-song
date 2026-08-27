@@ -1,20 +1,21 @@
 "use client";
 
+import type { ReactNode } from "react";
 import Image from "next/image";
 import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
-import { formatEffect, type ItemEffect, type SkillNode } from "@/lib/api";
+import type { SkillNode } from "@/lib/api";
 
 export interface SkillTreeGridNode extends SkillNode {
   unlocked?: boolean;
 }
 
-// 노드 배치 좌표 상수 (컴팩트하게). 6열 × 6행 그리드를 절대 좌표로 그린다.
+// 노드 배치 좌표 상수 (컴팩트하게). 6열 × 7행(0~6단계) 그리드를 절대 좌표로 그린다.
 const CELL_W = 52;
 const CELL_H = 68;
 const COLS = 6;
-const ROWS = 6;
+const ROWS = 7;
 const ICON = 40; // size-10
 const ICON_TOP = 4;
 const ICON_CENTER_Y = ICON_TOP + ICON / 2;
@@ -51,20 +52,67 @@ function cellFor(branch: number | null, col: number | null, tier: number): Cell 
   };
 }
 
-/** 기술 이름 + 효과 목록을 보여주는 공용 툴팁 내용. */
-export function SkillTooltipContent({ name, effects }: { name: string; effects: ItemEffect[] }) {
+function InfoRow({ label, value }: { label: string; value: string }) {
   return (
-    <div className="max-w-56 text-left">
-      <div className="font-semibold">{name}</div>
-      {effects.length > 0 ? (
-        <ul className="mt-1 space-y-0.5 text-muted">
-          {effects.map((effect, index) => (
-            <li key={index}>{formatEffect(effect)}</li>
-          ))}
-        </ul>
-      ) : (
-        <div className="mt-1 text-muted">효과 없음</div>
+    <li>
+      <span className="text-ivory/60">{label}</span> {value}
+    </li>
+  );
+}
+
+/**
+ * 기술 정보 툴팁. 러너에게는 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서만 보여주고,
+ * 관리자에게는 변수명을 제외한 모든 정보(기술 비용·위력·계산 공식·개요 포함)를 보여준다.
+ */
+export function SkillTooltipContent({
+  node,
+  variant,
+  footer,
+}: {
+  node: SkillNode;
+  variant: "runner" | "admin";
+  footer?: ReactNode;
+}) {
+  // 0단계(서 아이덴티티 노드)는 실제 기술이 아니라 위치 표시용이라 이름만 보여준다.
+  if (node.tier === 0) {
+    return (
+      <div className="max-w-64 text-left">
+        <div className="font-semibold text-ivory">{node.default_name}</div>
+        {footer ? <div className="mt-2">{footer}</div> : null}
+      </div>
+    );
+  }
+
+  const stackableText = node.stackable == null ? "정보 없음" : node.stackable ? "가능" : "불가능";
+
+  return (
+    <div className="max-w-64 text-left">
+      <div className={cn("flex items-center gap-1.5 font-semibold", node.is_placeholder ? "text-ivory" : "text-emerald-400")}>
+        {node.default_name}
+        {node.is_placeholder && (
+          <span className="rounded-full border border-line px-1.5 py-0.5 text-[9px] font-medium text-muted">
+            임시값
+          </span>
+        )}
+      </div>
+      <ul className="mt-1.5 space-y-0.5 text-muted">
+        <InfoRow label="발동 타입:" value={node.trigger_type ?? "정보 없음"} />
+        <InfoRow label="분류:" value={node.category ?? "정보 없음"} />
+        <InfoRow label="중첩 가능:" value={stackableText} />
+        <InfoRow label="기술 대상:" value={node.target ?? "정보 없음"} />
+        <InfoRow label="발동 순서:" value={node.activation_order != null ? String(node.activation_order) : "정보 없음"} />
+        {variant === "admin" && (
+          <>
+            <InfoRow label="기술 비용:" value={node.cost != null ? String(node.cost) : "정보 없음"} />
+            <InfoRow label="기술 위력:" value={node.power != null ? String(node.power) : "정보 없음"} />
+            <InfoRow label="계산 공식:" value={node.formula ?? "정보 없음"} />
+          </>
+        )}
+      </ul>
+      {variant === "admin" && node.description && (
+        <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-muted">{node.description}</p>
       )}
+      {footer ? <div className="mt-2">{footer}</div> : null}
     </div>
   );
 }
@@ -76,6 +124,8 @@ interface SkillTreeGridProps<T extends SkillTreeGridNode> {
   isDisabled?: (node: T) => boolean;
   onNodeClick?: (node: T) => void;
   showLabels?: boolean;
+  /** 툴팁에 노출할 정보 범위. 러너는 제한된 필드만, 관리자는 변수명을 제외한 전부를 본다. */
+  tooltipVariant?: "runner" | "admin";
 }
 
 export default function SkillTreeGrid<T extends SkillTreeGridNode>({
@@ -85,6 +135,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
   isDisabled,
   onNodeClick,
   showLabels = true,
+  tooltipVariant = "runner",
 }: SkillTreeGridProps<T>) {
   const width = COLS * CELL_W;
   const height = ROWS * CELL_H;
@@ -132,7 +183,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
           <InfoTooltip
             key={node.id}
             side="top"
-            content={<SkillTooltipContent name={getLabel(node)} effects={node.effects} />}
+            content={<SkillTooltipContent node={node} variant={tooltipVariant} />}
           >
             <button
               type="button"
@@ -157,6 +208,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                   highlighted
                     ? "border-gold bg-[#3b321f] text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
                     : disabled ? "border-line bg-inset text-muted" : "border-line text-muted",
+                  !highlighted && node.tier !== 0 && !node.is_placeholder ? "border-emerald-500/60 text-emerald-500" : "",
                   clickable && !highlighted ? "hover:border-gold" : "",
                 )}
               >
@@ -170,7 +222,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 <span
                   className={cn(
                     "line-clamp-2 text-[10px] font-semibold leading-tight",
-                    highlighted ? "text-gold" : "text-ivory/85",
+                    highlighted ? "text-gold" : (node.tier !== 0 && !node.is_placeholder) ? "text-emerald-400" : "text-ivory/85",
                   )}
                 >
                   {getLabel(node)}

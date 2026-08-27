@@ -9,7 +9,7 @@ import InfoTooltip from "@/components/common/InfoTooltip";
 import { fetchItems, formatEffect, type Item } from "@/lib/api";
 
 interface Props {
-  characterId: number;
+  characterId?: number;
   cartItemIds: Set<number>;
   onAddToCart: (item: Item) => void;
   refreshKey: number;
@@ -34,11 +34,11 @@ function PriceText({ item }: { item: Item }) {
   );
 }
 
-function ItemImage({ url, className }: { url: string | null; className: string }) {
+function ItemImage({ url, className, fit = "cover" }: { url: string | null; className: string; fit?: "cover" | "contain" }) {
   if (url) {
     return (
       <span className={`${className} relative block overflow-hidden`}>
-        <Image src={url} alt="" fill sizes="112px" className="object-cover" />
+        <Image src={url} alt="" fill sizes="240px" className={fit === "cover" ? "object-cover" : "object-contain"} />
       </span>
     );
   }
@@ -52,7 +52,8 @@ function ItemImage({ url, className }: { url: string | null; className: string }
 function ItemTooltip({ item }: { item: Item }) {
   return (
     <div className="max-w-64 space-y-2 text-left">
-      <ItemImage url={item.image_url} className="h-28 w-full rounded-lg" />
+      {/* 전체 이미지가 잘리지 않도록 object-contain으로 표시 */}
+      <ItemImage url={item.image_url} className="h-28 w-full rounded-lg bg-inset" fit="contain" />
       <div className="flex items-center gap-2">
         <span className="font-semibold text-ivory">{item.name}</span>
         <Badge variant={item.item_type === "equipment" ? "secondary" : "outline"} className="text-[10px]">
@@ -96,28 +97,28 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
     return <p className="py-12 text-center text-sm text-muted">판매 중인 아이템이 없습니다.</p>;
 
   return (
-    <div className="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-4">
+    <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {items.map((item) => {
         const stock = remainingStock(item);
         const soldOut = stock === 0;
         const inCart = cartItemIds.has(item.id);
         return (
           <InfoTooltip key={item.id} side="top" content={<ItemTooltip item={item} />}>
-            <div className="flex min-h-24 min-w-0 cursor-default gap-3 rounded-xl border border-line bg-surface p-3 transition hover:border-gold hover:shadow-sm">
-              <ItemImage url={item.image_url} className="size-16 shrink-0 rounded-lg" />
-              <div className="flex min-w-0 flex-1 flex-col justify-between gap-1.5">
-                <div className="min-w-0">
-                  <p className="whitespace-nowrap text-sm font-semibold text-ivory">{item.name}</p>
-                  <PriceText item={item} />
-                </div>
-                <div className="flex items-center justify-between gap-2">
+            <div className="flex cursor-default flex-col overflow-hidden rounded-xl border border-line bg-surface transition hover:border-gold hover:shadow-sm">
+              <div className="relative aspect-square w-full shrink-0">
+                <ItemImage url={item.image_url} className="absolute inset-0 size-full" />
+              </div>
+              <div className="flex shrink-0 flex-col gap-1 p-2.5">
+                <p className="truncate text-xs font-semibold text-ivory">{item.name}</p>
+                <PriceText item={item} />
+                <div className="flex items-center justify-between gap-1.5">
                   {stock !== null ? (
-                    <span className="shrink-0 whitespace-nowrap font-num text-xs text-muted">{soldOut ? "품절" : `${stock}개 남음`}</span>
+                    <span className="shrink-0 whitespace-nowrap font-num text-[10px] text-muted">{soldOut ? "품절" : `${stock}개 남음`}</span>
                   ) : (
                     <span />
                   )}
                   <Button
-                    className="shrink-0"
+                    className="ml-auto shrink-0"
                     size="sm"
                     variant={inCart ? "secondary" : soldOut ? "outline" : "default"}
                     disabled={soldOut}

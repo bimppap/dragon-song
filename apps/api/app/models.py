@@ -11,6 +11,7 @@ class Chapter(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    battle_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     music_url: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -198,19 +199,37 @@ class CharacterItemState(Base):
 
 
 class SkillNode(Base):
+    """기술트리 노드. `book`(용맹의 서/불굴의 서/헌신의 서/탐구의 서)은 캐릭터의 역할(Character.faction)과
+    무관한 별개의 축이다 — 어떤 역할의 캐릭터든 4개 서 전부에서 자유롭게 기술을 배울 수 있다."""
+
     __tablename__ = "skill_nodes"
     __table_args__ = (
-        UniqueConstraint("faction", "branch", "col", "tier", name="uq_skill_node_slot"),
+        UniqueConstraint("book", "branch", "col", "tier", name="uq_skill_node_slot"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    faction: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "공격" | "수비" | "치유"
+    book: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "용맹의 서"|"불굴의 서"|"헌신의 서"|"탐구의 서"
     branch: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0,1,2 (tier 0은 None)
     col: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0,1 (tier 0,1은 None)
-    tier: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=기본, 1=계열선택, 2~5=I~IV
+    tier: Mapped[int] = mapped_column(Integer, nullable=False)  # 0=서 아이덴티티(항상 활성), 1=1단계, 2~6=2~6단계
     default_name: Mapped[str] = mapped_column(String, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL (없으면 기본 아이콘)
     effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
+
+    # skill.xlsx "기술 종류" 시트 기반 상세 메타데이터. var_name은 내부 참조용으로 API에는 노출하지 않는다.
+    trigger_type: Mapped[str | None] = mapped_column(String, nullable=True)  # 발동 타입 (즉발형/지속형/혼합형)
+    category: Mapped[str | None] = mapped_column(String, nullable=True)  # 분류 (피해/복합/강화/회복/약화 등)
+    stackable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # 중첩 가능 여부
+    var_name: Mapped[str | None] = mapped_column(String, nullable=True)  # 내부 변수명 (API 미노출)
+    cost: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 비용
+    power: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 위력
+    target: Mapped[str | None] = mapped_column(String, nullable=True)  # 기술 대상 (자유 형식: "1", "ALL", "1+N" 등)
+    activation_order: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 발동 순서
+    formula: Mapped[str | None] = mapped_column(String, nullable=True)  # 계산 공식 (관리자 전용 표시)
+    description: Mapped[str | None] = mapped_column(String, nullable=True)  # 개요 (관리자 전용 표시)
+    # skill.xlsx에 값이 비어있어 기획 확정 전 임시로 채운 노드인지 여부 (UI에서 색으로 구분 표시).
+    is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -246,6 +265,21 @@ class Purchase(Base):
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
     item_id: Mapped[int] = mapped_column(Integer, ForeignKey("items.id"), nullable=False, index=True)
     # 기존 DB에 컬럼이 없다면: ALTER TABLE purchases ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1;
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ItemUsage(Base):
+    """캐릭터의 소모형 아이템 사용 이력(구매/사용 이력 병합 표시용)."""
+    __tablename__ = "item_usages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    item_id: Mapped[int] = mapped_column(Integer, ForeignKey("items.id"), nullable=False, index=True)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -355,6 +389,7 @@ class Enemy(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     chapter: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     base_hp: Mapped[int] = mapped_column(Integer, nullable=False)
     hp_per_attacker: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     hp_per_defender: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
@@ -459,6 +494,9 @@ class BattleSession(Base):
     summons: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     participants: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     log: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # 라운드 시작 시점(그 라운드의 행동이 반영되기 전) 스냅샷. [{"round", "participants", "enemies", "summons"}, ...]
+    # "이전 라운드 다시 진행하기"에서 되돌릴 상태로 쓰인다. 실전(real)에서만 채워진다.
+    round_snapshots: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("members.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

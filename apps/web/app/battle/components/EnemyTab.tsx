@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import Image from "next/image";
+import { Image as ImageIcon, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -13,7 +14,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { createEnemy, fetchChapters, fetchEnemies } from "@/lib/api";
+import Modal from "@/components/common/Modal";
+import {
+  createEnemy,
+  fetchChapters,
+  fetchEnemies,
+  updateChapter,
+  updateEnemy,
+  uploadEnemyImage,
+  uploadEnemySummonImage,
+} from "@/lib/api";
 import type { Chapter, Enemy, EnemyCreate, EnemySkill } from "@/lib/api";
 import { cn, parsePositiveInt } from "@/lib/utils";
 import AlertBanner from "@/components/common/AlertBanner";
@@ -21,6 +31,8 @@ import EmptyState from "@/components/common/EmptyState";
 
 const SKILL_TYPES = ["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환"] as const;
 type SkillType = (typeof SKILL_TYPES)[number];
+
+const ALL_CHAPTERS = "__all__";
 
 type SkillFormEntry = {
   skill_type: SkillType;
@@ -31,6 +43,12 @@ type SkillFormEntry = {
   summon_hp: string;
   summon_attack: string;
   summon_count: string;
+  /** 이미 업로드되어 저장된 소환수 이미지 URL. */
+  summon_image_url: string | null;
+  /** 아직 업로드하지 않은, 선택만 해둔 소환수 이미지 파일. */
+  summon_image_file: File | null;
+  /** 미리보기용 URL (blob 또는 기존 image_url). */
+  summon_image_preview: string | null;
 };
 
 type EnemyFormState = {
@@ -53,6 +71,9 @@ const EMPTY_SKILL: SkillFormEntry = {
   summon_hp: "0",
   summon_attack: "0",
   summon_count: "1",
+  summon_image_url: null,
+  summon_image_file: null,
+  summon_image_preview: null,
 };
 
 const DEFAULT_FORM: EnemyFormState = {
@@ -78,6 +99,7 @@ function toPayload(form: EnemyFormState): EnemyCreate {
       summon_hp: isSummon ? parsePositiveInt(s.summon_hp) : null,
       summon_attack: isSummon ? parsePositiveInt(s.summon_attack) : null,
       summon_count: isSummon ? parsePositiveInt(s.summon_count) : null,
+      summon_image_url: isSummon ? s.summon_image_url : null,
     };
   });
   return {
@@ -92,6 +114,33 @@ function toPayload(form: EnemyFormState): EnemyCreate {
   };
 }
 
+function enemyToForm(enemy: Enemy): EnemyFormState {
+  return {
+    name: enemy.name,
+    chapter: enemy.chapter ?? "",
+    base_hp: String(enemy.base_hp),
+    hp_per_attacker: String(enemy.hp_per_attacker),
+    hp_per_defender: String(enemy.hp_per_defender),
+    hp_per_healer: String(enemy.hp_per_healer),
+    attack: String(enemy.attack),
+    skills: enemy.skills.length > 0
+      ? enemy.skills.map((s) => ({
+          skill_type: s.skill_type as SkillType,
+          name: s.name,
+          target_count: String(s.target_count),
+          damage_percent: String(s.damage_percent),
+          summon_name: s.summon_name ?? "",
+          summon_hp: String(s.summon_hp ?? 0),
+          summon_attack: String(s.summon_attack ?? 0),
+          summon_count: String(s.summon_count ?? 1),
+          summon_image_url: s.summon_image_url ?? null,
+          summon_image_file: null,
+          summon_image_preview: s.summon_image_url ?? null,
+        }))
+      : [{ ...EMPTY_SKILL }],
+  };
+}
+
 const SKILL_TYPE_COLOR: Record<SkillType, string> = {
   "지정 공격A": "bg-blue-500/20 text-blue-300",
   "지정 공격B": "bg-gold/15 text-gold",
@@ -103,28 +152,55 @@ const SKILL_TYPE_COLOR: Record<SkillType, string> = {
 export default function EnemyTab() {
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
+  const [selectedChapter, setSelectedChapter] = useState<string>(ALL_CHAPTERS);
+  const [battleDateDraft, setBattleDateDraft] = useState("");
+  const [chaptersLoaded, setChaptersLoaded] = useState(false);
   const [form, setForm] = useState<EnemyFormState>(DEFAULT_FORM);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingEnemy, setEditingEnemy] = useState<Enemy | null>(null);
   const [loading, setLoading] = useState(true);
+  const [scheduleSaving, setScheduleSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const selectedChapterData = chapterList.find((chapter) => chapter.name === selectedChapter) ?? null;
+  const battleDateDirty = (selectedChapterData?.battle_date ?? "") !== battleDateDraft;
+
   useEffect(() => {
     let cancelled = false;
-    async function load() {
-      try {
-        const [enemyList, chapList] = await Promise.all([fetchEnemies(), fetchChapters()]);
+    fetchChapters()
+      .then((chapList) => {
         if (cancelled) return;
-        setEnemies(enemyList);
         setChapterList(chapList);
+        if (chapList.length > 0) {
+          setSelectedChapter(chapList[0].name);
+          setBattleDateDraft(chapList[0].battle_date ?? "");
+        }
+      })
+      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "챕터를 불러오지 못했습니다."); })
+      .finally(() => { if (!cancelled) setChaptersLoaded(true); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    if (!chaptersLoaded) return;
+    let cancelled = false;
+    async function load() {
+      setLoading(true);
+      try {
+        const enemyList = await fetchEnemies(selectedChapter === ALL_CHAPTERS ? undefined : selectedChapter);
+        if (!cancelled) { setEnemies(enemyList); setError(null); }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "데이터를 불러오지 못했습니다.");
+        if (!cancelled) setError(e instanceof Error ? e.message : "에너미를 불러오지 못했습니다.");
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [chaptersLoaded, selectedChapter]);
 
   function setField<K extends keyof EnemyFormState>(key: K, value: EnemyFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -145,6 +221,63 @@ export default function EnemyTab() {
     }));
   }
 
+  function openAddModal() {
+    setForm({ ...DEFAULT_FORM, chapter: selectedChapter === ALL_CHAPTERS ? "" : selectedChapter });
+    setEditingEnemy(null);
+    setImageFile(null);
+    setImagePreview(null);
+    setError(null);
+    setModalOpen(true);
+  }
+
+  function openEditModal(enemy: Enemy) {
+    setForm(enemyToForm(enemy));
+    setEditingEnemy(enemy);
+    setImageFile(null);
+    setImagePreview(enemy.image_url);
+    setError(null);
+    setModalOpen(true);
+  }
+
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : (editingEnemy?.image_url ?? null));
+  }
+
+  function handleSummonImageChange(index: number, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setForm((prev) => ({
+      ...prev,
+      skills: prev.skills.map((s, i) => (
+        i === index
+          ? { ...s, summon_image_file: file, summon_image_preview: file ? URL.createObjectURL(file) : s.summon_image_url }
+          : s
+      )),
+    }));
+  }
+
+  async function handleBattleDateSave() {
+    if (!selectedChapterData) return;
+    setScheduleSaving(true);
+    setError(null);
+    try {
+      const updatedChapter = await updateChapter(selectedChapterData.id, {
+        name: selectedChapterData.name,
+        start_date: selectedChapterData.start_date,
+        end_date: selectedChapterData.end_date,
+        battle_date: battleDateDraft || null,
+        music_url: selectedChapterData.music_url,
+      });
+      setChapterList((prev) => prev.map((chapter) => (chapter.id === updatedChapter.id ? updatedChapter : chapter)));
+      setBattleDateDraft(updatedChapter.battle_date ?? "");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "전투 일정 저장에 실패했습니다.");
+    } finally {
+      setScheduleSaving(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) return;
@@ -152,42 +285,136 @@ export default function EnemyTab() {
     setSubmitting(true);
     setError(null);
     try {
-      const created = await createEnemy(toPayload(form));
-      setEnemies((prev) => [...prev, created]);
-      setForm({ ...DEFAULT_FORM, chapter: form.chapter, skills: [{ ...EMPTY_SKILL }] });
+      let saved = editingEnemy
+        ? await updateEnemy(editingEnemy.id, toPayload(form))
+        : await createEnemy(toPayload(form));
+
+      if (imageFile) {
+        saved = await uploadEnemyImage(saved.id, imageFile);
+      }
+      for (let i = 0; i < form.skills.length; i++) {
+        const file = form.skills[i].summon_image_file;
+        if (file) {
+          saved = await uploadEnemySummonImage(saved.id, i, file);
+        }
+      }
+
+      if (editingEnemy) {
+        setEnemies((prev) => {
+          const replaced = prev.map((e) => (e.id === saved.id ? saved : e));
+          if (selectedChapter !== ALL_CHAPTERS && saved.chapter !== selectedChapter) {
+            return replaced.filter((e) => e.id !== saved.id);
+          }
+          return replaced;
+        });
+      } else {
+        setEnemies((prev) => [...prev, saved]);
+      }
+      setModalOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "에너미 생성에 실패했습니다.");
+      setError(e instanceof Error ? e.message : (editingEnemy ? "에너미 수정에 실패했습니다." : "에너미 생성에 실패했습니다."));
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
-      {error && (
-        <AlertBanner className="xl:col-span-2">{error}</AlertBanner>
-      )}
+    <div className="flex flex-col gap-6">
+      {error && <AlertBanner>{error}</AlertBanner>}
 
-      {/* 에너미 리스트 */}
       <Card>
-        <CardHeader>
-          <CardTitle>에너미 리스트</CardTitle>
-          <CardDescription>등록된 모든 에너미와 스킬 세트를 확인합니다.</CardDescription>
+        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>에너미 관리</CardTitle>
+            <CardDescription>챕터를 선택해 해당 챕터의 에너미를 확인하고 추가합니다.</CardDescription>
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={selectedChapter}
+              onValueChange={(value) => {
+                setSelectedChapter(value);
+                const chapter = chapterList.find((item) => item.name === value) ?? null;
+                setBattleDateDraft(chapter?.battle_date ?? "");
+              }}
+            >
+              <SelectTrigger className="w-44">
+                <SelectValue placeholder="챕터 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  <SelectItem value={ALL_CHAPTERS}>전체 챕터</SelectItem>
+                  {chapterList.map((c) => (
+                    <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              type="button"
+              onClick={openAddModal}
+              disabled={selectedChapter === ALL_CHAPTERS}
+              className="gap-2"
+              title={selectedChapter === ALL_CHAPTERS ? "에너미를 추가할 챕터를 먼저 선택하세요." : undefined}
+            >
+              <Plus size={15} />
+              에너미 추가
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3">
+        <CardContent>
+          {selectedChapterData && (
+            <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-inset/30 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-ivory">{selectedChapterData.name} 전투 일정</p>
+                <p className="text-xs text-muted">
+                  챕터 기간 {selectedChapterData.start_date} ~ {selectedChapterData.end_date} 안에서 지정할 수 있습니다. 비워두면 러너 전투
+                  페이지에 대기 문구가 표시됩니다.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <Input
+                  type="date"
+                  value={battleDateDraft}
+                  min={selectedChapterData.start_date}
+                  max={selectedChapterData.end_date}
+                  onChange={(event) => setBattleDateDraft(event.target.value)}
+                  className="sm:w-44"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleBattleDateSave}
+                  disabled={scheduleSaving || !battleDateDirty}
+                >
+                  {scheduleSaving ? "저장 중..." : "전투 일정 저장"}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <EmptyState>
               에너미 목록을 불러오는 중입니다.
             </EmptyState>
           ) : enemies.length === 0 ? (
             <EmptyState>
-              등록된 에너미가 없습니다.
+              {selectedChapter === ALL_CHAPTERS ? "등록된 에너미가 없습니다." : "이 챕터에 등록된 에너미가 없습니다."}
             </EmptyState>
           ) : (
-            enemies.map((enemy) => (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {enemies.map((enemy) => (
               <div key={enemy.id} className="rounded-xl border border-line px-4 py-4 flex flex-col gap-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-3">
+                    <div className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-line bg-inset">
+                      {enemy.image_url ? (
+                        <Image src={enemy.image_url} alt={enemy.name} fill className="object-cover object-top" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <ImageIcon size={16} className="text-muted" />
+                        </div>
+                      )}
+                    </div>
                     <span className="font-semibold text-ivory">{enemy.name}</span>
                     {enemy.chapter && (
                       <span className="text-xs text-muted border border-line rounded px-1.5 py-0.5">
@@ -198,6 +425,16 @@ export default function EnemyTab() {
                   <div className="flex items-center gap-3 text-xs text-muted">
                     <span>HP {enemy.base_hp.toLocaleString()}</span>
                     <span>공격 {enemy.attack.toLocaleString()}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEditModal(enemy)}
+                      className="h-7 w-7 text-muted hover:text-gold"
+                      aria-label={`${enemy.name} 수정`}
+                    >
+                      <Pencil size={14} />
+                    </Button>
                   </div>
                 </div>
 
@@ -229,26 +466,55 @@ export default function EnemyTab() {
                   ))}
                 </div>
               </div>
-            ))
+            ))}
+          </div>
           )}
         </CardContent>
       </Card>
 
-      {/* 에너미 추가 폼 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>에너미 추가</CardTitle>
-          <CardDescription>새 에너미를 등록합니다.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-ivory">이름</label>
-              <Input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="에너미 이름" required />
-            </div>
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={
+          editingEnemy
+            ? `에너미 수정 · ${form.chapter || "없음"}`
+            : `에너미 추가 · ${selectedChapter === ALL_CHAPTERS ? "" : selectedChapter}`
+        }
+      >
+        <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
+          {error && <AlertBanner>{error}</AlertBanner>}
 
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold text-ivory">이름</label>
+            <Input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="에너미 이름" required />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <label className="text-sm font-semibold text-ivory">이미지</label>
+            <div className="flex items-center gap-4">
+              <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+                {imagePreview ? (
+                  // blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다.
+                  <Image src={imagePreview} alt="에너미 이미지 미리보기" fill unoptimized className="object-cover object-top" />
+                ) : (
+                  <ImageIcon size={22} className="text-muted" />
+                )}
+              </div>
+              <div className="space-y-1">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageChange}
+                  className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
+                />
+                <p className="text-xs text-muted">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
+              </div>
+            </div>
+          </div>
+
+          {editingEnemy && (
             <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-ivory">챕터 (선택)</label>
+              <label className="text-sm font-semibold text-ivory">챕터</label>
               <Select
                 value={form.chapter || "__none__"}
                 onValueChange={(v) => setField("chapter", v === "__none__" ? "" : v)}
@@ -266,163 +532,185 @@ export default function EnemyTab() {
                 </SelectContent>
               </Select>
             </div>
+          )}
 
-            <div className="rounded-xl border border-line bg-inset px-4 py-4 flex flex-col gap-3">
-              <p className="text-xs font-semibold tracking-widest text-muted uppercase">체력 / 공격력</p>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-ivory/85">기본 체력</label>
-                  <Input type="number" min={0} value={form.base_hp} onChange={(e) => setField("base_hp", e.target.value)} placeholder="0" />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-ivory/85">공격력</label>
-                  <Input type="number" min={0} value={form.attack} onChange={(e) => setField("attack", e.target.value)} placeholder="0" />
-                </div>
+          <div className="rounded-xl border border-line bg-inset px-4 py-4 flex flex-col gap-3">
+            <p className="text-xs font-semibold tracking-widest text-muted uppercase">체력 / 공격력</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-ivory/85">기본 체력</label>
+                <Input type="number" min={0} value={form.base_hp} onChange={(e) => setField("base_hp", e.target.value)} placeholder="0" />
               </div>
-              <p className="text-xs font-semibold text-muted">인원당 증가 체력</p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {[
-                  { key: "hp_per_attacker" as const, label: "공격 인원" },
-                  { key: "hp_per_defender" as const, label: "수비 인원" },
-                  { key: "hp_per_healer" as const, label: "치유 인원" },
-                ].map(({ key, label }) => (
-                  <div key={key} className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold text-ivory/85">{label}</label>
-                    <Input type="number" min={0} value={form[key]} onChange={(e) => setField(key, e.target.value)} placeholder="0" />
-                  </div>
-                ))}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-semibold text-ivory/85">공격력</label>
+                <Input type="number" min={0} value={form.attack} onChange={(e) => setField("attack", e.target.value)} placeholder="0" />
               </div>
             </div>
+            <p className="text-xs font-semibold text-muted">인원당 증가 체력</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              {[
+                { key: "hp_per_attacker" as const, label: "공격 인원" },
+                { key: "hp_per_defender" as const, label: "수비 인원" },
+                { key: "hp_per_healer" as const, label: "치유 인원" },
+              ].map(({ key, label }) => (
+                <div key={key} className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">{label}</label>
+                  <Input type="number" min={0} value={form[key]} onChange={(e) => setField(key, e.target.value)} placeholder="0" />
+                </div>
+              ))}
+            </div>
+          </div>
 
-            {/* 스킬 세트 */}
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold text-ivory">스킬 세트</label>
-                <Button type="button" variant="outline" onClick={addSkill} className="h-7 px-3 text-xs gap-1">
-                  <Plus size={12} /> 스킬 추가
-                </Button>
-              </div>
+          {/* 스킬 세트 */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-semibold text-ivory">스킬 세트</label>
+              <Button type="button" variant="outline" onClick={addSkill} className="h-7 px-3 text-xs gap-1">
+                <Plus size={12} /> 스킬 추가
+              </Button>
+            </div>
 
-              {form.skills.map((skill, idx) => {
-                const isSummon = skill.skill_type === "소환";
-                return (
-                  <div key={idx} className="rounded-xl border border-line bg-surface px-4 py-4 flex flex-col gap-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-semibold text-muted">스킬 {idx + 1}</span>
-                      {form.skills.length > 1 && (
-                        <Button type="button" variant="ghost" onClick={() => removeSkill(idx)} className="h-6 w-6 p-0 text-muted hover:text-red-500">
-                          <Trash2 size={13} />
-                        </Button>
-                      )}
+            {form.skills.map((skill, idx) => {
+              const isSummon = skill.skill_type === "소환";
+              return (
+                <div key={idx} className="rounded-xl border border-line bg-surface px-4 py-4 flex flex-col gap-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-muted">스킬 {idx + 1}</span>
+                    {form.skills.length > 1 && (
+                      <Button type="button" variant="ghost" onClick={() => removeSkill(idx)} className="h-6 w-6 p-0 text-muted hover:text-red-500">
+                        <Trash2 size={13} />
+                      </Button>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-ivory/85">스킬 유형</label>
+                      <Select
+                        value={skill.skill_type}
+                        onValueChange={(v: SkillType) => updateSkill(idx, "skill_type", v)}
+                      >
+                        <SelectTrigger className="h-8 text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {SKILL_TYPES.map((t) => (
+                              <SelectItem key={t} value={t}>{t}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                     </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-ivory/85">스킬명</label>
+                      <Input
+                        className="h-8 text-xs"
+                        value={skill.name}
+                        onChange={(e) => updateSkill(idx, "name", e.target.value)}
+                        placeholder="스킬 이름"
+                      />
+                    </div>
+                  </div>
 
+                  {!isSummon && (
                     <div className="grid grid-cols-2 gap-2">
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-ivory/85">스킬 유형</label>
-                        <Select
-                          value={skill.skill_type}
-                          onValueChange={(v: SkillType) => updateSkill(idx, "skill_type", v)}
-                        >
-                          <SelectTrigger className="h-8 text-xs">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              {SKILL_TYPES.map((t) => (
-                                <SelectItem key={t} value={t}>{t}</SelectItem>
-                              ))}
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
+                        <label className="text-xs font-semibold text-ivory/85">타겟 인원</label>
+                        <Input
+                          type="number" min={0} className="h-8 text-xs"
+                          value={skill.target_count}
+                          onChange={(e) => updateSkill(idx, "target_count", e.target.value)}
+                          placeholder="0"
+                        />
                       </div>
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-ivory/85">스킬명</label>
+                        <label className="text-xs font-semibold text-ivory/85">피해량 (%)</label>
                         <Input
-                          className="h-8 text-xs"
-                          value={skill.name}
-                          onChange={(e) => updateSkill(idx, "name", e.target.value)}
-                          placeholder="스킬 이름"
+                          type="number" min={0} className="h-8 text-xs"
+                          value={skill.damage_percent}
+                          onChange={(e) => updateSkill(idx, "damage_percent", e.target.value)}
+                          placeholder="0"
                         />
                       </div>
                     </div>
+                  )}
 
-                    {!isSummon && (
-                      <div className="grid grid-cols-2 gap-2">
+                  {isSummon && (
+                    <div className="flex flex-col gap-2">
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-ivory/85">소환수 이름</label>
+                        <Input
+                          className="h-8 text-xs"
+                          value={skill.summon_name}
+                          onChange={(e) => updateSkill(idx, "summon_name", e.target.value)}
+                          placeholder="소환수 이름"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-xs font-semibold text-ivory/85">소환수 이미지</label>
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-inset">
+                            {skill.summon_image_preview ? (
+                              <Image src={skill.summon_image_preview} alt="소환수 이미지 미리보기" fill unoptimized className="object-cover object-top" />
+                            ) : (
+                              <ImageIcon size={16} className="text-muted" />
+                            )}
+                          </div>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={(e) => handleSummonImageChange(idx, e)}
+                            className="block text-xs text-ivory/85 file:mr-2 file:rounded-lg file:border-0 file:bg-gold/10 file:px-2.5 file:py-1 file:text-xs file:font-semibold file:text-gold hover:file:bg-gold/15"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-semibold text-ivory/85">타겟 인원</label>
+                          <label className="text-xs font-semibold text-ivory/85">소환수 체력</label>
                           <Input
                             type="number" min={0} className="h-8 text-xs"
-                            value={skill.target_count}
-                            onChange={(e) => updateSkill(idx, "target_count", e.target.value)}
+                            value={skill.summon_hp}
+                            onChange={(e) => updateSkill(idx, "summon_hp", e.target.value)}
                             placeholder="0"
                           />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-semibold text-ivory/85">피해량 (%)</label>
+                          <label className="text-xs font-semibold text-ivory/85">소환수 공격력</label>
                           <Input
                             type="number" min={0} className="h-8 text-xs"
-                            value={skill.damage_percent}
-                            onChange={(e) => updateSkill(idx, "damage_percent", e.target.value)}
+                            value={skill.summon_attack}
+                            onChange={(e) => updateSkill(idx, "summon_attack", e.target.value)}
                             placeholder="0"
                           />
                         </div>
-                      </div>
-                    )}
-
-                    {isSummon && (
-                      <div className="flex flex-col gap-2">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-semibold text-ivory/85">소환수 이름</label>
+                          <label className="text-xs font-semibold text-ivory/85">소환 인원수</label>
                           <Input
-                            className="h-8 text-xs"
-                            value={skill.summon_name}
-                            onChange={(e) => updateSkill(idx, "summon_name", e.target.value)}
-                            placeholder="소환수 이름"
+                            type="number" min={1} className="h-8 text-xs"
+                            value={skill.summon_count}
+                            onChange={(e) => updateSkill(idx, "summon_count", e.target.value)}
+                            placeholder="1"
                           />
                         </div>
-                        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                          <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-ivory/85">소환수 체력</label>
-                            <Input
-                              type="number" min={0} className="h-8 text-xs"
-                              value={skill.summon_hp}
-                              onChange={(e) => updateSkill(idx, "summon_hp", e.target.value)}
-                              placeholder="0"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-ivory/85">소환수 공격력</label>
-                            <Input
-                              type="number" min={0} className="h-8 text-xs"
-                              value={skill.summon_attack}
-                              onChange={(e) => updateSkill(idx, "summon_attack", e.target.value)}
-                              placeholder="0"
-                            />
-                          </div>
-                          <div className="flex flex-col gap-1.5">
-                            <label className="text-xs font-semibold text-ivory/85">소환 인원수</label>
-                            <Input
-                              type="number" min={1} className="h-8 text-xs"
-                              value={skill.summon_count}
-                              onChange={(e) => updateSkill(idx, "summon_count", e.target.value)}
-                              placeholder="1"
-                            />
-                          </div>
-                        </div>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              <Plus size={15} />
-              {submitting ? "추가 중..." : "에너미 추가"}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
+          <Button type="submit" className="w-full" disabled={submitting}>
+            {editingEnemy ? <Pencil size={15} /> : <Plus size={15} />}
+            {submitting
+              ? (editingEnemy ? "수정 중..." : "추가 중...")
+              : (editingEnemy ? "수정 완료" : "에너미 추가")}
+          </Button>
+        </form>
+      </Modal>
     </div>
   );
 }

@@ -1,19 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { Settings } from "lucide-react";
 import ShopGrid from "./components/ShopGrid";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
 import GiftCart from "./components/GiftCart";
+import ShopAdminPanel from "./components/ShopAdminPanel";
 import { fetchCharacters, bulkPurchase, consumeItem, equipItem, sendAdminGift } from "@/lib/api";
 import type { Character, Item } from "@/lib/api";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/common/PageContainer";
 import { useRequireMember } from "@/lib/auth";
 import { useDialog } from "@/components/common/DialogProvider";
@@ -124,8 +120,9 @@ function RunnerShop({ characterId }: { characterId: number }) {
 
 function AdminShop() {
   const { confirm, alert } = useDialog();
+  const [managing, setManaging] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [characterId, setCharacterId] = useState<number | null>(null);
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<number[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
   const { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove } = useCartEntries();
   const [gold, setGold] = useState(0);
@@ -133,19 +130,24 @@ function AdminShop() {
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
-    fetchCharacters()
-      .then((list) => {
-        setCharacters(list);
-        if (list.length > 0) setCharacterId(list[0].id);
-      })
-      .catch(console.error);
+    fetchCharacters().then(setCharacters).catch(console.error);
   }, []);
 
   const cartItemIds = new Set(cart.map((e) => e.item.id));
 
+  function handleSelectCharacter(id: number) {
+    setSelectedCharacterIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+  }
+
+  function handleUnselectCharacter(id: number) {
+    setSelectedCharacterIds((prev) => prev.filter((existing) => existing !== id));
+  }
+
   async function handleSend() {
-    if (characterId == null) return;
-    const characterName = characters.find((c) => c.id === characterId)?.name ?? "선택한 캐릭터";
+    if (selectedCharacterIds.length === 0) return;
+    const characterNames = selectedCharacterIds
+      .map((id) => characters.find((c) => c.id === id)?.name ?? String(id))
+      .join(", ");
     const contents = [
       gold > 0 ? `골드 ${gold.toLocaleString()}G` : null,
       cp > 0 ? `CP ${cp.toLocaleString()}` : null,
@@ -154,7 +156,7 @@ function AdminShop() {
 
     const ok = await confirm({
       title: "선물 보내기",
-      description: `${characterName}에게 다음 선물을 보낼까요?\n${contents}`,
+      description: `${characterNames}에게 각각 다음 선물을 보낼까요?\n${contents}`,
       confirmText: "보내기",
     });
     if (!ok) return;
@@ -162,15 +164,16 @@ function AdminShop() {
     setSending(true);
     try {
       await sendAdminGift({
-        character_id: characterId,
+        character_ids: selectedCharacterIds,
         gold,
         cp,
         items: cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })),
       });
-      await alert(`${characterName}에게 선물을 보냈습니다. 보상 이력에 '관리자의 선물'로 기록됩니다.`);
+      await alert(`${characterNames}에게 선물을 보냈습니다. 보상 이력에 '관리자의 선물'로 기록됩니다.`);
       setCart([]);
       setGold(0);
       setCp(0);
+      setSelectedCharacterIds([]);
       setRefreshKey((k) => k + 1);
     } catch (e) {
       await alert(e instanceof Error ? e.message : "선물 보내기 실패");
@@ -181,49 +184,37 @@ function AdminShop() {
 
   return (
     <PageContainer className="space-y-8">
-      <div className="flex flex-col gap-2">
-        <h1 className="text-2xl font-bold tracking-tight text-ivory">상점</h1>
-        <p className="text-sm text-muted">캐릭터를 선택해 골드·CP·아이템을 선물로 보낼 수 있습니다.</p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold tracking-tight text-ivory">상점</h1>
+          <p className="text-sm text-muted">
+            {managing
+              ? "아이템을 관리하고 구매 내역을 확인할 수 있습니다."
+              : "캐릭터를 선택해 골드·CP·아이템을 선물로 보낼 수 있습니다."}
+          </p>
+        </div>
+        <Button variant="link" className="gap-1.5 px-0" onClick={() => setManaging((v) => !v)}>
+          <Settings size={15} />
+          {managing ? "상점으로 돌아가기" : "상점 관리"}
+        </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <span className="whitespace-nowrap text-sm font-semibold text-ivory/85">
-          선물을 받을 캐릭터
-        </span>
-        <Select
-          value={characterId?.toString() ?? ""}
-          onValueChange={(v) => {
-            setCharacterId(Number(v));
-            setCart([]);
-          }}
-          disabled={characters.length === 0}
-        >
-          <SelectTrigger className="w-44">
-            <SelectValue placeholder="캐릭터 없음" />
-          </SelectTrigger>
-          <SelectContent>
-            {characters.map((c) => (
-              <SelectItem key={c.id} value={c.id.toString()}>
-                {c.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-
-      {characterId == null ? (
-        <p className="py-12 text-center text-sm text-muted">캐릭터를 선택해 주세요.</p>
+      {managing ? (
+        <ShopAdminPanel />
       ) : (
         <div className="flex flex-col items-start gap-6 lg:flex-row">
           <div className="w-full min-w-0 flex-1">
             <ShopGrid
-              characterId={characterId}
               cartItemIds={cartItemIds}
               onAddToCart={handleAddToCart}
               refreshKey={refreshKey}
             />
           </div>
           <GiftCart
+            characters={characters}
+            selectedCharacterIds={selectedCharacterIds}
+            onSelectCharacter={handleSelectCharacter}
+            onUnselectCharacter={handleUnselectCharacter}
             entries={cart}
             gold={gold}
             cp={cp}

@@ -5,7 +5,7 @@ import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Ban, Package, Settings2, ShoppingCart } from "lucide-react";
-import { fetchItems, ITEM_EFFECT_STAT_OPTIONS } from "@/lib/api";
+import { fetchItems, formatEffect } from "@/lib/api";
 import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 ModuleRegistry.registerModules([AllCommunityModule]);
 
 interface Props {
-  characterId: number;
+  characterId?: number;
   cartItemIds?: Set<number>;
   onAddToCart?: (item: Item) => void;
   refreshKey: number;
@@ -21,10 +21,6 @@ interface Props {
   showEffects?: boolean;
   onEditItem?: (item: Item) => void;
 }
-
-const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
-  ITEM_EFFECT_STAT_OPTIONS.map((option) => [option.value, option.label]),
-);
 
 function StockBadge({ value }: { value: number | null }) {
   if (value === null) return <Badge variant="secondary">무제한</Badge>;
@@ -43,13 +39,7 @@ function formatAvailability(item: Item): string {
 
 function formatEffects(item: Item): string {
   if (item.effects.length === 0) return "효과 없음";
-  return item.effects
-    .map((effect) => {
-      const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
-      const sign = effect.delta >= 0 ? "+" : "";
-      return `${label} ${sign}${effect.delta}`;
-    })
-    .join(", ");
+  return item.effects.map(formatEffect).join(", ");
 }
 
 function calcStock(item: Item): number | null {

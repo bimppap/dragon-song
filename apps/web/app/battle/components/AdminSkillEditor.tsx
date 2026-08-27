@@ -12,12 +12,12 @@ import {
   fetchSkillNodes,
   updateSkillNode,
   uploadSkillImage,
-  type Faction,
   type ItemEffect,
+  type SkillBook,
   type SkillNode,
 } from "@/lib/api";
 
-const FACTIONS: Faction[] = ["공격", "수비", "치유"];
+const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 
 interface Draft {
   name: string;
@@ -25,7 +25,7 @@ interface Draft {
 }
 
 export default function AdminSkillEditor() {
-  const [nodesByFaction, setNodesByFaction] = useState<Record<Faction, SkillNode[]>>();
+  const [nodesByBook, setNodesByBook] = useState<Record<SkillBook, SkillNode[]>>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<SkillNode | null>(null);
@@ -41,9 +41,9 @@ export default function AdminSkillEditor() {
       setLoading(true);
       setError(null);
       try {
-        const lists = await Promise.all(FACTIONS.map((f) => fetchSkillNodes(f)));
+        const lists = await Promise.all(BOOKS.map((b) => fetchSkillNodes(b)));
         if (cancelled) return;
-        setNodesByFaction(Object.fromEntries(FACTIONS.map((f, i) => [f, lists[i]])) as Record<Faction, SkillNode[]>);
+        setNodesByBook(Object.fromEntries(BOOKS.map((b, i) => [b, lists[i]])) as Record<SkillBook, SkillNode[]>);
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패");
       } finally {
@@ -75,9 +75,9 @@ export default function AdminSkillEditor() {
   }
 
   function replaceNode(updated: SkillNode) {
-    setNodesByFaction((prev) =>
+    setNodesByBook((prev) =>
       prev
-        ? { ...prev, [updated.faction]: prev[updated.faction].map((n) => (n.id === updated.id ? updated : n)) }
+        ? { ...prev, [updated.book]: prev[updated.book].map((n) => (n.id === updated.id ? updated : n)) }
         : prev,
     );
   }
@@ -105,28 +105,30 @@ export default function AdminSkillEditor() {
       <div className="space-y-1">
         <h2 className="text-lg font-bold text-ivory">기술트리 관리</h2>
         <p className="text-sm text-muted">
-          진영별 기술트리 구조를 한 페이지에서 확인하고 각 기술을 클릭해 이름·효과·이미지를 편집할 수 있습니다. 기술
-          아이콘에 마우스를 올리면 이름과 효과가 표시됩니다. 기본 기술(맨 아래)에서 시작해 1분기(계열) 하나, 2분기(세부
-          경로) 하나를 골라 I~IV 단계로 강화하는 구조입니다.
+          서(용맹/불굴/헌신/탐구)별 기술트리 구조를 한 페이지에서 확인하고 각 기술을 클릭해 이름·효과·이미지를 편집할 수
+          있습니다. 기술 아이콘에 마우스를 올리면 상세 정보가 표시됩니다(주황색은 기획 확정 전 임시값). 서 아이덴티티
+          노드(맨 아래)는 모든 캐릭터에게 항상 활성화되며, 1단계 계열 하나·2단계부터의 세부 경로 하나를 골라 6단계까지
+          강화하는 구조입니다.
         </p>
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}
 
-      {loading || !nodesByFaction ? (
+      {loading || !nodesByBook ? (
         <p className="text-sm text-muted">불러오는 중...</p>
       ) : (
         <div className="no-scrollbar overflow-x-auto pb-2"><div className="mx-auto flex w-max gap-6">
-          {FACTIONS.map((faction) => (
-            <div key={faction} className="flex flex-col items-center gap-3">
-              <h3 className="text-sm font-semibold text-ivory">{faction} 계열</h3>
+          {BOOKS.map((book) => (
+            <div key={book} className="flex flex-col items-center gap-3">
+              <h3 className="text-sm font-semibold text-ivory">{book}</h3>
               <div className="rounded-xl border border-line bg-surface p-4">
                 <SkillTreeGrid
-                  nodes={nodesByFaction[faction]}
+                  nodes={nodesByBook[book]}
                   getLabel={(n) => n.default_name}
                   isHighlighted={(n) => editing?.id === n.id}
                   onNodeClick={startEdit}
                   showLabels={false}
+                  tooltipVariant="admin"
                 />
               </div>
             </div>
@@ -137,7 +139,7 @@ export default function AdminSkillEditor() {
       <Modal
         open={editing !== null}
         onClose={closeEdit}
-        title={editing ? `${editing.faction} · ${editing.tier_label} 기술 편집` : undefined}
+        title={editing ? `${editing.book} · ${editing.tier_label} 기술 편집` : undefined}
       >
         <div className="space-y-4">
           <div className="space-y-1.5">

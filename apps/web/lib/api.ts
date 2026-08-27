@@ -167,7 +167,7 @@ export type ItemEffectStat =
   | "skill_lv" | "skill_eff_true" | "skill_eff_fixed"
   | "skill_cost" | "skill_target"
   | "start_sh" | "revive_hp" | "act_time"
-  | "ap_reset";
+  | "ap_reset" | "grade_choice_1" | "grade_choice_2";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -209,6 +209,8 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "revive_hp", label: "부활 후 체력" },
   { value: "act_time", label: "행동횟수" },
   { value: "ap_reset", label: "AP 초기화(기술 리셋)" },
+  { value: "grade_choice_1", label: "능력치 1개 선택 +1" },
+  { value: "grade_choice_2", label: "능력치 2개 선택 +1" },
 ];
 
 /** ItemEffectStat → 한글 라벨 조회 맵. */
@@ -219,7 +221,7 @@ export const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
 /** 효과 하나를 "라벨 +N" 형태의 문자열로 표현한다. */
 export function formatEffect(effect: ItemEffect): string {
   const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
-  if (effect.stat === "ap_reset") return label;
+  if (effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2") return label;
   const sign = effect.delta >= 0 ? "+" : "";
   return `${label} ${sign}${effect.delta}`;
 }
@@ -273,6 +275,17 @@ export interface Purchase {
   character_name: string;
   item_id: number;
   item_name: string;
+  item_image_url: string | null;
+  quantity: number;
+  created_at: string;
+}
+
+export interface ItemHistoryEntry {
+  id: number;
+  kind: "purchase" | "use";
+  item_id: number;
+  item_name: string;
+  item_image_url: string | null;
   quantity: number;
   created_at: string;
 }
@@ -354,6 +367,7 @@ export interface CharacterOwnedItem {
   item_id: number;
   item_name: string;
   item_description: string;
+  item_image_url: string | null;
   item_type: ItemType;
   effects: ItemEffect[];
   quantity: number;
@@ -372,14 +386,14 @@ export interface CharacterAchievedChallenge {
 export interface CharacterDetail extends Character {
   owned_items: CharacterOwnedItem[];
   achieved_challenges: CharacterAchievedChallenge[];
-  purchase_history: Purchase[];
+  item_history: ItemHistoryEntry[];
   reward_history: Reward[];
   attendance_streak: number;
 }
 
 export type RewardGrant =
   | { type: "item"; item_id: number; quantity: number }
-  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset">; amount: number };
+  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2">; amount: number };
 
 export type ChallengeRewardItemGrant = RewardGrant;
 
@@ -419,6 +433,7 @@ export interface RewardItemEntry {
   type: string;
   amount: number | null;
   item_id: number | null;
+  item_name: string | null;
   quantity: number | null;
   stat?: string | null;
 }
@@ -520,6 +535,12 @@ export async function createAttendanceEntry(characterId: number, attendanceDate:
   }, "출석 처리 실패");
 }
 
+export async function deleteAttendanceEntry(entryId: number): Promise<AttendanceEntry[]> {
+  return request<AttendanceEntry[]>(`/attendance/entries/${entryId}`, {
+    method: "DELETE",
+  }, "출석 기록 삭제 실패");
+}
+
 export async function payAttendanceRewards(): Promise<AttendanceRewardPayResult> {
   return request<AttendanceRewardPayResult>("/attendance/rewards/pay", {
     method: "POST",
@@ -553,10 +574,19 @@ export async function uploadItemImage(itemId: number, file: File): Promise<Item>
   return uploadFile<Item>(`/items/${itemId}/image`, file, "file", "이미지 업로드 실패");
 }
 
+/** 가능성/잠재성의 메달 사용 시 선택 가능한 능력치. */
+export const GRADE_CHOICE_STAT_OPTIONS: { value: "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom"; label: string }[] = [
+  { value: "stat_courage", label: "용기" },
+  { value: "stat_endurance", label: "인내" },
+  { value: "stat_charity", label: "자애" },
+  { value: "stat_wisdom", label: "지혜" },
+];
+
 // "use"로 시작하면 React Hook으로 오인되어 rules-of-hooks 린트 오탐이 발생하므로 consumeItem으로 명명한다.
-export async function consumeItem(characterId: number, itemId: number): Promise<CharacterDetail> {
+export async function consumeItem(characterId: number, itemId: number, chosenStats?: string[]): Promise<CharacterDetail> {
   return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
     method: "POST",
+    body: JSON.stringify({ chosen_stats: chosenStats ?? [] }),
   }, "아이템 사용 실패");
 }
 
@@ -664,6 +694,7 @@ export async function paySettlement(settlementId: number, gold: number, cp: numb
 
 export interface RewardWithCharacter extends Reward {
   character_name: string;
+  character_image_url: string | null;
   revoked: boolean;
 }
 
@@ -687,14 +718,14 @@ export async function revokeReward(rewardId: number): Promise<RewardWithCharacte
 }
 
 export interface AdminGiftRequest {
-  character_id: number;
+  character_ids: number[];
   gold: number;
   cp: number;
   items: CartItem[];
 }
 
-export async function sendAdminGift(data: AdminGiftRequest): Promise<Reward> {
-  return request<Reward>("/rewards/admin-gift", {
+export async function sendAdminGift(data: AdminGiftRequest): Promise<Reward[]> {
+  return request<Reward[]>("/rewards/admin-gift", {
     method: "POST",
     body: JSON.stringify(data),
   }, "선물 보내기 실패");
@@ -810,9 +841,11 @@ export interface Chapter {
   name: string;
   start_date: string;
   end_date: string;
+  battle_date: string | null;
   image_url: string | null;
   music_url: string | null;
   is_active: boolean;
+  is_battle_day: boolean;
   created_at: string;
 }
 
@@ -820,6 +853,7 @@ export interface ChapterCreate {
   name: string;
   start_date: string;
   end_date: string;
+  battle_date?: string | null;
   music_url?: string | null;
 }
 
@@ -884,12 +918,14 @@ export interface EnemySkill {
   summon_hp: number | null;
   summon_attack: number | null;
   summon_count: number | null;
+  summon_image_url: string | null;
 }
 
 export interface Enemy {
   id: number;
   name: string;
   chapter: string | null;
+  image_url: string | null;
   base_hp: number;
   hp_per_attacker: number;
   hp_per_defender: number;
@@ -920,6 +956,21 @@ export async function createEnemy(data: EnemyCreate): Promise<Enemy> {
     method: "POST",
     body: JSON.stringify(data),
   }, "에너미 생성 실패");
+}
+
+export async function updateEnemy(enemyId: number, data: EnemyCreate): Promise<Enemy> {
+  return request<Enemy>(`/enemies/${enemyId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }, "에너미 수정 실패");
+}
+
+export async function uploadEnemyImage(enemyId: number, file: File): Promise<Enemy> {
+  return uploadFile<Enemy>(`/enemies/${enemyId}/image`, file, "file", "에너미 이미지 업로드 실패");
+}
+
+export async function uploadEnemySummonImage(enemyId: number, skillIndex: number, file: File): Promise<Enemy> {
+  return uploadFile<Enemy>(`/enemies/${enemyId}/skills/${skillIndex}/summon-image`, file, "file", "소환수 이미지 업로드 실패");
 }
 
 export type BattleMode = "practice" | "real";
@@ -1022,6 +1073,11 @@ export async function fetchBattle(sessionId: number): Promise<BattleSession> {
   return request<BattleSession>(`/battles/${sessionId}`, undefined, "전투 조회 실패");
 }
 
+/** 러너 관전용: 진행 중인 실전 전투가 있으면 반환하고, 없으면 null을 반환한다. */
+export async function fetchLiveBattle(): Promise<BattleSession | null> {
+  return request<BattleSession | null>("/battles/live", undefined, "전투 조회 실패");
+}
+
 export async function createBattle(data: BattleStartRequest): Promise<BattleSession> {
   return request<BattleSession>("/battles", {
     method: "POST",
@@ -1047,9 +1103,23 @@ export async function joinBattle(sessionId: number, characterId: number): Promis
   }, "난입 실패");
 }
 
+/** 직전 라운드를 되돌려 그 라운드를 다시 진행할 수 있게 한다(실전 전투만 가능). */
+export async function undoLastBattleRound(sessionId: number): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/undo-round`, {
+    method: "POST",
+  }, "라운드 되돌리기 실패");
+}
+
+export async function deleteBattle(sessionId: number): Promise<void> {
+  await request(`/battles/${sessionId}`, { method: "DELETE" }, "전투 기록 삭제 실패");
+}
+
+/** 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다. */
+export type SkillBook = "용맹의 서" | "불굴의 서" | "헌신의 서" | "탐구의 서";
+
 export interface SkillNode {
   id: number;
-  faction: Faction;
+  book: SkillBook;
   branch: number | null;
   col: number | null;
   tier: number;
@@ -1057,24 +1127,35 @@ export interface SkillNode {
   default_name: string;
   image_url: string | null;
   effects: ItemEffect[];
+  trigger_type: string | null;
+  category: string | null;
+  stackable: boolean | null;
+  cost: number | null;
+  power: number | null;
+  target: string | null;
+  activation_order: number | null;
+  formula: string | null;
+  description: string | null;
+  is_placeholder: boolean;
 }
 
 export interface CharacterSkillNode extends SkillNode {
   unlocked: boolean;
   custom_name: string | null;
   display_name: string;
+  unlocked_at: string | null;
 }
 
 export interface CharacterSkillTree {
-  faction: Faction;
+  book: SkillBook;
   character_ap: number;
   ap_cost_to_unlock: number;
   latest_unlocked_node_id: number | null;
   nodes: CharacterSkillNode[];
 }
 
-export async function fetchSkillNodes(faction: Faction): Promise<SkillNode[]> {
-  return request<SkillNode[]>(`/skills?faction=${encodeURIComponent(faction)}`, undefined, "기술트리 조회 실패");
+export async function fetchSkillNodes(book: SkillBook): Promise<SkillNode[]> {
+  return request<SkillNode[]>(`/skills?book=${encodeURIComponent(book)}`, undefined, "기술트리 조회 실패");
 }
 
 export async function updateSkillNode(
@@ -1091,8 +1172,8 @@ export async function uploadSkillImage(nodeId: number, file: File): Promise<Skil
   return uploadFile<SkillNode>(`/skills/${nodeId}/image`, file, "file", "기술 이미지 업로드 실패");
 }
 
-export async function fetchCharacterSkillTree(characterId: number): Promise<CharacterSkillTree> {
-  return request<CharacterSkillTree>(`/characters/${characterId}/skills`, undefined, "캐릭터 기술트리 조회 실패");
+export async function fetchCharacterSkillTree(characterId: number, book: SkillBook): Promise<CharacterSkillTree> {
+  return request<CharacterSkillTree>(`/characters/${characterId}/skills?book=${encodeURIComponent(book)}`, undefined, "캐릭터 기술트리 조회 실패");
 }
 
 export async function unlockCharacterSkill(characterId: number, nodeId: number): Promise<CharacterSkillTree> {

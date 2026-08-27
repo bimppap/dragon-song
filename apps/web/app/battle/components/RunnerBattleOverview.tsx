@@ -1,0 +1,140 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Image from "next/image";
+import { CalendarClock, Image as ImageIcon } from "lucide-react";
+import AlertBanner from "@/components/common/AlertBanner";
+import EmptyState from "@/components/common/EmptyState";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type Chapter, type Enemy } from "@/lib/api";
+import BattleArena from "./BattleArena";
+
+// 웹소켓 없이 폴링으로 진행 상황을 갱신한다. 너무 잦으면 서버 부담, 너무 길면 갱신이 굼떠 보이므로 절충한다.
+const LIVE_BATTLE_POLL_MS = 6000;
+
+export default function RunnerBattleOverview() {
+  const [chapter, setChapter] = useState<Chapter | null>(null);
+  const [enemies, setEnemies] = useState<Enemy[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [liveSessionId, setLiveSessionId] = useState<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      setLoading(true);
+      try {
+        const [activeChapter, visibleEnemies] = await Promise.all([
+          fetchActiveChapter(),
+          fetchEnemies(),
+        ]);
+        if (cancelled) return;
+        setChapter(activeChapter);
+        setEnemies(visibleEnemies);
+        setError(null);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "전투 정보를 불러오지 못했습니다.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    load();
+    return () => { cancelled = true; };
+  }, []);
+
+  // 관리자가 실전 전투를 시작했는지 주기적으로 확인해, 있으면 관전 화면으로 전환한다.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function poll() {
+      try {
+        const live = await fetchLiveBattle();
+        if (!cancelled) setLiveSessionId(live?.id ?? null);
+      } catch {
+        if (!cancelled) setLiveSessionId(null);
+      }
+    }
+
+    poll();
+    const interval = setInterval(poll, LIVE_BATTLE_POLL_MS);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, []);
+
+  if (liveSessionId != null) {
+    return (
+      <BattleArena
+        sessionId={liveSessionId}
+        readOnly
+        onExit={() => setLiveSessionId(null)}
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {error && <AlertBanner>{error}</AlertBanner>}
+
+      <Card>
+        <CardHeader className="gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <CardTitle>{chapter?.name ?? "진행 중인 챕터 없음"}</CardTitle>
+            {chapter?.battle_date ? (
+              <Badge variant={chapter.is_battle_day ? "success" : "outline"} className="font-num">
+                전투 일정 {chapter.battle_date}
+              </Badge>
+            ) : (
+              <Badge variant="outline">전투 일정 미정</Badge>
+            )}
+          </div>
+          <CardDescription className="flex items-center gap-2">
+            <CalendarClock size={15} />
+            {chapter
+              ? "전투 일정일 때만 현재 챕터의 에너미가 나타납니다."
+              : "현재 날짜에 진행 중인 챕터가 없어 전투 정보를 표시할 수 없습니다."}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loading ? (
+            <p className="text-sm text-muted">전투 정보를 불러오는 중입니다.</p>
+          ) : !chapter ? (
+            <EmptyState>진행 중인 챕터가 없습니다.</EmptyState>
+          ) : !chapter.is_battle_day ? (
+            <div className="rounded-xl border border-dashed border-line bg-inset/40 px-6 py-10 text-center text-lg font-semibold text-muted">
+              적의 동향을 살피는 중입니다...
+            </div>
+          ) : enemies.length === 0 ? (
+            <EmptyState>이 챕터에 등록된 에너미가 없습니다.</EmptyState>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {enemies.map((enemy) => (
+                <div key={enemy.id} className="overflow-hidden rounded-2xl border border-line bg-surface/80">
+                  <div className="relative aspect-[4/5] bg-inset/60">
+                    {enemy.image_url ? (
+                      <Image
+                        src={enemy.image_url}
+                        alt={`${enemy.name} 이미지`}
+                        fill
+                        sizes="(min-width: 1024px) 20vw, (min-width: 640px) 40vw, 90vw"
+                        className="object-cover object-top"
+                      />
+                    ) : (
+                      <div className="flex h-full items-center justify-center text-muted">
+                        <ImageIcon size={28} />
+                      </div>
+                    )}
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-base font-semibold text-ivory">{enemy.name}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

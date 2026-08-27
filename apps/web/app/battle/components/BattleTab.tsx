@@ -1,16 +1,18 @@
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Flag, Heart, History, PlayCircle, Shield, Swords, Zap } from "lucide-react";
+import { CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Shield, Swords, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   createBattle,
+  deleteBattle,
+  fetchActiveChapter,
   fetchBattles,
   fetchCharacters,
-  fetchChapters,
   fetchEnemies,
   type BattleMode,
   type BattleSessionSummary,
@@ -21,6 +23,7 @@ import {
 import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
+import { useDialog } from "@/components/common/DialogProvider";
 import BattleArena from "./BattleArena";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -54,23 +57,32 @@ interface ActiveBattle {
   readOnly: boolean;
 }
 
-function groupEnemiesByChapter(enemies: Enemy[], chapters: Chapter[]): { chapter: string; enemies: Enemy[] }[] {
-  const order = chapters.map((c) => c.name);
-  const map = new Map<string, Enemy[]>();
-  for (const enemy of enemies) {
-    const key = enemy.chapter ?? "챕터 미지정";
-    if (!map.has(key)) map.set(key, []);
-    map.get(key)!.push(enemy);
-  }
-  const keys = [...map.keys()].sort((a, b) => {
-    const ia = order.indexOf(a);
-    const ib = order.indexOf(b);
-    if (ia === -1 && ib === -1) return a.localeCompare(b);
-    if (ia === -1) return 1;
-    if (ib === -1) return -1;
-    return ia - ib;
-  });
-  return keys.map((chapter) => ({ chapter, enemies: map.get(chapter)! }));
+interface PartyCounts {
+  attackers: number;
+  defenders: number;
+  healers: number;
+}
+
+function countSelectedParty(characters: Character[], selectedCharacterIds: Set<number>): PartyCounts {
+  return characters.reduce<PartyCounts>((counts, character) => {
+    if (!selectedCharacterIds.has(character.id)) return counts;
+    if (character.faction === "공격") counts.attackers += 1;
+    else if (character.faction === "수비") counts.defenders += 1;
+    else if (character.faction === "치유") counts.healers += 1;
+    return counts;
+  }, { attackers: 0, defenders: 0, healers: 0 });
+}
+
+function getEnemyFinalStats(enemy: Enemy, partyCounts: PartyCounts) {
+  const bonusHp =
+    partyCounts.attackers * enemy.hp_per_attacker
+    + partyCounts.defenders * enemy.hp_per_defender
+    + partyCounts.healers * enemy.hp_per_healer;
+
+  return {
+    bonusHp,
+    finalHp: enemy.base_hp + bonusHp,
+  };
 }
 
 function statusBadge(status: BattleSessionSummary["status"]) {
@@ -80,16 +92,18 @@ function statusBadge(status: BattleSessionSummary["status"]) {
 }
 
 export default function BattleTab() {
+  const { confirm } = useDialog();
   const [enemies, setEnemies] = useState<Enemy[]>([]);
-  const [chapters, setChapters] = useState<Chapter[]>([]);
+  const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [resumable, setResumable] = useState<BattleSessionSummary[]>([]);
   const [history, setHistory] = useState<BattleSessionSummary[]>([]);
+  const [historyMode, setHistoryMode] = useState<BattleMode>("real");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const [selectedEnemyIds, setSelectedEnemyIds] = useState<Set<number>>(new Set());
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<number>>(new Set());
   const [active, setActive] = useState<ActiveBattle | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -100,16 +114,16 @@ export default function BattleTab() {
     async function load() {
       try {
         setLoading(true);
-        const [enemyList, chapterList, characterList, resumableList, historyList] = await Promise.all([
+        const [enemyList, activeChapterData, characterList, resumableList, historyList] = await Promise.all([
           fetchEnemies(),
-          fetchChapters(),
+          fetchActiveChapter(),
           fetchCharacters(),
           fetchBattles({ mode: "real", status: "in_progress" }),
-          fetchBattles({ mode: "real" }),
+          fetchBattles({ mode: historyMode }),
         ]);
         if (cancelled) return;
         setEnemies(enemyList);
-        setChapters(chapterList);
+        setActiveChapter(activeChapterData);
         setCharacters(characterList);
         setResumable(resumableList);
         setHistory(historyList);
@@ -123,18 +137,35 @@ export default function BattleTab() {
 
     load();
     return () => { cancelled = true; };
-  }, [reloadKey]);
+  }, [reloadKey, historyMode]);
 
-  const grouped = useMemo(() => groupEnemiesByChapter(enemies, chapters), [enemies, chapters]);
-
-  function toggleEnemy(id: number) {
-    setSelectedEnemyIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  async function handleDelete(session: BattleSessionSummary) {
+    const ok = await confirm({
+      title: "전투 기록 삭제",
+      description: `${session.enemy_names.join(", ") || `전투 #${session.id}`} 기록을 삭제할까요? 되돌릴 수 없습니다.`,
+      confirmText: "삭제",
+      tone: "danger",
     });
+    if (!ok) return;
+    setDeletingId(session.id);
+    try {
+      await deleteBattle(session.id);
+      setHistory((prev) => prev.filter((s) => s.id !== session.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "전투 기록 삭제 실패");
+    } finally {
+      setDeletingId(null);
+    }
   }
+
+  const currentChapterEnemies = useMemo(
+    () => (activeChapter ? enemies.filter((enemy) => enemy.chapter === activeChapter.name) : []),
+    [activeChapter, enemies],
+  );
+  const selectedPartyCounts = useMemo(
+    () => countSelectedParty(characters, selectedCharacterIds),
+    [characters, selectedCharacterIds],
+  );
 
   function toggleCharacter(id: number) {
     setSelectedCharacterIds((prev) => {
@@ -146,12 +177,13 @@ export default function BattleTab() {
   }
 
   async function handleStart(mode: BattleMode) {
-    if (selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0) return;
+    const activeEnemyIds = currentChapterEnemies.map((enemy) => enemy.id);
+    if (activeEnemyIds.length === 0 || selectedCharacterIds.size === 0) return;
     try {
       setStarting(true);
       const session = await createBattle({
         mode,
-        enemy_ids: [...selectedEnemyIds],
+        enemy_ids: activeEnemyIds,
         character_ids: [...selectedCharacterIds],
       });
       setActive({ sessionId: session.id, readOnly: false });
@@ -170,7 +202,6 @@ export default function BattleTab() {
         readOnly={active.readOnly}
         onExit={() => {
           setActive(null);
-          setSelectedEnemyIds(new Set());
           setSelectedCharacterIds(new Set());
           setReloadKey((k) => k + 1);
         }}
@@ -232,42 +263,116 @@ export default function BattleTab() {
         <>
           <Card>
             <CardHeader>
-              <CardTitle>에너미 선택</CardTitle>
-              <CardDescription>챕터별로 묶인 에너미 중 이번 전투에 등장시킬 에너미를 모두 선택하세요.</CardDescription>
+              <div className="flex flex-wrap items-center gap-2">
+                <CardTitle>{activeChapter ? `${activeChapter.name} 에너미` : "현재 챕터 에너미"}</CardTitle>
+                {activeChapter?.battle_date ? (
+                  <Badge variant={activeChapter.is_battle_day ? "success" : "outline"} className="font-num">
+                    전투 일정 {activeChapter.battle_date}
+                  </Badge>
+                ) : null}
+              </div>
+              <CardDescription>
+                {activeChapter
+                  ? "러너 화면처럼 현재 챕터 에너미를 표시합니다. 이 에너미들은 모두 자동으로 전투 대상에 포함되며, 체크한 캐릭터 조합에 따라 최종 HP가 아래 정보에 즉시 반영됩니다."
+                  : "진행 중인 챕터가 없어 현재 챕터 에너미를 표시할 수 없습니다."}
+              </CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col gap-6">
-              {grouped.length === 0 ? (
-                <EmptyState>등록된 에너미가 없습니다. 에너미 탭에서 먼저 등록하세요.</EmptyState>
+              <div className="flex flex-wrap gap-2">
+                <Badge variant="secondary">공격 {selectedPartyCounts.attackers}명</Badge>
+                <Badge variant="secondary">수비 {selectedPartyCounts.defenders}명</Badge>
+                <Badge variant="secondary">치유 {selectedPartyCounts.healers}명</Badge>
+              </div>
+
+              {!activeChapter ? (
+                <EmptyState>진행 중인 챕터가 없습니다.</EmptyState>
+              ) : currentChapterEnemies.length === 0 ? (
+                <EmptyState>현재 챕터에 등록된 에너미가 없습니다.</EmptyState>
               ) : (
-                grouped.map(({ chapter, enemies: chapterEnemies }) => (
-                  <div key={chapter} className="space-y-2">
-                    <h3 className="text-sm font-bold text-ivory">{chapter}</h3>
-                    <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                      {chapterEnemies.map((enemy) => {
-                        const checked = selectedEnemyIds.has(enemy.id);
-                        return (
-                          <label
-                            key={enemy.id}
-                            className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
-                              checked ? "border-gold bg-gold/10" : "border-line hover:border-line"
-                            }`}
-                          >
-                            <Checkbox checked={checked} onCheckedChange={() => toggleEnemy(enemy.id)} />
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2">
-                                <span className="truncate font-semibold text-ivory">{enemy.name}</span>
+                <div className="grid gap-4 xl:grid-cols-2">
+                  {currentChapterEnemies.map((enemy) => {
+                    const { bonusHp, finalHp } = getEnemyFinalStats(enemy, selectedPartyCounts);
+
+                    return (
+                      <div
+                        key={enemy.id}
+                        className="flex flex-col gap-4 rounded-2xl border border-gold/45 bg-gold/10 p-4"
+                      >
+                        <div className="flex items-start gap-4">
+                          <div className="relative h-28 w-24 shrink-0 overflow-hidden rounded-xl border border-line bg-inset">
+                            {enemy.image_url ? (
+                              <Image src={enemy.image_url} alt={enemy.name} fill sizes="96px" className="object-cover object-top" />
+                            ) : (
+                              <div className="flex h-full items-center justify-center text-muted">
+                                <ImageIcon size={24} />
                               </div>
-                              <div className="font-num mt-0.5 flex gap-3 text-xs text-muted">
-                                <span>HP {numberFormatter.format(enemy.base_hp)}</span>
-                                <span className="flex items-center gap-0.5"><Zap size={10} />{numberFormatter.format(enemy.attack)}</span>
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1 space-y-2">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="text-lg font-semibold text-ivory">{enemy.name}</span>
+                              <Badge variant="secondary">자동 포함</Badge>
+                              {enemy.chapter && <Badge variant="outline">{enemy.chapter}</Badge>}
+                            </div>
+                            <div className="grid gap-2 text-sm sm:grid-cols-2">
+                              <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
+                                <p className="text-xs text-muted">기본 HP</p>
+                                <p className="font-num font-semibold text-ivory">{numberFormatter.format(enemy.base_hp)}</p>
+                              </div>
+                              <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
+                                <p className="text-xs text-muted">최종 HP</p>
+                                <p className="font-num font-semibold text-gold">{numberFormatter.format(finalHp)}</p>
+                              </div>
+                              <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
+                                <p className="text-xs text-muted">파티 보정 HP</p>
+                                <p className="font-num font-semibold text-ivory">{bonusHp > 0 ? `+${numberFormatter.format(bonusHp)}` : "0"}</p>
+                              </div>
+                              <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
+                                <p className="text-xs text-muted">공격력</p>
+                                <p className="font-num font-semibold text-ivory">{numberFormatter.format(enemy.attack)}</p>
                               </div>
                             </div>
-                          </label>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))
+                          </div>
+                        </div>
+
+                        <div className="grid gap-2 text-xs text-muted sm:grid-cols-3">
+                          <div className="rounded-lg border border-line bg-inset/30 px-3 py-2">
+                            공격 러너당 +{numberFormatter.format(enemy.hp_per_attacker)} HP
+                          </div>
+                          <div className="rounded-lg border border-line bg-inset/30 px-3 py-2">
+                            수비 러너당 +{numberFormatter.format(enemy.hp_per_defender)} HP
+                          </div>
+                          <div className="rounded-lg border border-line bg-inset/30 px-3 py-2">
+                            치유 러너당 +{numberFormatter.format(enemy.hp_per_healer)} HP
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <p className="text-xs font-semibold uppercase tracking-wide text-muted">기술 정보</p>
+                          {enemy.skills.length === 0 ? (
+                            <p className="text-sm text-muted">등록된 기술이 없습니다.</p>
+                          ) : (
+                            <div className="grid gap-2">
+                              {enemy.skills.map((skill, index) => (
+                                <div key={`${enemy.id}-${skill.name}-${index}`} className="rounded-xl border border-line bg-inset/30 px-3 py-3">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge variant="secondary">{skill.skill_type}</Badge>
+                                    <span className="font-semibold text-ivory">{skill.name}</span>
+                                  </div>
+                                  <p className="mt-1 text-xs text-muted">
+                                    {skill.skill_type === "소환"
+                                      ? `${skill.summon_name ?? "소환수"} · HP ${numberFormatter.format(skill.summon_hp ?? 0)} · 공격 ${numberFormatter.format(skill.summon_attack ?? 0)} · 수량 ${numberFormatter.format(skill.summon_count ?? 1)}`
+                                      : `대상 ${numberFormatter.format(skill.target_count)}명 · 피해 ${numberFormatter.format(skill.damage_percent)}%`}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -306,14 +411,14 @@ export default function BattleTab() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button
               variant="outline"
-              disabled={selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0 || starting}
+              disabled={currentChapterEnemies.length === 0 || selectedCharacterIds.size === 0 || starting}
               onClick={() => handleStart("practice")}
             >
               <Flag size={15} />
-              모의전 시작 ({selectedCharacterIds.size}명 · 에너미 {selectedEnemyIds.size}마리)
+              모의전 시작 ({selectedCharacterIds.size}명 · 에너미 {currentChapterEnemies.length}마리)
             </Button>
             <Button
-              disabled={selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0 || starting}
+              disabled={currentChapterEnemies.length === 0 || selectedCharacterIds.size === 0 || starting}
               onClick={() => handleStart("real")}
             >
               <Swords size={15} />
@@ -323,33 +428,69 @@ export default function BattleTab() {
           </div>
 
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <History size={16} className="text-gold" />
-                전투 기록
-              </CardTitle>
-              <CardDescription>완료되거나 진행 중인 실전 전투 기록입니다. 클릭하면 로그를 다시 볼 수 있습니다.</CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  <History size={16} className="text-gold" />
+                  전투 기록
+                </CardTitle>
+                <CardDescription>
+                  {historyMode === "real"
+                    ? "완료되거나 진행 중인 실전 전투 기록입니다. 러너에게는 보이지 않습니다. 클릭하면 로그를 다시 볼 수 있습니다."
+                    : "모의전 기록입니다. 러너에게는 보이지 않습니다. 클릭하면 로그를 다시 볼 수 있습니다."}
+                </CardDescription>
+              </div>
+              <div className="flex shrink-0 gap-1 rounded-lg border border-line bg-inset p-0.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={historyMode === "real" ? "default" : "ghost"}
+                  onClick={() => setHistoryMode("real")}
+                >
+                  실전
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={historyMode === "practice" ? "default" : "ghost"}
+                  onClick={() => setHistoryMode("practice")}
+                >
+                  모의전
+                </Button>
+              </div>
             </CardHeader>
             <CardContent>
               {history.length === 0 ? (
-                <EmptyState>실전 전투 기록이 없습니다.</EmptyState>
+                <EmptyState>{historyMode === "real" ? "실전 전투 기록이 없습니다." : "모의전 기록이 없습니다."}</EmptyState>
               ) : (
                 <div className="flex flex-col divide-y divide-line">
                   {history.map((session) => (
-                    <button
-                      key={session.id}
-                      type="button"
-                      onClick={() =>
-                        setActive({ sessionId: session.id, readOnly: session.status !== "in_progress" })
-                      }
-                      className="flex items-center justify-between gap-3 py-3 text-left hover:opacity-80"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="font-semibold text-ivory">{session.enemy_names.join(", ") || `전투 #${session.id}`}</span>
-                        <span className="text-xs text-muted">{session.chapter ?? "챕터 미지정"} · 라운드 {session.round}</span>
-                      </div>
-                      {statusBadge(session.status)}
-                    </button>
+                    <div key={session.id} className="flex items-center justify-between gap-3 py-3">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setActive({ sessionId: session.id, readOnly: session.status !== "in_progress" })
+                        }
+                        className="flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-80"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <span className="truncate font-semibold text-ivory">{session.enemy_names.join(", ") || `전투 #${session.id}`}</span>
+                          <span className="shrink-0 text-xs text-muted">{session.chapter ?? "챕터 미지정"} · 라운드 {session.round}</span>
+                        </div>
+                        {statusBadge(session.status)}
+                      </button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="shrink-0 text-muted hover:text-red-500"
+                        disabled={deletingId === session.id}
+                        onClick={() => handleDelete(session)}
+                        aria-label="전투 기록 삭제"
+                      >
+                        <Trash2 size={15} />
+                      </Button>
+                    </div>
                   ))}
                 </div>
               )}

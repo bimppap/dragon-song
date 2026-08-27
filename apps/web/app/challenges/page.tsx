@@ -9,7 +9,6 @@ import {
   Save,
   Target,
   Trophy,
-  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -54,6 +53,7 @@ import { cn } from "@/lib/utils";
 import { useRequireMember } from "@/lib/auth";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
+import Modal from "@/components/common/Modal";
 import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
@@ -208,6 +208,7 @@ export function ChallengeAdmin() {
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [form, setForm] = useState<ChallengeFormState>(DEFAULT_FORM);
   const [editingChallengeId, setEditingChallengeId] = useState<number | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
   const [progressEntries, setProgressEntries] = useState<ChallengeProgress[]>([]);
@@ -342,6 +343,7 @@ export function ChallengeAdmin() {
       }
       setForm({ ...DEFAULT_FORM, chapter: payload.chapter });
       setErrorMessage(null);
+      setModalOpen(false);
     } catch (error) {
       console.error(error);
       setErrorMessage(
@@ -352,14 +354,16 @@ export function ChallengeAdmin() {
     }
   }
 
+  function openAddChallengeModal() {
+    setEditingChallengeId(null);
+    setForm(DEFAULT_FORM);
+    setModalOpen(true);
+  }
+
   function handleEditChallengeClick(challenge: Challenge) {
     setEditingChallengeId(challenge.id);
     setForm(toChallengeFormState(challenge));
-  }
-
-  function handleCancelEditChallenge() {
-    setEditingChallengeId(null);
-    setForm(DEFAULT_FORM);
+    setModalOpen(true);
   }
 
   async function handlePayChallengeReward() {
@@ -459,13 +463,19 @@ export function ChallengeAdmin() {
       <TabBar tabs={PAGE_TABS} active={tab} onChange={setTab} />
 
       {tab === "manage" ? (
-        <section className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
+        <section className="flex flex-col gap-6">
           <Card>
-            <CardHeader>
-              <CardTitle>도전과제 리스트</CardTitle>
-              <CardDescription>
-                챕터, 이름, 내용, 보상, 공개 상태를 한 번에 확인할 수 있습니다.
-              </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>도전과제 리스트</CardTitle>
+                <CardDescription>
+                  챕터, 이름, 내용, 보상, 공개 상태를 한 번에 확인할 수 있습니다.
+                </CardDescription>
+              </div>
+              <Button type="button" onClick={openAddChallengeModal} className="gap-2">
+                <PlusSquare size={15} />
+                도전과제 추가
+              </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               <div className="flex items-center justify-between rounded-xl bg-inset px-4 py-3">
@@ -534,30 +544,17 @@ export function ChallengeAdmin() {
                 </div>
               ) : (
                 <EmptyState>
-                  등록된 도전과제가 없습니다. 우측 폼에서 첫 도전과제를 추가해 주세요.
+                  등록된 도전과제가 없습니다. &quot;도전과제 추가&quot; 버튼으로 첫 도전과제를 추가해 주세요.
                 </EmptyState>
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-start justify-between gap-3">
-              <div>
-                <CardTitle>{editingChallengeId != null ? "과제 수정" : "과제 추가"}</CardTitle>
-                <CardDescription>
-                  {editingChallengeId != null
-                    ? "선택한 도전과제의 내용을 수정합니다."
-                    : "새 도전과제를 등록하면 현황 탭에서 즉시 조회할 수 있습니다."}
-                </CardDescription>
-              </div>
-              {editingChallengeId != null && (
-                <Button type="button" variant="ghost" size="sm" onClick={handleCancelEditChallenge}>
-                  <X size={13} />
-                  취소
-                </Button>
-              )}
-            </CardHeader>
-            <CardContent>
+          <Modal
+            open={modalOpen}
+            onClose={() => setModalOpen(false)}
+            title={editingChallengeId != null ? "과제 수정" : "과제 추가"}
+          >
               <form className="flex flex-col gap-4" onSubmit={handleAddChallenge}>
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-semibold text-ivory">챕터</label>
@@ -642,8 +639,7 @@ export function ChallengeAdmin() {
                   {submittingChallenge ? "저장 중..." : editingChallengeId != null ? "도전과제 수정 저장" : "도전과제 추가"}
                 </Button>
               </form>
-            </CardContent>
-          </Card>
+          </Modal>
         </section>
       ) : (
         <section className="flex flex-col gap-6">

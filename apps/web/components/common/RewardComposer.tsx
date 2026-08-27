@@ -13,8 +13,10 @@ import {
 } from "@/components/ui/select";
 import { ITEM_EFFECT_STAT_OPTIONS, type ItemEffectStat } from "@/lib/api";
 
+type RewardableStat = Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2">;
+
 export type RewardFormEntry =
-  | { id: string; type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset">; amount: string }
+  | { id: string; type: "stat"; stat: RewardableStat; amount: string }
   | { id: string; type: "item"; item_id: string; quantity: string };
 
 interface Props {
@@ -23,7 +25,11 @@ interface Props {
   onChange: (entries: RewardFormEntry[]) => void;
 }
 
-const STAT_OPTIONS = ITEM_EFFECT_STAT_OPTIONS.filter((option) => option.value !== "ap_reset");
+const EXCLUDED_STATS = new Set<ItemEffectStat>(["ap_reset", "grade_choice_1", "grade_choice_2"]);
+const STAT_OPTIONS = ITEM_EFFECT_STAT_OPTIONS.filter((option) => !EXCLUDED_STATS.has(option.value)) as {
+  value: RewardableStat;
+  label: string;
+}[];
 
 function createEntry(type: RewardFormEntry["type"]): RewardFormEntry {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -74,7 +80,7 @@ export default function RewardComposer({ entries, items, onChange }: Props) {
               {entry.type === "stat" ? (
                 <Select
                   value={entry.stat}
-                  onValueChange={(stat: Exclude<ItemEffectStat, "ap_reset">) => replace(index, { ...entry, stat })}
+                  onValueChange={(stat: RewardableStat) => replace(index, { ...entry, stat })}
                 >
                   <SelectTrigger><SelectValue placeholder="능력치 선택" /></SelectTrigger>
                   <SelectContent>

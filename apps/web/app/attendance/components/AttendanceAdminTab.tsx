@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Flame, Gift, UserPlus } from "lucide-react";
+import { CalendarDays, Flame, Gift, UserPlus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,8 +10,10 @@ import { Input } from "@/components/ui/input";
 import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
+import { useDialog } from "@/components/common/DialogProvider";
 import {
   createAttendanceEntry,
+  deleteAttendanceEntry,
   fetchAttendanceEntries,
   fetchAttendanceStreakRanking,
   fetchCharacters,
@@ -40,6 +42,7 @@ function StreakRow({ entry }: { entry: AttendanceStreakEntry }) {
 }
 
 export default function AttendanceAdminTab() {
+  const { confirm } = useDialog();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [streaks, setStreaks] = useState<AttendanceStreakEntry[]>([]);
@@ -47,7 +50,7 @@ export default function AttendanceAdminTab() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const [selectedCharacterId, setSelectedCharacterId] = useState<string | null>(null);
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(todayDateValue);
   const [submitting, setSubmitting] = useState(false);
   const [paying, setPaying] = useState(false);
@@ -78,35 +81,110 @@ export default function AttendanceAdminTab() {
     return () => { cancelled = true; };
   }, []);
 
-  const characterOptions = useMemo(
-    () => characters.map((c) => ({
-      value: String(c.id),
-      label: c.name,
-      icon: <CharacterAvatar src={c.image_url} alt={c.name} className="size-5 rounded-full" iconSize={10} />,
-    })),
+  const charactersById = useMemo(
+    () => new Map(characters.map((c) => [String(c.id), c])),
     [characters],
+  );
+
+  const characterOptions = useMemo(
+    () => characters
+      .filter((c) => !selectedCharacterIds.includes(String(c.id)))
+      .map((c) => ({
+        value: String(c.id),
+        label: c.name,
+        icon: <CharacterAvatar src={c.image_url} alt={c.name} className="size-5 rounded-full" iconSize={10} />,
+      })),
+    [characters, selectedCharacterIds],
   );
 
   const unpaidCount = entries.filter((entry) => !entry.reward_paid).length;
 
+  function handleSelectCharacter(value: string) {
+    setSelectedCharacterIds((prev) => (prev.includes(value) ? prev : [...prev, value]));
+  }
+
+  function handleUnselectCharacter(value: string) {
+    setSelectedCharacterIds((prev) => prev.filter((id) => id !== value));
+  }
+
   async function handleCheckIn() {
-    if (!selectedCharacterId) return;
+    if (selectedCharacterIds.length === 0) return;
     try {
       setSubmitting(true);
-      const updated = await createAttendanceEntry(Number(selectedCharacterId), selectedDate);
+      const failedNames: string[] = [];
+      let updated: AttendanceEntry[] = entries;
+
+      for (const characterId of selectedCharacterIds) {
+        try {
+          updated = await createAttendanceEntry(Number(characterId), selectedDate);
+        } catch (error) {
+          const name = charactersById.get(characterId)?.name ?? characterId;
+          failedNames.push(`${name}(${error instanceof Error ? error.message : "실패"})`);
+        }
+      }
+
       setEntries(updated);
-      setSelectedCharacterId(null);
-      setSuccessMessage("출석 처리했습니다.");
-      setErrorMessage(null);
+      setSelectedCharacterIds([]);
       fetchAttendanceStreakRanking().then(setStreaks).catch(() => {});
-    } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "출석 처리 실패");
+
+      if (failedNames.length > 0) {
+        setErrorMessage(`일부 캐릭터 출석 처리에 실패했습니다: ${failedNames.join(", ")}`);
+        setSuccessMessage(null);
+      } else {
+        setSuccessMessage("출석 처리했습니다.");
+        setErrorMessage(null);
+      }
     } finally {
       setSubmitting(false);
     }
   }
 
+  async function handleRemoveEntry(entry: AttendanceEntry) {
+    const ok = await confirm({
+      title: "출석 취소",
+      description: `${entry.character_name}의 ${entry.attendance_date} 출석 기록을 삭제할까요?`,
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    try {
+      const updated = await deleteAttendanceEntry(entry.id);
+      setEntries(updated);
+      setSuccessMessage("출석 기록을 삭제했습니다.");
+      setErrorMessage(null);
+      fetchAttendanceStreakRanking().then(setStreaks).catch(() => {});
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "출석 기록 삭제 실패");
+    }
+  }
+
   async function handlePayRewards() {
+    const unpaidEntries = entries.filter((entry) => !entry.reward_paid);
+    if (unpaidEntries.length === 0) return;
+
+    const ok = await confirm({
+      title: "출석 보상 전송",
+      description: `아래 ${unpaidEntries.length}명에게 출석 보상을 전송할까요?`,
+      confirmText: "전송",
+      content: (
+        <div className="mt-3 flex max-h-48 flex-col gap-2 overflow-y-auto rounded-lg border border-line bg-ground/40 p-2">
+          {unpaidEntries.map((entry) => (
+            <div key={entry.id} className="flex items-center gap-2">
+              <CharacterAvatar
+                src={entry.character_image_url}
+                alt={entry.character_name}
+                className="size-6 rounded-full"
+                iconSize={12}
+              />
+              <span className="text-sm text-ivory">{entry.character_name}</span>
+            </div>
+          ))}
+        </div>
+      ),
+    });
+    if (!ok) return;
+
     try {
       setPaying(true);
       const result = await payAttendanceRewards();
@@ -130,39 +208,68 @@ export default function AttendanceAdminTab() {
           <CardTitle>출석 처리</CardTitle>
           <CardDescription>캐릭터와 날짜를 선택해 출석을 기록합니다. 보상은 별도로 지급합니다.</CardDescription>
         </CardHeader>
-        <CardContent className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <div className="flex-1 space-y-1.5">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-              <UserPlus size={13} />
-              캐릭터
-            </p>
-            <Combobox
-              options={characterOptions}
-              value={selectedCharacterId}
-              onChange={setSelectedCharacterId}
-              placeholder="캐릭터 선택"
-              searchPlaceholder="캐릭터 이름 검색"
-              emptyText="일치하는 캐릭터가 없습니다."
-            />
+        <CardContent className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+            <div className="flex-1 space-y-1.5">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                <UserPlus size={13} />
+                캐릭터
+              </p>
+              <Combobox
+                options={characterOptions}
+                value={null}
+                onChange={handleSelectCharacter}
+                placeholder="캐릭터 선택 (여러 명 선택 가능)"
+                searchPlaceholder="캐릭터 이름 검색"
+                emptyText="일치하는 캐릭터가 없습니다."
+              />
+            </div>
+            <div className="space-y-1.5 sm:w-48">
+              <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                <CalendarDays size={13} />
+                출석 날짜
+              </p>
+              <Input
+                type="date"
+                value={selectedDate}
+                onChange={(event) => {
+                  if (!event.target.value) return;
+                  setSelectedDate(event.target.value);
+                }}
+              />
+            </div>
+            <Button onClick={handleCheckIn} disabled={selectedCharacterIds.length === 0 || submitting} className="gap-2">
+              <UserPlus size={15} />
+              {submitting ? "처리 중..." : `출석 처리${selectedCharacterIds.length > 0 ? ` (${selectedCharacterIds.length})` : ""}`}
+            </Button>
           </div>
-          <div className="space-y-1.5 sm:w-48">
-            <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-[0.18em] text-muted">
-              <CalendarDays size={13} />
-              출석 날짜
-            </p>
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(event) => {
-                if (!event.target.value) return;
-                setSelectedDate(event.target.value);
-              }}
-            />
-          </div>
-          <Button onClick={handleCheckIn} disabled={!selectedCharacterId || submitting} className="gap-2">
-            <UserPlus size={15} />
-            {submitting ? "처리 중..." : "출석 처리"}
-          </Button>
+
+          {selectedCharacterIds.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {selectedCharacterIds.map((id) => {
+                const character = charactersById.get(id);
+                return (
+                  <Badge key={id} variant="secondary" className="gap-1.5 py-1 pl-1.5 pr-1">
+                    <CharacterAvatar
+                      src={character?.image_url ?? null}
+                      alt={character?.name ?? id}
+                      className="size-4 rounded-full"
+                      iconSize={9}
+                    />
+                    {character?.name ?? id}
+                    <button
+                      type="button"
+                      onClick={() => handleUnselectCharacter(id)}
+                      className="rounded-full p-0.5 text-ivory/70 transition-colors hover:bg-ivory/15 hover:text-ivory"
+                      aria-label={`${character?.name ?? id} 선택 해제`}
+                    >
+                      <X size={11} />
+                    </button>
+                  </Badge>
+                );
+              })}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -204,6 +311,14 @@ export default function AttendanceAdminTab() {
                   <Badge variant={entry.reward_paid ? "success" : "outline"}>
                     {entry.reward_paid ? "보상 수령" : "미수령"}
                   </Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => handleRemoveEntry(entry)}
+                    aria-label={`${entry.character_name} 출석 기록 삭제`}
+                  >
+                    <X size={15} />
+                  </Button>
                 </div>
               ))}
             </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, PlusSquare, ScrollText, X } from "lucide-react";
+import { Pencil, PlusSquare, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -21,6 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import Modal from "@/components/common/Modal";
 import { createMission, fetchChapters, fetchItems, fetchMissions, updateMission } from "@/lib/api";
 import type { Chapter, Item, Mission, MissionCreate, RewardGrant } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
@@ -108,6 +109,7 @@ export default function MissionManageTab() {
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [form, setForm] = useState<MissionFormState>(DEFAULT_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -155,6 +157,7 @@ export default function MissionManageTab() {
       }
       setForm({ ...DEFAULT_FORM, chapter: payload.chapter, mission_type: form.mission_type });
       setErrorMessage(null);
+      setModalOpen(false);
     } catch (e) {
       setErrorMessage(e instanceof Error ? e.message : "임무 저장에 실패했습니다.");
     } finally {
@@ -162,26 +165,32 @@ export default function MissionManageTab() {
     }
   }
 
+  function openAddModal() {
+    setEditingId(null);
+    setForm(DEFAULT_FORM);
+    setModalOpen(true);
+  }
+
   function handleEditClick(mission: Mission) {
     setEditingId(mission.id);
     setForm(toFormState(mission));
-  }
-
-  function handleCancelEdit() {
-    setEditingId(null);
-    setForm(DEFAULT_FORM);
+    setModalOpen(true);
   }
 
   return (
-    <section className="grid gap-6 xl:grid-cols-[1.45fr_0.95fr]">
-      {errorMessage && (
-        <AlertBanner className="xl:col-span-2">{errorMessage}</AlertBanner>
-      )}
+    <section className="flex flex-col gap-6">
+      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
 
       <Card>
-        <CardHeader>
-          <CardTitle>임무 리스트</CardTitle>
-          <CardDescription>등록된 모든 임무를 확인할 수 있습니다.</CardDescription>
+        <CardHeader className="flex flex-row items-start justify-between gap-3">
+          <div>
+            <CardTitle>임무 리스트</CardTitle>
+            <CardDescription>등록된 모든 임무를 확인할 수 있습니다.</CardDescription>
+          </div>
+          <Button type="button" onClick={openAddModal} className="gap-2">
+            <PlusSquare size={15} />
+            임무 추가
+          </Button>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">
           <div className="flex items-center justify-between rounded-xl bg-inset px-4 py-3">
@@ -240,28 +249,17 @@ export default function MissionManageTab() {
             </div>
           ) : (
             <EmptyState>
-              등록된 임무가 없습니다. 우측 폼에서 첫 임무를 추가해 주세요.
+              등록된 임무가 없습니다. &quot;임무 추가&quot; 버튼으로 첫 임무를 추가해 주세요.
             </EmptyState>
           )}
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader className="flex flex-row items-start justify-between gap-3">
-          <div>
-            <CardTitle>{editingId != null ? "임무 수정" : "임무 추가"}</CardTitle>
-            <CardDescription>
-              {editingId != null ? "선택한 임무의 내용을 수정합니다." : "새 임무를 등록하면 현황 탭에서 즉시 조회할 수 있습니다."}
-            </CardDescription>
-          </div>
-          {editingId != null && (
-            <Button type="button" variant="ghost" size="sm" onClick={handleCancelEdit}>
-              <X size={13} />
-              취소
-            </Button>
-          )}
-        </CardHeader>
-        <CardContent>
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={editingId != null ? "임무 수정" : "임무 추가"}
+      >
           <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
             <div className="flex flex-col gap-2">
               <label className="text-sm font-semibold text-ivory">챕터</label>
@@ -351,8 +349,7 @@ export default function MissionManageTab() {
               {submitting ? "저장 중..." : editingId != null ? "임무 수정 저장" : "임무 추가"}
             </Button>
           </form>
-        </CardContent>
-      </Card>
+      </Modal>
     </section>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Ban, Skull, Sparkles, Swords, UserPlus } from "lucide-react";
+import { ArrowLeft, Ban, Heart, ListChecks, type LucideIcon, Skull, Sparkles, Swords, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -20,6 +20,7 @@ import {
   fetchCharacters,
   joinBattle,
   submitBattleActions,
+  undoLastBattleRound,
   type BattleCharacterActionInput,
   type BattleEnemyActionInput,
   type BattleParticipant,
@@ -31,6 +32,7 @@ import {
 } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
+import { useDialog } from "@/components/common/DialogProvider";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
@@ -63,6 +65,11 @@ function isActive(p: BattleParticipant): boolean {
   return !p.downed && !p.retreated;
 }
 
+/** 이번 라운드에 난입한 캐릭터는 행동할 수 없고, 공격/치유 대상도 될 수 없다. */
+function isTargetable(p: BattleParticipant, currentRound: number): boolean {
+  return isActive(p) && p.joined_round !== currentRound;
+}
+
 function HpBar({ hp, max, color }: { hp: number; max: number; color: string }) {
   const pct = max > 0 ? Math.min(100, Math.max(0, (hp / max) * 100)) : 0;
   return (
@@ -77,6 +84,37 @@ function HpBar({ hp, max, color }: { hp: number; max: number; color: string }) {
   );
 }
 
+function ResourceBar({
+  icon: Icon,
+  iconClassName,
+  value,
+  max,
+  color,
+}: {
+  icon: LucideIcon;
+  iconClassName?: string;
+  value: number;
+  max: number;
+  color: string;
+}) {
+  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+
+  return (
+    <div className="flex items-center gap-2">
+      <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClassName)} />
+      <div className="relative h-[18px] flex-1 overflow-hidden rounded-full border border-line bg-white/10">
+        <div
+          className={cn("h-full rounded-full transition-all", color)}
+          style={{ width: `${pct}%` }}
+        />
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-num text-[10px] font-semibold text-ivory">
+          {fmt(value)}/{fmt(max)}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const CHAR_ACTION_LABEL: Record<CharacterActionKind, string> = {
   attack: "공격",
   skill: "기술 사용",
@@ -87,11 +125,33 @@ const CHAR_ACTION_LABEL: Record<CharacterActionKind, string> = {
   retreat: "퇴각",
 };
 
+function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
+  switch (kind) {
+    case "attack":
+      return "border-rose-500/35 bg-rose-500/10";
+    case "skill":
+      return "border-amber-400/35 bg-amber-400/10";
+    case "defend":
+      return "border-sky-500/35 bg-sky-500/10";
+    case "heal":
+      return "border-emerald-500/35 bg-emerald-500/10";
+    case "item":
+      return "border-orange-500/40 bg-orange-500/12";
+    case "retreat":
+      return "border-slate-400/35 bg-slate-400/10";
+    case "none":
+    default:
+      return "border-line bg-surface";
+  }
+}
+
 export default function BattleArena({ sessionId, readOnly = false, onExit }: Props) {
+  const { confirm } = useDialog();
   const [session, setSession] = useState<BattleSession | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [undoing, setUndoing] = useState(false);
 
   const [charDrafts, setCharDrafts] = useState<Record<number, CharDraft>>({});
   const [enemyDrafts, setEnemyDrafts] = useState<Record<number, EnemyDraft>>({});
@@ -124,10 +184,25 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
     return () => { cancelled = true; };
   }, [sessionId]);
 
+  // 관전(readOnly) 화면은 아무도 행동을 제출하지 않으므로, 라운드 진행 상황을 놓치지 않도록 주기적으로 다시 불러온다.
+  useEffect(() => {
+    if (!readOnly) return;
+    let cancelled = false;
+    const interval = setInterval(async () => {
+      try {
+        const data = await fetchBattle(sessionId);
+        if (!cancelled) setSession(data);
+      } catch {
+        // 폴링 실패는 조용히 무시하고 다음 주기에 다시 시도한다.
+      }
+    }, 6000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [readOnly, sessionId]);
+
   function resetDrafts(data: BattleSession) {
     const nextChar: Record<number, CharDraft> = {};
     for (const p of data.participants) {
-      if (!isActive(p)) continue;
+      if (!isTargetable(p, data.round)) continue;
       nextChar[p.character_id] = {
         kind: defaultCharKind(p.faction),
         target_enemy_id: data.enemies.find((e) => e.hp > 0)?.enemy_id ?? null,
@@ -194,6 +269,28 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       setError(e instanceof Error ? e.message : "라운드 진행 실패");
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function handleUndoRound() {
+    if (!session || session.round <= 1) return;
+    const ok = await confirm({
+      title: "이전 라운드 다시 진행하기",
+      description: `라운드 ${session.round - 1}의 로그가 사라지고, 그 라운드를 다시 진행할 수 있는 상태로 되돌립니다.`,
+      confirmText: "되돌리기",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      setUndoing(true);
+      const updated = await undoLastBattleRound(session.id);
+      setSession(updated);
+      resetDrafts(updated);
+      setError(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "라운드 되돌리기 실패");
+    } finally {
+      setUndoing(false);
     }
   }
 
@@ -364,109 +461,156 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       )}
 
       {/* 캐릭터 그리드 */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+      <div className="grid grid-cols-1 justify-items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {session.participants.map((p) => {
           const draft = charDrafts[p.character_id];
           const active = isActive(p);
           const items = itemsByCharacter[p.character_id] ?? [];
+          const secondaryActionControl =
+            draft && (draft.kind === "attack" || draft.kind === "skill") && aliveEnemies.length > 1 ? (
+              <Select
+                value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
+                onValueChange={(v) => patchChar(p.character_id, { target_enemy_id: Number(v) })}
+              >
+                <SelectTrigger className="h-8 w-full text-[11px]">
+                  <SelectValue placeholder="대상 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {aliveEnemies.map((e) => (
+                      <SelectItem key={e.enemy_id} value={String(e.enemy_id)}>{e.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            ) : draft?.kind === "heal" ? (
+              <Select
+                value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
+                onValueChange={(v) => patchChar(p.character_id, { target_character_id: Number(v) })}
+              >
+                <SelectTrigger className="h-8 w-full text-[11px]">
+                  <SelectValue placeholder="치유 대상 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {session.participants.filter((t) => isTargetable(t, session.round)).map((t) => (
+                      <SelectItem key={t.character_id} value={String(t.character_id)}>{t.name}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            ) : draft?.kind === "item" ? (
+              <Select
+                value={draft.item_id != null ? String(draft.item_id) : ""}
+                onValueChange={(v) => patchChar(p.character_id, { item_id: Number(v) })}
+              >
+                <SelectTrigger className="h-8 w-full text-[11px]">
+                  <SelectValue placeholder="아이템 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {items.length === 0 ? (
+                      <SelectItem value="__none__" disabled>보유 아이템 없음</SelectItem>
+                    ) : (
+                      items.map((item) => (
+                        <SelectItem key={item.item_id} value={String(item.item_id)}>
+                          {item.item_name} ({item.quantity - item.used_quantity}개)
+                        </SelectItem>
+                      ))
+                    )}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            ) : null;
+
           return (
             <div
               key={p.character_id}
               className={cn(
-                "flex flex-col items-center gap-1.5 rounded-xl border p-2",
-                !active ? "border-line bg-primary-light/10 opacity-60" : "border-line bg-surface",
+                "w-full max-w-[21rem] rounded-2xl border p-2.5 transition-colors duration-200",
+                !active
+                  ? "border-line bg-primary-light/10 opacity-60"
+                  : canAct
+                    ? getCharacterCardTone(draft?.kind)
+                    : "border-line bg-surface",
               )}
             >
-              <CharacterAvatar
-                src={p.image_url}
-                alt={p.name}
-                className={cn("size-10 rounded-lg", !active && "grayscale")}
-                iconSize={16}
-              />
-              <p className="w-full truncate text-center text-xs font-semibold text-ivory">{p.name}</p>
-              <HpBar hp={p.hp} max={p.max_hp} color="bg-emerald-500" />
-              {p.max_mp > 0 && (
-                <span className="font-num text-[10px] text-muted">MP {fmt(p.mp)}/{fmt(p.max_mp)}</span>
-              )}
-              {p.downed && <Badge variant="destructive" className="text-[10px]">전투불능</Badge>}
-              {p.retreated && <Badge variant="secondary" className="text-[10px]">퇴각</Badge>}
+              <div className="space-y-2.5">
+                <div className="flex gap-2.5">
+                  <div className="w-16 shrink-0 self-start overflow-hidden rounded-2xl border border-line bg-surface">
+                    <CharacterAvatar
+                      src={p.image_url}
+                      alt={p.name}
+                      className={cn("aspect-square w-full rounded-none", !active && "grayscale")}
+                      iconSize={18}
+                    />
+                  </div>
 
-              {canAct && active && draft && (
-                <div className="flex w-full flex-col gap-1">
-                  <Select
-                    value={draft.kind}
-                    onValueChange={(kind: CharacterActionKind) => {
-                      patchChar(p.character_id, { kind });
-                      if (kind === "item") void ensureItemsLoaded(p.character_id);
-                    }}
-                  >
-                    <SelectTrigger className="h-7 w-full text-[11px]">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {(Object.keys(CHAR_ACTION_LABEL) as CharacterActionKind[]).map((kind) => (
-                          <SelectItem key={kind} value={kind}>{CHAR_ACTION_LABEL[kind]}</SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                  <div className="min-w-0 flex-1 space-y-2.5">
+                    <p className="truncate text-sm font-semibold text-ivory">{p.name}</p>
+                    <div className="space-y-1.5">
+                      <ResourceBar
+                        icon={Heart}
+                        iconClassName="text-rose-500"
+                        value={p.hp}
+                        max={p.max_hp}
+                        color="bg-rose-500"
+                      />
+                      <ResourceBar
+                        icon={Zap}
+                        iconClassName="text-sky-500"
+                        value={p.mp}
+                        max={p.max_mp}
+                        color="bg-sky-500"
+                      />
+                    </div>
 
-                  {(draft.kind === "attack" || draft.kind === "skill") && aliveEnemies.length > 1 && (
-                    <Select
-                      value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
-                      onValueChange={(v) => patchChar(p.character_id, { target_enemy_id: Number(v) })}
-                    >
-                      <SelectTrigger className="h-7 w-full text-[11px]"><SelectValue placeholder="대상" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {aliveEnemies.map((e) => (
-                            <SelectItem key={e.enemy_id} value={String(e.enemy_id)}>{e.name}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
-
-                  {draft.kind === "heal" && (
-                    <Select
-                      value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
-                      onValueChange={(v) => patchChar(p.character_id, { target_character_id: Number(v) })}
-                    >
-                      <SelectTrigger className="h-7 w-full text-[11px]"><SelectValue placeholder="치유 대상" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {session.participants.filter((t) => isActive(t)).map((t) => (
-                            <SelectItem key={t.character_id} value={String(t.character_id)}>{t.name}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
-
-                  {draft.kind === "item" && (
-                    <Select
-                      value={draft.item_id != null ? String(draft.item_id) : ""}
-                      onValueChange={(v) => patchChar(p.character_id, { item_id: Number(v) })}
-                    >
-                      <SelectTrigger className="h-7 w-full text-[11px]"><SelectValue placeholder="아이템 선택" /></SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {items.length === 0 ? (
-                            <SelectItem value="__none__" disabled>보유 아이템 없음</SelectItem>
-                          ) : (
-                            items.map((item) => (
-                              <SelectItem key={item.item_id} value={String(item.item_id)}>
-                                {item.item_name} ({item.quantity - item.used_quantity}개)
-                              </SelectItem>
-                            ))
-                          )}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  )}
+                    {(p.downed || p.retreated || (active && p.joined_round === session.round)) && (
+                      <div className="flex flex-wrap gap-2">
+                        {p.downed && <Badge variant="destructive" className="text-[10px]">전투불능</Badge>}
+                        {p.retreated && <Badge variant="secondary" className="text-[10px]">퇴각</Badge>}
+                        {active && p.joined_round === session.round && (
+                          <Badge variant="outline" className="text-[10px]">난입 · 이번 라운드 행동 불가</Badge>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              )}
+
+                {canAct && active && draft && (
+                  <div
+                    className={cn(
+                      "grid w-full gap-2",
+                      secondaryActionControl
+                        ? "grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-start"
+                        : "grid-cols-1",
+                    )}
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted" />
+                      <Select
+                        value={draft.kind}
+                        onValueChange={(kind: CharacterActionKind) => {
+                          patchChar(p.character_id, { kind });
+                          if (kind === "item") void ensureItemsLoaded(p.character_id);
+                        }}
+                      >
+                        <SelectTrigger className="h-8 w-full text-[11px]">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {(Object.keys(CHAR_ACTION_LABEL) as CharacterActionKind[]).map((kind) => (
+                              <SelectItem key={kind} value={kind}>{CHAR_ACTION_LABEL[kind]}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {secondaryActionControl && <div className="min-w-0">{secondaryActionControl}</div>}
+                  </div>
+                )}
+              </div>
             </div>
           );
         })}
@@ -486,10 +630,22 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
           {session.status === "victory" ? "전투 승리! 에너미를 격파했습니다." : "전투 패배... 모든 캐릭터가 전투 불능/퇴각했습니다."}
         </div>
       ) : canAct ? (
-        <Button onClick={handleSubmitRound} disabled={submitting}>
-          <Sparkles size={15} />
-          {submitting ? "진행 중..." : `라운드 ${session.round} 진행`}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={handleSubmitRound} disabled={submitting || undoing}>
+            <Sparkles size={15} />
+            {submitting ? "진행 중..." : `라운드 ${session.round} 진행`}
+          </Button>
+          {session.mode === "real" && session.round > 1 && (
+            <Button
+              variant="outline"
+              onClick={handleUndoRound}
+              disabled={submitting || undoing}
+            >
+              <Undo2 size={15} />
+              {undoing ? "되돌리는 중..." : "이전 라운드 다시 진행하기"}
+            </Button>
+          )}
+        </div>
       ) : null}
 
       {/* 전투 로그 */}

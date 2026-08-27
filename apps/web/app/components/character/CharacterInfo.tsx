@@ -18,7 +18,6 @@ import {
   Image as ImageIcon,
   Lock,
   Package,
-  Receipt,
   Shield,
   Trophy,
   Zap,
@@ -27,6 +26,7 @@ import CharacterOwnedSkills from "./CharacterOwnedSkills";
 import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
+import Modal from "@/components/common/Modal";
 import { useDialog } from "@/components/common/DialogProvider";
 
 import { formatRewardItems, REWARD_TYPE_LABELS } from "@/lib/rewards";
@@ -35,7 +35,6 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -48,8 +47,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { consumeItem, equipItem, fetchCharacterDetail, unequipItem, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem } from "@/lib/api";
+import { consumeItem, equipItem, fetchCharacterDetail, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadCharacterImage } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem, ItemHistoryEntry, Reward } from "@/lib/api";
 
 interface Props {
   characters: Character[];
@@ -80,17 +79,17 @@ const RANK_GRADES = [
   {
     name: "동",
     description: "기본적인 전투 감각을 익히는 입문 등급입니다.",
-    badgeClass: "border-gold bg-gold/15 text-gold",
+    medalClass: "fill-amber-600 text-amber-800",
   },
   {
     name: "은",
     description: "기본 전투를 안정적으로 수행할 수 있는 숙련 등급입니다.",
-    badgeClass: "border-line bg-white/10 text-ivory",
+    medalClass: "fill-slate-300 text-slate-500",
   },
   {
     name: "금",
     description: "전투와 파티 운영에서 중심 역할을 맡는 상위 등급입니다.",
-    badgeClass: "border-yellow-500 bg-yellow-500/20 text-yellow-300",
+    medalClass: "fill-yellow-400 text-yellow-600",
   },
 ] as const;
 
@@ -239,9 +238,8 @@ function CoreStatLine({
   );
 }
 
-function getExperienceCap(level: number, experience: number) {
-  return Math.max(1000, level * 1000, experience);
-}
+/** 경험치가 이만큼 쌓일 때마다 성장등급이 오르고 경험치는 0으로 리셋된다(app/crud.py의 GROWTH_EXP_PER_LEVEL과 동일). */
+const GROWTH_EXP_PER_LEVEL = 20;
 
 function ExperienceBar({
   value,
@@ -266,6 +264,51 @@ function ExperienceBar({
   );
 }
 
+function GradeChoiceSelector({
+  requiredCount,
+  onChange,
+}: {
+  requiredCount: number;
+  onChange: (stats: string[]) => void;
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+
+  function toggle(stat: string) {
+    setSelected((prev) => {
+      const next = prev.includes(stat)
+        ? prev.filter((s) => s !== stat)
+        : prev.length < requiredCount
+          ? [...prev, stat]
+          : prev;
+      onChange(next);
+      return next;
+    });
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-2">
+      <p className="text-sm text-muted">능력치를 {requiredCount}개 선택하세요. ({selected.length}/{requiredCount})</p>
+      <div className="flex flex-wrap gap-2">
+        {GRADE_CHOICE_STAT_OPTIONS.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            onClick={() => toggle(option.value)}
+            className={cn(
+              "rounded-full border px-3 py-1 text-sm transition-colors",
+              selected.includes(option.value)
+                ? "border-gold bg-gold/20 text-gold"
+                : "border-line text-ivory",
+            )}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function OwnedItemTile({
   item,
   loading,
@@ -277,7 +320,7 @@ function OwnedItemTile({
   item: CharacterOwnedItem;
   loading: boolean;
   readOnly?: boolean;
-  onUse: () => void;
+  onUse: (chosenStats?: string[]) => void;
   onEquip: () => void;
   onUnequip: () => void;
 }) {
@@ -285,6 +328,9 @@ function OwnedItemTile({
   const isConsumable = item.item_type === "consumable";
   const remainingUses = item.quantity - item.used_quantity;
   const badgeCount = isConsumable ? remainingUses : item.quantity;
+  const gradeChoiceEffect = item.effects.find(
+    (effect) => effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2",
+  );
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -301,12 +347,16 @@ function OwnedItemTile({
       >
         <div
           className={cn(
-            "relative flex size-14 shrink-0 cursor-default items-center justify-center rounded-2xl bg-gold/10 text-gold",
+            "relative flex size-14 shrink-0 cursor-default items-center justify-center overflow-hidden rounded-2xl bg-gold/10 text-gold",
             item.equipped && "ring-2 ring-gold",
           )}
         >
-          <Package size={22} />
-          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 text-sm font-bold text-ivory [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
+          {item.item_image_url ? (
+            <Image src={item.item_image_url} alt={item.item_name} fill sizes="56px" className="object-cover" />
+          ) : (
+            <Package size={22} />
+          )}
+          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 z-10 text-sm font-bold text-ivory [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
             {badgeCount}
           </span>
         </div>
@@ -315,7 +365,25 @@ function OwnedItemTile({
         <Button
           size="sm"
           variant="outline"
-          onClick={async () => { if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse(); }}
+          onClick={async () => {
+            if (gradeChoiceEffect) {
+              const requiredCount = gradeChoiceEffect.stat === "grade_choice_1" ? 1 : 2;
+              const chosenRef: { current: string[] } = { current: [] };
+              const ok = await confirm({
+                title: "아이템 사용",
+                description: `'${item.item_name}'을(를) 사용하시겠습니까?`,
+                content: (
+                  <GradeChoiceSelector
+                    requiredCount={requiredCount}
+                    onChange={(stats) => { chosenRef.current = stats; }}
+                  />
+                ),
+              });
+              if (ok) onUse(chosenRef.current);
+              return;
+            }
+            if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse();
+          }}
           disabled={loading || remainingUses <= 0}
         >
           사용
@@ -338,6 +406,109 @@ function OwnedItemTile({
   );
 }
 
+const HISTORY_PREVIEW_COUNT = 6;
+const HISTORY_PAGE_SIZE = 20;
+
+function RewardHistoryRow({ reward }: { reward: Reward }) {
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-line px-4 py-4">
+      <div className="flex items-center gap-3">
+        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600">
+          <Gift size={18} />
+        </span>
+        <div className="flex flex-col gap-1">
+          <p className="font-semibold text-ivory">
+            {formatRewardItems(reward)}
+          </p>
+          <p className="text-sm text-muted">
+            {reward.rewarded_at} ·{" "}
+            <Badge variant="secondary" className="text-xs">
+              {REWARD_TYPE_LABELS[reward.type] ?? reward.type}
+            </Badge>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ItemHistoryRow({ entry }: { entry: ItemHistoryEntry }) {
+  const isUse = entry.kind === "use";
+  return (
+    <div className="flex items-center justify-between rounded-2xl border border-line px-4 py-4">
+      <div className="flex items-center gap-3">
+        <span
+          className={cn(
+            "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full",
+            isUse ? "bg-sky-500/10 text-sky-500" : "bg-gold/10 text-gold",
+          )}
+        >
+          {entry.item_image_url ? (
+            <Image src={entry.item_image_url} alt={entry.item_name} fill sizes="40px" className="object-cover" />
+          ) : (
+            <Backpack size={18} />
+          )}
+        </span>
+        <div className="flex flex-col gap-1">
+          <p className="font-semibold text-ivory">{entry.item_name}</p>
+          <p className="text-sm text-muted">
+            {new Date(entry.created_at).toLocaleString("ko-KR")}
+          </p>
+        </div>
+      </div>
+      <Badge variant={isUse ? "secondary" : "outline"}>
+        {entry.quantity}개 {isUse ? "사용" : "구매"}
+      </Badge>
+    </div>
+  );
+}
+
+function HistoryModal<T extends { id: number }>({
+  open,
+  onClose,
+  title,
+  items,
+  renderItem,
+  emptyText,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  items: T[];
+  renderItem: (item: T) => React.ReactNode;
+  emptyText: string;
+}) {
+  const [visibleCount, setVisibleCount] = useState(HISTORY_PAGE_SIZE);
+
+  function handleScroll(event: React.UIEvent<HTMLDivElement>) {
+    const el = event.currentTarget;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
+      setVisibleCount((prev) => Math.min(prev + HISTORY_PAGE_SIZE, items.length));
+    }
+  }
+
+  const visibleItems = items.slice(0, visibleCount);
+
+  return (
+    <Modal open={open} onClose={onClose} title={title}>
+      {items.length === 0 ? (
+        <EmptyState className="rounded-2xl">{emptyText}</EmptyState>
+      ) : (
+        <>
+          <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto pr-1" onScroll={handleScroll}>
+            {visibleItems.map((item) => (
+              <div key={item.id}>{renderItem(item)}</div>
+            ))}
+          </div>
+          <p className="mt-3 text-center text-xs text-muted">
+            {visibleItems.length} / {items.length}개 표시 중
+          </p>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 export default function CharacterInfo({
   characters,
   loading,
@@ -355,6 +526,8 @@ export default function CharacterInfo({
   const [itemActionError, setItemActionError] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [rewardModalOpen, setRewardModalOpen] = useState(false);
+  const [itemHistoryModalOpen, setItemHistoryModalOpen] = useState(false);
 
   const selectedCharacterId = characters.some(
     (character) => character.id === selectedCharacterIdState,
@@ -403,13 +576,14 @@ export default function CharacterInfo({
 
   async function handleItemAction(
     itemId: number,
-    action: (characterId: number, itemId: number) => Promise<CharacterDetail>,
+    action: (characterId: number, itemId: number, chosenStats?: string[]) => Promise<CharacterDetail>,
+    chosenStats?: string[],
   ) {
     if (selectedDetail == null) return;
     setItemActionLoadingId(itemId);
     setItemActionError(null);
     try {
-      const nextDetail = await action(selectedDetail.id, itemId);
+      const nextDetail = await action(selectedDetail.id, itemId, chosenStats);
       setDetail(nextDetail);
     } catch (error) {
       setItemActionError(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.");
@@ -459,12 +633,7 @@ export default function CharacterInfo({
       {showSelector && (
         <Card>
           <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex flex-col gap-1.5">
-              <CardTitle>캐릭터 정보</CardTitle>
-              <CardDescription>
-                캐릭터를 이름으로 선택하면 기본 능력치, 아이템, 도전과제, 구매 이력을 확인할 수 있습니다.
-              </CardDescription>
-            </div>
+            <CardTitle>캐릭터 정보</CardTitle>
             <div className="w-full md:w-60">
               <Select
                 value={selectedCharacterId?.toString() ?? ""}
@@ -509,7 +678,28 @@ export default function CharacterInfo({
           <Card>
             <CardContent className="flex flex-col gap-6 pt-6 sm:flex-row sm:items-start">
               {/* 명함 좌측: 캐릭터 이미지 (정사각형 고정, 편집 가능) */}
-              <div className="flex w-full shrink-0 flex-col gap-2 sm:w-40">
+              <div className="relative flex w-full shrink-0 flex-col gap-2 sm:w-40">
+                <InfoTooltip
+                  content={
+                    <div className="max-w-52 whitespace-pre-line text-left">
+                      <div className="font-semibold">
+                        모험가 등급 {selectedDetail.rank} · {getRankGrade(selectedDetail.rank).name}
+                      </div>
+                      <div className="mt-1 text-muted">
+                        {getRankGrade(selectedDetail.rank).description}
+                      </div>
+                    </div>
+                  }
+                >
+                  <Award
+                    size={48}
+                    strokeWidth={2}
+                    className={cn(
+                      "absolute -left-3 -top-3 z-10 cursor-help drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]",
+                      getRankGrade(selectedDetail.rank).medalClass,
+                    )}
+                  />
+                </InfoTooltip>
                 <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-line bg-inset">
                   {selectedDetail.image_url ? (
                     <Image src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} fill sizes="160px" className="object-cover" />
@@ -538,52 +728,25 @@ export default function CharacterInfo({
               {/* 명함 우측: 정보 */}
               <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <CardTitle className="text-xl">{selectedDetail.name}</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {selectedDetail.faction && <Badge variant="secondary">{selectedDetail.faction}</Badge>}
+                    <CardTitle className="text-xl">{selectedDetail.name}</CardTitle>
+                  </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
-                    {selectedDetail.faction && <Badge variant="secondary">{selectedDetail.faction}</Badge>}
-                    <Badge variant="outline" className="gap-1 font-num">
-                      <Coins size={12} className="text-gold" />
-                      {numberFormatter.format(selectedDetail.gold)} G
-                    </Badge>
-                    <Badge variant="outline" className="gap-1 font-num">
-                      <Gem size={12} className="text-cyan-500" />
-                      {numberFormatter.format(selectedDetail.cp)} CP
-                    </Badge>
                   </div>
                 </div>
 
-                {/* 성장 등급 · 경험치 · AP */}
+                {/* 성장 등급 · 경험치 */}
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="gap-1 font-num">
                     <Trophy size={12} />
                     성장 등급 Lv.{selectedDetail.lv}
                   </Badge>
-                  <InfoTooltip
-                    content={
-                      <div className="max-w-52 whitespace-pre-line text-left">
-                        <div className="font-semibold">
-                          {getRankGrade(selectedDetail.rank).name}
-                        </div>
-                        <div className="mt-1 text-muted">
-                          {getRankGrade(selectedDetail.rank).description}
-                        </div>
-                      </div>
-                    }
-                  >
-                    <Badge className={cn("gap-1 font-num cursor-help border", getRankGrade(selectedDetail.rank).badgeClass)}>
-                      <Award size={12} />
-                      모험가 등급 {selectedDetail.rank}
-                    </Badge>
-                  </InfoTooltip>
                   <ExperienceBar
                     value={selectedDetail.exp}
-                    max={getExperienceCap(selectedDetail.lv, selectedDetail.exp)}
+                    max={GROWTH_EXP_PER_LEVEL}
                   />
-                  <Badge variant="outline" className="gap-1 font-num">
-                    <Gauge size={12} className="text-gold" />
-                    AP {numberFormatter.format(selectedDetail.ap)}
-                  </Badge>
                   {selectedDetail.attendance_streak > 0 && (
                     <Badge className="gap-1 border border-orange-300 bg-orange-500/20 font-num text-orange-300">
                       <Flame size={12} />
@@ -625,10 +788,7 @@ export default function CharacterInfo({
                     ))}
                   </div>
                   {!readOnly && (
-                    <CharacterOwnedSkills
-                      characterId={selectedDetail.id}
-                      faction={selectedDetail.faction}
-                    />
+                    <CharacterOwnedSkills characterId={selectedDetail.id} />
                   )}
                 </div>
 
@@ -693,13 +853,22 @@ export default function CharacterInfo({
 
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle>보유 중인 아이템</CardTitle>
-                <CardDescription>
-                  {readOnly
-                    ? "이 캐릭터가 보유한 아이템 목록입니다. 아이템에 마우스를 올리면 이름과 설명이 보입니다."
-                    : "구매 기록을 기준으로 현재 보유한 아이템 수량을 집계했습니다. 아이템에 마우스를 올리면 이름과 설명이 보입니다. 소모형은 '사용'해야, 장착형은 '장착'해야 능력치에 반영됩니다."}
-                </CardDescription>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="gap-1 font-num">
+                    <Coins size={12} className="text-gold" />
+                    {numberFormatter.format(selectedDetail.gold)} G
+                  </Badge>
+                  <Badge variant="outline" className="gap-1 font-num">
+                    <Gem size={12} className="text-cyan-500" />
+                    {numberFormatter.format(selectedDetail.cp)} CP
+                  </Badge>
+                  <Badge variant="outline" className="gap-1 font-num">
+                    <Gauge size={12} className="text-gold" />
+                    AP {numberFormatter.format(selectedDetail.ap)}
+                  </Badge>
+                </div>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {itemActionError && (
@@ -713,7 +882,7 @@ export default function CharacterInfo({
                         item={item}
                         readOnly={readOnly}
                         loading={itemActionLoadingId === item.item_id}
-                        onUse={() => handleItemAction(item.item_id, consumeItem)}
+                        onUse={(chosenStats) => handleItemAction(item.item_id, consumeItem, chosenStats)}
                         onEquip={() => handleItemAction(item.item_id, equipItem)}
                         onUnequip={() => handleItemAction(item.item_id, unequipItem)}
                       />
@@ -728,13 +897,8 @@ export default function CharacterInfo({
             </Card>
 
             <Card>
-              <CardHeader className="flex flex-row items-start justify-between gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <CardTitle>달성한 도전과제</CardTitle>
-                  <CardDescription>
-                    캐릭터가 완료 처리한 도전과제만 표시합니다.
-                  </CardDescription>
-                </div>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle>달성한 도전과제</CardTitle>
                 <Badge variant="success" className="shrink-0 whitespace-nowrap">{selectedDetail.achieved_challenges.length}개</Badge>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
@@ -768,41 +932,23 @@ export default function CharacterInfo({
 
           {!readOnly && <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle>보상 이력</CardTitle>
-                <CardDescription>
-                  지급된 보상 내역을 최신순으로 표시합니다.
-                </CardDescription>
+                {selectedDetail.reward_history.length > HISTORY_PREVIEW_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => setRewardModalOpen(true)}
+                    className="shrink-0 text-sm font-semibold text-gold hover:underline"
+                  >
+                    더보기
+                  </button>
+                )}
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {selectedDetail.reward_history.length > 0 ? (
-                  selectedDetail.reward_history.map((reward) => (
-                    <div
-                      key={reward.id}
-                      className="flex items-center justify-between rounded-2xl border border-line px-4 py-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-10 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600">
-                          <Gift size={18} />
-                        </span>
-                        <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-ivory">
-                            {formatRewardItems(reward)}
-                          </p>
-                          <p className="text-sm text-muted">
-                            {reward.rewarded_at} ·{" "}
-                            <Badge variant="secondary" className="text-xs">
-                              {REWARD_TYPE_LABELS[reward.type] ?? reward.type}
-                            </Badge>
-                          </p>
-                        </div>
-                      </div>
-                      <span className="flex items-center gap-1 text-xs text-muted">
-                        <Receipt size={12} />
-                        #{reward.id}
-                      </span>
-                    </div>
-                  ))
+                  selectedDetail.reward_history
+                    .slice(0, HISTORY_PREVIEW_COUNT)
+                    .map((reward) => <RewardHistoryRow key={reward.id} reward={reward} />)
                 ) : (
                   <EmptyState className="rounded-2xl">
                     지급된 보상이 없습니다.
@@ -812,46 +958,51 @@ export default function CharacterInfo({
             </Card>
 
             <Card>
-              <CardHeader>
-                <CardTitle>구매 이력</CardTitle>
-                <CardDescription>
-                  아이템 구매 기록을 최신순으로 표시합니다.
-                </CardDescription>
+              <CardHeader className="flex flex-row items-center justify-between gap-3">
+                <CardTitle>구매/사용 이력</CardTitle>
+                {selectedDetail.item_history.length > HISTORY_PREVIEW_COUNT && (
+                  <button
+                    type="button"
+                    onClick={() => setItemHistoryModalOpen(true)}
+                    className="shrink-0 text-sm font-semibold text-gold hover:underline"
+                  >
+                    더보기
+                  </button>
+                )}
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {selectedDetail.purchase_history.length > 0 ? (
-                  selectedDetail.purchase_history.map((purchase) => (
-                    <div
-                      key={purchase.id}
-                      className="flex items-center justify-between rounded-2xl border border-line px-4 py-4"
-                    >
-                      <div className="flex items-center gap-3">
-                        <span className="flex size-10 items-center justify-center rounded-full bg-gold/10 text-gold">
-                          <Backpack size={18} />
-                        </span>
-                        <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-ivory">{purchase.item_name}</p>
-                          <p className="text-sm text-muted">
-                            {new Date(purchase.created_at).toLocaleString("ko-KR")}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <Badge variant="secondary">{purchase.quantity}개 구매</Badge>
-                        <span className="flex items-center gap-1 text-xs text-muted">
-                          <Receipt size={12} />
-                          구매 ID {purchase.id}
-                        </span>
-                      </div>
-                    </div>
-                  ))
+                {selectedDetail.item_history.length > 0 ? (
+                  selectedDetail.item_history
+                    .slice(0, HISTORY_PREVIEW_COUNT)
+                    .map((entry) => <ItemHistoryRow key={entry.id} entry={entry} />)
                 ) : (
                   <EmptyState className="rounded-2xl">
-                    구매 이력이 없습니다.
+                    구매/사용 이력이 없습니다.
                   </EmptyState>
                 )}
               </CardContent>
             </Card>
+
+            {rewardModalOpen && (
+              <HistoryModal
+                open={rewardModalOpen}
+                onClose={() => setRewardModalOpen(false)}
+                title="보상 이력"
+                items={selectedDetail.reward_history}
+                renderItem={(reward) => <RewardHistoryRow reward={reward} />}
+                emptyText="지급된 보상이 없습니다."
+              />
+            )}
+            {itemHistoryModalOpen && (
+              <HistoryModal
+                open={itemHistoryModalOpen}
+                onClose={() => setItemHistoryModalOpen(false)}
+                title="구매/사용 이력"
+                items={selectedDetail.item_history}
+                renderItem={(entry) => <ItemHistoryRow entry={entry} />}
+                emptyText="구매/사용 이력이 없습니다."
+              />
+            )}
           </div>}
         </>
       )}

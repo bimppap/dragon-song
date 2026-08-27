@@ -8,6 +8,8 @@ import { cn } from "@/lib/utils";
 interface DialogOptions {
   title?: string;
   description?: string;
+  /** description 아래에 표시할 커스텀 콘텐츠 (예: 대상 목록). */
+  content?: React.ReactNode;
   confirmText?: string;
   cancelText?: string;
   tone?: "default" | "danger";
@@ -106,6 +108,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
             {dialog.description && (
               <p className={cn("whitespace-pre-line text-sm text-ivory/85", dialog.title ? "mt-2" : "")}>{dialog.description}</p>
             )}
+            {dialog.content}
             {dialog.mode === "prompt" && (
               <Input
                 className="mt-4"

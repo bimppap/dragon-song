@@ -9,6 +9,7 @@ export const REWARD_TYPE_LABELS: Record<string, string> = {
   admin_gift: "관리자의 선물",
   settlement: "로그 정산",
   revoke: "보상 회수",
+  growth: "성장",
 };
 
 function signed(amount: number): string {
@@ -25,11 +26,12 @@ export function formatRewardItems(reward: Reward): string {
         case "gold": return `골드 ${signed(amount)}G`;
         case "experience": return `경험치 ${signed(amount)}`;
         case "ap": return `AP ${signed(amount)}`;
+        case "lv": return `성장등급 ${signed(amount)}`;
         case "stat_hp": return `HP ${signed(amount)}`;
         case "stat_attack": return `공격력 ${signed(amount)}`;
         case "stat_defense": return `방어력 ${signed(amount)}`;
         case "stat": return `${EFFECT_STAT_LABELS[item.stat ?? ""] ?? item.stat ?? "능력치"} ${signed(amount)}`;
-        case "item": return `아이템 ID${item.item_id} ×${item.quantity ?? 1}`;
+        case "item": return `${item.item_name ?? `아이템 ID${item.item_id}`} ×${item.quantity ?? 1}`;
         default: return item.type;
       }
     })

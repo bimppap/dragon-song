@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createCharacter, fetchSkillNodes, formatEffect } from "@/lib/api";
-import type { Character, Faction, SkillNode } from "@/lib/api";
+import type { Character, Faction, SkillBook, SkillNode } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
 
 type CharacterCreateForm = {
@@ -88,7 +88,7 @@ const EMPTY_FORM: CharacterCreateForm = {
   revive_hp: "10",
   act_time: "1",
   over_heal: false,
-  gold: "1000",
+  gold: "0",
   cp: "0",
   ap: "10",
   lv: "1",
@@ -149,22 +149,27 @@ interface Props {
 export default function CharacterCreate({ onCreated }: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [faction, setFaction] = useState<Faction | null>(null);
+  const [skillBook, setSkillBook] = useState<SkillBook | null>(null);
   const [skillNodes, setSkillNodes] = useState<SkillNode[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!faction) return;
+    if (!skillBook) return;
     let cancelled = false;
-    fetchSkillNodes(faction)
+    fetchSkillNodes(skillBook)
       .then((nodes) => { if (!cancelled) setSkillNodes(nodes); })
       .catch((error) => { if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "기술 조회에 실패했습니다."); });
     return () => { cancelled = true; };
-  }, [faction]);
+  }, [skillBook]);
 
   function handleFactionChange(value: string) {
     setFaction(value === "none" ? null : value as Faction);
+  }
+
+  function handleSkillBookChange(value: string) {
+    setSkillBook(value === "none" ? null : value as SkillBook);
     setSkillNodes([]);
     setSelectedSkillIds(new Set());
   }
@@ -218,6 +223,7 @@ export default function CharacterCreate({ onCreated }: Props) {
       });
       setForm(EMPTY_FORM);
       setFaction(null);
+      setSkillBook(null);
       setSelectedSkillIds(new Set());
       setErrorMessage(null);
       onCreated(createdCharacter);
@@ -265,7 +271,23 @@ export default function CharacterCreate({ onCreated }: Props) {
           </Select>
         </div>
 
-        {faction && (
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted">초기 기술 서</label>
+          <p className="text-xs text-muted">기술트리는 역할(진영)과 무관합니다. 기술을 선택할 서를 골라주세요.</p>
+          <Select value={skillBook ?? "none"} onValueChange={handleSkillBookChange}>
+            <SelectTrigger><SelectValue placeholder="서 선택" /></SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="none">선택 안 함</SelectItem>
+                {(["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"] as SkillBook[]).map((value) => (
+                  <SelectItem key={value} value={value}>{value}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {skillBook && (
           <div className="flex flex-col gap-2">
             <div>
               <p className="text-xs font-semibold uppercase tracking-wide text-muted">초기 기술</p>

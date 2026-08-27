@@ -8,7 +8,7 @@ from app import storage
 from app.auth import create_access_token, get_current_member, require_admin
 from app.db import engine, get_db
 from app.migrations import ensure_schema
-from app.models import Chapter, Character, Item, Member, SkillNode
+from app.models import Chapter, Character, Enemy, Item, Member, SkillNode
 from app.schemas import (
     AccessTokenResponse,
     AdminGiftRequest,
@@ -60,6 +60,7 @@ from app.schemas import (
     SkillNodeUpdate,
     CharacterSkillTreeRead,
     TokenResponse,
+    UseItemRequest,
 )
 from app import crud
 
@@ -159,7 +160,7 @@ def get_character(
         detail = crud.scrub_admin_only_stats(detail)
         # 다른 캐릭터를 조회할 때는 보상·구매 이력을 숨긴다.
         if crud.get_member_character_id(db, member.id) != character_id:
-            detail = detail.model_copy(update={"reward_history": [], "purchase_history": []})
+            detail = detail.model_copy(update={"reward_history": [], "item_history": []})
     return detail
 
 
@@ -223,6 +224,16 @@ def create_attendance_entry(
 ):
     """관리자가 캐릭터를 선택해 출석 처리한다. 보상은 별도 버튼으로 지급한다."""
     return crud.create_attendance_entry(db, data)
+
+
+@app.delete("/attendance/entries/{entry_id}", response_model=list[AttendanceEntryRead])
+def delete_attendance_entry(
+    entry_id: int,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자가 잘못 등록한 출석 기록을 삭제한다."""
+    return crud.delete_attendance_entry(db, entry_id)
 
 
 @app.post("/attendance/rewards/pay", response_model=AttendanceRewardPayResult)
@@ -384,11 +395,12 @@ def _require_own_character_or_admin(db: Session, member: Member, character_id: i
 def use_item(
     character_id: int,
     item_id: int,
+    data: UseItemRequest | None = None,
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
     _require_own_character_or_admin(db, member, character_id)
-    detail = crud.use_item(db, character_id, item_id)
+    detail = crud.use_item(db, character_id, item_id, data.chosen_stats if data else None)
     if member.role != "ADMIN":
         detail = crud.scrub_admin_only_stats(detail)
     return detail
@@ -527,7 +539,7 @@ def revoke_reward(reward_id: int, member: Member = Depends(require_admin), db: S
     return crud.revoke_reward(db, reward_id)
 
 
-@app.post("/rewards/admin-gift", response_model=RewardRead)
+@app.post("/rewards/admin-gift", response_model=list[RewardRead])
 def send_admin_gift(data: AdminGiftRequest, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     """관리자가 캐릭터에게 골드·CP·아이템을 선물한다. 보상 이력에 '관리자의 선물'로 남는다."""
     return crud.send_admin_gift(db, data)
@@ -586,17 +598,7 @@ async def upload_chapter_image(
     chapter.image_url = result["public_url"]
     db.commit()
     db.refresh(chapter)
-    today = crud._today()
-    return ChapterRead(
-        id=chapter.id,
-        name=chapter.name,
-        start_date=chapter.start_date,
-        end_date=chapter.end_date,
-        image_url=chapter.image_url,
-        music_url=chapter.music_url,
-        is_active=chapter.start_date <= today <= chapter.end_date,
-        created_at=chapter.created_at,
-    )
+    return crud._to_chapter_read(chapter)
 
 
 @app.post("/chapters/{chapter_id}/music", response_model=ChapterRead)
@@ -624,17 +626,7 @@ async def upload_chapter_music(
     chapter.music_url = result["public_url"]
     db.commit()
     db.refresh(chapter)
-    today = crud._today()
-    return ChapterRead(
-        id=chapter.id,
-        name=chapter.name,
-        start_date=chapter.start_date,
-        end_date=chapter.end_date,
-        image_url=chapter.image_url,
-        music_url=chapter.music_url,
-        is_active=chapter.start_date <= today <= chapter.end_date,
-        created_at=chapter.created_at,
-    )
+    return crud._to_chapter_read(chapter)
 
 
 @app.get("/chapters/active", response_model=ChapterRead | None)
@@ -643,13 +635,80 @@ def get_active_chapter(db: Session = Depends(get_db)):
 
 
 @app.get("/enemies", response_model=list[EnemyRead])
-def list_enemies(chapter: str | None = None, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    return crud.get_enemies(db, chapter)
+def list_enemies(chapter: str | None = None, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_enemies_for_member(db, member, chapter)
 
 
 @app.post("/enemies", response_model=EnemyRead)
 def create_enemy(data: EnemyCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_enemy(db, data)
+
+
+@app.put("/enemies/{enemy_id}", response_model=EnemyRead)
+def update_enemy(
+    enemy_id: int,
+    data: EnemyCreate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_enemy(db, enemy_id, data)
+
+
+@app.post("/enemies/{enemy_id}/image", response_model=EnemyRead)
+async def upload_enemy_image(
+    enemy_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """에너미 이미지를 WebP로 변환해 버킷 enemy/ 디렉토리에 업로드하고, 기존 이미지는 삭제한다."""
+    enemy = db.get(Enemy, enemy_id)
+    if not enemy:
+        raise HTTPException(status_code=404, detail="에너미를 찾을 수 없습니다.")
+
+    data = await file.read()
+    result = await storage.upload_image_to_bucket(storage.make_key("enemy", enemy.id, enemy.name), data)
+
+    old_path = storage.public_url_to_path(enemy.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    enemy.image_url = result["public_url"]
+    db.commit()
+    db.refresh(enemy)
+    return enemy
+
+
+@app.post("/enemies/{enemy_id}/skills/{skill_index}/summon-image", response_model=EnemyRead)
+async def upload_enemy_summon_image(
+    enemy_id: int,
+    skill_index: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """소환 스킬의 소환수 이미지를 업로드한다. skill_index는 에너미의 skills 배열 내 인덱스다."""
+    enemy = db.get(Enemy, enemy_id)
+    if not enemy:
+        raise HTTPException(status_code=404, detail="에너미를 찾을 수 없습니다.")
+    skills = list(enemy.skills or [])
+    if skill_index < 0 or skill_index >= len(skills):
+        raise HTTPException(status_code=404, detail="스킬을 찾을 수 없습니다.")
+
+    skill = skills[skill_index]
+    data = await file.read()
+    key_name = f"{skill_index}_{skill.get('summon_name') or 'summon'}"
+    result = await storage.upload_image_to_bucket(storage.make_key("enemy-summon", enemy.id, key_name), data)
+
+    old_path = storage.public_url_to_path(skill.get("summon_image_url"))
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    skills[skill_index] = {**skill, "summon_image_url": result["public_url"]}
+    enemy.skills = skills
+    db.commit()
+    db.refresh(enemy)
+    return enemy
 
 
 @app.get("/battles", response_model=list[BattleSessionSummary])
@@ -667,9 +726,21 @@ def create_battle(data: BattleStartRequest, member: Member = Depends(require_adm
     return crud.start_battle(db, member, data)
 
 
+@app.get("/battles/live", response_model=BattleSessionRead | None)
+def get_live_battle(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """러너 관전용: 진행 중인 실전 전투가 있으면 반환하고, 없으면 null을 반환한다."""
+    return crud.get_live_real_battle(db)
+
+
 @app.get("/battles/{session_id}", response_model=BattleSessionRead)
-def get_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    return crud.get_battle_session(db, session_id)
+def get_battle(session_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_battle_session(db, session_id, member)
+
+
+@app.delete("/battles/{session_id}")
+def delete_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    crud.delete_battle_session(db, session_id)
+    return {"deleted": True}
 
 
 @app.post("/battles/{session_id}/actions", response_model=BattleSessionRead)
@@ -680,6 +751,12 @@ def submit_battle_actions(
     db: Session = Depends(get_db),
 ):
     return crud.resolve_battle_round(db, session_id, data)
+
+
+@app.post("/battles/{session_id}/undo-round", response_model=BattleSessionRead)
+def undo_battle_round(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """직전 라운드를 되돌려 그 라운드를 다시 진행할 수 있게 한다(실전 전투만 가능)."""
+    return crud.undo_last_round(db, session_id)
 
 
 @app.post("/battles/{session_id}/join", response_model=BattleSessionRead)
@@ -705,8 +782,8 @@ async def upload_image(
 
 
 @app.get("/skills", response_model=list[SkillNodeRead])
-def list_skill_nodes(faction: str, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
-    return crud.get_skill_nodes(db, faction)
+def list_skill_nodes(book: str, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_skill_nodes(db, book)
 
 
 @app.put("/skills/{node_id}", response_model=SkillNodeRead)
@@ -750,11 +827,12 @@ async def upload_skill_image(
 @app.get("/characters/{character_id}/skills", response_model=CharacterSkillTreeRead)
 def get_character_skills(
     character_id: int,
+    book: str,
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
     _require_own_character_or_admin(db, member, character_id)
-    return crud.get_character_skill_tree(db, character_id)
+    return crud.get_character_skill_tree(db, character_id, book)
 
 
 @app.post("/characters/{character_id}/skills/{node_id}/unlock", response_model=CharacterSkillTreeRead)

@@ -120,6 +120,8 @@ def ensure_schema(engine: Engine) -> None:
 
     if "chapters" in table_names:
         chapter_columns = {col["name"] for col in inspector.get_columns("chapters")}
+        if "battle_date" not in chapter_columns:
+            statements.append("ALTER TABLE chapters ADD COLUMN battle_date DATE")
         if "image_url" not in chapter_columns:
             statements.append("ALTER TABLE chapters ADD COLUMN image_url VARCHAR")
         if "music_url" not in chapter_columns:
@@ -148,6 +150,40 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN effects JSON NOT NULL DEFAULT '[]'")
         if "image_url" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN image_url VARCHAR")
+
+        # 기술트리 개편: 진영(faction, 공격/수비/치유) 3계열 -> 캐릭터 역할과 무관한 4개 "서"
+        # (용맹/불굴/헌신/탐구)로 전환. 기존 트리 구조와 호환되지 않으므로 전면 재시딩하고,
+        # 캐릭터가 강화에 소모한 AP는 전부 환급한다(최초 1회).
+        if "book" not in skill_node_columns:
+            if "character_skill_unlocks" in table_names:
+                statements.append(
+                    "UPDATE characters SET ap = ap + COALESCE(("
+                    "SELECT SUM(csu.ap_spent) FROM character_skill_unlocks csu "
+                    "JOIN skill_nodes sn ON sn.id = csu.node_id "
+                    "WHERE csu.character_id = characters.id AND sn.tier <> 0"
+                    "), 0)"
+                )
+                statements.append("DELETE FROM character_skill_unlocks")
+            statements.append("DELETE FROM skill_nodes")
+            if "faction" in skill_node_columns:
+                statements.append("ALTER TABLE skill_nodes RENAME COLUMN faction TO book")
+            else:
+                statements.append("ALTER TABLE skill_nodes ADD COLUMN book VARCHAR NOT NULL DEFAULT ''")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN trigger_type VARCHAR")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN category VARCHAR")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN stackable BOOLEAN")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN var_name VARCHAR")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN cost DOUBLE PRECISION")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN power DOUBLE PRECISION")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN target VARCHAR")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN activation_order INTEGER")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN formula VARCHAR")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN description VARCHAR")
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN is_placeholder BOOLEAN NOT NULL DEFAULT false")
+            statements.append("ALTER TABLE skill_nodes DROP CONSTRAINT IF EXISTS uq_skill_node_slot")
+            statements.append(
+                "ALTER TABLE skill_nodes ADD CONSTRAINT uq_skill_node_slot UNIQUE (book, branch, col, tier)"
+            )
 
     if "character_skill_unlocks" in table_names:
         unlock_columns = {col["name"] for col in inspector.get_columns("character_skill_unlocks")}
@@ -188,6 +224,16 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE attendance_entries DROP COLUMN message")
         if "updated_at" in attendance_columns:
             statements.append("ALTER TABLE attendance_entries DROP COLUMN updated_at")
+
+    if "enemies" in table_names:
+        enemy_columns = {col["name"] for col in inspector.get_columns("enemies")}
+        if "image_url" not in enemy_columns:
+            statements.append("ALTER TABLE enemies ADD COLUMN image_url VARCHAR")
+
+    if "battle_sessions" in table_names:
+        battle_columns = {col["name"] for col in inspector.get_columns("battle_sessions")}
+        if "round_snapshots" not in battle_columns:
+            statements.append("ALTER TABLE battle_sessions ADD COLUMN round_snapshots JSON NOT NULL DEFAULT '[]'")
 
     if "attendance_missions" in table_names:
         statements.append("DROP TABLE attendance_missions")

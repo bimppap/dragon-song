@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 EnemySkillType = Literal["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환"]
 Faction = Literal["공격", "수비", "치유"]
+# 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다.
+SkillBook = Literal["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"]
 MemberRole = Literal["RUNNER", "ADMIN"]
 
 # 아이템 효과가 적용될 수 있는 캐릭터 능력치와 값의 정수/실수 여부.
@@ -20,10 +22,15 @@ ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
     "skill_cost": int, "skill_target": int,
     "start_sh": int, "revive_hp": float, "act_time": int,
 }
+# 능력치 등급(용기/인내/자애/지혜) 필드 — "가능성/잠재성의 메달"에서 사용자가 고를 수 있는 대상.
+GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wisdom")
+
 # 특수 효과: 캐릭터 능력치가 아니라 별도 동작을 트리거한다(값 무시).
 # "ap_reset": 소모 시 기술을 전부 기본으로 되돌리고 소모한 AP를 환급한다.
 # "hp_heal_p": 최대 체력 대비 퍼센트만큼 현재 체력을 회복한다(_apply_item_effects에서 특수 처리).
-ITEM_EFFECT_SPECIAL_STATS = {"ap_reset"}
+# "grade_choice_1"/"grade_choice_2": 사용 시 용기/인내/자애/지혜 중 1개/2개(중복 불가)를 선택해 각각 1등급 올린다
+#   (가능성의 메달 / 잠재성의 메달). 선택값은 사용 요청의 chosen_stats로 받는다.
+ITEM_EFFECT_SPECIAL_STATS = {"ap_reset", "grade_choice_1", "grade_choice_2"}
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap",
     "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
@@ -35,7 +42,7 @@ ItemEffectStat = Literal[
     "skill_lv", "skill_eff_true", "skill_eff_fixed",
     "skill_cost", "skill_target",
     "start_sh", "revive_hp", "act_time",
-    "ap_reset",
+    "ap_reset", "grade_choice_1", "grade_choice_2",
 ]
 ItemType = Literal["consumable", "equipment"]
 
@@ -131,7 +138,16 @@ class ChapterCreate(BaseModel):
     name: str
     start_date: date
     end_date: date
+    battle_date: date | None = None
     music_url: str | None = None
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.start_date > self.end_date:
+            raise ValueError("챕터 시작일은 종료일보다 늦을 수 없습니다.")
+        if self.battle_date and not (self.start_date <= self.battle_date <= self.end_date):
+            raise ValueError("전투 일정은 챕터 진행 기간 안에서만 지정할 수 있습니다.")
+        return self
 
 
 class ChapterRead(BaseModel):
@@ -139,9 +155,11 @@ class ChapterRead(BaseModel):
     name: str
     start_date: date
     end_date: date
+    battle_date: date | None = None
     image_url: str | None = None
     music_url: str | None = None
     is_active: bool
+    is_battle_day: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -151,6 +169,7 @@ class RewardItemEntry(BaseModel):
     type: str  # "gold" | "item"
     amount: float | None = None
     item_id: int | None = None
+    item_name: str | None = None
     quantity: int | None = None
     stat: str | None = None
 
@@ -178,7 +197,7 @@ class CharacterCreate(BaseModel):
     name: str
     faction: Faction | None = None
     skill_node_ids: list[int] = Field(default_factory=list)
-    gold: int = Field(default=1000, ge=0)
+    gold: int = Field(default=0, ge=0)
     cp: int = Field(default=0, ge=0)
     ap: int = Field(default=10, ge=0)
 
@@ -352,6 +371,11 @@ class BulkPurchaseRequest(BaseModel):
     items: list[CartItem]
 
 
+class UseItemRequest(BaseModel):
+    """가능성/잠재성의 메달처럼 사용 시점에 선택이 필요한 아이템을 위한 선택값. 그 외 아이템은 무시된다."""
+    chosen_stats: list[str] = Field(default_factory=list)
+
+
 class CharacterFlagsUpdate(BaseModel):
     """관리자 전용 관리 플래그 (주의·경고·합격미션여부) 수정."""
 
@@ -361,9 +385,9 @@ class CharacterFlagsUpdate(BaseModel):
 
 
 class AdminGiftRequest(BaseModel):
-    """관리자가 캐릭터에게 보내는 선물 (골드·CP·아이템)."""
+    """관리자가 하나 이상의 캐릭터에게 보내는 선물 (골드·CP·아이템). 각 캐릭터에게 동일한 내용이 각각 지급된다."""
 
-    character_id: int
+    character_ids: list[int] = Field(min_length=1)
     gold: int = Field(default=0, ge=0)
     cp: int = Field(default=0, ge=0)
     items: list[CartItem] = Field(default_factory=list)
@@ -383,6 +407,20 @@ class PurchaseRead(BaseModel):
     character_name: str
     item_id: int
     item_name: str
+    item_image_url: str | None = None
+    quantity: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class ItemHistoryEntry(BaseModel):
+    """구매/사용 이력을 시간순으로 병합해 보여주기 위한 통합 엔트리."""
+    id: int
+    kind: Literal["purchase", "use"]
+    item_id: int
+    item_name: str
+    item_image_url: str | None = None
     quantity: int
     created_at: datetime
 
@@ -393,6 +431,7 @@ class CharacterOwnedItemRead(BaseModel):
     item_id: int
     item_name: str
     item_description: str
+    item_image_url: str | None = None
     item_type: ItemType
     effects: list[ItemEffect] = Field(default_factory=list)
     quantity: int
@@ -416,7 +455,7 @@ class CharacterAchievedChallengeRead(BaseModel):
 class CharacterDetailRead(CharacterRead):
     owned_items: list[CharacterOwnedItemRead]
     achieved_challenges: list[CharacterAchievedChallengeRead]
-    purchase_history: list[PurchaseRead]
+    item_history: list[ItemHistoryEntry]
     reward_history: list[RewardRead]
     attendance_streak: int = 0
 
@@ -568,6 +607,7 @@ class EnemySkill(BaseModel):
     summon_hp: int | None = None
     summon_attack: int | None = None
     summon_count: int | None = None
+    summon_image_url: str | None = None
 
 
 class EnemyCreate(BaseModel):
@@ -585,6 +625,7 @@ class EnemyRead(BaseModel):
     id: int
     name: str
     chapter: str | None
+    image_url: str | None = None
     base_hp: int
     hp_per_attacker: int
     hp_per_defender: int
@@ -714,6 +755,7 @@ class SettlementPayRequest(BaseModel):
 
 class RewardWithCharacterRead(RewardRead):
     character_name: str
+    character_image_url: str | None = None
     revoked: bool = False
 
 
@@ -745,12 +787,14 @@ class AttendanceStreakEntry(BaseModel):
     rank: int  # 동률은 같은 순위를 공유한다(밀집 순위). 최대 5위까지만 반환된다.
 
 
-TIER_LABELS = {0: "기본", 1: "선택", 2: "I", 3: "II", 4: "III", 5: "IV"}
+TIER_LABELS = {0: "기본", 1: "1단계", 2: "2단계", 3: "3단계", 4: "4단계", 5: "5단계", 6: "6단계"}
 
 
 class SkillNodeRead(BaseModel):
+    """var_name(내부 변수명)은 러너·관리자 모두에게 노출하지 않으므로 이 스키마에 포함하지 않는다."""
+
     id: int
-    faction: Faction
+    book: SkillBook
     branch: int | None
     col: int | None
     tier: int
@@ -758,6 +802,16 @@ class SkillNodeRead(BaseModel):
     default_name: str
     image_url: str | None = None
     effects: list[ItemEffect] = Field(default_factory=list)
+    trigger_type: str | None = None
+    category: str | None = None
+    stackable: bool | None = None
+    cost: float | None = None
+    power: float | None = None
+    target: str | None = None
+    activation_order: int | None = None
+    formula: str | None = None
+    description: str | None = None
+    is_placeholder: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -776,10 +830,11 @@ class CharacterSkillNodeRead(SkillNodeRead):
     unlocked: bool
     custom_name: str | None
     display_name: str
+    unlocked_at: datetime | None = None
 
 
 class CharacterSkillTreeRead(BaseModel):
-    faction: Faction
+    book: SkillBook
     character_ap: int
     ap_cost_to_unlock: int
     latest_unlocked_node_id: int | None = None

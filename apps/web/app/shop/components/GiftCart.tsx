@@ -1,12 +1,20 @@
 "use client";
 
-import { Coins, Gift, Minus, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Coins, Gift, Minus, Plus, Sparkles, Trash2, UserPlus, X } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
+import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { parsePositiveInt } from "@/lib/utils";
+import type { Character } from "@/lib/api";
 import type { CartEntry } from "./Cart";
 
 interface Props {
+  characters: Character[];
+  selectedCharacterIds: number[];
+  onSelectCharacter: (id: number) => void;
+  onUnselectCharacter: (id: number) => void;
   entries: CartEntry[];
   gold: number;
   cp: number;
@@ -18,8 +26,12 @@ interface Props {
   onSend: () => void;
 }
 
-/** 관리자 상점의 선물 바구니: 골드·CP·아이템을 담아 캐릭터에게 보낸다. */
+/** 관리자 상점의 선물 바구니: 캐릭터(들)를 고르고 골드·CP·아이템을 담아 보낸다. */
 export default function GiftCart({
+  characters,
+  selectedCharacterIds,
+  onSelectCharacter,
+  onUnselectCharacter,
   entries,
   gold,
   cp,
@@ -32,6 +44,14 @@ export default function GiftCart({
 }: Props) {
   const totalQty = entries.reduce((sum, e) => sum + e.qty, 0);
   const hasContent = gold > 0 || cp > 0 || entries.length > 0;
+  const charactersById = new Map(characters.map((c) => [c.id, c]));
+  const characterOptions = characters
+    .filter((c) => !selectedCharacterIds.includes(c.id))
+    .map((c) => ({
+      value: String(c.id),
+      label: c.name,
+      icon: <CharacterAvatar src={c.image_url} alt={c.name} className="size-5 rounded-full" iconSize={10} />,
+    }));
 
   return (
     <aside className="flex w-full shrink-0 flex-col overflow-hidden rounded-xl border border-line bg-surface lg:w-72">
@@ -39,6 +59,47 @@ export default function GiftCart({
         <Gift size={16} className="text-gold" />
         <span className="text-sm font-semibold text-ivory">선물 바구니</span>
         <span className="font-num ml-auto text-xs font-medium text-muted">아이템 {totalQty}개</span>
+      </div>
+
+      {/* 선물 받을 캐릭터 */}
+      <div className="flex flex-col gap-2 border-b border-line px-4 py-3">
+        <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted">
+          <UserPlus size={11} className="text-gold" />선물 받을 캐릭터
+        </span>
+        <Combobox
+          options={characterOptions}
+          value={null}
+          onChange={(v) => onSelectCharacter(Number(v))}
+          placeholder="캐릭터 선택 (여러 명 선택 가능)"
+          searchPlaceholder="캐릭터 이름 검색"
+          emptyText="일치하는 캐릭터가 없습니다."
+        />
+        {selectedCharacterIds.length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {selectedCharacterIds.map((id) => {
+              const character = charactersById.get(id);
+              return (
+                <Badge key={id} variant="secondary" className="gap-1.5 py-1 pl-1.5 pr-1">
+                  <CharacterAvatar
+                    src={character?.image_url ?? null}
+                    alt={character?.name ?? String(id)}
+                    className="size-4 rounded-full"
+                    iconSize={9}
+                  />
+                  {character?.name ?? id}
+                  <button
+                    type="button"
+                    onClick={() => onUnselectCharacter(id)}
+                    className="rounded-full p-0.5 text-ivory/70 transition-colors hover:bg-ivory/15 hover:text-ivory"
+                    aria-label={`${character?.name ?? id} 선택 해제`}
+                  >
+                    <X size={11} />
+                  </button>
+                </Badge>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 골드 / CP */}
@@ -110,9 +171,14 @@ export default function GiftCart({
 
       <div className="space-y-3 border-t border-line bg-inset px-4 py-4">
         <p className="text-xs text-muted">
-          보낸 선물은 캐릭터의 보상 이력에 &lsquo;관리자의 선물&rsquo;로 기록됩니다.
+          선택한 캐릭터 각각에게 동일한 선물이 지급되며, 캐릭터의 보상 이력에 &lsquo;관리자의 선물&rsquo;로 기록됩니다.
         </p>
-        <Button variant="cta" className="w-full" disabled={loading || !hasContent} onClick={onSend}>
+        <Button
+          variant="cta"
+          className="w-full"
+          disabled={loading || !hasContent || selectedCharacterIds.length === 0}
+          onClick={onSend}
+        >
           <Gift size={15} />
           {loading ? "보내는 중..." : "선물 보내기"}
         </Button>
