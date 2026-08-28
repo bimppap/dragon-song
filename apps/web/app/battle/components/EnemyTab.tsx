@@ -25,8 +25,8 @@ import {
   uploadEnemySummonImage,
 } from "@/lib/api";
 import type { Chapter, Enemy, EnemyCreate, EnemySkill } from "@/lib/api";
-import { cn, parsePositiveInt } from "@/lib/utils";
-import AlertBanner from "@/components/common/AlertBanner";
+import { cn, parsePositiveInt, todayDateValue } from "@/lib/utils";
+import { useToast } from "@/components/common/ToastProvider";
 import EmptyState from "@/components/common/EmptyState";
 
 const SKILL_TYPES = ["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환"] as const;
@@ -160,10 +160,10 @@ export default function EnemyTab() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEnemy, setEditingEnemy] = useState<Enemy | null>(null);
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const selectedChapterData = chapterList.find((chapter) => chapter.name === selectedChapter) ?? null;
   const battleDateDirty = (selectedChapterData?.battle_date ?? "") !== battleDateDraft;
@@ -175,14 +175,18 @@ export default function EnemyTab() {
         if (cancelled) return;
         setChapterList(chapList);
         if (chapList.length > 0) {
-          setSelectedChapter(chapList[0].name);
-          setBattleDateDraft(chapList[0].battle_date ?? "");
+          const today = todayDateValue();
+          const defaultChapter = chapList.find(
+            (chapter) => chapter.start_date <= today && today <= chapter.end_date,
+          ) ?? chapList[0];
+          setSelectedChapter(defaultChapter.name);
+          setBattleDateDraft(defaultChapter.battle_date ?? "");
         }
       })
-      .catch((e) => { if (!cancelled) setError(e instanceof Error ? e.message : "챕터를 불러오지 못했습니다."); })
+      .catch((e) => { if (!cancelled) toast(e instanceof Error ? e.message : "챕터를 불러오지 못했습니다.", "error"); })
       .finally(() => { if (!cancelled) setChaptersLoaded(true); });
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     if (!chaptersLoaded) return;
@@ -191,16 +195,16 @@ export default function EnemyTab() {
       setLoading(true);
       try {
         const enemyList = await fetchEnemies(selectedChapter === ALL_CHAPTERS ? undefined : selectedChapter);
-        if (!cancelled) { setEnemies(enemyList); setError(null); }
+        if (!cancelled) setEnemies(enemyList);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "에너미를 불러오지 못했습니다.");
+        if (!cancelled) toast(e instanceof Error ? e.message : "에너미를 불러오지 못했습니다.", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, [chaptersLoaded, selectedChapter]);
+  }, [chaptersLoaded, selectedChapter, toast]);
 
   function setField<K extends keyof EnemyFormState>(key: K, value: EnemyFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -226,7 +230,6 @@ export default function EnemyTab() {
     setEditingEnemy(null);
     setImageFile(null);
     setImagePreview(null);
-    setError(null);
     setModalOpen(true);
   }
 
@@ -235,7 +238,6 @@ export default function EnemyTab() {
     setEditingEnemy(enemy);
     setImageFile(null);
     setImagePreview(enemy.image_url);
-    setError(null);
     setModalOpen(true);
   }
 
@@ -260,7 +262,6 @@ export default function EnemyTab() {
   async function handleBattleDateSave() {
     if (!selectedChapterData) return;
     setScheduleSaving(true);
-    setError(null);
     try {
       const updatedChapter = await updateChapter(selectedChapterData.id, {
         name: selectedChapterData.name,
@@ -272,7 +273,7 @@ export default function EnemyTab() {
       setChapterList((prev) => prev.map((chapter) => (chapter.id === updatedChapter.id ? updatedChapter : chapter)));
       setBattleDateDraft(updatedChapter.battle_date ?? "");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "전투 일정 저장에 실패했습니다.");
+      toast(e instanceof Error ? e.message : "전투 일정 저장에 실패했습니다.", "error");
     } finally {
       setScheduleSaving(false);
     }
@@ -281,9 +282,8 @@ export default function EnemyTab() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) return;
-    if (form.skills.length === 0) { setError("스킬을 하나 이상 추가해주세요."); return; }
+    if (form.skills.length === 0) { toast("스킬을 하나 이상 추가해주세요.", "error"); return; }
     setSubmitting(true);
-    setError(null);
     try {
       let saved = editingEnemy
         ? await updateEnemy(editingEnemy.id, toPayload(form))
@@ -312,7 +312,7 @@ export default function EnemyTab() {
       }
       setModalOpen(false);
     } catch (e) {
-      setError(e instanceof Error ? e.message : (editingEnemy ? "에너미 수정에 실패했습니다." : "에너미 생성에 실패했습니다."));
+      toast(e instanceof Error ? e.message : (editingEnemy ? "에너미 수정에 실패했습니다." : "에너미 생성에 실패했습니다."), "error");
     } finally {
       setSubmitting(false);
     }
@@ -320,8 +320,6 @@ export default function EnemyTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      {error && <AlertBanner>{error}</AlertBanner>}
-
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -482,8 +480,6 @@ export default function EnemyTab() {
         }
       >
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-          {error && <AlertBanner>{error}</AlertBanner>}
-
           <div className="flex flex-col gap-2">
             <label className="text-sm font-semibold text-ivory">이름</label>
             <Input value={form.name} onChange={(e) => setField("name", e.target.value)} placeholder="에너미 이름" required />

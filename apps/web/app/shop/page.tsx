@@ -7,7 +7,7 @@ import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
 import GiftCart from "./components/GiftCart";
 import ShopAdminPanel from "./components/ShopAdminPanel";
-import { fetchCharacters, bulkPurchase, consumeItem, equipItem, sendAdminGift } from "@/lib/api";
+import { fetchCharacterDetail, fetchCharacters, bulkPurchase, consumeItem, equipItem, sendAdminGift } from "@/lib/api";
 import type { Character, Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/common/PageContainer";
@@ -86,9 +86,22 @@ function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
 
 function RunnerShop({ characterId }: { characterId: number }) {
   const [refreshKey, setRefreshKey] = useState(0);
+  const [balance, setBalance] = useState<{ gold: number; cp: number } | null>(null);
   const { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
     usePurchaseCart(characterId, () => setRefreshKey((k) => k + 1));
   const cartItemIds = new Set(cart.map((e) => e.item.id));
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchCharacterDetail(characterId)
+      .then((character) => {
+        if (!cancelled) setBalance({ gold: character.gold, cp: character.cp });
+      })
+      .catch(() => {
+        if (!cancelled) setBalance(null);
+      });
+    return () => { cancelled = true; };
+  }, [characterId, refreshKey]);
 
   return (
     <PageContainer className="space-y-8">
@@ -106,13 +119,20 @@ function RunnerShop({ characterId }: { characterId: number }) {
             refreshKey={refreshKey}
           />
         </div>
-        <Cart
-          entries={cart}
-          loading={cartLoading}
-          onUpdateQty={handleUpdateQty}
-          onRemove={handleRemove}
-          onPurchase={handlePurchase}
-        />
+        <div className="flex w-full shrink-0 flex-col gap-2 lg:w-72">
+          <p className="text-sm text-muted" aria-live="polite">
+            보유 골드 <span className="font-num font-semibold text-gold">{balance ? `${balance.gold.toLocaleString()} G` : "-"}</span>
+            <span className="px-2 text-line">·</span>
+            보유 CP <span className="font-num font-semibold text-cyan-600">{balance ? balance.cp.toLocaleString() : "-"}</span>
+          </p>
+          <Cart
+            entries={cart}
+            loading={cartLoading}
+            onUpdateQty={handleUpdateQty}
+            onRemove={handleRemove}
+            onPurchase={handlePurchase}
+          />
+        </div>
       </div>
     </PageContainer>
   );

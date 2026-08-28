@@ -5,12 +5,14 @@ import Image from "next/image";
 import { Check, Image as ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import EffectListEditor from "@/components/common/EffectListEditor";
 import Modal from "@/components/common/Modal";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import {
   fetchSkillNodes,
   updateSkillNode,
+  updateSkillVisibility,
   uploadSkillImage,
   type ItemEffect,
   type SkillBook,
@@ -33,6 +35,8 @@ export default function AdminSkillEditor() {
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [maxPublicTier, setMaxPublicTier] = useState(6);
+  const [savingVisibility, setSavingVisibility] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,6 +48,7 @@ export default function AdminSkillEditor() {
         const lists = await Promise.all(BOOKS.map((b) => fetchSkillNodes(b)));
         if (cancelled) return;
         setNodesByBook(Object.fromEntries(BOOKS.map((b, i) => [b, lists[i]])) as Record<SkillBook, SkillNode[]>);
+        setMaxPublicTier(Math.max(0, ...lists.flatMap((nodes) => nodes.filter((node) => node.is_public).map((node) => node.tier))));
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패");
       } finally {
@@ -100,16 +105,49 @@ export default function AdminSkillEditor() {
     }
   }
 
+  async function handleVisibilityChange(value: string) {
+    const nextTier = Number(value);
+    setSavingVisibility(true);
+    setError(null);
+    try {
+      const updated = await updateSkillVisibility(nextTier);
+      setNodesByBook(Object.fromEntries(
+        BOOKS.map((book) => [book, updated.filter((node) => node.book === book)]),
+      ) as Record<SkillBook, SkillNode[]>);
+      setMaxPublicTier(nextTier);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "기술 공개 단계 저장 실패");
+    } finally {
+      setSavingVisibility(false);
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="space-y-1">
+      <div className="space-y-3">
         <h2 className="text-lg font-bold text-ivory">기술트리 관리</h2>
-        <p className="text-sm text-muted">
-          서(용맹/불굴/헌신/탐구)별 기술트리 구조를 한 페이지에서 확인하고 각 기술을 클릭해 이름·효과·이미지를 편집할 수
-          있습니다. 기술 아이콘에 마우스를 올리면 상세 정보가 표시됩니다(주황색은 기획 확정 전 임시값). 서 아이덴티티
-          노드(맨 아래)는 모든 캐릭터에게 항상 활성화되며, 1단계 계열 하나·2단계부터의 세부 경로 하나를 골라 6단계까지
-          강화하는 구조입니다.
-        </p>
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-sm font-semibold text-ivory">기술 노드 공개 범위</span>
+          <Select
+            value={String(maxPublicTier)}
+            onValueChange={(value) => void handleVisibilityChange(value)}
+            disabled={loading || savingVisibility}
+          >
+            <SelectTrigger className="h-8 w-40 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {Array.from({ length: 7 }, (_, tier) => (
+                  <SelectItem key={tier} value={String(tier)}>
+                    {tier === 0 ? "루트만 공개" : `${tier}단계까지 공개`}
+                  </SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          {savingVisibility ? <span className="text-xs text-muted">저장 중...</span> : null}
+        </div>
       </div>
 
       {error && <p className="text-sm text-red-500">{error}</p>}

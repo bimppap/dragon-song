@@ -13,15 +13,15 @@ import {
   CardContent,
 } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
-import AlertBanner from "@/components/common/AlertBanner";
+import { useToast } from "@/components/common/ToastProvider";
 
 export default function LoginPage() {
+  const { toast } = useToast();
   const { member, login } = useAuth();
   const router = useRouter();
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (member === undefined || member === null) return;
@@ -31,12 +31,11 @@ export default function LoginPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    setErrorMessage(null);
     try {
       await login({ login_id: loginId, password });
       router.replace("/");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "로그인에 실패했습니다.");
+      toast(error instanceof Error ? error.message : "로그인에 실패했습니다.", "error");
     } finally {
       setLoading(false);
     }
@@ -55,10 +54,6 @@ export default function LoginPage() {
       <Card className="w-full max-w-xs">
         <CardContent className="pt-5 pb-5">
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {errorMessage && (
-              <AlertBanner>{errorMessage}</AlertBanner>
-            )}
-
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted uppercase tracking-wide">아이디</label>
               <Input value={loginId} onChange={(e) => setLoginId(e.target.value)} autoFocus required />

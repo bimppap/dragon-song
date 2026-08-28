@@ -7,9 +7,9 @@ import CharacterList from "../components/character/CharacterList";
 import CharacterInfo from "../components/character/CharacterInfo";
 import CharacterCreate from "../components/character/CharacterCreate";
 import { fetchCharacters, fetchMyCharacter, type Character } from "@/lib/api";
-import AlertBanner from "@/components/common/AlertBanner";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
+import { useToast } from "@/components/common/ToastProvider";
 
 type Tab = "list" | "info" | "create";
 
@@ -20,10 +20,10 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 ];
 
 function AdminCharacterConsole() {
+  const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("list");
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loadingCharacters, setLoadingCharacters] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [focusCharacterId, setFocusCharacterId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -31,19 +31,18 @@ function AdminCharacterConsole() {
     fetchCharacters().then((list) => {
       if (!cancelled) setCharacters(list);
     }).catch((error) => {
-      if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "캐릭터 목록을 불러오지 못했습니다.");
+      if (!cancelled) toast(error instanceof Error ? error.message : "캐릭터 목록을 불러오지 못했습니다.", "error");
     }).finally(() => {
       if (!cancelled) setLoadingCharacters(false);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   return <PageContainer max="4xl" className="space-y-8">
-    {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
     <TabBar tabs={TABS} active={tab} onChange={setTab} />
     {tab === "list" && <CharacterList characters={characters} loading={loadingCharacters} showAdminFlags onSelectCharacter={(character) => { setFocusCharacterId(character.id); setTab("info"); }} />}
     {tab === "info" && <CharacterInfo key={focusCharacterId ?? "info"} characters={characters} loading={loadingCharacters} focusCharacterId={focusCharacterId} />}
-    {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.id - b.id)); setTab("list"); }} />}
+    {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.name.localeCompare(b.name, "ko"))); setTab("list"); }} />}
   </PageContainer>;
 }
 
@@ -53,24 +52,24 @@ type RunnerView =
   | { mode: "other"; character: Character };
 
 function MyCharacterConsole() {
+  const { toast } = useToast();
   const [view, setView] = useState<RunnerView>({ mode: "mine" });
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
   const [others, setOthers] = useState<Character[]>([]);
   const [othersLoading, setOthersLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     fetchMyCharacter().then((detail) => {
       if (!cancelled) setCharacter(detail);
     }).catch((error) => {
-      if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "캐릭터 정보를 불러오지 못했습니다.");
+      if (!cancelled) toast(error instanceof Error ? error.message : "캐릭터 정보를 불러오지 못했습니다.", "error");
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   async function openList() {
     setView({ mode: "list" });
@@ -78,17 +77,14 @@ function MyCharacterConsole() {
     setOthersLoading(true);
     try {
       setOthers(await fetchCharacters());
-      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "캐릭터 목록을 불러오지 못했습니다.");
+      toast(error instanceof Error ? error.message : "캐릭터 목록을 불러오지 못했습니다.", "error");
     } finally {
       setOthersLoading(false);
     }
   }
 
   return <PageContainer max="4xl" className="space-y-8">
-    {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-
     {view.mode === "mine" && <>
       <div className="flex justify-end">
         <button

@@ -13,10 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
+import { useToast } from "@/components/common/ToastProvider";
 import { fetchAllRewards, fetchCharacters, revokeReward } from "@/lib/api";
 import type { Character, RewardWithCharacter } from "@/lib/api";
 import { formatRewardItems, REWARD_TYPE_LABELS } from "@/lib/rewards";
@@ -25,13 +25,13 @@ const ALL_CHARACTERS = "__all__";
 
 export default function RewardAdminTab() {
   const { confirm } = useDialog();
+  const { toast } = useToast();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [characterFilter, setCharacterFilter] = useState<string>(ALL_CHARACTERS);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [rewards, setRewards] = useState<RewardWithCharacter[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchCharacters().then(setCharacters).catch(console.error);
@@ -50,10 +50,9 @@ export default function RewardAdminTab() {
         });
         if (!cancelled) {
           setRewards(list);
-          setErrorMessage(null);
         }
       } catch (error) {
-        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "보상 이력 조회 실패");
+        if (!cancelled) toast(error instanceof Error ? error.message : "보상 이력 조회 실패", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -61,7 +60,7 @@ export default function RewardAdminTab() {
 
     load();
     return () => { cancelled = true; };
-  }, [characterFilter, dateFrom, dateTo]);
+  }, [characterFilter, dateFrom, dateTo, toast]);
 
   async function handleRevoke(reward: RewardWithCharacter) {
     const ok = await confirm({
@@ -77,16 +76,13 @@ export default function RewardAdminTab() {
         revokeEntry,
         ...prev.map((r) => (r.id === reward.id ? { ...r, revoked: true } : r)),
       ]);
-      setErrorMessage(null);
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "보상 회수 실패");
+      toast(error instanceof Error ? error.message : "보상 회수 실패", "error");
     }
   }
 
   return (
     <div className="flex flex-col gap-6">
-      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-
       <Card>
         <CardHeader>
           <CardTitle>보상 이력</CardTitle>

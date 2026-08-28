@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Shield, Swords, Trash2 } from "lucide-react";
+import { CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Plus, Shield, Sword, Swords, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -20,7 +20,7 @@ import {
   type Character,
   type Enemy,
 } from "@/lib/api";
-import AlertBanner from "@/components/common/AlertBanner";
+import { useToast } from "@/components/common/ToastProvider";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
@@ -85,6 +85,32 @@ function getEnemyFinalStats(enemy: Enemy, partyCounts: PartyCounts) {
   };
 }
 
+function getCharacterNameFontSize(name: string): number {
+  return Math.min(14, 132 / Math.max(1, Array.from(name).length));
+}
+
+function CharacterFactionIcon({ faction }: { faction: Character["faction"] }) {
+  const config = faction === "공격"
+    ? { icon: Sword, label: "공격", className: "text-red-500" }
+    : faction === "수비"
+      ? { icon: Shield, label: "수비", className: "text-sky-500" }
+      : faction === "치유"
+        ? { icon: Plus, label: "치유", className: "text-emerald-500" }
+        : null;
+
+  if (!config) return null;
+  const Icon = config.icon;
+  return (
+    <span
+      title={config.label}
+      aria-label={config.label}
+      className="absolute left-2 top-2 z-10 flex items-center justify-center drop-shadow-md"
+    >
+      <Icon size={26} strokeWidth={2.75} className={config.className} />
+    </span>
+  );
+}
+
 function statusBadge(status: BattleSessionSummary["status"]) {
   if (status === "victory") return <Badge variant="success">승리</Badge>;
   if (status === "defeat") return <Badge variant="destructive">패배</Badge>;
@@ -93,6 +119,7 @@ function statusBadge(status: BattleSessionSummary["status"]) {
 
 export default function BattleTab() {
   const { confirm } = useDialog();
+  const { toast } = useToast();
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -100,10 +127,10 @@ export default function BattleTab() {
   const [history, setHistory] = useState<BattleSessionSummary[]>([]);
   const [historyMode, setHistoryMode] = useState<BattleMode>("real");
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
+  const [selectedEnemyIds, setSelectedEnemyIds] = useState<Set<number>>(new Set());
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<number>>(new Set());
   const [active, setActive] = useState<ActiveBattle | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
@@ -127,9 +154,8 @@ export default function BattleTab() {
         setCharacters(characterList);
         setResumable(resumableList);
         setHistory(historyList);
-        setError(null);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "전투 데이터 조회 실패");
+        if (!cancelled) toast(e instanceof Error ? e.message : "전투 데이터 조회 실패", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -137,7 +163,7 @@ export default function BattleTab() {
 
     load();
     return () => { cancelled = true; };
-  }, [reloadKey, historyMode]);
+  }, [reloadKey, historyMode, toast]);
 
   async function handleDelete(session: BattleSessionSummary) {
     const ok = await confirm({
@@ -152,7 +178,7 @@ export default function BattleTab() {
       await deleteBattle(session.id);
       setHistory((prev) => prev.filter((s) => s.id !== session.id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "전투 기록 삭제 실패");
+      toast(e instanceof Error ? e.message : "전투 기록 삭제 실패", "error");
     } finally {
       setDeletingId(null);
     }
@@ -176,20 +202,27 @@ export default function BattleTab() {
     });
   }
 
+  function toggleEnemy(id: number) {
+    setSelectedEnemyIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   async function handleStart(mode: BattleMode) {
-    const activeEnemyIds = currentChapterEnemies.map((enemy) => enemy.id);
-    if (activeEnemyIds.length === 0 || selectedCharacterIds.size === 0) return;
+    if (selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0) return;
     try {
       setStarting(true);
       const session = await createBattle({
         mode,
-        enemy_ids: activeEnemyIds,
+        enemy_ids: [...selectedEnemyIds],
         character_ids: [...selectedCharacterIds],
       });
       setActive({ sessionId: session.id, readOnly: false });
-      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "전투 시작 실패");
+      toast(e instanceof Error ? e.message : "전투 시작 실패", "error");
     } finally {
       setStarting(false);
     }
@@ -202,6 +235,7 @@ export default function BattleTab() {
         readOnly={active.readOnly}
         onExit={() => {
           setActive(null);
+          setSelectedEnemyIds(new Set());
           setSelectedCharacterIds(new Set());
           setReloadKey((k) => k + 1);
         }}
@@ -231,8 +265,6 @@ export default function BattleTab() {
           라운드에는 공격/치유 대상이 되지 않습니다.
         </p>
       </div>
-
-      {error && <AlertBanner>{error}</AlertBanner>}
 
       {resumable.length > 0 && (
         <Card className="border-gold/40 bg-gold/5">
@@ -273,7 +305,7 @@ export default function BattleTab() {
               </div>
               <CardDescription>
                 {activeChapter
-                  ? "러너 화면처럼 현재 챕터 에너미를 표시합니다. 이 에너미들은 모두 자동으로 전투 대상에 포함되며, 체크한 캐릭터 조합에 따라 최종 HP가 아래 정보에 즉시 반영됩니다."
+                  ? "현재 챕터에서 전투를 시작할 에너미를 선택하세요. 체크한 캐릭터 조합에 따라 최종 HP가 아래 정보에 즉시 반영됩니다."
                   : "진행 중인 챕터가 없어 현재 챕터 에너미를 표시할 수 없습니다."}
               </CardDescription>
             </CardHeader>
@@ -292,11 +324,14 @@ export default function BattleTab() {
                 <div className="grid gap-4 xl:grid-cols-2">
                   {currentChapterEnemies.map((enemy) => {
                     const { bonusHp, finalHp } = getEnemyFinalStats(enemy, selectedPartyCounts);
+                    const checked = selectedEnemyIds.has(enemy.id);
 
                     return (
                       <div
                         key={enemy.id}
-                        className="flex flex-col gap-4 rounded-2xl border border-gold/45 bg-gold/10 p-4"
+                        className={`flex flex-col gap-4 rounded-2xl border p-4 transition-colors ${
+                          checked ? "border-gold bg-gold/10" : "border-line bg-surface hover:border-gold/45"
+                        }`}
                       >
                         <div className="flex items-start gap-4">
                           <div className="relative h-28 w-24 shrink-0 overflow-hidden rounded-xl border border-line bg-inset">
@@ -310,8 +345,9 @@ export default function BattleTab() {
                           </div>
                           <div className="min-w-0 flex-1 space-y-2">
                             <div className="flex flex-wrap items-center gap-2">
+                              <Checkbox checked={checked} onCheckedChange={() => toggleEnemy(enemy.id)} />
                               <span className="text-lg font-semibold text-ivory">{enemy.name}</span>
-                              <Badge variant="secondary">자동 포함</Badge>
+                              {checked && <Badge variant="secondary">선택됨</Badge>}
                               {enemy.chapter && <Badge variant="outline">{enemy.chapter}</Badge>}
                             </div>
                             <div className="grid gap-2 text-sm sm:grid-cols-2">
@@ -383,25 +419,47 @@ export default function BattleTab() {
               <CardDescription>전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid max-w-3xl grid-cols-6 gap-3">
                 {characters.map((c) => {
                   const checked = selectedCharacterIds.has(c.id);
                   return (
-                    <label
+                    <div
                       key={c.id}
-                      className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-colors ${
-                        checked ? "border-gold bg-gold/10" : "border-line hover:border-line"
+                      role="checkbox"
+                      tabIndex={0}
+                      aria-checked={checked}
+                      onClick={() => toggleCharacter(c.id)}
+                      onKeyDown={(event) => {
+                        if (event.key !== "Enter" && event.key !== " ") return;
+                        event.preventDefault();
+                        toggleCharacter(c.id);
+                      }}
+                      className={`flex cursor-pointer flex-col items-center gap-2 overflow-hidden rounded-2xl border bg-surface pb-3 transition-colors ${
+                        checked ? "border-gold ring-1 ring-gold/50" : "border-line hover:border-gold/45"
                       }`}
                     >
-                      <Checkbox checked={checked} onCheckedChange={() => toggleCharacter(c.id)} />
-                      <CharacterAvatar src={c.image_url} alt={c.name} className="size-8 rounded-lg" iconSize={14} />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="truncate font-semibold text-ivory">{c.name}</span>
-                          {c.faction && <Badge variant="secondary" className="text-[10px]">{c.faction}</Badge>}
-                        </div>
+                      <div className="relative w-full">
+                        <CharacterAvatar
+                          src={c.image_url}
+                          alt={c.name}
+                          className="aspect-square w-full rounded-none"
+                          iconSize={28}
+                        />
+                        <CharacterFactionIcon faction={c.faction} />
+                        <Checkbox
+                          checked={checked}
+                          className="absolute right-2 top-2 z-10 size-5 rounded border-2 bg-surface shadow-md"
+                          onClick={(event) => event.stopPropagation()}
+                          onCheckedChange={() => toggleCharacter(c.id)}
+                        />
                       </div>
-                    </label>
+                      <span
+                        className="w-full whitespace-nowrap px-1 text-center font-semibold leading-tight text-ivory"
+                        style={{ fontSize: `${getCharacterNameFontSize(c.name)}px` }}
+                      >
+                        {c.name}
+                      </span>
+                    </div>
                   );
                 })}
               </div>
@@ -411,14 +469,14 @@ export default function BattleTab() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Button
               variant="outline"
-              disabled={currentChapterEnemies.length === 0 || selectedCharacterIds.size === 0 || starting}
+              disabled={selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0 || starting}
               onClick={() => handleStart("practice")}
             >
               <Flag size={15} />
-              모의전 시작 ({selectedCharacterIds.size}명 · 에너미 {currentChapterEnemies.length}마리)
+              모의전 시작 ({selectedCharacterIds.size}명 · 에너미 {selectedEnemyIds.size}마리)
             </Button>
             <Button
-              disabled={currentChapterEnemies.length === 0 || selectedCharacterIds.size === 0 || starting}
+              disabled={selectedEnemyIds.size === 0 || selectedCharacterIds.size === 0 || starting}
               onClick={() => handleStart("real")}
             >
               <Swords size={15} />

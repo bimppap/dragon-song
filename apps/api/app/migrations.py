@@ -90,8 +90,6 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN caution BOOLEAN NOT NULL DEFAULT false")
     if "warning_count" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0")
-    if "mission_passed" not in character_columns:
-        statements.append("ALTER TABLE characters ADD COLUMN mission_passed BOOLEAN NOT NULL DEFAULT false")
 
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}
@@ -150,6 +148,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN effects JSON NOT NULL DEFAULT '[]'")
         if "image_url" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN image_url VARCHAR")
+        if "is_public" not in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT true")
 
         # 기술트리 개편: 진영(faction, 공격/수비/치유) 3계열 -> 캐릭터 역할과 무관한 4개 "서"
         # (용맹/불굴/헌신/탐구)로 전환. 기존 트리 구조와 호환되지 않으므로 전면 재시딩하고,

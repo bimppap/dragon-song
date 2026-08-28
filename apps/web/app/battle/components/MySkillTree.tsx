@@ -12,10 +12,18 @@ import {
   type CharacterSkillTree,
   type SkillBook,
 } from "@/lib/api";
-import AlertBanner from "@/components/common/AlertBanner";
 import { useDialog } from "@/components/common/DialogProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
+// 서별 제목 색 — 보유 기술 목록의 테두리 색(BOOK_BORDER_CLASS)과 같은 순서다.
+// 어두운 배경(ground)에서 작은 글씨 대비를 확보하려고 500이 아닌 400을 쓴다
+const BOOK_TEXT_CLASS: Record<SkillBook, string> = {
+  "용맹의 서": "text-red-400",
+  "불굴의 서": "text-blue-400",
+  "헌신의 서": "text-green-400",
+  "탐구의 서": "text-purple-400",
+};
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 interface Props {
@@ -24,9 +32,9 @@ interface Props {
 
 export default function MySkillTree({ characterId }: Props) {
   const { confirm, prompt } = useDialog();
+  const { toast } = useToast();
   const [treesByBook, setTreesByBook] = useState<Record<SkillBook, CharacterSkillTree> | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [busyNodeId, setBusyNodeId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -34,13 +42,12 @@ export default function MySkillTree({ characterId }: Props) {
 
     async function load() {
       setLoading(true);
-      setError(null);
       try {
         const lists = await Promise.all(BOOKS.map((b) => fetchCharacterSkillTree(characterId, b)));
         if (cancelled) return;
         setTreesByBook(Object.fromEntries(BOOKS.map((b, i) => [b, lists[i]])) as Record<SkillBook, CharacterSkillTree>);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "기술트리 조회 실패");
+        if (!cancelled) toast(e instanceof Error ? e.message : "기술트리 조회 실패", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -48,7 +55,7 @@ export default function MySkillTree({ characterId }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, [characterId]);
+  }, [characterId, toast]);
 
   /** AP는 캐릭터 전역 값이라, 한 서에서 소모해도 나머지 서의 캐시된 표시 AP를 함께 갱신해야 어긋나지 않는다. */
   function applyTreeUpdate(book: SkillBook, updated: CharacterSkillTree) {
@@ -64,11 +71,10 @@ export default function MySkillTree({ characterId }: Props) {
 
   async function handleUnlock(book: SkillBook, node: CharacterSkillNode) {
     setBusyNodeId(node.id);
-    setError(null);
     try {
       applyTreeUpdate(book, await unlockCharacterSkill(characterId, node.id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "기술 강화 실패");
+      toast(e instanceof Error ? e.message : "기술 강화 실패", "error");
     } finally {
       setBusyNodeId(null);
     }
@@ -81,18 +87,17 @@ export default function MySkillTree({ characterId }: Props) {
     );
     if (nextName === null) return;
     setBusyNodeId(node.id);
-    setError(null);
     try {
       applyTreeUpdate(book, await renameCharacterSkill(characterId, node.id, nextName));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "기술 이름 설정 실패");
+      toast(e instanceof Error ? e.message : "기술 이름 설정 실패", "error");
     } finally {
       setBusyNodeId(null);
     }
   }
 
   function canUnlock(tree: CharacterSkillTree, node: CharacterSkillNode): boolean {
-    if (node.unlocked || node.tier === 0 || tree.character_ap < tree.ap_cost_to_unlock) return false;
+    if (!node.is_public || node.unlocked || node.tier === 0 || tree.character_ap < tree.ap_cost_to_unlock) return false;
     if (node.tier === 1) {
       return !tree.nodes.some((candidate) => candidate.unlocked && candidate.tier === 1 && candidate.branch !== node.branch);
     }
@@ -142,10 +147,6 @@ export default function MySkillTree({ characterId }: Props) {
         )}
       </div>
 
-      {error && (
-        <AlertBanner>{error}</AlertBanner>
-      )}
-
       {loading || !treesByBook ? (
         <p className="text-sm text-muted">불러오는 중...</p>
       ) : (
@@ -154,12 +155,13 @@ export default function MySkillTree({ characterId }: Props) {
             const tree = treesByBook[book];
             return (
               <div key={book} className="flex flex-col items-center gap-3">
-                <h3 className="text-sm font-semibold text-ivory">{book}</h3>
+                <h3 className={`text-sm font-semibold ${BOOK_TEXT_CLASS[book]}`}>{book}</h3>
                 <div className="rounded-xl border border-gold bg-surface p-4">
                   <SkillTreeGrid
                     nodes={tree.nodes}
                     getLabel={(n) => n.display_name}
                     isHighlighted={(n) => n.unlocked}
+                    isLocked={(n) => !n.is_public}
                     isDisabled={(node) => busyNodeId !== null || (!node.unlocked && !canUnlock(tree, node))}
                     onNodeClick={(node) => handleNodeClick(book, tree, node)}
                     showLabels={false}

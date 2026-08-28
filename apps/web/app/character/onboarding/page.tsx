@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import { createMyCharacter } from "@/lib/api";
 import type { Faction } from "@/lib/api";
-import AlertBanner from "@/components/common/AlertBanner";
+import { useToast } from "@/components/common/ToastProvider";
 
 const TOTAL_POINTS = 2;
 
@@ -44,13 +44,13 @@ const EMPTY_STATS: Record<StatKey, number> = {
 };
 
 export default function CharacterOnboardingPage() {
+  const { toast } = useToast();
   const { member, refresh } = useAuth();
   const router = useRouter();
   const [name, setName] = useState("");
   const [faction, setFaction] = useState<Faction | "">("");
   const [stats, setStats] = useState(EMPTY_STATS);
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (member === undefined) return;
@@ -80,13 +80,12 @@ export default function CharacterOnboardingPage() {
     if (!faction || remainingPoints !== 0) return;
 
     setLoading(true);
-    setErrorMessage(null);
     try {
       await createMyCharacter({ name: name.trim(), faction, ...stats });
       await refresh();
       router.replace("/");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "캐릭터 생성에 실패했습니다.");
+      toast(error instanceof Error ? error.message : "캐릭터 생성에 실패했습니다.", "error");
     } finally {
       setLoading(false);
     }
@@ -107,10 +106,6 @@ export default function CharacterOnboardingPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-            {errorMessage && (
-              <AlertBanner>{errorMessage}</AlertBanner>
-            )}
-
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted uppercase tracking-wide">캐릭터 이름</label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="캐릭터 이름" required />

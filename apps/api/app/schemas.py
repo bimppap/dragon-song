@@ -302,7 +302,6 @@ class CharacterRead(BaseModel):
     # 관리자 전용 관리 플래그 (RUNNER 조회 시 null 처리됨)
     caution: bool | None = None
     warning_count: int | None = None
-    mission_passed: bool | None = None
 
     image_url: str | None = None
 
@@ -377,11 +376,10 @@ class UseItemRequest(BaseModel):
 
 
 class CharacterFlagsUpdate(BaseModel):
-    """관리자 전용 관리 플래그 (주의·경고·합격미션여부) 수정."""
+    """관리자 전용 관리 플래그 (주의·경고) 수정."""
 
     caution: bool
     warning_count: int = Field(ge=0)
-    mission_passed: bool
 
 
 class AdminGiftRequest(BaseModel):
@@ -524,6 +522,7 @@ class ChallengeProgressRead(BaseModel):
     character_image_url: str | None
     achieved: bool
     memo: str
+    reward_paid: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -594,6 +593,7 @@ class MissionProgressRead(BaseModel):
     character_image_url: str | None
     achieved: bool
     memo: str
+    reward_paid: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -676,6 +676,10 @@ class BattleActionRequest(BaseModel):
 
 class BattleJoinRequest(BaseModel):
     character_id: int
+
+
+class BattleEnemyJoinRequest(BaseModel):
+    enemy_id: int
 
 
 class BattleSessionRead(BaseModel):
@@ -812,6 +816,7 @@ class SkillNodeRead(BaseModel):
     formula: str | None = None
     description: str | None = None
     is_placeholder: bool = False
+    is_public: bool = True
 
     model_config = {"from_attributes": True}
 
@@ -824,6 +829,10 @@ class SkillNodeRead(BaseModel):
 class SkillNodeUpdate(BaseModel):
     default_name: str = Field(min_length=1, max_length=50)
     effects: list[ItemEffect] = Field(default_factory=list)
+
+
+class SkillVisibilityUpdate(BaseModel):
+    max_public_tier: int = Field(ge=0, le=6)
 
 
 class CharacterSkillNodeRead(SkillNodeRead):

@@ -1,11 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { CellClickedEvent, CellValueChangedEvent, ColDef, ICellRendererParams } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
 import { Card, CardContent } from "@/components/ui/card";
-import AlertBanner from "@/components/common/AlertBanner";
+import { useToast } from "@/components/common/ToastProvider";
 import { updateCharacterFlags } from "@/lib/api";
 import type { Character } from "@/lib/api";
 
@@ -15,7 +14,7 @@ interface Props {
   characters: Character[];
   loading: boolean;
   onSelectCharacter?: (character: Character) => void;
-  /** admin 전용: 주의/경고/합격미션 편집 컬럼을 노출한다. */
+  /** admin 전용: 주의/경고 편집 컬럼을 노출한다. */
   showAdminFlags?: boolean;
 }
 
@@ -119,7 +118,7 @@ const baseColDefs: ColDef<Character>[] = [
   },
 ];
 
-const ADMIN_FLAG_FIELDS = new Set(["caution", "warning_count", "mission_passed"]);
+const ADMIN_FLAG_FIELDS = new Set(["caution", "warning_count"]);
 
 const adminFlagColDefs: ColDef<Character>[] = [
   {
@@ -146,19 +145,10 @@ const adminFlagColDefs: ColDef<Character>[] = [
       </span>
     ),
   },
-  {
-    headerName: "합격미션",
-    field: "mission_passed",
-    flex: 0.8,
-    minWidth: 76,
-    editable: true,
-    cellRenderer: "agCheckboxCellRenderer",
-    cellEditor: "agCheckboxCellEditor",
-  },
 ];
 
 export default function CharacterList({ characters, loading, onSelectCharacter, showAdminFlags = false }: Props) {
-  const [flagError, setFlagError] = useState<string | null>(null);
+  const { toast } = useToast();
 
   if (loading) {
     return (
@@ -195,19 +185,16 @@ export default function CharacterList({ characters, loading, onSelectCharacter, 
       const updated = await updateCharacterFlags(row.id, {
         caution: Boolean(row.caution),
         warning_count: Math.max(0, Number(row.warning_count ?? 0)),
-        mission_passed: Boolean(row.mission_passed),
       });
       event.node.setData({ ...row, ...updated });
-      setFlagError(null);
     } catch (error) {
       event.node.setDataValue(event.column.getColId(), event.oldValue);
-      setFlagError(error instanceof Error ? error.message : "관리 플래그 저장 실패");
+      toast(error instanceof Error ? error.message : "관리 플래그 저장 실패", "error");
     }
   }
 
   return (
     <div className="flex flex-col gap-3">
-      {flagError && <AlertBanner>{flagError}</AlertBanner>}
       <div className={`ag-theme-quartz h-120 rounded-lg overflow-hidden`}>
         <AgGridReact
           rowData={characters}

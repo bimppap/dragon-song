@@ -347,7 +347,6 @@ export interface Character {
   // 관리자 전용 관리 플래그 (RUNNER 조회 시 null)
   caution: boolean | null;
   warning_count: number | null;
-  mission_passed: boolean | null;
 
   image_url: string | null;
 }
@@ -355,7 +354,6 @@ export interface Character {
 export interface CharacterFlagsUpdate {
   caution: boolean;
   warning_count: number;
-  mission_passed: boolean;
 }
 
 export type CharacterCreate = Partial<Omit<Character, "id">> & {
@@ -459,6 +457,7 @@ export interface ChallengeProgress {
   character_image_url: string | null;
   achieved: boolean;
   memo: string;
+  reward_paid: boolean;
 }
 
 export interface ChallengeProgressUpdate {
@@ -781,6 +780,7 @@ export interface MissionProgress {
   character_image_url: string | null;
   achieved: boolean;
   memo: string;
+  reward_paid: boolean;
 }
 
 export interface MissionProgressUpdate {
@@ -985,11 +985,13 @@ export interface BattleEnemyState {
   hp: number;
   max_hp: number;
   skills: EnemySkill[];
+  joined_round?: number;
 }
 
 export interface BattleSummonState {
   id: number;
   name: string;
+  log_number?: number | null;
   hp: number;
   max_hp: number;
   attack: number;
@@ -1103,6 +1105,13 @@ export async function joinBattle(sessionId: number, characterId: number): Promis
   }, "난입 실패");
 }
 
+export async function joinBattleEnemy(sessionId: number, enemyId: number): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/join-enemy`, {
+    method: "POST",
+    body: JSON.stringify({ enemy_id: enemyId }),
+  }, "에너미 참가 실패");
+}
+
 /** 직전 라운드를 되돌려 그 라운드를 다시 진행할 수 있게 한다(실전 전투만 가능). */
 export async function undoLastBattleRound(sessionId: number): Promise<BattleSession> {
   return request<BattleSession>(`/battles/${sessionId}/undo-round`, {
@@ -1137,6 +1146,7 @@ export interface SkillNode {
   formula: string | null;
   description: string | null;
   is_placeholder: boolean;
+  is_public: boolean;
 }
 
 export interface CharacterSkillNode extends SkillNode {
@@ -1166,6 +1176,13 @@ export async function updateSkillNode(
     method: "PUT",
     body: JSON.stringify(data),
   }, "기술 수정 실패");
+}
+
+export async function updateSkillVisibility(maxPublicTier: number): Promise<SkillNode[]> {
+  return request<SkillNode[]>("/skills/visibility", {
+    method: "PUT",
+    body: JSON.stringify({ max_public_tier: maxPublicTier }),
+  }, "기술 공개 단계 저장 실패");
 }
 
 export async function uploadSkillImage(nodeId: number, file: File): Promise<SkillNode> {

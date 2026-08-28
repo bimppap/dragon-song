@@ -10,15 +10,21 @@ import { Button } from "@/components/ui/button";
 import { fetchCharacterSkillTree, type CharacterSkillNode, type SkillBook } from "@/lib/api";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
+const BOOK_BORDER_CLASS: Record<SkillBook, string> = {
+  "용맹의 서": "border-red-500",
+  "불굴의 서": "border-blue-500",
+  "헌신의 서": "border-green-500",
+  "탐구의 서": "border-purple-500",
+};
 
 interface Props {
   characterId: number;
 }
 
-/** 캐릭터가 4개 서(용맹/불굴/헌신/탐구)를 통틀어 가장 최근에 습득한 기술 1개를 아이콘+이름 타일로 보여준다. */
+/** 4개 서마다 습득 단계가 가장 높은 기술을 하나씩 보여주며, 습득 기술이 없으면 루트 노드를 보여준다. */
 export default function CharacterOwnedSkills({ characterId }: Props) {
   const router = useRouter();
-  const [latestSkill, setLatestSkill] = useState<CharacterSkillNode | null>(null);
+  const [skills, setSkills] = useState<CharacterSkillNode[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,12 +41,17 @@ export default function CharacterOwnedSkills({ characterId }: Props) {
       try {
         const trees = await Promise.all(BOOKS.map((b) => fetchCharacterSkillTree(characterId, b)));
         if (cancelled) return;
-        const unlockedNodes = trees.flatMap((tree) => tree.nodes.filter((n) => n.unlocked && n.unlocked_at));
-        const latest = unlockedNodes.reduce<CharacterSkillNode | null>((best, node) => {
-          if (!best || !best.unlocked_at) return node;
-          return node.unlocked_at && node.unlocked_at > best.unlocked_at ? node : best;
-        }, null);
-        setLatestSkill(latest);
+        const displayedSkills = trees.flatMap((tree) => {
+          const unlocked = tree.nodes
+            .filter((node) => node.is_public && node.unlocked && node.tier > 0)
+            .toSorted((a, b) => {
+              if (a.tier !== b.tier) return b.tier - a.tier;
+              return (b.unlocked_at ?? "").localeCompare(a.unlocked_at ?? "");
+            });
+          const root = tree.nodes.find((node) => node.is_public && node.tier === 0);
+          return unlocked[0] ? [unlocked[0]] : root ? [root] : [];
+        });
+        setSkills(displayedSkills);
         setLoaded(true);
       } catch (e) {
         if (cancelled) return;
@@ -60,48 +71,56 @@ export default function CharacterOwnedSkills({ characterId }: Props) {
         <span className="text-xs text-red-500">{error}</span>
       ) : !loaded ? (
         <span className="text-xs text-muted">불러오는 중...</span>
-      ) : latestSkill ? (
-        <InfoTooltip
-          side="top"
-          content={(
-            <SkillTooltipContent
-              node={latestSkill}
-              variant="runner"
-              footer={(
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="cta"
-                  className="w-full"
-                  onClick={(event) => {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    goToSkillPage();
-                  }}
-                >
-                  기술 강화하기
-                </Button>
-              )}
-            />
-          )}
-        >
-          <button
-            type="button"
-            onClick={goToSkillPage}
-            className="flex w-16 cursor-pointer flex-col items-center gap-1.5 text-center"
-          >
-            <span className="relative flex size-14 items-center justify-center overflow-hidden rounded-2xl border-2 border-gold bg-gold/10 text-gold transition-colors hover:bg-gold/15">
-              {latestSkill.image_url ? (
-                <Image src={latestSkill.image_url} alt="" fill sizes="56px" className="object-cover" />
-              ) : (
-                <Sparkles size={22} />
-              )}
-            </span>
-            <span className="text-xs font-semibold leading-tight text-ivory">{latestSkill.display_name}</span>
-          </button>
-        </InfoTooltip>
       ) : (
-        <span className="text-xs text-muted">습득한 기술 없음</span>
+        <div className="grid grid-cols-4 gap-1">
+          {skills.map((skill) => {
+            const isOwned = skill.unlocked && skill.tier > 0;
+            return (
+              <InfoTooltip
+                key={skill.book}
+                side="top"
+                content={(
+                  <SkillTooltipContent
+                    node={skill}
+                    variant="runner"
+                    footer={(
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="cta"
+                        className="w-full"
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
+                          goToSkillPage();
+                        }}
+                      >
+                        {isOwned ? "기술 강화하기" : "기술 배우기"}
+                      </Button>
+                    )}
+                  />
+                )}
+              >
+                <button
+                  type="button"
+                  onClick={goToSkillPage}
+                  className="flex min-w-0 cursor-pointer flex-col items-center gap-1 text-center"
+                >
+                  <span className={`relative flex size-9 items-center justify-center overflow-hidden rounded-xl border-2 bg-gold/10 text-gold transition-colors hover:bg-gold/15 ${BOOK_BORDER_CLASS[skill.book]}`}>
+                    {skill.image_url ? (
+                      <Image src={skill.image_url} alt="" fill sizes="36px" className="object-cover" />
+                    ) : (
+                      <Sparkles size={17} />
+                    )}
+                  </span>
+                  {skill.tier > 0 ? (
+                    <span className="line-clamp-2 text-[9px] font-semibold leading-tight text-ivory">{skill.display_name}</span>
+                  ) : null}
+                </button>
+              </InfoTooltip>
+            );
+          })}
+        </div>
       )}
     </div>
   );

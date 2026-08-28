@@ -17,6 +17,7 @@ from app.schemas import (
     AttendanceRewardPayResult,
     AttendanceStreakEntry,
     BattleActionRequest,
+    BattleEnemyJoinRequest,
     BattleJoinRequest,
     BattleSessionRead,
     BattleSessionSummary,
@@ -58,6 +59,7 @@ from app.schemas import (
     SkillNameUpdate,
     SkillNodeRead,
     SkillNodeUpdate,
+    SkillVisibilityUpdate,
     CharacterSkillTreeRead,
     TokenResponse,
     UseItemRequest,
@@ -171,7 +173,7 @@ def update_character_flags(
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """관리자 전용 관리 플래그(주의·경고·합격미션여부)를 수정한다."""
+    """관리자 전용 관리 플래그(주의·경고)를 수정한다."""
     return crud.update_character_flags(db, character_id, data)
 
 
@@ -770,6 +772,17 @@ def join_battle(
     return crud.join_battle(db, session_id, data)
 
 
+@app.post("/battles/{session_id}/join-enemy", response_model=BattleSessionRead)
+def join_battle_enemy(
+    session_id: int,
+    data: BattleEnemyJoinRequest,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자가 전투 중간에 에너미를 추가한다. 추가된 에너미는 다음 라운드부터 행동한다."""
+    return crud.join_battle_enemy(db, session_id, data)
+
+
 @app.post("/uploads/image")
 async def upload_image(
     file: UploadFile = File(...),
@@ -784,6 +797,15 @@ async def upload_image(
 @app.get("/skills", response_model=list[SkillNodeRead])
 def list_skill_nodes(book: str, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     return crud.get_skill_nodes(db, book)
+
+
+@app.put("/skills/visibility", response_model=list[SkillNodeRead])
+def update_skill_visibility(
+    data: SkillVisibilityUpdate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_skill_visibility(db, data)
 
 
 @app.put("/skills/{node_id}", response_model=SkillNodeRead)

@@ -6,7 +6,6 @@ import {
   Gift,
   Pencil,
   PlusSquare,
-  Save,
   Target,
   Trophy,
 } from "lucide-react";
@@ -45,7 +44,6 @@ import type {
   Chapter,
   ChallengeCreate,
   ChallengeProgress,
-  ChallengeProgressUpdate,
   RewardGrant,
   Item,
 } from "@/lib/api";
@@ -54,15 +52,22 @@ import { useRequireMember } from "@/lib/auth";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import Modal from "@/components/common/Modal";
-import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import RewardComposer, { type RewardFormEntry } from "@/components/common/RewardComposer";
+import RewardSummary from "@/components/common/RewardSummary";
+import { useToast } from "@/components/common/ToastProvider";
+
+const ALL_CHAPTERS = "__all__";
+
+function statusCardNameFontSize(name: string): number {
+  return Math.min(14, 132 / Math.max(1, Array.from(name).length));
+}
 
 function RunnerChallengeList() {
+  const { toast } = useToast();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -70,11 +75,11 @@ function RunnerChallengeList() {
       .then((list) => { if (!cancelled) setChallenges(list); })
       .catch((error) => {
         if (cancelled) return;
-        setErrorMessage(error instanceof Error ? error.message : "도전과제 조회 실패");
+        toast(error instanceof Error ? error.message : "도전과제 조회 실패", "error");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   const chapters = [...new Set(challenges.map((c) => c.chapter))];
 
@@ -87,8 +92,6 @@ function RunnerChallengeList() {
         </h1>
         <p className="text-sm text-muted">현재 공개된 도전과제 목록입니다.</p>
       </section>
-
-      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
 
       {loading ? (
         <EmptyState>도전과제 목록을 불러오는 중입니다.</EmptyState>
@@ -132,7 +135,6 @@ type ChallengeFormState = {
   chapter: string;
   name: string;
   description: string;
-  reward: string;
   reward_entries: RewardFormEntry[];
   visibility: ChallengeVisibility;
 };
@@ -146,7 +148,6 @@ const DEFAULT_FORM: ChallengeFormState = {
   chapter: "",
   name: "",
   description: "",
-  reward: "",
   reward_entries: [],
   visibility: "공개",
 };
@@ -169,7 +170,6 @@ function toChallengeFormState(challenge: Challenge): ChallengeFormState {
     chapter: challenge.chapter,
     name: challenge.name,
     description: challenge.description,
-    reward: challenge.reward,
     reward_entries: toRewardEntries(challenge.reward_items),
     visibility: challenge.is_public ? "공개" : "비공개",
   };
@@ -189,7 +189,7 @@ function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
     chapter: form.chapter.trim(),
     name: form.name.trim(),
     description: form.description.trim(),
-    reward: form.reward.trim(),
+    reward: "",
     reward_gold: 0,
     reward_experience: 0,
     reward_ap: 0,
@@ -202,34 +202,35 @@ function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
 }
 
 export function ChallengeAdmin() {
-  const [tab, setTab] = useState<PageTab>("manage");
+  const { toast } = useToast();
+  const [tab, setTab] = useState<PageTab>("status");
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
+  const [manageChapterFilter, setManageChapterFilter] = useState(ALL_CHAPTERS);
   const [form, setForm] = useState<ChallengeFormState>(DEFAULT_FORM);
   const [editingChallengeId, setEditingChallengeId] = useState<number | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
   const [progressEntries, setProgressEntries] = useState<ChallengeProgress[]>([]);
-  const [progressDraft, setProgressDraft] = useState<ChallengeProgress[]>([]);
   const [showAchievedOnly, setShowAchievedOnly] = useState(false);
-  const [isEditingProgress, setIsEditingProgress] = useState(false);
   const [loadingChallenges, setLoadingChallenges] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [submittingChallenge, setSubmittingChallenge] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [payingReward, setPayingReward] = useState(false);
-  const [rewardMessage, setRewardMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const chapters = [...new Set(challenges.map((challenge) => challenge.chapter))];
   const chapterChallenges = challenges.filter(
     (challenge) => challenge.chapter === selectedChapter,
   );
+  const visibleChallenges = manageChapterFilter === ALL_CHAPTERS
+    ? challenges
+    : challenges.filter((challenge) => challenge.chapter === manageChapterFilter);
   const selectedChallenge =
     chapterChallenges.find((challenge) => challenge.id === selectedChallengeId) ?? null;
-  const activeProgress = isEditingProgress ? progressDraft : progressEntries;
+  const activeProgress = progressEntries;
   const visibleProgress = showAchievedOnly
     ? activeProgress.filter((entry) => entry.achieved)
     : activeProgress;
@@ -255,12 +256,12 @@ export function ChallengeAdmin() {
         if (chapList.length > 0) {
           setForm((prev) => ({ ...prev, chapter: prev.chapter || chapList[0].name }));
         }
-        setErrorMessage(null);
       } catch (error) {
         if (cancelled) return;
         console.error(error);
-        setErrorMessage(
+        toast(
           error instanceof Error ? error.message : "도전과제 데이터를 불러오지 못했습니다.",
+          "error",
         );
       } finally {
         if (!cancelled) {
@@ -274,7 +275,7 @@ export function ChallengeAdmin() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     const challengeId = selectedChallengeId;
@@ -292,15 +293,13 @@ export function ChallengeAdmin() {
         if (cancelled) return;
 
         setProgressEntries(entries);
-        setProgressDraft(entries);
-        setErrorMessage(null);
       } catch (error) {
         if (cancelled) return;
         console.error(error);
         setProgressEntries([]);
-        setProgressDraft([]);
-        setErrorMessage(
+        toast(
           error instanceof Error ? error.message : "도전과제 현황을 불러오지 못했습니다.",
+          "error",
         );
       } finally {
         if (!cancelled) {
@@ -314,7 +313,7 @@ export function ChallengeAdmin() {
     return () => {
       cancelled = true;
     };
-  }, [selectedChallengeId]);
+  }, [selectedChallengeId, toast]);
 
   function handleFormChange<K extends keyof ChallengeFormState>(
     key: K,
@@ -327,7 +326,7 @@ export function ChallengeAdmin() {
     event.preventDefault();
 
     const payload = toChallengePayload(form);
-    if (!payload.chapter || !payload.name || !payload.description || !payload.reward) return;
+    if (!payload.chapter || !payload.name || !payload.description) return;
 
     try {
       setSubmittingChallenge(true);
@@ -342,12 +341,12 @@ export function ChallengeAdmin() {
         setSelectedChallengeId(createdChallenge.id);
       }
       setForm({ ...DEFAULT_FORM, chapter: payload.chapter });
-      setErrorMessage(null);
       setModalOpen(false);
     } catch (error) {
       console.error(error);
-      setErrorMessage(
+      toast(
         error instanceof Error ? error.message : "도전과제 저장에 실패했습니다.",
+        "error",
       );
     } finally {
       setSubmittingChallenge(false);
@@ -370,10 +369,15 @@ export function ChallengeAdmin() {
     if (!selectedChallenge) return;
     try {
       setPayingReward(true);
-      setRewardMessage(null);
       const result = await payChallengeRewards(selectedChallenge.id);
+      const newlyPaidIds = new Set(result.rewards.map((reward) => reward.character_id));
+      if (newlyPaidIds.size > 0) {
+        setProgressEntries((prev) => prev.map((entry) => (
+          newlyPaidIds.has(entry.character_id) ? { ...entry, reward_paid: true } : entry
+        )));
+      }
       if (result.paid_count === 0) {
-        setRewardMessage("이미 모든 달성자에게 보상이 지급되었거나 달성자가 없습니다.");
+        toast("이미 모든 달성자에게 보상이 지급되었거나 달성자가 없습니다.", "info");
       } else {
         const c = selectedChallenge;
         const parts: string[] = [];
@@ -385,10 +389,10 @@ export function ChallengeAdmin() {
         if (c.reward_defense > 0) parts.push(`방어력 +${c.reward_defense}`);
         if (c.reward_items?.length > 0) parts.push(`구성 보상 ${c.reward_items.length}종`);
         const rewardDesc = parts.length > 0 ? `(${parts.join(", ")})` : "";
-        setRewardMessage(`${result.paid_count}명에게 도전과제 보상${rewardDesc}이 지급되었습니다.`);
+        toast(`${result.paid_count}명에게 도전과제 보상${rewardDesc}이 지급되었습니다.`, "success");
       }
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "도전과제 보상 지급에 실패했습니다.");
+      toast(error instanceof Error ? error.message : "도전과제 보상 지급에 실패했습니다.", "error");
     } finally {
       setPayingReward(false);
     }
@@ -399,42 +403,27 @@ export function ChallengeAdmin() {
     setSelectedChapter(value);
     setSelectedChallengeId(nextChallenge?.id ?? null);
     setShowAchievedOnly(false);
-    setIsEditingProgress(false);
-    setRewardMessage(null);
   }
 
   function handleSelectChallenge(challengeId: number) {
     setSelectedChallengeId(challengeId);
     setShowAchievedOnly(false);
-    setIsEditingProgress(false);
-    setRewardMessage(null);
   }
 
-  function updateProgressDraft(
-    characterId: number,
-    patch: Partial<Pick<ChallengeProgress, "achieved" | "memo">>,
-  ) {
-    setProgressDraft((prev) =>
-      prev.map((entry) =>
-        entry.character_id === characterId ? { ...entry, ...patch } : entry,
-      ),
-    );
-  }
-
-  async function handleEditOrSaveProgress() {
+  async function handleProgressToggle(characterId: number, achieved: boolean) {
     if (!selectedChallenge) return;
-
-    if (!isEditingProgress) {
-      setProgressDraft(progressEntries);
-      setIsEditingProgress(true);
-      return;
-    }
-
+    const targetEntry = progressEntries.find((entry) => entry.character_id === characterId);
+    if (targetEntry?.reward_paid && !achieved) return;
+    const previousEntries = progressEntries;
+    const nextEntries = progressEntries.map((entry) => (
+      entry.character_id === characterId ? { ...entry, achieved } : entry
+    ));
+    setProgressEntries(nextEntries);
     try {
       setSavingProgress(true);
       const updatedEntries = await saveChallengeProgress(
         selectedChallenge.id,
-        progressDraft.map<ChallengeProgressUpdate>((entry) => ({
+        nextEntries.map((entry) => ({
           character_id: entry.character_id,
           achieved: entry.achieved,
           memo: entry.memo,
@@ -442,13 +431,12 @@ export function ChallengeAdmin() {
       );
 
       setProgressEntries(updatedEntries);
-      setProgressDraft(updatedEntries);
-      setIsEditingProgress(false);
-      setErrorMessage(null);
     } catch (error) {
+      setProgressEntries(previousEntries);
       console.error(error);
-      setErrorMessage(
+      toast(
         error instanceof Error ? error.message : "도전과제 현황 저장에 실패했습니다.",
+        "error",
       );
     } finally {
       setSavingProgress(false);
@@ -457,9 +445,6 @@ export function ChallengeAdmin() {
 
   return (
     <div className="flex flex-col gap-8">
-      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-      {rewardMessage && <AlertBanner tone="success">{rewardMessage}</AlertBanner>}
-
       <TabBar tabs={PAGE_TABS} active={tab} onChange={setTab} />
 
       {tab === "manage" ? (
@@ -469,7 +454,7 @@ export function ChallengeAdmin() {
               <div>
                 <CardTitle>도전과제 리스트</CardTitle>
                 <CardDescription>
-                  챕터, 이름, 내용, 보상, 공개 상태를 한 번에 확인할 수 있습니다.
+                  이름, 내용, 보상 구성, 공개 상태를 한 번에 확인할 수 있습니다.
                 </CardDescription>
               </div>
               <Button type="button" onClick={openAddChallengeModal} className="gap-2">
@@ -478,45 +463,56 @@ export function ChallengeAdmin() {
               </Button>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <div className="flex items-center justify-between rounded-xl bg-inset px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-inset px-4 py-3">
                 <div className="flex items-center gap-2 text-sm text-muted">
                   <Trophy size={16} className="text-gold" />
-                  등록된 도전과제 {challenges.length}개
+                  등록된 도전과제 {visibleChallenges.length}개
                 </div>
-                <Badge variant="secondary">관리 탭</Badge>
+                <div className="flex items-center gap-2">
+                  <Select value={manageChapterFilter} onValueChange={setManageChapterFilter}>
+                    <SelectTrigger className="w-44">
+                      <SelectValue placeholder="챕터 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value={ALL_CHAPTERS}>전체 챕터</SelectItem>
+                        {chapterList.map((c) => (
+                          <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                  <Badge variant="secondary">관리 탭</Badge>
+                </div>
               </div>
 
               {loadingChallenges ? (
                 <EmptyState>
                   도전과제 목록을 불러오는 중입니다.
                 </EmptyState>
-              ) : challenges.length > 0 ? (
+              ) : visibleChallenges.length > 0 ? (
                 <div className="overflow-x-auto rounded-xl border border-line">
                   <table className="min-w-full text-sm">
                     <thead className="bg-inset text-muted">
                       <tr>
-                        <th className="px-4 py-3 text-left font-semibold">챕터</th>
                         <th className="px-4 py-3 text-left font-semibold">이름</th>
                         <th className="px-4 py-3 text-left font-semibold">내용</th>
-                        <th className="px-4 py-3 text-left font-semibold">보상</th>
+                        <th className="px-4 py-3 text-left font-semibold">보상 구성</th>
                         <th className="px-4 py-3 text-left font-semibold">상태</th>
                         <th className="px-4 py-3 text-left font-semibold" />
                       </tr>
                     </thead>
                     <tbody>
-                      {challenges.map((challenge) => (
+                      {visibleChallenges.map((challenge) => (
                         <tr
                           key={challenge.id}
                           className="border-t border-line align-top"
                         >
-                          <td className="px-4 py-4 font-medium text-ivory">
-                            {challenge.chapter}
-                          </td>
                           <td className="px-4 py-4 text-ivory">{challenge.name}</td>
                           <td className="px-4 py-4 text-muted">
                             {challenge.description}
                           </td>
-                          <td className="px-4 py-4 text-ivory">{challenge.reward}</td>
+                          <td className="px-4 py-4"><RewardSummary entries={challenge.reward_items} items={items} /></td>
                           <td className="px-4 py-4">
                             <Badge
                               variant={
@@ -598,16 +594,6 @@ export function ChallengeAdmin() {
                   />
                 </div>
 
-                <div className="flex flex-col gap-2">
-                  <label className="text-sm font-semibold text-ivory">보상 설명</label>
-                  <Input
-                    value={form.reward}
-                    onChange={(event) => handleFormChange("reward", event.target.value)}
-                    placeholder="예: 골드 3,000G"
-                    required
-                  />
-                </div>
-
                 <RewardComposer
                   entries={form.reward_entries}
                   items={items}
@@ -643,46 +629,37 @@ export function ChallengeAdmin() {
         </section>
       ) : (
         <section className="flex flex-col gap-6">
-          <Card>
-            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex flex-col gap-1.5">
-                <CardTitle>챕터별 현황</CardTitle>
-                <CardDescription>
-                  챕터를 선택한 뒤 해당 챕터의 도전과제를 클릭하면 캐릭터별 달성 상태를 볼 수 있습니다.
-                </CardDescription>
-              </div>
-              {chapters.length > 0 ? (
-                <div className="w-full md:w-56">
-                  <Select value={selectedChapter} onValueChange={handleSelectChapter}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="챕터 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {chapters.map((chapter) => (
-                          <SelectItem key={chapter} value={chapter}>
-                            {chapter}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-              ) : (
-                <div className="rounded-lg border border-line bg-inset px-4 py-2 text-sm text-muted">
-                  챕터 없음
-                </div>
-              )}
-            </CardHeader>
-          </Card>
-
           <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
             <Card>
-              <CardHeader>
-                <CardTitle>{selectedChapter || "도전과제"} 목록</CardTitle>
-                <CardDescription>
-                  선택한 챕터에 속한 과제를 클릭해 상세 현황을 확인합니다.
-                </CardDescription>
+              <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex flex-col gap-1.5">
+                  <CardTitle>챕터별 현황</CardTitle>
+                  <CardDescription>
+                    챕터를 선택한 뒤 해당 챕터의 도전과제를 클릭하면 캐릭터별 달성 상태를 볼 수 있습니다.
+                  </CardDescription>
+                </div>
+                {chapters.length > 0 ? (
+                  <div className="w-full md:w-56">
+                    <Select value={selectedChapter} onValueChange={handleSelectChapter}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="챕터 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {chapters.map((chapter) => (
+                            <SelectItem key={chapter} value={chapter}>
+                              {chapter}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="rounded-lg border border-line bg-inset px-4 py-2 text-sm text-muted">
+                    챕터 없음
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {chapterChallenges.length > 0 ? (
@@ -709,9 +686,9 @@ export function ChallengeAdmin() {
                           {toVisibilityText(challenge.is_public)}
                         </Badge>
                       </div>
-                      <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-                        <Gift size={14} />
-                        {challenge.reward}
+                      <div className="mt-3 flex items-center gap-2">
+                        <Gift size={14} className="shrink-0 text-muted" />
+                        <RewardSummary entries={challenge.reward_items} items={items} />
                       </div>
                     </button>
                   ))
@@ -757,18 +734,7 @@ export function ChallengeAdmin() {
                       />
                       달성 캐릭터만 보기
                     </label>
-                    <Button
-                      variant={isEditingProgress ? "default" : "outline"}
-                      onClick={handleEditOrSaveProgress}
-                      disabled={!selectedChallenge || loadingProgress || savingProgress}
-                    >
-                      {isEditingProgress ? <Save size={15} /> : <Pencil size={15} />}
-                      {savingProgress
-                        ? "저장 중..."
-                        : isEditingProgress
-                          ? "저장"
-                          : "편집"}
-                    </Button>
+                    {savingProgress ? <span className="text-xs text-muted">저장 중...</span> : null}
                   </div>
                 </div>
 
@@ -777,51 +743,44 @@ export function ChallengeAdmin() {
                     도전과제 현황을 불러오는 중입니다.
                   </EmptyState>
                 ) : visibleProgress.length > 0 ? (
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                     {visibleProgress.map((entry) => (
                       <div
                         key={entry.character_id}
-                        className="flex flex-col items-center gap-2 rounded-2xl border border-line px-3 py-4"
+                        className="flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface pb-3"
                       >
-                        <div className="relative">
+                        <div className="relative w-full">
                           <CharacterAvatar
                             src={entry.character_image_url}
                             alt={entry.character_name}
                             className={cn(
-                              "size-16 rounded-xl transition-all",
+                              "aspect-square w-full rounded-none transition-all",
                               !entry.achieved && "grayscale opacity-60",
                             )}
-                            iconSize={24}
+                            iconSize={28}
                           />
-                          <div className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 shadow-sm">
+                          <div className="absolute right-2 top-2">
                             <Checkbox
                               checked={entry.achieved}
-                              disabled={!isEditingProgress}
+                              disabled={savingProgress || entry.reward_paid}
+                              className="size-5 border-2 bg-surface shadow-md"
                               onCheckedChange={(checked) =>
-                                updateProgressDraft(entry.character_id, {
-                                  achieved: checked === true,
-                                })
+                                void handleProgressToggle(entry.character_id, checked === true)
                               }
                             />
                           </div>
+                          {entry.reward_paid ? (
+                            <span className="absolute bottom-2 right-2 flex size-6 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white shadow-md">
+                              완
+                            </span>
+                          ) : null}
                         </div>
-                        <p className="w-full truncate text-center text-sm font-semibold text-ivory">
+                        <p
+                          className="flex h-5 w-full items-center justify-center whitespace-nowrap px-1 text-center font-semibold leading-none text-ivory"
+                          style={{ fontSize: `${statusCardNameFontSize(entry.character_name)}px` }}
+                        >
                           {entry.character_name}
                         </p>
-                        {isEditingProgress ? (
-                          <Input
-                            value={entry.memo}
-                            onChange={(event) =>
-                              updateProgressDraft(entry.character_id, {
-                                memo: event.target.value,
-                              })
-                            }
-                            placeholder="메모"
-                            className="h-7 text-xs"
-                          />
-                        ) : entry.memo ? (
-                          <p className="w-full truncate text-center text-xs text-muted">{entry.memo}</p>
-                        ) : null}
                       </div>
                     ))}
                   </div>

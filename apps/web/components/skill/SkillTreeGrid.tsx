@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Image from "next/image";
-import { Sparkles } from "lucide-react";
+import { Lock, Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
 import type { SkillNode } from "@/lib/api";
@@ -122,6 +122,7 @@ interface SkillTreeGridProps<T extends SkillTreeGridNode> {
   getLabel: (node: T) => string;
   isHighlighted?: (node: T) => boolean;
   isDisabled?: (node: T) => boolean;
+  isLocked?: (node: T) => boolean;
   onNodeClick?: (node: T) => void;
   showLabels?: boolean;
   /** 툴팁에 노출할 정보 범위. 러너는 제한된 필드만, 관리자는 변수명을 제외한 전부를 본다. */
@@ -133,6 +134,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
   getLabel,
   isHighlighted,
   isDisabled,
+  isLocked,
   onNodeClick,
   showLabels = true,
   tooltipVariant = "runner",
@@ -149,7 +151,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
         node.tier === 1
           ? cellFor(null, null, 0)
           : cellFor(node.branch, node.col, node.tier - 1);
-      return { id: node.id, child, parent, active: Boolean(node.unlocked) };
+      return { id: node.id, child, parent, active: Boolean(node.unlocked) && !(isLocked?.(node) ?? false) };
     });
 
   return (
@@ -175,18 +177,16 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
 
       {nodes.map((node) => {
         const cell = cellFor(node.branch, node.col, node.tier);
-        const highlighted = isHighlighted?.(node) ?? false;
-        const disabled = isDisabled?.(node) ?? false;
+        const locked = isLocked?.(node) ?? false;
+        const highlighted = !locked && (isHighlighted?.(node) ?? false);
+        const disabled = locked || (isDisabled?.(node) ?? false);
         const clickable = Boolean(onNodeClick) && !disabled;
 
-        return (
-          <InfoTooltip
-            key={node.id}
-            side="top"
-            content={<SkillTooltipContent node={node} variant={tooltipVariant} />}
-          >
-            <button
+        const nodeButton = (
+          <button
+              key={node.id}
               type="button"
+              aria-label={locked ? "비공개 기술" : undefined}
               aria-disabled={!clickable}
               onClick={clickable ? () => onNodeClick?.(node) : undefined}
               style={{
@@ -208,17 +208,19 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                   highlighted
                     ? "border-gold bg-[#3b321f] text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
                     : disabled ? "border-line bg-inset text-muted" : "border-line text-muted",
-                  !highlighted && node.tier !== 0 && !node.is_placeholder ? "border-emerald-500/60 text-emerald-500" : "",
+                  !locked && !highlighted && node.tier !== 0 && !node.is_placeholder ? "border-emerald-500/60 text-emerald-500" : "",
                   clickable && !highlighted ? "hover:border-gold" : "",
                 )}
               >
-                {node.image_url ? (
+                {locked ? (
+                  <Lock size={18} />
+                ) : node.image_url ? (
                   <Image src={node.image_url} alt="" fill sizes="40px" className="object-cover" />
                 ) : (
                   <Sparkles size={18} />
                 )}
               </span>
-              {showLabels && (
+              {showLabels && !locked && (
                 <span
                   className={cn(
                     "line-clamp-2 text-[10px] font-semibold leading-tight",
@@ -228,7 +230,16 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                   {getLabel(node)}
                 </span>
               )}
-            </button>
+          </button>
+        );
+
+        return locked ? nodeButton : (
+          <InfoTooltip
+            key={node.id}
+            side="top"
+            content={<SkillTooltipContent node={node} variant={tooltipVariant} />}
+          >
+            {nodeButton}
           </InfoTooltip>
         );
       })}

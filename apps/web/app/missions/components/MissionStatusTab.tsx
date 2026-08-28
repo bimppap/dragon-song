@@ -4,8 +4,6 @@ import { useEffect, useState } from "react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Gift,
-  Pencil,
-  Save,
   Target,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -17,7 +15,6 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -27,16 +24,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  fetchItems,
   fetchMissionProgress,
   fetchMissions,
   payMissionRewards,
   saveMissionProgress,
 } from "@/lib/api";
-import type { Mission, MissionProgress, MissionProgressUpdate } from "@/lib/api";
+import type { Item, Mission, MissionProgress } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
+import RewardSummary from "@/components/common/RewardSummary";
+import { useToast } from "@/components/common/ToastProvider";
 
 type MissionType = "일일" | "중요";
 
@@ -45,25 +44,27 @@ const MISSION_TYPE_VARIANT: Record<MissionType, "default" | "warning"> = {
   중요: "warning",
 };
 
+function statusCardNameFontSize(name: string): number {
+  return Math.min(14, 132 / Math.max(1, Array.from(name).length));
+}
+
 export default function MissionStatusTab() {
+  const { toast } = useToast();
   const [missions, setMissions] = useState<Mission[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
   const [progressEntries, setProgressEntries] = useState<MissionProgress[]>([]);
-  const [progressDraft, setProgressDraft] = useState<MissionProgress[]>([]);
   const [showAchievedOnly, setShowAchievedOnly] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
   const [loadingMissions, setLoadingMissions] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [payingReward, setPayingReward] = useState(false);
-  const [rewardMessage, setRewardMessage] = useState<string | null>(null);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const chapters = [...new Set(missions.map((m) => m.chapter))];
   const chapterMissions = missions.filter((m) => m.chapter === selectedChapter);
   const selectedMission = chapterMissions.find((m) => m.id === selectedMissionId) ?? null;
-  const activeProgress = isEditing ? progressDraft : progressEntries;
+  const activeProgress = progressEntries;
   const visibleProgress = showAchievedOnly
     ? activeProgress.filter((e) => e.achieved)
     : activeProgress;
@@ -74,22 +75,23 @@ export default function MissionStatusTab() {
     async function load() {
       try {
         setLoadingMissions(true);
-        const list = await fetchMissions();
+        const [list, itemList] = await Promise.all([fetchMissions(), fetchItems()]);
         if (cancelled) return;
         setMissions(list);
+        setItems(itemList);
         if (list.length > 0) {
           setSelectedChapter(list[0].chapter);
           setSelectedMissionId(list[0].id);
         }
       } catch (e) {
-        if (!cancelled) setErrorMessage(e instanceof Error ? e.message : "임무 데이터를 불러오지 못했습니다.");
+        if (!cancelled) toast(e instanceof Error ? e.message : "임무 데이터를 불러오지 못했습니다.", "error");
       } finally {
         if (!cancelled) setLoadingMissions(false);
       }
     }
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   useEffect(() => {
     if (selectedMissionId == null) return;
@@ -101,12 +103,10 @@ export default function MissionStatusTab() {
         const entries = await fetchMissionProgress(missionId);
         if (cancelled) return;
         setProgressEntries(entries);
-        setProgressDraft(entries);
       } catch (e) {
         if (!cancelled) {
           setProgressEntries([]);
-          setProgressDraft([]);
-          setErrorMessage(e instanceof Error ? e.message : "임무 현황을 불러오지 못했습니다.");
+          toast(e instanceof Error ? e.message : "임무 현황을 불러오지 못했습니다.", "error");
         }
       } finally {
         if (!cancelled) setLoadingProgress(false);
@@ -114,53 +114,43 @@ export default function MissionStatusTab() {
     }
     loadProgress();
     return () => { cancelled = true; };
-  }, [selectedMissionId]);
+  }, [selectedMissionId, toast]);
 
   function handleSelectChapter(value: string) {
     const next = missions.find((m) => m.chapter === value);
     setSelectedChapter(value);
     setSelectedMissionId(next?.id ?? null);
     setShowAchievedOnly(false);
-    setIsEditing(false);
-    setRewardMessage(null);
   }
 
   function handleSelectMission(id: number) {
     setSelectedMissionId(id);
     setShowAchievedOnly(false);
-    setIsEditing(false);
-    setRewardMessage(null);
   }
 
-  function updateDraft(characterId: number, patch: Partial<Pick<MissionProgress, "achieved" | "memo">>) {
-    setProgressDraft((prev) =>
-      prev.map((e) => (e.character_id === characterId ? { ...e, ...patch } : e)),
-    );
-  }
-
-  async function handleEditOrSave() {
+  async function handleProgressToggle(characterId: number, achieved: boolean) {
     if (!selectedMission) return;
-    if (!isEditing) {
-      setProgressDraft(progressEntries);
-      setIsEditing(true);
-      return;
-    }
+    const targetEntry = progressEntries.find((entry) => entry.character_id === characterId);
+    if (targetEntry?.reward_paid && !achieved) return;
+    const previousEntries = progressEntries;
+    const nextEntries = progressEntries.map((entry) => (
+      entry.character_id === characterId ? { ...entry, achieved } : entry
+    ));
+    setProgressEntries(nextEntries);
     try {
       setSavingProgress(true);
       const updated = await saveMissionProgress(
         selectedMission.id,
-        progressDraft.map<MissionProgressUpdate>((e) => ({
+        nextEntries.map((e) => ({
           character_id: e.character_id,
           achieved: e.achieved,
           memo: e.memo,
         })),
       );
       setProgressEntries(updated);
-      setProgressDraft(updated);
-      setIsEditing(false);
-      setErrorMessage(null);
     } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "임무 현황 저장에 실패했습니다.");
+      setProgressEntries(previousEntries);
+      toast(e instanceof Error ? e.message : "임무 현황 저장에 실패했습니다.", "error");
     } finally {
       setSavingProgress(false);
     }
@@ -170,10 +160,15 @@ export default function MissionStatusTab() {
     if (!selectedMission) return;
     try {
       setPayingReward(true);
-      setRewardMessage(null);
       const result = await payMissionRewards(selectedMission.id);
+      const newlyPaidIds = new Set(result.rewards.map((reward) => reward.character_id));
+      if (newlyPaidIds.size > 0) {
+        setProgressEntries((prev) => prev.map((entry) => (
+          newlyPaidIds.has(entry.character_id) ? { ...entry, reward_paid: true } : entry
+        )));
+      }
       if (result.paid_count === 0) {
-        setRewardMessage("이미 모든 달성자에게 보상이 지급되었거나 달성자가 없습니다.");
+        toast("이미 모든 달성자에게 보상이 지급되었거나 달성자가 없습니다.", "info");
       } else {
         const m = selectedMission;
         const parts: string[] = [];
@@ -185,10 +180,10 @@ export default function MissionStatusTab() {
         if (m.reward_defense > 0) parts.push(`방어력 +${m.reward_defense}`);
         if (m.reward_items?.length > 0) parts.push(`구성 보상 ${m.reward_items.length}종`);
         const desc = parts.length > 0 ? `(${parts.join(", ")})` : "";
-        setRewardMessage(`${result.paid_count}명에게 임무 보상${desc}이 지급되었습니다.`);
+        toast(`${result.paid_count}명에게 임무 보상${desc}이 지급되었습니다.`, "success");
       }
     } catch (e) {
-      setErrorMessage(e instanceof Error ? e.message : "임무 보상 지급에 실패했습니다.");
+      toast(e instanceof Error ? e.message : "임무 보상 지급에 실패했습니다.", "error");
     } finally {
       setPayingReward(false);
     }
@@ -196,44 +191,6 @@ export default function MissionStatusTab() {
 
   return (
     <section className="flex flex-col gap-6">
-      {errorMessage && (
-        <AlertBanner>{errorMessage}</AlertBanner>
-      )}
-      {rewardMessage && (
-        <AlertBanner tone="success">{rewardMessage}</AlertBanner>
-      )}
-
-      <Card>
-        <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-col gap-1.5">
-            <CardTitle>챕터별 현황</CardTitle>
-            <CardDescription>
-              챕터를 선택한 뒤 임무를 클릭하면 캐릭터별 달성 상태를 볼 수 있습니다.
-            </CardDescription>
-          </div>
-          {chapters.length > 0 ? (
-            <div className="w-full md:w-56">
-              <Select value={selectedChapter} onValueChange={handleSelectChapter}>
-                <SelectTrigger>
-                  <SelectValue placeholder="챕터 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {chapters.map((chapter) => (
-                      <SelectItem key={chapter} value={chapter}>{chapter}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-line bg-inset px-4 py-2 text-sm text-muted">
-              챕터 없음
-            </div>
-          )}
-        </CardHeader>
-      </Card>
-
       {loadingMissions ? (
         <div className="rounded-xl border border-dashed border-line px-4 py-12 text-center text-sm text-muted">
           임무 데이터를 불러오는 중입니다.
@@ -241,9 +198,33 @@ export default function MissionStatusTab() {
       ) : (
         <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
           <Card>
-            <CardHeader>
-              <CardTitle>{selectedChapter || "임무"} 목록</CardTitle>
-              <CardDescription>선택한 챕터의 임무를 클릭해 상세 현황을 확인합니다.</CardDescription>
+            <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex flex-col gap-1.5">
+                <CardTitle>챕터별 현황</CardTitle>
+                <CardDescription>
+                  챕터를 선택한 뒤 임무를 클릭하면 캐릭터별 달성 상태를 볼 수 있습니다.
+                </CardDescription>
+              </div>
+              {chapters.length > 0 ? (
+                <div className="w-full md:w-56">
+                  <Select value={selectedChapter} onValueChange={handleSelectChapter}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="챕터 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {chapters.map((chapter) => (
+                          <SelectItem key={chapter} value={chapter}>{chapter}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-line bg-inset px-4 py-2 text-sm text-muted">
+                  챕터 없음
+                </div>
+              )}
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               {chapterMissions.length > 0 ? (
@@ -264,7 +245,7 @@ export default function MissionStatusTab() {
                         <p className="font-semibold text-ivory">{mission.name}</p>
                         <p className="text-sm text-muted">{mission.description}</p>
                       </div>
-                      <div className="flex flex-col items-end gap-1 shrink-0">
+                      <div className="flex items-center gap-1.5 shrink-0">
                         <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type as MissionType] ?? "secondary"}>
                           {mission.mission_type}
                         </Badge>
@@ -273,9 +254,9 @@ export default function MissionStatusTab() {
                         </Badge>
                       </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-                      <Gift size={14} />
-                      {mission.reward}
+                    <div className="mt-3 flex items-center gap-2">
+                      <Gift size={14} className="shrink-0 text-muted" />
+                      <RewardSummary entries={mission.reward_items} items={items} />
                     </div>
                   </button>
                 ))
@@ -312,14 +293,7 @@ export default function MissionStatusTab() {
                     />
                     달성 캐릭터만 보기
                   </label>
-                  <Button
-                    variant={isEditing ? "default" : "outline"}
-                    onClick={handleEditOrSave}
-                    disabled={!selectedMission || loadingProgress || savingProgress}
-                  >
-                    {isEditing ? <Save size={15} /> : <Pencil size={15} />}
-                    {savingProgress ? "저장 중..." : isEditing ? "저장" : "편집"}
-                  </Button>
+                  {savingProgress ? <span className="text-xs text-muted">저장 중...</span> : null}
                 </div>
               </div>
 
@@ -328,42 +302,41 @@ export default function MissionStatusTab() {
                   임무 현황을 불러오는 중입니다.
                 </EmptyState>
               ) : visibleProgress.length > 0 ? (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
                   {visibleProgress.map((entry) => (
-                    <div key={entry.character_id} className="flex flex-col items-center gap-2 rounded-2xl border border-line px-3 py-4">
-                      <div className="relative">
+                    <div key={entry.character_id} className="flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface pb-3">
+                      <div className="relative w-full">
                         <CharacterAvatar
                           src={entry.character_image_url}
                           alt={entry.character_name}
                           className={cn(
-                            "size-16 rounded-xl transition-all",
+                            "aspect-square w-full rounded-none transition-all",
                             !entry.achieved && "grayscale opacity-60",
                           )}
-                          iconSize={24}
+                          iconSize={28}
                         />
-                        <div className="absolute -right-1.5 -top-1.5 rounded-full bg-surface p-0.5 shadow-sm">
+                        <div className="absolute right-2 top-2">
                           <Checkbox
                             checked={entry.achieved}
-                            disabled={!isEditing}
+                            disabled={savingProgress || entry.reward_paid}
+                            className="size-5 border-2 bg-surface shadow-md"
                             onCheckedChange={(checked) =>
-                              updateDraft(entry.character_id, { achieved: checked === true })
+                              void handleProgressToggle(entry.character_id, checked === true)
                             }
                           />
                         </div>
+                        {entry.reward_paid ? (
+                          <span className="absolute bottom-2 right-2 flex size-6 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white shadow-md">
+                            완
+                          </span>
+                        ) : null}
                       </div>
-                      <p className="w-full truncate text-center text-sm font-semibold text-ivory">
+                      <p
+                        className="flex h-5 w-full items-center justify-center whitespace-nowrap px-1 text-center font-semibold leading-none text-ivory"
+                        style={{ fontSize: `${statusCardNameFontSize(entry.character_name)}px` }}
+                      >
                         {entry.character_name}
                       </p>
-                      {isEditing ? (
-                        <Input
-                          value={entry.memo}
-                          onChange={(e) => updateDraft(entry.character_id, { memo: e.target.value })}
-                          placeholder="메모"
-                          className="h-7 text-xs"
-                        />
-                      ) : entry.memo ? (
-                        <p className="w-full truncate text-center text-xs text-muted">{entry.memo}</p>
-                      ) : null}
                     </div>
                   ))}
                 </div>

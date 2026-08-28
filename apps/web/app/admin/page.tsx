@@ -23,17 +23,17 @@ import { MissionAdmin } from "@/app/missions/page";
 type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "skill";
 
 const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
-  { id: "chapter", label: "챕터", icon: BookMarked },
-  { id: "reward", label: "보상", icon: Gift },
-  { id: "challenge", label: "도전과제", icon: Trophy },
   { id: "mission", label: "임무", icon: ScrollText },
+  { id: "challenge", label: "도전과제", icon: Trophy },
   { id: "enemy", label: "에너미", icon: Skull },
+  { id: "reward", label: "보상", icon: Gift },
   { id: "skill", label: "기술트리", icon: Sparkles },
+  { id: "chapter", label: "챕터", icon: BookMarked },
 ];
 
 export default function AdminPage() {
   const member = useRequireAdmin();
-  const [tab, setTab] = useState<PageTab>("chapter");
+  const [tab, setTab] = useState<PageTab>("mission");
 
   if (!member) return null;
 

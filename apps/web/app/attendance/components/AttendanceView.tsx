@@ -4,39 +4,39 @@ import { useEffect, useMemo, useState } from "react";
 import { CalendarDays } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
+import { useToast } from "@/components/common/ToastProvider";
 import { fetchAttendanceEntries } from "@/lib/api";
 import type { AttendanceEntry } from "@/lib/api";
 import { todayDateValue } from "@/lib/utils";
 
 export default function AttendanceView() {
+  const { toast } = useToast();
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState(todayDateValue);
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     fetchAttendanceEntries()
-      .then((data) => { if (!cancelled) { setEntries(data); setErrorMessage(null); } })
-      .catch((error) => { if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "출석 조회 실패"); })
+      .then((data) => { if (!cancelled) setEntries(data); })
+      .catch((error) => { if (!cancelled) toast(error instanceof Error ? error.message : "출석 조회 실패", "error"); })
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   const entriesForDate = useMemo(
-    () => entries.filter((entry) => entry.attendance_date === selectedDate),
+    () => entries
+      .filter((entry) => entry.attendance_date === selectedDate)
+      .toSorted((a, b) => a.character_name.localeCompare(b.character_name, "ko")),
     [entries, selectedDate],
   );
 
   return (
     <div className="flex flex-col gap-6">
-      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>출석 캐릭터 조회</CardTitle>

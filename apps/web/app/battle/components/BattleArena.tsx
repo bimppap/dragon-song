@@ -18,7 +18,9 @@ import {
   fetchBattle,
   fetchCharacterDetail,
   fetchCharacters,
+  fetchEnemies,
   joinBattle,
+  joinBattleEnemy,
   submitBattleActions,
   undoLastBattleRound,
   type BattleCharacterActionInput,
@@ -28,11 +30,13 @@ import {
   type CharacterActionKind,
   type CharacterOwnedItem,
   type Character,
+  type Enemy,
   type EnemyActionKind,
 } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
@@ -68,6 +72,10 @@ function isActive(p: BattleParticipant): boolean {
 /** 이번 라운드에 난입한 캐릭터는 행동할 수 없고, 공격/치유 대상도 될 수 없다. */
 function isTargetable(p: BattleParticipant, currentRound: number): boolean {
   return isActive(p) && p.joined_round !== currentRound;
+}
+
+function isEnemyTargetable(enemy: BattleSession["enemies"][number], currentRound: number): boolean {
+  return enemy.hp > 0 && enemy.joined_round !== currentRound;
 }
 
 function HpBar({ hp, max, color }: { hp: number; max: number; color: string }) {
@@ -147,13 +155,14 @@ function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
 
 export default function BattleArena({ sessionId, readOnly = false, onExit }: Props) {
   const { confirm } = useDialog();
+  const { toast } = useToast();
   const [session, setSession] = useState<BattleSession | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [undoing, setUndoing] = useState(false);
 
   const [charDrafts, setCharDrafts] = useState<Record<number, CharDraft>>({});
+  const [bulkActionKind, setBulkActionKind] = useState<CharacterActionKind>("attack");
   const [enemyDrafts, setEnemyDrafts] = useState<Record<number, EnemyDraft>>({});
   const [itemsByCharacter, setItemsByCharacter] = useState<Record<number, CharacterOwnedItem[]>>({});
 
@@ -161,6 +170,10 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
   const [joinCandidates, setJoinCandidates] = useState<Character[]>([]);
   const [joinCharacterId, setJoinCharacterId] = useState<string | null>(null);
   const [joining, setJoining] = useState(false);
+  const [enemyJoinOpen, setEnemyJoinOpen] = useState(false);
+  const [enemyJoinCandidates, setEnemyJoinCandidates] = useState<Enemy[]>([]);
+  const [joinEnemyId, setJoinEnemyId] = useState<string | null>(null);
+  const [joiningEnemy, setJoiningEnemy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -172,9 +185,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
         if (cancelled) return;
         setSession(data);
         resetDrafts(data);
-        setError(null);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "전투 조회 실패");
+        if (!cancelled) toast(e instanceof Error ? e.message : "전투 조회 실패", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -182,7 +194,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
 
     load();
     return () => { cancelled = true; };
-  }, [sessionId]);
+  }, [sessionId, toast]);
 
   // 관전(readOnly) 화면은 아무도 행동을 제출하지 않으므로, 라운드 진행 상황을 놓치지 않도록 주기적으로 다시 불러온다.
   useEffect(() => {
@@ -205,7 +217,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       if (!isTargetable(p, data.round)) continue;
       nextChar[p.character_id] = {
         kind: defaultCharKind(p.faction),
-        target_enemy_id: data.enemies.find((e) => e.hp > 0)?.enemy_id ?? null,
+        target_enemy_id: data.enemies.find((enemy) => isEnemyTargetable(enemy, data.round))?.enemy_id ?? null,
         target_character_id: p.character_id,
         item_id: null,
       };
@@ -214,7 +226,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
 
     const nextEnemy: Record<number, EnemyDraft> = {};
     for (const enemy of data.enemies) {
-      if (enemy.hp <= 0) continue;
+      if (enemy.hp <= 0 || enemy.joined_round === data.round) continue;
       const firstAttackIndex = enemy.skills.findIndex((s) => s.skill_type !== "소환");
       nextEnemy[enemy.enemy_id] = firstAttackIndex >= 0
         ? { kind: "attack", skill_index: firstAttackIndex }
@@ -244,6 +256,23 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
     }
   }
 
+  function applyBulkCharacterAction() {
+    const characterIds = Object.keys(charDrafts).map(Number);
+    setCharDrafts((prev) => Object.fromEntries(
+      Object.entries(prev).map(([characterId, draft]) => [
+        characterId,
+        {
+          ...draft,
+          kind: bulkActionKind,
+          item_id: bulkActionKind === "item" ? draft.item_id : null,
+        },
+      ]),
+    ));
+    if (bulkActionKind === "item") {
+      void Promise.all(characterIds.map((characterId) => ensureItemsLoaded(characterId)));
+    }
+  }
+
   async function handleSubmitRound() {
     if (!session) return;
     const characterActions: BattleCharacterActionInput[] = Object.entries(charDrafts).map(([id, draft]) => ({
@@ -264,9 +293,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       const updated = await submitBattleActions(session.id, characterActions, enemyActions);
       setSession(updated);
       resetDrafts(updated);
-      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "라운드 진행 실패");
+      toast(e instanceof Error ? e.message : "라운드 진행 실패", "error");
     } finally {
       setSubmitting(false);
     }
@@ -286,9 +314,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       const updated = await undoLastBattleRound(session.id);
       setSession(updated);
       resetDrafts(updated);
-      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "라운드 되돌리기 실패");
+      toast(e instanceof Error ? e.message : "라운드 되돌리기 실패", "error");
     } finally {
       setUndoing(false);
     }
@@ -315,11 +342,38 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       resetDrafts(updated);
       setJoinOpen(false);
       setJoinCharacterId(null);
-      setError(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "난입 실패");
+      toast(e instanceof Error ? e.message : "난입 실패", "error");
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function openEnemyJoin() {
+    setEnemyJoinOpen(true);
+    setJoinEnemyId(null);
+    if (!session) return;
+    try {
+      const candidates = await fetchEnemies(session.chapter ?? undefined);
+      setEnemyJoinCandidates(candidates.filter((enemy) => enemy.chapter === session.chapter));
+    } catch {
+      setEnemyJoinCandidates([]);
+    }
+  }
+
+  async function handleEnemyJoin() {
+    if (!session || !joinEnemyId) return;
+    try {
+      setJoiningEnemy(true);
+      const updated = await joinBattleEnemy(session.id, Number(joinEnemyId));
+      setSession(updated);
+      resetDrafts(updated);
+      setEnemyJoinOpen(false);
+      setJoinEnemyId(null);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "에너미 참가 실패", "error");
+    } finally {
+      setJoiningEnemy(false);
     }
   }
 
@@ -334,10 +388,34 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       }));
   }, [joinCandidates, session]);
 
+  const enemyJoinOptions = useMemo(() => {
+    const existingIds = new Set((session?.enemies ?? []).map((enemy) => enemy.enemy_id));
+    return enemyJoinCandidates
+      .filter((enemy) => enemy.chapter === session?.chapter && !existingIds.has(enemy.id))
+      .map((enemy) => ({ value: String(enemy.id), label: enemy.name }));
+  }, [enemyJoinCandidates, session]);
+
+  const summonDisplayNames = useMemo(() => {
+    const namesById = new Map<number, string>();
+    const groups = new Map<string, BattleSession["summons"]>();
+    for (const summon of session?.summons ?? []) {
+      const group = groups.get(summon.name);
+      if (group) group.push(summon);
+      else groups.set(summon.name, [summon]);
+    }
+    for (const [name, summons] of groups) {
+      const sortedSummons = summons.toSorted((a, b) => a.id - b.id);
+      sortedSummons.forEach((summon, index) => {
+        const number = summon.log_number ?? (sortedSummons.length > 1 ? index + 1 : null);
+        namesById.set(summon.id, number == null ? name : `${name}${number}`);
+      });
+    }
+    return namesById;
+  }, [session?.summons]);
+
   if (loading || !session) {
     return (
       <div className="space-y-4">
-        {error && <AlertBanner>{error}</AlertBanner>}
         <p className="text-sm text-muted">전투 정보를 불러오는 중입니다.</p>
       </div>
     );
@@ -345,7 +423,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
 
   const inProgress = session.status === "in_progress";
   const canAct = inProgress && !readOnly;
-  const aliveEnemies = session.enemies.filter((e) => e.hp > 0);
+  const targetableEnemies = session.enemies.filter((enemy) => isEnemyTargetable(enemy, session.round));
 
   return (
     <div className="space-y-6">
@@ -361,14 +439,19 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
           <Badge variant="outline">라운드 {session.round}</Badge>
         </div>
         {canAct && (
-          <Button variant="outline" size="sm" onClick={openJoin}>
-            <UserPlus size={14} />
-            난입
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" onClick={openJoin}>
+              <UserPlus size={14} />
+              캐릭터 난입
+            </Button>
+            <Button variant="outline" size="sm" onClick={openEnemyJoin}>
+              <Skull size={14} />
+              에너미 추가
+            </Button>
+          </div>
         )}
       </div>
 
-      {error && <AlertBanner>{error}</AlertBanner>}
       {readOnly && <AlertBanner tone="success">완료된 실전 전투 기록입니다. (읽기 전용)</AlertBanner>}
 
       {joinOpen && (
@@ -389,10 +472,29 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
         </div>
       )}
 
+      {enemyJoinOpen && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-red-500/40 bg-red-500/5 p-3">
+          <Combobox
+            options={enemyJoinOptions}
+            value={joinEnemyId}
+            onChange={setJoinEnemyId}
+            placeholder="추가할 에너미 선택"
+            searchPlaceholder="에너미 이름 검색"
+            className="w-56"
+          />
+          <Button size="sm" disabled={!joinEnemyId || joiningEnemy} onClick={handleEnemyJoin}>
+            {joiningEnemy ? "처리 중..." : "참가 확정"}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setEnemyJoinOpen(false)}>취소</Button>
+          <p className="text-xs text-muted">추가된 에너미는 다음 라운드부터 행동하고 공격 대상으로 선택할 수 있습니다.</p>
+        </div>
+      )}
+
       {/* 에너미 */}
       <div className="space-y-2">
         {session.enemies.map((enemy) => {
           const dead = enemy.hp <= 0;
+          const justJoined = enemy.joined_round === session.round;
           const draft = enemyDrafts[enemy.enemy_id];
           const attackSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type !== "소환");
           const summonSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type === "소환");
@@ -405,6 +507,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                 <Skull size={16} className={dead ? "text-muted" : "text-red-500"} />
                 <span className="font-semibold text-ivory">{enemy.name}</span>
                 {dead && <Badge variant="secondary">격파</Badge>}
+                {!dead && justJoined && <Badge variant="outline">참가 · 다음 라운드부터 행동</Badge>}
                 <span className="font-num text-xs text-muted">공격력 {enemy.attack}</span>
               </div>
               <HpBar hp={enemy.hp} max={enemy.max_hp} color="bg-red-500" />
@@ -449,14 +552,39 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       {session.summons.length > 0 && (
         <div className="rounded-xl border border-line bg-inset p-4">
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">소환수 (공격 우선 대상)</p>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-5 gap-2">
             {session.summons.map((s) => (
               <div key={s.id} className="rounded-lg border border-line bg-surface px-3 py-2">
-                <p className="mb-1 text-sm font-semibold text-ivory">{s.name}</p>
+                <p className="mb-1 text-sm font-semibold text-ivory">{summonDisplayNames.get(s.id) ?? s.name}</p>
                 <HpBar hp={s.hp} max={s.max_hp} color="bg-orange-500" />
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {canAct && (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-line bg-inset p-3">
+          <div className="flex items-center gap-2 text-sm font-semibold text-ivory">
+            <ListChecks size={15} className="text-gold" />
+            전원 행동 변경
+          </div>
+          <Select value={bulkActionKind} onValueChange={(kind: CharacterActionKind) => setBulkActionKind(kind)}>
+            <SelectTrigger className="h-8 w-36 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                {(Object.keys(CHAR_ACTION_LABEL) as CharacterActionKind[]).map((kind) => (
+                  <SelectItem key={kind} value={kind}>{CHAR_ACTION_LABEL[kind]}</SelectItem>
+                ))}
+              </SelectGroup>
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={applyBulkCharacterAction} disabled={Object.keys(charDrafts).length === 0}>
+            반영
+          </Button>
+          <p className="text-xs text-muted">이번 라운드에 행동 가능한 모든 캐릭터에게 적용됩니다.</p>
         </div>
       )}
 
@@ -467,7 +595,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
           const active = isActive(p);
           const items = itemsByCharacter[p.character_id] ?? [];
           const secondaryActionControl =
-            draft && (draft.kind === "attack" || draft.kind === "skill") && aliveEnemies.length > 1 ? (
+            draft && (draft.kind === "attack" || draft.kind === "skill") && targetableEnemies.length > 1 ? (
               <Select
                 value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
                 onValueChange={(v) => patchChar(p.character_id, { target_enemy_id: Number(v) })}
@@ -477,7 +605,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    {aliveEnemies.map((e) => (
+                    {targetableEnemies.map((e) => (
                       <SelectItem key={e.enemy_id} value={String(e.enemy_id)}>{e.name}</SelectItem>
                     ))}
                   </SelectGroup>
@@ -567,7 +695,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
 
                     {(p.downed || p.retreated || (active && p.joined_round === session.round)) && (
                       <div className="flex flex-wrap gap-2">
-                        {p.downed && <Badge variant="destructive" className="text-[10px]">전투불능</Badge>}
+                        {p.downed && <Badge variant="destructive" className="text-[10px]">기절</Badge>}
                         {p.retreated && <Badge variant="secondary" className="text-[10px]">퇴각</Badge>}
                         {active && p.joined_round === session.round && (
                           <Badge variant="outline" className="text-[10px]">난입 · 이번 라운드 행동 불가</Badge>
@@ -627,7 +755,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
           )}
         >
           {session.status === "victory" ? <Swords size={16} /> : <Ban size={16} />}
-          {session.status === "victory" ? "전투 승리! 에너미를 격파했습니다." : "전투 패배... 모든 캐릭터가 전투 불능/퇴각했습니다."}
+          {session.status === "victory" ? "전투 승리! 에너미를 격파했습니다." : "전투 패배... 모든 캐릭터가 기절/퇴각했습니다."}
         </div>
       ) : canAct ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -652,8 +780,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       {session.log.length > 0 && (
         <div className="space-y-3 rounded-xl border border-line bg-inset p-4">
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">전투 로그</span>
-          {[...session.log].reverse().map((entry) => (
-            <div key={entry.round} className="space-y-1">
+          {[...session.log].reverse().map((entry, index) => (
+            <div key={entry.round} className={cn("space-y-1", index > 0 && "border-t border-line pt-3")}>
               <div className="text-xs font-bold text-ivory/85">라운드 {entry.round}</div>
               {entry.events.map((e, i) => (
                 <div key={i} className="text-sm text-ivory/85">{e}</div>

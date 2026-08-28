@@ -137,7 +137,6 @@ class Character(Base):
     # 관리자 전용 관리 플래그 (RUNNER에게는 노출되지 않음)
     caution: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     warning_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
-    mission_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     # 관리자 전용 능력치 (RUNNER에게는 노출되지 않음)
     start_sh: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
@@ -229,6 +228,7 @@ class SkillNode(Base):
     description: Mapped[str | None] = mapped_column(String, nullable=True)  # 개요 (관리자 전용 표시)
     # skill.xlsx에 값이 비어있어 기획 확정 전 임시로 채운 노드인지 여부 (UI에서 색으로 구분 표시).
     is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

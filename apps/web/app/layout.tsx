@@ -4,6 +4,7 @@ import "./globals.css";
 import Header from "./components/Header";
 import { AuthProvider } from "@/lib/auth";
 import { DialogProvider } from "@/components/common/DialogProvider";
+import { ToastProvider } from "@/components/common/ToastProvider";
 import CursorEffect from "@/components/common/CursorEffect";
 
 export const metadata: Metadata = {
@@ -25,10 +26,12 @@ export default function RootLayout({
     <html lang="ko">
       <body className="min-h-screen bg-ground text-ivory">
         <AuthProvider>
-          <DialogProvider>
-            <Header />
-            {children}
-          </DialogProvider>
+          <ToastProvider>
+            <DialogProvider>
+              <Header />
+              {children}
+            </DialogProvider>
+          </ToastProvider>
         </AuthProvider>
         <CursorEffect />
       </body>

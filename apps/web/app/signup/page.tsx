@@ -15,16 +15,16 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { useAuth } from "@/lib/auth";
-import AlertBanner from "@/components/common/AlertBanner";
+import { useToast } from "@/components/common/ToastProvider";
 
 export default function SignupPage() {
+  const { toast } = useToast();
   const { member, signup } = useAuth();
   const router = useRouter();
   const [loginId, setLoginId] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (member === undefined || member === null) return;
@@ -33,10 +33,9 @@ export default function SignupPage() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setErrorMessage(null);
 
     if (password !== passwordConfirm) {
-      setErrorMessage("비밀번호가 일치하지 않습니다.");
+      toast("비밀번호가 일치하지 않습니다.", "error");
       return;
     }
 
@@ -45,7 +44,7 @@ export default function SignupPage() {
       await signup({ login_id: loginId, password, password_confirm: passwordConfirm });
       router.replace("/login");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "회원가입에 실패했습니다.");
+      toast(error instanceof Error ? error.message : "회원가입에 실패했습니다.", "error");
     } finally {
       setLoading(false);
     }
@@ -60,10 +59,6 @@ export default function SignupPage() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {errorMessage && (
-              <AlertBanner>{errorMessage}</AlertBanner>
-            )}
-
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted uppercase tracking-wide">아이디</label>
               <Input

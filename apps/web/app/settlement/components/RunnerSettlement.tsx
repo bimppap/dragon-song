@@ -9,6 +9,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
+import { useToast } from "@/components/common/ToastProvider";
 import { createSettlement, fetchSettlements } from "@/lib/api";
 import type { Settlement, SettlementType } from "@/lib/api";
 import { cn, parsePositiveInt } from "@/lib/utils";
@@ -55,6 +56,7 @@ function SettlementHistoryRow({ settlement }: { settlement: Settlement }) {
 }
 
 export default function RunnerSettlement() {
+  const { toast } = useToast();
   const [type, setType] = useState<SettlementType>("board");
   const [totalPosts, setTotalPosts] = useState("");
   const [totalComments, setTotalComments] = useState("");
@@ -62,8 +64,6 @@ export default function RunnerSettlement() {
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -74,7 +74,7 @@ export default function RunnerSettlement() {
         const list = await fetchSettlements();
         if (!cancelled) setSettlements(list);
       } catch (error) {
-        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "정산 요청 조회 실패");
+        if (!cancelled) toast(error instanceof Error ? error.message : "정산 요청 조회 실패", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -82,31 +82,29 @@ export default function RunnerSettlement() {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   async function handleSubmit() {
-    setSuccessMessage(null);
     try {
       setSubmitting(true);
       const payload = type === "board"
         ? { type, total_posts: parsePositiveInt(totalPosts), total_comments: parsePositiveInt(totalComments) }
         : { type, links: links.map((l) => l.trim()).filter(Boolean) };
       if (type === "board" && (totalPosts.trim() === "" || totalComments.trim() === "")) {
-        setErrorMessage("총 게시물 갯수와 총 댓글 갯수를 모두 입력해 주세요.");
+        toast("총 게시물 갯수와 총 댓글 갯수를 모두 입력해 주세요.", "error");
         return;
       }
       if (type === "log" && (payload.links?.length ?? 0) === 0) {
-        setErrorMessage("게시물 링크를 1개 이상 입력해 주세요.");
+        toast("게시물 링크를 1개 이상 입력해 주세요.", "error");
         return;
       }
       setSettlements(await createSettlement(payload));
       setTotalPosts("");
       setTotalComments("");
       setLinks([""]);
-      setErrorMessage(null);
-      setSuccessMessage("정산 요청을 보냈습니다. 어드민 확인 후 보상이 지급됩니다.");
+      toast("정산 요청을 보냈습니다. 어드민 확인 후 보상이 지급됩니다.", "success");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "정산 요청 실패");
+      toast(error instanceof Error ? error.message : "정산 요청 실패", "error");
     } finally {
       setSubmitting(false);
     }
@@ -114,9 +112,6 @@ export default function RunnerSettlement() {
 
   return (
     <div className="flex flex-col gap-6">
-      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-      {successMessage && <AlertBanner tone="success">{successMessage}</AlertBanner>}
-
       <Card>
         <CardHeader>
           <CardTitle>정산 요청</CardTitle>

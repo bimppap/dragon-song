@@ -23,11 +23,11 @@ import {
   Zap,
 } from "lucide-react";
 import CharacterOwnedSkills from "./CharacterOwnedSkills";
-import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import Modal from "@/components/common/Modal";
 import { useDialog } from "@/components/common/DialogProvider";
+import { useToast } from "@/components/common/ToastProvider";
 
 import { formatRewardItems, REWARD_TYPE_LABELS } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
@@ -517,13 +517,12 @@ export default function CharacterInfo({
   focusCharacterId = null,
   readOnly = false,
 }: Props) {
+  const { toast } = useToast();
   const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(null);
-  const [itemActionError, setItemActionError] = useState<string | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
@@ -553,12 +552,12 @@ export default function CharacterInfo({
         if (cancelled) return;
 
         setDetail(nextDetail);
-        setErrorMessage(null);
       } catch (error) {
         if (cancelled) return;
         console.error(error);
-        setErrorMessage(
+        toast(
           error instanceof Error ? error.message : "캐릭터 상세 정보를 불러오지 못했습니다.",
+          "error",
         );
       } finally {
         if (!cancelled) {
@@ -572,7 +571,7 @@ export default function CharacterInfo({
     return () => {
       cancelled = true;
     };
-  }, [selectedCharacterId]);
+  }, [selectedCharacterId, toast]);
 
   async function handleItemAction(
     itemId: number,
@@ -581,12 +580,11 @@ export default function CharacterInfo({
   ) {
     if (selectedDetail == null) return;
     setItemActionLoadingId(itemId);
-    setItemActionError(null);
     try {
       const nextDetail = await action(selectedDetail.id, itemId, chosenStats);
       setDetail(nextDetail);
     } catch (error) {
-      setItemActionError(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.");
+      toast(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.", "error");
     } finally {
       setItemActionLoadingId(null);
     }
@@ -657,10 +655,6 @@ export default function CharacterInfo({
         </Card>
       )}
 
-      {errorMessage && (
-        <AlertBanner>{errorMessage}</AlertBanner>
-      )}
-
       {detailLoading ? (
         <Card>
           <CardContent className="py-16 text-center text-sm text-muted">
@@ -710,19 +704,22 @@ export default function CharacterInfo({
                     </div>
                   )}
                   {!readOnly && (
-                    <label className="absolute inset-x-0 bottom-0 flex cursor-pointer items-center justify-center gap-1 bg-ground/60 py-1.5 text-xs font-semibold text-ivory transition-colors hover:bg-ground/75">
-                      <ImageIcon size={12} />
-                      {imageUploading ? "업로드 중..." : selectedDetail.image_url ? "이미지 변경" : "이미지 등록"}
+                    <label className="group absolute inset-0 flex cursor-pointer items-center justify-center bg-ground/0 text-xs font-semibold text-ivory transition-colors hover:bg-ground/60">
+                      <span className="flex flex-col items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                        <span className="flex items-center gap-1">
+                          <ImageIcon size={12} />
+                          {imageUploading ? "업로드 중..." : "편집"}
+                        </span>
+                        <span className="text-[10px] font-normal text-ivory/80">(200*200 권장)</span>
+                      </span>
                       <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
                     </label>
                   )}
                 </div>
-                {!readOnly && (
-                  <p className="text-[11px] leading-tight text-muted">
-                    정사각형 이미지를 권장합니다. 업로드 시 WebP로 변환되며 5MB를 넘으면 실패합니다.
-                  </p>
-                )}
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
+                {!readOnly && (
+                  <CharacterOwnedSkills characterId={selectedDetail.id} />
+                )}
               </div>
 
               {/* 명함 우측: 정보 */}
@@ -774,22 +771,17 @@ export default function CharacterInfo({
                   />
                 </div>
 
-                {/* 핵심 능력치 + 보유 기술 */}
-                <div className="grid gap-6 sm:grid-cols-[1fr_auto] sm:items-start">
-                  <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
-                    {CORE_STATS.map(({ key, label, icon: Icon, accent }) => (
-                      <CoreStatLine
-                        key={key}
-                        label={label}
-                        icon={Icon}
-                        value={selectedDetail[key]}
-                        accent={accent}
-                      />
-                    ))}
-                  </div>
-                  {!readOnly && (
-                    <CharacterOwnedSkills characterId={selectedDetail.id} />
-                  )}
+                {/* 핵심 능력치 */}
+                <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
+                  {CORE_STATS.map(({ key, label, icon: Icon, accent }) => (
+                    <CoreStatLine
+                      key={key}
+                      label={label}
+                      icon={Icon}
+                      value={selectedDetail[key]}
+                      accent={accent}
+                    />
+                  ))}
                 </div>
 
                 {/* 상세정보 (테두리 없는 펼치기 버튼) */}
@@ -871,9 +863,6 @@ export default function CharacterInfo({
                 </div>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {itemActionError && (
-                  <AlertBanner>{itemActionError}</AlertBanner>
-                )}
                 {selectedDetail.owned_items.length > 0 ? (
                   <div className="flex flex-wrap gap-4">
                     {selectedDetail.owned_items.map((item) => (

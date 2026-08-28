@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { createCharacter, fetchSkillNodes, formatEffect } from "@/lib/api";
 import type { Character, Faction, SkillBook, SkillNode } from "@/lib/api";
-import AlertBanner from "@/components/common/AlertBanner";
+import { useToast } from "@/components/common/ToastProvider";
 
 type CharacterCreateForm = {
   name: string;
@@ -147,22 +147,22 @@ interface Props {
 }
 
 export default function CharacterCreate({ onCreated }: Props) {
+  const { toast } = useToast();
   const [form, setForm] = useState(EMPTY_FORM);
   const [faction, setFaction] = useState<Faction | null>(null);
   const [skillBook, setSkillBook] = useState<SkillBook | null>(null);
   const [skillNodes, setSkillNodes] = useState<SkillNode[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!skillBook) return;
     let cancelled = false;
     fetchSkillNodes(skillBook)
       .then((nodes) => { if (!cancelled) setSkillNodes(nodes); })
-      .catch((error) => { if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "기술 조회에 실패했습니다."); });
+      .catch((error) => { if (!cancelled) toast(error instanceof Error ? error.message : "기술 조회에 실패했습니다.", "error"); });
     return () => { cancelled = true; };
-  }, [skillBook]);
+  }, [skillBook, toast]);
 
   function handleFactionChange(value: string) {
     setFaction(value === "none" ? null : value as Faction);
@@ -225,11 +225,10 @@ export default function CharacterCreate({ onCreated }: Props) {
       setFaction(null);
       setSkillBook(null);
       setSelectedSkillIds(new Set());
-      setErrorMessage(null);
       onCreated(createdCharacter);
     } catch (error) {
       console.error(error);
-      setErrorMessage(error instanceof Error ? error.message : "캐릭터 생성에 실패했습니다.");
+      toast(error instanceof Error ? error.message : "캐릭터 생성에 실패했습니다.", "error");
     } finally {
       setLoading(false);
     }
@@ -242,10 +241,6 @@ export default function CharacterCreate({ onCreated }: Props) {
 
   return (
     <section className="flex max-w-5xl flex-col gap-5">
-      {errorMessage && (
-        <AlertBanner>{errorMessage}</AlertBanner>
-      )}
-
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="flex flex-col gap-1.5">
           <label className="block text-xs font-semibold text-muted uppercase tracking-wide">이름</label>

@@ -9,8 +9,8 @@ import { fetchMissions } from "@/lib/api";
 import type { Mission } from "@/lib/api";
 import MissionManageTab from "./components/MissionManageTab";
 import MissionStatusTab from "./components/MissionStatusTab";
-import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
+import { useToast } from "@/components/common/ToastProvider";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 
@@ -27,9 +27,9 @@ const MISSION_TYPE_VARIANT: Record<string, "default" | "warning"> = {
 };
 
 function RunnerMissionList() {
+  const { toast } = useToast();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -37,11 +37,11 @@ function RunnerMissionList() {
       .then((list) => { if (!cancelled) setMissions(list); })
       .catch((error) => {
         if (cancelled) return;
-        setErrorMessage(error instanceof Error ? error.message : "임무 조회 실패");
+        toast(error instanceof Error ? error.message : "임무 조회 실패", "error");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   const chapters = [...new Set(missions.map((m) => m.chapter))];
 
@@ -54,10 +54,6 @@ function RunnerMissionList() {
         </h1>
         <p className="text-sm text-muted">현재 공개된 임무 목록입니다.</p>
       </section>
-
-      {errorMessage && (
-        <AlertBanner>{errorMessage}</AlertBanner>
-      )}
 
       {loading ? (
         <EmptyState>
@@ -103,7 +99,7 @@ function RunnerMissionList() {
 
 /** /admin 페이지에 임베드되는 임무 관리 콘솔(페이지 컨테이너 없음). */
 export function MissionAdmin() {
-  const [tab, setTab] = useState<PageTab>("manage");
+  const [tab, setTab] = useState<PageTab>("status");
 
   return (
     <div className="flex flex-col gap-6">

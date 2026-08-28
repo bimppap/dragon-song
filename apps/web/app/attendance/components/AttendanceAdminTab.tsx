@@ -7,10 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
-import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
+import { useToast } from "@/components/common/ToastProvider";
 import {
   createAttendanceEntry,
   deleteAttendanceEntry,
@@ -43,12 +43,11 @@ function StreakRow({ entry }: { entry: AttendanceStreakEntry }) {
 
 export default function AttendanceAdminTab() {
   const { confirm } = useDialog();
+  const { toast } = useToast();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [streaks, setStreaks] = useState<AttendanceStreakEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(todayDateValue);
@@ -68,9 +67,8 @@ export default function AttendanceAdminTab() {
         if (cancelled) return;
         setEntries(entriesData);
         setStreaks(streaksData);
-        setErrorMessage(null);
       } catch (error) {
-        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "출석 현황 조회 실패");
+        if (!cancelled) toast(error instanceof Error ? error.message : "출석 현황 조회 실패", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -79,11 +77,26 @@ export default function AttendanceAdminTab() {
     fetchCharacters().then((data) => { if (!cancelled) setCharacters(data); }).catch(console.error);
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   const charactersById = useMemo(
     () => new Map(characters.map((c) => [String(c.id), c])),
     [characters],
+  );
+
+  const sortedEntries = useMemo(
+    () => entries.toSorted((a, b) => {
+      const dateOrder = b.attendance_date.localeCompare(a.attendance_date);
+      return dateOrder || a.character_name.localeCompare(b.character_name, "ko");
+    }),
+    [entries],
+  );
+
+  const sortedSelectedCharacterIds = useMemo(
+    () => selectedCharacterIds.toSorted((a, b) => (
+      (charactersById.get(a)?.name ?? "").localeCompare(charactersById.get(b)?.name ?? "", "ko")
+    )),
+    [charactersById, selectedCharacterIds],
   );
 
   const characterOptions = useMemo(
@@ -128,11 +141,9 @@ export default function AttendanceAdminTab() {
       fetchAttendanceStreakRanking().then(setStreaks).catch(() => {});
 
       if (failedNames.length > 0) {
-        setErrorMessage(`일부 캐릭터 출석 처리에 실패했습니다: ${failedNames.join(", ")}`);
-        setSuccessMessage(null);
+        toast(`일부 캐릭터 출석 처리에 실패했습니다: ${failedNames.join(", ")}`, "error");
       } else {
-        setSuccessMessage("출석 처리했습니다.");
-        setErrorMessage(null);
+        toast("출석 처리했습니다.", "success");
       }
     } finally {
       setSubmitting(false);
@@ -151,11 +162,10 @@ export default function AttendanceAdminTab() {
     try {
       const updated = await deleteAttendanceEntry(entry.id);
       setEntries(updated);
-      setSuccessMessage("출석 기록을 삭제했습니다.");
-      setErrorMessage(null);
+      toast("출석 기록을 삭제했습니다.", "success");
       fetchAttendanceStreakRanking().then(setStreaks).catch(() => {});
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "출석 기록 삭제 실패");
+      toast(error instanceof Error ? error.message : "출석 기록 삭제 실패", "error");
     }
   }
 
@@ -189,10 +199,9 @@ export default function AttendanceAdminTab() {
       setPaying(true);
       const result = await payAttendanceRewards();
       setEntries(result.entries);
-      setSuccessMessage(`${result.paid_count}명에게 출석 보상을 전송했습니다.`);
-      setErrorMessage(null);
+      toast(`${result.paid_count}명에게 출석 보상을 전송했습니다.`, "success");
     } catch (error) {
-      setErrorMessage(error instanceof Error ? error.message : "출석 보상 전송 실패");
+      toast(error instanceof Error ? error.message : "출석 보상 전송 실패", "error");
     } finally {
       setPaying(false);
     }
@@ -200,9 +209,6 @@ export default function AttendanceAdminTab() {
 
   return (
     <div className="flex flex-col gap-6">
-      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-      {successMessage && <AlertBanner tone="success">{successMessage}</AlertBanner>}
-
       <Card>
         <CardHeader>
           <CardTitle>출석 처리</CardTitle>
@@ -246,7 +252,7 @@ export default function AttendanceAdminTab() {
 
           {selectedCharacterIds.length > 0 && (
             <div className="flex flex-wrap gap-2">
-              {selectedCharacterIds.map((id) => {
+              {sortedSelectedCharacterIds.map((id) => {
                 const character = charactersById.get(id);
                 return (
                   <Badge key={id} variant="secondary" className="gap-1.5 py-1 pl-1.5 pr-1">
@@ -296,7 +302,7 @@ export default function AttendanceAdminTab() {
             <EmptyState>출석 기록이 없습니다.</EmptyState>
           ) : (
             <div className="flex flex-col divide-y divide-line">
-              {entries.map((entry) => (
+              {sortedEntries.map((entry) => (
                 <div key={entry.id} className="flex items-center gap-3 py-2">
                   <CharacterAvatar
                     src={entry.character_image_url}

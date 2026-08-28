@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { CalendarClock, Image as ImageIcon } from "lucide-react";
-import AlertBanner from "@/components/common/AlertBanner";
 import EmptyState from "@/components/common/EmptyState";
+import { useToast } from "@/components/common/ToastProvider";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type Chapter, type Enemy } from "@/lib/api";
@@ -14,10 +14,10 @@ import BattleArena from "./BattleArena";
 const LIVE_BATTLE_POLL_MS = 6000;
 
 export default function RunnerBattleOverview() {
+  const { toast } = useToast();
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [liveSessionId, setLiveSessionId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -33,9 +33,8 @@ export default function RunnerBattleOverview() {
         if (cancelled) return;
         setChapter(activeChapter);
         setEnemies(visibleEnemies);
-        setError(null);
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "전투 정보를 불러오지 못했습니다.");
+        if (!cancelled) toast(e instanceof Error ? e.message : "전투 정보를 불러오지 못했습니다.", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -43,7 +42,7 @@ export default function RunnerBattleOverview() {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   // 관리자가 실전 전투를 시작했는지 주기적으로 확인해, 있으면 관전 화면으로 전환한다.
   useEffect(() => {
@@ -75,8 +74,6 @@ export default function RunnerBattleOverview() {
 
   return (
     <div className="space-y-6">
-      {error && <AlertBanner>{error}</AlertBanner>}
-
       <Card>
         <CardHeader className="gap-3">
           <div className="flex flex-wrap items-center gap-2">

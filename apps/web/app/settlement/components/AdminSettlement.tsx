@@ -6,10 +6,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
+import { useToast } from "@/components/common/ToastProvider";
 import { fetchSettlements, paySettlement } from "@/lib/api";
 import type { Settlement } from "@/lib/api";
 import { parsePositiveInt } from "@/lib/utils";
@@ -158,9 +158,9 @@ function PendingSettlementCard({
 }
 
 export default function AdminSettlement() {
+  const { toast } = useToast();
   const [settlements, setSettlements] = useState<Settlement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -171,7 +171,7 @@ export default function AdminSettlement() {
         const list = await fetchSettlements();
         if (!cancelled) setSettlements(list);
       } catch (error) {
-        if (!cancelled) setErrorMessage(error instanceof Error ? error.message : "정산 요청 조회 실패");
+        if (!cancelled) toast(error instanceof Error ? error.message : "정산 요청 조회 실패", "error");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -179,20 +179,17 @@ export default function AdminSettlement() {
 
     load();
     return () => { cancelled = true; };
-  }, []);
+  }, [toast]);
 
   const pending = settlements.filter((s) => s.status === "pending");
   const paid = settlements.filter((s) => s.status === "paid");
 
   function handlePaid(updated: Settlement) {
     setSettlements((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-    setErrorMessage(null);
   }
 
   return (
     <div className="flex flex-col gap-6">
-      {errorMessage && <AlertBanner>{errorMessage}</AlertBanner>}
-
       <Card>
         <CardHeader className="flex flex-row items-start justify-between gap-3">
           <div className="flex flex-col gap-1.5">
@@ -215,7 +212,7 @@ export default function AdminSettlement() {
                 key={settlement.id}
                 settlement={settlement}
                 onPaid={handlePaid}
-                onError={setErrorMessage}
+                onError={(message) => toast(message, "error")}
               />
             ))
           )}
