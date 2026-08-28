@@ -2,7 +2,7 @@
 
 import type { ReactNode } from "react";
 import Image from "next/image";
-import { Lock, Sparkles } from "lucide-react";
+import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
 import type { SkillNode } from "@/lib/api";
@@ -227,7 +227,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 )}
               >
                 {locked ? (
-                  <Lock size={18} />
+                  <Image src="/skill/private_skill.png" alt="비공개 기술" fill sizes="40px" className="object-cover" />
                 ) : node.image_url ? (
                   <Image src={node.image_url} alt="" fill sizes="40px" className="object-cover" />
                 ) : (
