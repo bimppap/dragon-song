@@ -16,12 +16,13 @@ from app.schemas import (
     AttendanceEntryRead,
     AttendanceRewardPayResult,
     AttendanceStreakEntry,
-    BattleActionRequest,
+    BattleAllyTurnRequest,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
     BattleSessionRead,
     BattleSessionSummary,
     BattleStartRequest,
+    BattleTelegraphRequest,
     ChapterCreate,
     ChapterRead,
     CharacterCreate,
@@ -856,14 +857,36 @@ def terminate_battle(session_id: int, member: Member = Depends(require_admin), d
     return crud.terminate_battle(db, session_id)
 
 
-@app.post("/battles/{session_id}/actions", response_model=BattleSessionRead)
-def submit_battle_actions(
+@app.post("/battles/{session_id}/telegraph", response_model=BattleSessionRead)
+def submit_battle_telegraph(
     session_id: int,
-    data: BattleActionRequest,
+    data: BattleTelegraphRequest,
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return crud.resolve_battle_round(db, session_id, data)
+    """1턴: 적의 행동 암시."""
+    return crud.resolve_battle_telegraph(db, session_id, data)
+
+
+@app.post("/battles/{session_id}/ally-turn", response_model=BattleSessionRead)
+def submit_battle_ally_turn(
+    session_id: int,
+    data: BattleAllyTurnRequest,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """2턴: 아군 턴."""
+    return crud.resolve_battle_ally_turn(db, session_id, data)
+
+
+@app.post("/battles/{session_id}/enemy-turn", response_model=BattleSessionRead)
+def submit_battle_enemy_turn(
+    session_id: int,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """3턴: 에너미 턴."""
+    return crud.resolve_battle_enemy_turn(db, session_id)
 
 
 @app.post("/battles/{session_id}/undo-round", response_model=BattleSessionRead)

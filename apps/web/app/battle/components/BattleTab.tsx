@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Shield, Swords, Trash2 } from "lucide-react";
+import { Ambulance, CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Shield, Swords, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,25 +30,32 @@ const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 const BATTLE_FORMULAS: { label: string; icon: React.ElementType; accent: string; formula: string }[] = [
   {
-    label: "공격",
+    label: "공격 / 기술 사용",
     icon: Swords,
     accent: "text-red-500",
     formula:
-      "에너미에게 주는 피해 = (공격력 × (1 + 공격력 증폭) + 기술 효율(고정)) × (1 + 피해 증폭) × (1 + 기술 등급 × 기술 효율(비례)) × 마나계수",
+      "에너미에게 주는 피해 = (공격력 × (1 + 공격력 증폭) + 기술 효율(고정)) × (1 + 피해 증폭) × (1 + 기술 등급 × 기술 효율(비례)). 두 행동의 피해 계산은 동일하며, 마나는 '기술 사용'일 때만 소모됨",
   },
   {
-    label: "수비",
+    label: "방어",
     icon: Shield,
     accent: "text-gold",
     formula:
-      "받는 피해 = max(0, 에너미 피해 × (1 − 피해 감소) − 방어력 × (1 + 방어력 증폭) × 방어 효율), 남은 피해는 보호막(보호막 + 시작 보호막)이 먼저 흡수",
+      "받는 피해 = max(0, 에너미 피해 × (1 − 피해 감소) − 방어력 × (1 + 방어력 증폭) × 방어 효율) × (1 − 피해 감소율(수비 포지션 50%, 그 외 30%)), 남은 피해는 보호막(보호막 + 시작 보호막)이 먼저 흡수. 수비 포지션은 본인 대신 다른 캐릭터가 맞도록 지정할 수 있음(기본값 본인)",
   },
   {
     label: "치유",
     icon: Heart,
     accent: "text-emerald-500",
     formula:
-      "치유량 = (치유 효율 + 기술 효율(고정)) × (1 + 치유 효율 증폭) × (1 + 기술 등급 × 기술 효율(비례)) × 마나계수, 지정 대상과 체력 낮은 아군에게 기술 대상 수만큼 적용(오버힐 대상은 최대 체력 초과 회복)",
+      "치유 포지션만 사용 가능. 치유량 = 25% × 대상 최대 체력 × (100 + 치유 효율(%)) / 100, 자신 또는 다른 캐릭터 한 명에게만 적용(오버힐 대상은 최대 체력 초과 회복)",
+  },
+  {
+    label: "구조",
+    icon: Ambulance,
+    accent: "text-fuchsia-500",
+    formula:
+      "기절한 아군이 1명 이상일 때만 사용 가능. 지정한 기절 캐릭터를 최대 체력의 10%로 부활시킴(포지션 제한 없음)",
   },
 ];
 
@@ -279,7 +286,7 @@ export default function BattleTab() {
           ))}
         </div>
         <p className="text-xs text-muted">
-          마나계수는 마나가 기술 비용 이상이면 1(기술 비용만큼 마나 소모), 미만이면 0.5입니다. 매 라운드 시작 시
+          마나는 &ldquo;기술 사용&rdquo;일 때만 소모됩니다(그 외 행동은 마나를 쓰지 않음). 마나가 기술 비용 이상이면 그만큼 소모하고, 부족하면 소모하지 않습니다(위력에는 영향 없음). 매 라운드 시작 시
           체력 재생력(고정) + 최대 체력 × 체력 재생력(비례)만큼 회복하고 마나 재생력만큼 마나가 회복됩니다. 소환수가
           있으면 캐릭터의 공격은 소환수부터 소모하며, 초과 피해는 에너미에게 넘어가지 않습니다. 난입한 캐릭터는 난입한
           라운드에는 공격/치유 대상이 되지 않습니다.

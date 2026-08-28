@@ -1024,7 +1024,9 @@ export async function uploadEnemySummonImage(enemyId: number, skillIndex: number
 
 export type BattleMode = "practice" | "real";
 export type BattleStatus = "in_progress" | "victory" | "defeat" | "early_terminated";
-export type CharacterActionKind = "attack" | "skill" | "defend" | "heal" | "item" | "none" | "retreat";
+// 한 라운드는 3턴으로 나뉜다: "telegraph"(적의 행동 암시) → "ally"(아군 턴) → "enemy"(에너미 턴).
+export type BattlePhase = "telegraph" | "ally" | "enemy";
+export type CharacterActionKind = "attack" | "skill" | "defend" | "heal" | "rescue" | "item" | "none" | "retreat";
 export type EnemyActionKind = "attack" | "summon" | "none";
 
 export interface BattleEnemyState {
@@ -1060,11 +1062,20 @@ export interface BattleParticipant {
   mp: number; max_mp: number;
   hp_regen_true: number; hp_regen_fixed: number; mp_regen: number;
   downed: boolean; retreated: boolean; joined_round: number;
+  defending: boolean; protect_target: number | null;
 }
 
 export interface BattleLogRound {
   round: number;
+  phase?: BattlePhase;
   events: string[];
+}
+
+export interface BattlePendingEnemyAction {
+  enemy_id: number;
+  kind: EnemyActionKind;
+  skill_index: number | null;
+  target_character_ids: number[];
 }
 
 export interface BattleSession {
@@ -1073,6 +1084,8 @@ export interface BattleSession {
   chapter: string | null;
   status: BattleStatus;
   round: number;
+  phase: BattlePhase;
+  pending_enemy_actions: BattlePendingEnemyAction[];
   enemies: BattleEnemyState[];
   summons: BattleSummonState[];
   participants: BattleParticipant[];
@@ -1103,6 +1116,7 @@ export interface BattleCharacterActionInput {
   kind: CharacterActionKind;
   target_enemy_id?: number | null;
   target_character_id?: number | null;
+  protect_target_character_id?: number | null;
   item_id?: number | null;
 }
 
@@ -1110,6 +1124,7 @@ export interface BattleEnemyActionInput {
   enemy_id: number;
   kind: EnemyActionKind;
   skill_index?: number | null;
+  target_character_ids?: number[];
 }
 
 export async function fetchBattles(params?: { mode?: BattleMode; status?: BattleStatus }): Promise<BattleSessionSummary[]> {
@@ -1136,15 +1151,33 @@ export async function createBattle(data: BattleStartRequest): Promise<BattleSess
   }, "전투 시작 실패");
 }
 
-export async function submitBattleActions(
+/** 1턴: 적의 행동 암시. */
+export async function submitBattleTelegraph(
   sessionId: number,
-  characterActions: BattleCharacterActionInput[],
   enemyActions: BattleEnemyActionInput[],
 ): Promise<BattleSession> {
-  return request<BattleSession>(`/battles/${sessionId}/actions`, {
+  return request<BattleSession>(`/battles/${sessionId}/telegraph`, {
     method: "POST",
-    body: JSON.stringify({ character_actions: characterActions, enemy_actions: enemyActions }),
-  }, "라운드 진행 실패");
+    body: JSON.stringify({ enemy_actions: enemyActions }),
+  }, "적의 행동 암시 진행 실패");
+}
+
+/** 2턴: 아군 턴. */
+export async function submitBattleAllyTurn(
+  sessionId: number,
+  characterActions: BattleCharacterActionInput[],
+): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/ally-turn`, {
+    method: "POST",
+    body: JSON.stringify({ character_actions: characterActions }),
+  }, "아군 턴 진행 실패");
+}
+
+/** 3턴: 에너미 턴. */
+export async function submitBattleEnemyTurn(sessionId: number): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/enemy-turn`, {
+    method: "POST",
+  }, "에너미 턴 진행 실패");
 }
 
 export async function terminateBattle(sessionId: number): Promise<BattleSession> {

@@ -1,3 +1,4 @@
+import math
 from datetime import date, datetime, timedelta, timezone
 
 from fastapi import HTTPException
@@ -16,12 +17,13 @@ from app.schemas import (
     AttendanceEntryRead,
     AttendanceRewardPayResult,
     AttendanceStreakEntry,
-    BattleActionRequest,
+    BattleAllyTurnRequest,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
     BattleSessionRead,
     BattleSessionSummary,
     BattleStartRequest,
+    BattleTelegraphRequest,
     BulkPurchaseRequest,
     ChapterCreate,
     ChapterRead,
@@ -2216,7 +2218,8 @@ def _snapshot_combatant(character: Character) -> dict:
         "def": character.def_, "def_p": character.def_p, "def_eff": character.def_eff, "dmg_r": character.dmg_r,
         "heal_eff": character.heal_eff, "skill_target": max(1, character.skill_target or 1),
         "over_heal": bool(character.over_heal),
-        "attn": character.attn, "presence": character.presence,
+        # 주목도(attn)는 캐릭터 고정 스탯이 아니라 전투 중 행동으로 쌓이는 값이다. 전투/난입 시작 시 0에서 출발한다.
+        "attn": 0, "presence": character.presence, "lv": character.lv,
         "hp": min(character.hp, max_hp) if character.hp > 0 else max_hp,
         "max_hp": max_hp,
         "shield": (character.sh or 0) + (character.start_sh or 0),
@@ -2226,7 +2229,101 @@ def _snapshot_combatant(character: Character) -> dict:
         # 0은 "원래 파티원"을 뜻하는 센티널이다(라운드 번호는 1부터 시작하므로 절대 일치하지 않음).
         # 난입 캐릭터만 join_battle에서 실제 합류 라운드 번호로 덮어써 그 라운드에 한해 피격/치유 대상에서 제외된다.
         "downed": False, "retreated": False, "joined_round": 0,
+        # 이번 라운드에 "방어"를 선택했는지와, 그렇다면 누구 대신 맞아줄지(기본값 본인). 매 아군 턴 시작 시 초기화된다.
+        "defending": False, "protect_target": None,
     }
+
+
+# ── 라운드 처리 공용 헬퍼 ──
+def _combatant_active(p: dict) -> bool:
+    return not p["downed"] and not p["retreated"]
+
+
+def _just_joined(p: dict, round_no: int) -> bool:
+    # 이번 라운드에 난입한 캐릭터는 그 라운드에 행동할 수 없고, 공격/치유 대상도 될 수 없다.
+    return p["joined_round"] == round_no
+
+
+def _combatant_targetable(p: dict, round_no: int) -> bool:
+    return _combatant_active(p) and not _just_joined(p, round_no)
+
+
+def _healable(p: dict, round_no: int) -> bool:
+    # 치유 대상은 기절한 캐릭터도 포함한다(퇴각/난입 캐릭터만 제외).
+    return not p["retreated"] and not _just_joined(p, round_no)
+
+
+def _enemy_targetable(enemy: dict, round_no: int) -> bool:
+    # 이번 라운드에 참가한 에너미는 다음 라운드부터 행동 및 피격 대상이 된다.
+    return enemy["hp"] > 0 and enemy.get("joined_round", 0) != round_no
+
+
+def _floor_amount(value: float) -> int:
+    """최종 데미지/치유량 등은 소수점을 반올림하지 않고 내림(버림) 처리한다."""
+    return math.floor(value) if value >= 0 else -math.ceil(-value)
+
+
+def _eff_def(p: dict) -> int:
+    return _floor_amount(p["def"] * (1 + p["def_p"]) * p["def_eff"])
+
+
+def _skill_coef(p: dict) -> float:
+    return 1 + p["skill_lv"] * p["skill_eff_fixed"]
+
+
+def _defend_reduction_rate(p: dict) -> float:
+    # 방어 시 피해 감소율: 수비 포지션은 50%, 그 외 포지션은 30%.
+    return 0.5 if p["faction"] == "수비" else 0.3
+
+
+def _assign_summon_log_numbers(summons: list[dict]) -> None:
+    # 이전에 생성된 전투 데이터에도 같은 이름의 소환수가 여럿이면 안정적인 번호를 부여한다.
+    summons_by_name: dict[str, list[dict]] = {}
+    for summon in summons:
+        summons_by_name.setdefault(summon["name"], []).append(summon)
+    for same_name_summons in summons_by_name.values():
+        if len(same_name_summons) <= 1:
+            continue
+        used_numbers = {
+            summon["log_number"]
+            for summon in same_name_summons
+            if isinstance(summon.get("log_number"), int)
+        }
+        next_number = 1
+        for summon in sorted(same_name_summons, key=lambda value: value["id"]):
+            if isinstance(summon.get("log_number"), int):
+                continue
+            while next_number in used_numbers:
+                next_number += 1
+            summon["log_number"] = next_number
+            used_numbers.add(next_number)
+
+
+def _summon_log_name(summon: dict) -> str:
+    number = summon.get("log_number")
+    return f"{summon['name']}{number}" if isinstance(number, int) else summon["name"]
+
+
+def _apply_hit(recipient: dict, dmg: int) -> tuple[int, int]:
+    """보호막 흡수 후 HP를 깎는다. (실제 감소된 dmg, 흡수량)을 반환한다."""
+    absorbed = min(recipient["shield"], dmg)
+    recipient["shield"] -= absorbed
+    dmg -= absorbed
+    recipient["hp"] = max(0, recipient["hp"] - dmg)
+    return dmg, absorbed
+
+
+def _build_protect_map(participants: list[dict]) -> dict[int, int]:
+    """{보호받는 캐릭터ID: 대신 맞아줄 방어자ID}. 자기 자신을 보호 대상으로 고른 경우는 제외한다."""
+    protect_map: dict[int, int] = {}
+    for p in participants:
+        if not p.get("defending"):
+            continue
+        target_id = p.get("protect_target")
+        if target_id is None or target_id == p["character_id"]:
+            continue
+        protect_map.setdefault(target_id, p["character_id"])
+    return protect_map
 
 
 def _snapshot_enemy(enemy: Enemy, party: list[Character]) -> dict:
@@ -2278,6 +2375,8 @@ def _to_battle_session_read(session: BattleSession) -> BattleSessionRead:
         chapter=session.chapter,
         status=session.status,
         round=session.round,
+        phase=session.phase,
+        pending_enemy_actions=session.pending_enemy_actions,
         enemies=session.enemies,
         summons=session.summons,
         participants=session.participants,
@@ -2451,18 +2550,20 @@ def _finalize_real_battle(db: Session, participants: list[dict]) -> None:
         character.mp = character.mp_max
 
 
-def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest) -> BattleSessionRead:
+def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraphRequest) -> BattleSessionRead:
+    """1턴: 적의 행동 암시. 에너미의 공격 패턴과 (지정 공격이면) 공격 대상을 확정해 둔다."""
     session = db.get(BattleSession, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status != "in_progress":
         raise HTTPException(status_code=400, detail="이미 종료된 전투입니다.")
+    if session.phase != "telegraph":
+        raise HTTPException(status_code=400, detail="지금은 적의 행동 암시 턴이 아닙니다.")
 
     round_no = session.round
     participants = [dict(p) for p in session.participants]
     enemies = [dict(e) for e in session.enemies]
     summons = [dict(s) for s in session.summons]
-    events: list[str] = []
 
     # 실전은 "이전 라운드 다시 진행하기"를 위해 이 라운드의 행동이 반영되기 전 상태를 남겨둔다.
     if session.mode == "real":
@@ -2475,55 +2576,97 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
 
     by_char_id = {p["character_id"]: p for p in participants}
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
+
+    events: list[str] = []
+    for enemy in enemies:
+        if enemy.get("joined_round", 0) == round_no:
+            particle = _korean_subject_particle(enemy["name"])
+            events.append(f"{enemy['name']}{particle} 전투에 참가했습니다!")
+
+    events.append("📣 적의 행동 암시!")
+    pending_actions: list[dict] = []
+    for action in data.enemy_actions:
+        enemy = enemies_by_id.get(action.enemy_id)
+        if not enemy or not _enemy_targetable(enemy, round_no):
+            continue
+
+        skill = None
+        if action.skill_index is not None and 0 <= action.skill_index < len(enemy["skills"]):
+            skill = enemy["skills"][action.skill_index]
+
+        if action.kind == "attack" and skill and skill["skill_type"] != "소환":
+            is_aoe = skill["skill_type"].startswith("광역")
+            if is_aoe:
+                target_ids = [p["character_id"] for p in participants if _combatant_targetable(p, round_no)]
+                target_label = "전원"
+            else:
+                target_count = max(1, skill["target_count"])
+                chosen = [
+                    cid for cid in action.target_character_ids
+                    if cid in by_char_id and _combatant_targetable(by_char_id[cid], round_no)
+                ][:target_count]
+                if not chosen:
+                    living_now = sorted(
+                        (p for p in participants if _combatant_targetable(p, round_no)),
+                        key=lambda t: -(t["attn"] + t["presence"]),
+                    )
+                    chosen = [p["character_id"] for p in living_now[:target_count]]
+                target_ids = chosen
+                target_label = ", ".join(by_char_id[cid]["name"] for cid in target_ids) if target_ids else "대상 없음"
+            base = _floor_amount(enemy["attack"] * skill["damage_percent"] / 100)
+            events.append(f"🔮 {enemy['name']} - {skill['name']}")
+            events.append(f"이번 차례 공격 대상 : {target_label} / 예상 피해 : {base}")
+            pending_actions.append({
+                "enemy_id": enemy["enemy_id"], "kind": "attack",
+                "skill_index": action.skill_index, "target_character_ids": target_ids,
+            })
+        elif action.kind == "summon" and skill and skill["skill_type"] == "소환":
+            summon_name = skill.get("summon_name") or f"{enemy['name']}의 소환수"
+            events.append(
+                f"🔮 {enemy['name']} - {skill['name']} (소환 예정: {summon_name} x{skill.get('summon_count') or 1})"
+            )
+            pending_actions.append({
+                "enemy_id": enemy["enemy_id"], "kind": "summon",
+                "skill_index": action.skill_index, "target_character_ids": [],
+            })
+        else:
+            events.append(f"🔮 {enemy['name']} - 무반응 예정")
+            pending_actions.append({
+                "enemy_id": enemy["enemy_id"], "kind": "none",
+                "skill_index": None, "target_character_ids": [],
+            })
+
+    session.pending_enemy_actions = pending_actions
+    session.phase = "ally"
+    session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
+
+    db.commit()
+    db.refresh(session)
+    return _to_battle_session_read(session)
+
+
+def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnRequest) -> BattleSessionRead:
+    """2턴: 아군 턴. 방어/공격/기술/아이템/구조/치유/퇴각을 처리한다."""
+    session = db.get(BattleSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="이미 종료된 전투입니다.")
+    if session.phase != "ally":
+        raise HTTPException(status_code=400, detail="지금은 아군 턴이 아닙니다.")
+
+    round_no = session.round
+    participants = [dict(p) for p in session.participants]
+    enemies = [dict(e) for e in session.enemies]
+    summons = [dict(s) for s in session.summons]
+    events: list[str] = ["🗡️ 조사단의 행동!"]
+
+    by_char_id = {p["character_id"]: p for p in participants}
+    enemies_by_id = {e["enemy_id"]: e for e in enemies}
     actions_by_char = {a.character_id: a for a in data.character_actions}
 
-    def active(p: dict) -> bool:
-        return not p["downed"] and not p["retreated"]
-
-    def just_joined(p: dict) -> bool:
-        # 이번 라운드에 난입한 캐릭터는 그 라운드에 행동할 수 없고, 공격/치유 대상도 될 수 없다.
-        return p["joined_round"] == round_no
-
-    def enemy_targetable(enemy: dict) -> bool:
-        # 이번 라운드에 참가한 에너미는 다음 라운드부터 행동 및 피격 대상이 된다.
-        return enemy["hp"] > 0 and enemy.get("joined_round", 0) != round_no
-
-    def targetable(p: dict) -> bool:
-        return active(p) and not just_joined(p)
-
-    def eff_def(p: dict) -> int:
-        return round(p["def"] * (1 + p["def_p"]) * p["def_eff"])
-
-    def skill_coef(p: dict) -> float:
-        return 1 + p["skill_lv"] * p["skill_eff_fixed"]
-
-    # 이전에 생성된 전투 데이터에도 같은 이름의 소환수가 여럿이면 안정적인 번호를 부여한다.
-    summons_by_name: dict[str, list[dict]] = {}
-    for summon in summons:
-        summons_by_name.setdefault(summon["name"], []).append(summon)
-    for same_name_summons in summons_by_name.values():
-        if len(same_name_summons) <= 1:
-            continue
-        used_numbers = {
-            summon["log_number"]
-            for summon in same_name_summons
-            if isinstance(summon.get("log_number"), int)
-        }
-        next_number = 1
-        for summon in sorted(same_name_summons, key=lambda value: value["id"]):
-            if isinstance(summon.get("log_number"), int):
-                continue
-            while next_number in used_numbers:
-                next_number += 1
-            summon["log_number"] = next_number
-            used_numbers.add(next_number)
-
-    def summon_log_name(summon: dict) -> str:
-        number = summon.get("log_number")
-        return f"{summon['name']}{number}" if isinstance(number, int) else summon["name"]
-
-    living = [p for p in participants if active(p)]
-    actable = [p for p in living if not just_joined(p)]
+    living = [p for p in participants if _combatant_active(p)]
+    actable = [p for p in living if not _just_joined(p, round_no)]
 
     # 0) 라운드 시작 재생 (난입 캐릭터도 생존해 있으므로 재생은 받는다)
     for p in living:
@@ -2536,15 +2679,29 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
         if hp_heal > 0 or mp_heal > 0:
             events.append(f"♻️ {p['name']} 재생 (+{hp_heal} HP / +{mp_heal} MP)")
 
-    # 1) 수비 태세 표시 (난입 캐릭터는 이번 라운드 행동 불가)
-    defending: set[int] = set()
+    # 1) 방어 태세 표시 (수비 포지션 한정으로 다른 캐릭터를 지정해 대신 맞아줄 수 있음. 기본값은 본인)
+    for p in participants:
+        p["defending"] = False
+        p["protect_target"] = None
     for p in actable:
         action = actions_by_char.get(p["character_id"])
-        if action and action.kind == "defend":
-            defending.add(p["character_id"])
-            events.append(f"🛡️ {p['name']} 수비 태세 (방어력 {eff_def(p)} 경감)")
+        if not (action and action.kind == "defend"):
+            continue
+        protect_target_id = action.protect_target_character_id or p["character_id"]
+        protect_target = by_char_id.get(protect_target_id)
+        can_redirect = p["faction"] == "수비" and protect_target is not None and _combatant_targetable(protect_target, round_no)
+        if not can_redirect:
+            protect_target_id = p["character_id"]
+        p["defending"] = True
+        p["protect_target"] = protect_target_id
+        p["attn"] += round((p["lv"] * 20) * (1 + p["presence"]))
+        rate_pct = int(_defend_reduction_rate(p) * 100)
+        if protect_target_id == p["character_id"]:
+            events.append(f"🛡️ {p['name']} 방어 태세 (피해 {rate_pct}% 감소)")
+        else:
+            events.append(f"🛡️ {p['name']} 방어 태세 → {by_char_id[protect_target_id]['name']} 보호 (피해 {rate_pct}% 감소)")
 
-    # 2) 공격/기술 사용, 아이템, 퇴각 (난입 캐릭터는 이번 라운드 행동 불가)
+    # 2) 공격/기술 사용, 아이템, 구조, 퇴각 (난입 캐릭터는 이번 라운드 행동 불가)
     for p in actable:
         action = actions_by_char.get(p["character_id"])
         if not action:
@@ -2552,23 +2709,24 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
 
         if action.kind in ("attack", "skill"):
             target_enemy = enemies_by_id.get(action.target_enemy_id) if action.target_enemy_id else None
-            if target_enemy is None or not enemy_targetable(target_enemy):
-                target_enemy = next((e for e in enemies if enemy_targetable(e)), None)
+            if target_enemy is None or not _enemy_targetable(target_enemy, round_no):
+                target_enemy = next((e for e in enemies if _enemy_targetable(e, round_no)), None)
             if target_enemy is None:
                 continue
 
-            has_mana = p["mp"] >= p["skill_cost"]
-            mana_coef = 1 if has_mana else 0.5
-            if has_mana:
+            # 마나는 "기술 사용"일 때만 소비된다. 그냥 "공격"은 마나를 쓰지 않는다.
+            if action.kind == "skill" and p["mp"] >= p["skill_cost"]:
                 p["mp"] -= p["skill_cost"]
-            raw = (p["atk"] * (1 + p["atk_p"]) + p["skill_eff_true"]) * (1 + p["dmg_p"]) * skill_coef(p) * mana_coef
-            dmg = max(0, round(raw))
+            raw = (p["atk"] * (1 + p["atk_p"]) + p["skill_eff_true"]) * (1 + p["dmg_p"]) * _skill_coef(p)
+            dmg = max(0, _floor_amount(raw))
+            attn_mult = 4 if p["faction"] == "수비" else 1
+            p["attn"] += round(dmg * attn_mult * (1 + p["presence"]))
 
             target_summon = next((s for s in summons if s["hp"] > 0), None)
             if target_summon is not None:
                 overkill = dmg > target_summon["hp"]
                 target_summon["hp"] = max(0, target_summon["hp"] - dmg)
-                target_summon_name = summon_log_name(target_summon)
+                target_summon_name = _summon_log_name(target_summon)
                 events.append(
                     f"⚔️ {p['name']} 공격: 소환수 {target_summon_name}에게 {dmg} 피해 "
                     f"[{target_summon['hp']}/{target_summon['max_hp']}]"
@@ -2583,7 +2741,7 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
             overkill = dmg > target_enemy["hp"]
             target_enemy["hp"] = max(0, target_enemy["hp"] - dmg)
             events.append(
-                f"⚔️ {p['name']} 공격: {dealt} 피해{'' if has_mana else '(마나 부족·위력↓)'} · "
+                f"⚔️ {p['name']} 공격: {dealt} 피해 · "
                 f"{target_enemy['name']} [{target_enemy['hp']}/{target_enemy['max_hp']}]"
                 f"{' (오버킬)' if overkill else ''}"
             )
@@ -2604,13 +2762,22 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
             _apply_item_effects_to_snapshot(p, item.effects or [], sign=1)
             events.append(f"🎒 {p['name']} {item.name} 사용")
 
+        elif action.kind == "rescue":
+            target = by_char_id.get(action.target_character_id) if action.target_character_id else None
+            if target is None or not target["downed"]:
+                events.append(f"⚠️ {p['name']} 구조 대상이 없습니다.")
+                continue
+            target["hp"] = max(1, round(target["max_hp"] * 0.1))
+            target["downed"] = False
+            events.append(f"🚑 {p['name']} → {target['name']} 구조! {target['name']} 부활 [HP {target['hp']}/{target['max_hp']}]")
+
         elif action.kind == "retreat":
             p["retreated"] = True
             events.append(f"🏳️ {p['name']} 퇴각")
 
     victory = all(e["hp"] <= 0 for e in enemies)
 
-    # 3) 치유 (퇴각하지 않은 캐릭터만, 승리 확정 시 생략, 난입 캐릭터는 이번 라운드 행동 불가)
+    # 3) 치유 (치유 포지션만 가능. 자신 또는 다른 캐릭터 한 명. 퇴각하지 않은 캐릭터만, 승리 확정 시 생략)
     if not victory:
         for p in actable:
             if p["retreated"]:
@@ -2618,128 +2785,30 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
             action = actions_by_char.get(p["character_id"])
             if not action or action.kind != "heal":
                 continue
-
-            has_mana = p["mp"] >= p["skill_cost"]
-            mana_coef = 1 if has_mana else 0.5
-            if has_mana:
-                p["mp"] -= p["skill_cost"]
-            heal = max(0, round((p["heal_eff"] + p["skill_eff_true"]) * skill_coef(p) * mana_coef))
-
-            chosen = by_char_id.get(action.target_character_id) if action.target_character_id else None
-            targets: list[dict] = []
-            if chosen and targetable(chosen):
-                targets.append(chosen)
-            extras = sorted(
-                (t for t in participants if targetable(t) and t not in targets),
-                key=lambda t: (t["hp"] / t["max_hp"]) if t["max_hp"] else 0,
-            )
-            for t in extras:
-                if len(targets) >= max(1, p["skill_target"]):
-                    break
-                targets.append(t)
-
-            for t in targets:
-                before = t["hp"]
-                next_hp = t["hp"] + heal
-                if not t["over_heal"]:
-                    next_hp = min(next_hp, t["max_hp"])
-                t["hp"] = next_hp
-                events.append(f"💚 {p['name']} → {t['name']} {t['hp'] - before} 치유 · {t['name']} [{before}→{t['hp']}/{t['max_hp']}]")
-
-        # 4) 에너미 행동
-        # 라운드 시작부터 살아 있던 소환수만 이번 라운드에 공격한다.
-        attacking_summons = [s for s in summons if s["hp"] > 0]
-        next_summon_id = max([s["id"] for s in summons], default=0)
-        for enemy_action in data.enemy_actions:
-            enemy = enemies_by_id.get(enemy_action.enemy_id)
-            if not enemy or enemy["hp"] <= 0 or enemy.get("joined_round", 0) == round_no:
+            if p["faction"] != "치유":
+                events.append(f"⚠️ {p['name']}: 치유 포지션만 치유를 사용할 수 있습니다.")
                 continue
 
-            skill = None
-            if enemy_action.skill_index is not None and 0 <= enemy_action.skill_index < len(enemy["skills"]):
-                skill = enemy["skills"][enemy_action.skill_index]
+            chosen = by_char_id.get(action.target_character_id) if action.target_character_id else None
+            target = chosen if chosen and _healable(chosen, round_no) else p
+            heal = max(0, _floor_amount(0.25 * target["max_hp"] * (100 + p["heal_eff"]) / 100))
 
-            if enemy_action.kind == "attack" and skill and skill["skill_type"] != "소환":
-                living_now = [p for p in participants if targetable(p)]
-                if skill["skill_type"].startswith("광역"):
-                    targets = living_now
-                else:
-                    targets = sorted(living_now, key=lambda t: -(t["attn"] + t["presence"]))[: max(1, skill["target_count"])]
-                base = round(enemy["attack"] * skill["damage_percent"] / 100)
-                newly_downed_names: list[str] = []
-                for t in targets:
-                    dmg = round(base * (1 - t["dmg_r"]))
-                    if t["character_id"] in defending:
-                        dmg = max(0, dmg - eff_def(t))
-                    absorbed = min(t["shield"], dmg)
-                    t["shield"] -= absorbed
-                    dmg -= absorbed
-                    t["hp"] = max(0, t["hp"] - dmg)
-                    events.append(
-                        f"🔥 {enemy['name']}의 {skill['name']} → {t['name']} {dmg} 피해"
-                        f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · {t['name']} [{t['hp']}/{t['max_hp']}]"
-                    )
-                    if t["hp"] == 0 and not t["downed"]:
-                        t["downed"] = True
-                        newly_downed_names.append(t["name"])
-                if newly_downed_names:
-                    events.append(f"💫 {', '.join(sorted(newly_downed_names))} 기절")
-            elif enemy_action.kind == "summon" and skill and skill["skill_type"] == "소환":
-                count = skill.get("summon_count") or 1
-                summon_name = skill.get("summon_name") or f"{enemy['name']}의 소환수"
-                same_name_summons = [s for s in summons if s["name"] == summon_name]
-                if same_name_summons and any(not isinstance(s.get("log_number"), int) for s in same_name_summons):
-                    for number, existing_summon in enumerate(
-                        sorted(same_name_summons, key=lambda value: value["id"]),
-                        start=1,
-                    ):
-                        existing_summon["log_number"] = number
-                next_log_number = max(
-                    (s.get("log_number", 0) for s in same_name_summons),
-                    default=0,
-                )
-                for _ in range(count):
-                    next_summon_id += 1
-                    next_log_number += 1
-                    summons.append({
-                        "id": next_summon_id,
-                        "name": summon_name,
-                        "hp": skill.get("summon_hp") or 1,
-                        "max_hp": skill.get("summon_hp") or 1,
-                        "attack": skill.get("summon_attack") or 0,
-                        "log_number": next_log_number if same_name_summons or count > 1 else None,
-                    })
-                events.append(f"👹 {enemy['name']} 소환: {skill.get('summon_name')} x{count}")
-            else:
-                events.append(f"💤 {enemy['name']} 무반응")
-
-        # 5) 소환수 행동 (단일 대상 자동 공격)
-        for summon in attacking_summons:
-            targets = sorted(
-                (p for p in participants if targetable(p)),
-                key=lambda p: -(p["attn"] + p["presence"]),
-            )
-            if not targets:
-                break
-            target = targets[0]
-            dmg = round(summon["attack"] * (1 - target["dmg_r"]))
-            if target["character_id"] in defending:
-                dmg = max(0, dmg - eff_def(target))
-            absorbed = min(target["shield"], dmg)
-            target["shield"] -= absorbed
-            dmg -= absorbed
-            target["hp"] = max(0, target["hp"] - dmg)
+            before = target["hp"]
+            next_hp = target["hp"] + heal
+            if not target["over_heal"]:
+                next_hp = min(next_hp, target["max_hp"])
+            target["hp"] = next_hp
+            healed = target["hp"] - before
+            p["attn"] += round(healed * 2 * (1 + p["presence"]))
+            revived = target["downed"] and target["hp"] > 0
+            if revived:
+                target["downed"] = False
             events.append(
-                f"👹 소환수 {summon_log_name(summon)} 공격 → {target['name']} {dmg} 피해"
-                f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · "
-                f"{target['name']} [{target['hp']}/{target['max_hp']}]"
+                f"💚 {p['name']} → {target['name']} {healed} 치유{' (부활)' if revived else ''} · "
+                f"{target['name']} [{before}→{target['hp']}/{target['max_hp']}]"
             )
-            if target["hp"] == 0 and not target["downed"]:
-                target["downed"] = True
-                events.append(f"💫 {target['name']} 기절")
 
-    no_active_left = not any(active(p) for p in participants)
-    victory = all(e["hp"] <= 0 for e in enemies)
+    no_active_left = not any(_combatant_active(p) for p in participants)
 
     if victory:
         session.status = "victory"
@@ -2748,17 +2817,164 @@ def resolve_battle_round(db: Session, session_id: int, data: BattleActionRequest
         session.status = "defeat"
         events.append("💀 전투 패배")
     else:
-        session.round = round_no + 1
-
-    for enemy in enemies:
-        if enemy.get("joined_round", 0) == round_no:
-            particle = _korean_subject_particle(enemy["name"])
-            events.append(f"{enemy['name']}{particle} 전투에 참가했습니다!")
+        session.phase = "enemy"
 
     session.participants = participants
     session.enemies = enemies
+    session.summons = summons
+    session.log = list(session.log) + [{"round": round_no, "phase": "ally", "events": events}]
+
+    if session.status != "in_progress" and session.mode == "real":
+        _finalize_real_battle(db, participants)
+
+    db.commit()
+    db.refresh(session)
+    return _to_battle_session_read(session)
+
+
+def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead:
+    """3턴: 에너미 턴. 1턴에서 암시한 행동과 소환수의 자동 공격을 처리하고 라운드를 마무리한다."""
+    session = db.get(BattleSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="이미 종료된 전투입니다.")
+    if session.phase != "enemy":
+        raise HTTPException(status_code=400, detail="지금은 에너미 턴이 아닙니다.")
+
+    round_no = session.round
+    participants = [dict(p) for p in session.participants]
+    enemies = [dict(e) for e in session.enemies]
+    summons = [dict(s) for s in session.summons]
+    events: list[str] = ["👹 에너미의 행동!"]
+
+    by_char_id = {p["character_id"]: p for p in participants}
+    enemies_by_id = {e["enemy_id"]: e for e in enemies}
+    protect_map = _build_protect_map(participants)
+
+    def hit(target: dict, base: int, skill_damage_percent_applied: bool = True) -> tuple[dict, int, int, bool]:
+        """방어 지정 대상이 있으면 방어자가 대신 맞는다. (실제 피격자, 피해량, 흡수량, 대신맞음여부)를 반환."""
+        protector_id = protect_map.get(target["character_id"])
+        recipient = target
+        redirected = False
+        if protector_id is not None and protector_id != target["character_id"]:
+            protector = by_char_id.get(protector_id)
+            if protector is not None and _combatant_active(protector):
+                recipient = protector
+                redirected = True
+        dmg = _floor_amount(base * (1 - recipient["dmg_r"]))
+        if recipient["defending"]:
+            dmg = _floor_amount(max(0, dmg - _eff_def(recipient)) * (1 - _defend_reduction_rate(recipient)))
+        dmg, absorbed = _apply_hit(recipient, dmg)
+        return recipient, dmg, absorbed, redirected
+
+    # 라운드 시작부터 살아 있던 소환수만 이번 라운드에 공격한다.
+    attacking_summons = [s for s in summons if s["hp"] > 0]
+    next_summon_id = max([s["id"] for s in summons], default=0)
+
+    for enemy_action in session.pending_enemy_actions:
+        enemy = enemies_by_id.get(enemy_action.get("enemy_id"))
+        if not enemy or enemy["hp"] <= 0:
+            continue
+
+        skill_index = enemy_action.get("skill_index")
+        skill = None
+        if skill_index is not None and 0 <= skill_index < len(enemy["skills"]):
+            skill = enemy["skills"][skill_index]
+
+        if enemy_action.get("kind") == "attack" and skill and skill["skill_type"] != "소환":
+            is_aoe = skill["skill_type"].startswith("광역")
+            if is_aoe:
+                targets = [p for p in participants if _combatant_targetable(p, round_no)]
+            else:
+                target_ids = enemy_action.get("target_character_ids") or []
+                targets = [
+                    by_char_id[cid] for cid in target_ids
+                    if cid in by_char_id and _combatant_targetable(by_char_id[cid], round_no)
+                ]
+                if not targets:
+                    # 암시 이후 대상이 전부 기절/퇴각했다면 지금 상태 기준으로 다시 고른다.
+                    living_now = sorted(
+                        (p for p in participants if _combatant_targetable(p, round_no)),
+                        key=lambda t: -(t["attn"] + t["presence"]),
+                    )
+                    targets = living_now[: max(1, skill["target_count"])]
+            base = _floor_amount(enemy["attack"] * skill["damage_percent"] / 100)
+            newly_downed_names: list[str] = []
+            for t in targets:
+                recipient, dmg, absorbed, redirected = hit(t, base)
+                redirect_note = f" (→ {recipient['name']}이(가) 대신 방어)" if redirected else ""
+                events.append(
+                    f"🔥 {enemy['name']}의 {skill['name']} → {t['name']}{redirect_note} {dmg} 피해"
+                    f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · {recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
+                )
+                if recipient["hp"] == 0 and not recipient["downed"]:
+                    recipient["downed"] = True
+                    newly_downed_names.append(recipient["name"])
+            if newly_downed_names:
+                events.append(f"💫 {', '.join(sorted(newly_downed_names))} 기절")
+        elif enemy_action.get("kind") == "summon" and skill and skill["skill_type"] == "소환":
+            count = skill.get("summon_count") or 1
+            summon_name = skill.get("summon_name") or f"{enemy['name']}의 소환수"
+            same_name_summons = [s for s in summons if s["name"] == summon_name]
+            if same_name_summons and any(not isinstance(s.get("log_number"), int) for s in same_name_summons):
+                for number, existing_summon in enumerate(
+                    sorted(same_name_summons, key=lambda value: value["id"]),
+                    start=1,
+                ):
+                    existing_summon["log_number"] = number
+            next_log_number = max(
+                (s.get("log_number", 0) for s in same_name_summons),
+                default=0,
+            )
+            for _ in range(count):
+                next_summon_id += 1
+                next_log_number += 1
+                summons.append({
+                    "id": next_summon_id,
+                    "name": summon_name,
+                    "hp": skill.get("summon_hp") or 1,
+                    "max_hp": skill.get("summon_hp") or 1,
+                    "attack": skill.get("summon_attack") or 0,
+                    "log_number": next_log_number if same_name_summons or count > 1 else None,
+                })
+            events.append(f"👹 {enemy['name']} 소환: {skill.get('summon_name')} x{count}")
+        else:
+            events.append(f"💤 {enemy['name']} 무반응")
+
+    # 소환수 행동 (단일 대상 자동 공격)
+    for summon in attacking_summons:
+        targets = sorted(
+            (p for p in participants if _combatant_targetable(p, round_no)),
+            key=lambda p: -(p["attn"] + p["presence"]),
+        )
+        if not targets:
+            break
+        recipient, dmg, absorbed, redirected = hit(targets[0], summon["attack"])
+        redirect_note = f" (→ {recipient['name']}이(가) 대신 방어)" if redirected else ""
+        events.append(
+            f"👹 소환수 {_summon_log_name(summon)} 공격 → {targets[0]['name']}{redirect_note} {dmg} 피해"
+            f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · "
+            f"{recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
+        )
+        if recipient["hp"] == 0 and not recipient["downed"]:
+            recipient["downed"] = True
+            events.append(f"💫 {recipient['name']} 기절")
+
+    no_active_left = not any(_combatant_active(p) for p in participants)
+
+    if no_active_left:
+        session.status = "defeat"
+        events.append("💀 전투 패배")
+    else:
+        session.round = round_no + 1
+        session.phase = "telegraph"
+
+    session.pending_enemy_actions = []
+    session.participants = participants
+    session.enemies = enemies
     session.summons = [s for s in summons if s["hp"] > 0]
-    session.log = list(session.log) + [{"round": round_no, "events": events}]
+    session.log = list(session.log) + [{"round": round_no, "phase": "enemy", "events": events}]
 
     if session.status != "in_progress" and session.mode == "real":
         _finalize_real_battle(db, participants)
@@ -2788,6 +3004,8 @@ def undo_last_round(db: Session, session_id: int) -> BattleSessionRead:
     session.enemies = snapshot["enemies"]
     session.summons = snapshot["summons"]
     session.round = target_round
+    session.phase = "telegraph"
+    session.pending_enemy_actions = []
     session.log = [entry for entry in session.log if entry["round"] < target_round]
     session.round_snapshots = [s for s in snapshots if s["round"] < target_round]
 

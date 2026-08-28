@@ -34,11 +34,13 @@ function PriceText({ item }: { item: Item }) {
   );
 }
 
-function ItemImage({ url, className, fit = "cover" }: { url: string | null; className: string; fit?: "cover" | "contain" }) {
+// 아이템 이미지는 원본이 100×100 고정 크기라, 카드/툴팁 박스가 더 커도 확대하지 않고
+// 원본 해상도 그대로(scale-down) 가운데 보여준다. 억지로 늘리면 깨져 보이기 때문.
+function ItemImage({ url, className }: { url: string | null; className: string }) {
   if (url) {
     return (
       <span className={`${className} relative block overflow-hidden`}>
-        <Image src={url} alt="" fill sizes="240px" className={fit === "cover" ? "object-cover" : "object-contain"} />
+        <Image src={url} alt="" fill sizes="100px" className="object-scale-down" />
       </span>
     );
   }
@@ -53,7 +55,7 @@ function ItemTooltip({ item }: { item: Item }) {
   return (
     <div className="max-w-64 space-y-2 text-left">
       {/* 전체 이미지가 잘리지 않도록 object-contain으로 표시 */}
-      <ItemImage url={item.image_url} className="h-28 w-full rounded-lg bg-inset" fit="contain" />
+      <ItemImage url={item.image_url} className="h-28 w-full rounded-lg bg-inset" />
       <div className="flex items-center gap-2">
         <span className="font-semibold text-ivory">{item.name}</span>
         <Badge variant={item.item_type === "equipment" ? "secondary" : "outline"} className="text-[10px]">

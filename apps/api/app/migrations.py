@@ -243,6 +243,10 @@ def ensure_schema(engine: Engine) -> None:
         battle_columns = {col["name"] for col in inspector.get_columns("battle_sessions")}
         if "round_snapshots" not in battle_columns:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN round_snapshots JSON NOT NULL DEFAULT '[]'")
+        if "phase" not in battle_columns:
+            statements.append("ALTER TABLE battle_sessions ADD COLUMN phase VARCHAR NOT NULL DEFAULT 'telegraph'")
+        if "pending_enemy_actions" not in battle_columns:
+            statements.append("ALTER TABLE battle_sessions ADD COLUMN pending_enemy_actions JSON NOT NULL DEFAULT '[]'")
 
     if "attendance_missions" in table_names:
         statements.append("DROP TABLE attendance_missions")

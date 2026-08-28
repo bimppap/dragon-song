@@ -493,6 +493,11 @@ class BattleSession(Base):
         String, nullable=False, default="in_progress", server_default=text("'in_progress'")
     )  # "in_progress" | "victory" | "defeat" | "early_terminated"
     round: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    # 한 라운드는 3턴으로 나뉜다: "telegraph"(적의 행동 암시) → "ally"(아군 턴) → "enemy"(에너미 턴).
+    phase: Mapped[str] = mapped_column(String, nullable=False, default="telegraph", server_default=text("'telegraph'"))
+    # telegraph 턴에서 확정한 에너미 행동을 enemy 턴까지 들고 있는다.
+    # [{"enemy_id", "kind", "skill_index", "target_character_ids"}, ...]
+    pending_enemy_actions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     enemies: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     summons: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     participants: Mapped[list] = mapped_column(JSON, nullable=False, default=list)

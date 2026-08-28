@@ -670,8 +670,10 @@ class EnemyRead(BaseModel):
 
 BattleMode = Literal["practice", "real"]
 BattleStatus = Literal["in_progress", "victory", "defeat", "early_terminated"]
+# 한 라운드는 3턴으로 나뉜다: "telegraph"(적의 행동 암시) → "ally"(아군 턴) → "enemy"(에너미 턴).
+BattlePhase = Literal["telegraph", "ally", "enemy"]
 # "skill"(기술 사용)은 현재는 "attack"과 동일하게 처리되는 자리만 갖춘 행동이다.
-CharacterActionKind = Literal["attack", "skill", "defend", "heal", "item", "none", "retreat"]
+CharacterActionKind = Literal["attack", "skill", "defend", "heal", "rescue", "item", "none", "retreat"]
 EnemyActionKind = Literal["attack", "summon", "none"]
 
 
@@ -685,7 +687,8 @@ class CharacterActionInput(BaseModel):
     character_id: int
     kind: CharacterActionKind
     target_enemy_id: int | None = None
-    target_character_id: int | None = None  # 치유 지정 대상
+    target_character_id: int | None = None  # 치유/구조 지정 대상
+    protect_target_character_id: int | None = None  # 방어(수비 포지션 한정) 시 대신 맞아줄 대상. 기본값은 본인
     item_id: int | None = None
 
 
@@ -693,11 +696,16 @@ class EnemyActionInput(BaseModel):
     enemy_id: int
     kind: EnemyActionKind
     skill_index: int | None = None
+    # 지정 공격일 때 관리자가 직접 고르는 공격 대상(기술의 target_count 명). 광역/소환/무반응은 사용하지 않는다.
+    target_character_ids: list[int] = Field(default_factory=list)
 
 
-class BattleActionRequest(BaseModel):
-    character_actions: list[CharacterActionInput] = Field(default_factory=list)
+class BattleTelegraphRequest(BaseModel):
     enemy_actions: list[EnemyActionInput] = Field(default_factory=list)
+
+
+class BattleAllyTurnRequest(BaseModel):
+    character_actions: list[CharacterActionInput] = Field(default_factory=list)
 
 
 class BattleJoinRequest(BaseModel):
@@ -714,6 +722,8 @@ class BattleSessionRead(BaseModel):
     chapter: str | None
     status: BattleStatus
     round: int
+    phase: BattlePhase
+    pending_enemy_actions: list = Field(default_factory=list)
     enemies: list = Field(default_factory=list)
     summons: list = Field(default_factory=list)
     participants: list = Field(default_factory=list)
