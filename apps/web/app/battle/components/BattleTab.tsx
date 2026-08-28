@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Plus, Shield, Sword, Swords, Trash2 } from "lucide-react";
+import { CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Shield, Swords, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -89,24 +89,23 @@ function getCharacterNameFontSize(name: string): number {
   return Math.min(14, 132 / Math.max(1, Array.from(name).length));
 }
 
-function CharacterFactionIcon({ faction }: { faction: Character["faction"] }) {
-  const config = faction === "공격"
-    ? { icon: Sword, label: "공격", className: "text-red-500" }
-    : faction === "수비"
-      ? { icon: Shield, label: "수비", className: "text-sky-500" }
-      : faction === "치유"
-        ? { icon: Plus, label: "치유", className: "text-emerald-500" }
-        : null;
+const FACTION_POSITION_IMAGE: Record<string, string> = {
+  공격: "/position/position_1.png",
+  수비: "/position/position_2.png",
+  치유: "/position/position_3.png",
+};
 
-  if (!config) return null;
-  const Icon = config.icon;
+function CharacterFactionIcon({ faction }: { faction: Character["faction"] }) {
+  if (!faction) return null;
+  const image = FACTION_POSITION_IMAGE[faction];
+  if (!image) return null;
   return (
     <span
-      title={config.label}
-      aria-label={config.label}
+      title={faction}
+      aria-label={faction}
       className="absolute left-2 top-2 z-10 flex items-center justify-center drop-shadow-md"
     >
-      <Icon size={26} strokeWidth={2.75} className={config.className} />
+      <Image src={image} alt={faction} width={26} height={26} />
     </span>
   );
 }
@@ -128,6 +127,7 @@ export default function BattleTab() {
   const [history, setHistory] = useState<BattleSessionSummary[]>([]);
   const [historyMode, setHistoryMode] = useState<BattleMode>("real");
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
@@ -142,19 +142,17 @@ export default function BattleTab() {
     async function load() {
       try {
         setLoading(true);
-        const [enemyList, activeChapterData, characterList, resumableList, historyList] = await Promise.all([
+        const [enemyList, activeChapterData, characterList, resumableList] = await Promise.all([
           fetchEnemies(),
           fetchActiveChapter(),
           fetchCharacters(),
           fetchBattles({ mode: "real", status: "in_progress" }),
-          fetchBattles({ mode: historyMode }),
         ]);
         if (cancelled) return;
         setEnemies(enemyList);
         setActiveChapter(activeChapterData);
         setCharacters(characterList);
         setResumable(resumableList);
-        setHistory(historyList);
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "전투 데이터 조회 실패", "error");
       } finally {
@@ -163,6 +161,27 @@ export default function BattleTab() {
     }
 
     load();
+    return () => { cancelled = true; };
+  }, [reloadKey, toast]);
+
+  // 실전/모의전 토글은 전투 기록만 다시 불러온다. 전체 loading을 같이 켜면 이 카드 위의
+  // 큰 선택 영역이 통째로 사라졌다 다시 그려지면서 스크롤 위치가 맨 위로 튀는 문제가 있었다.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadHistory() {
+      try {
+        setHistoryLoading(true);
+        const historyList = await fetchBattles({ mode: historyMode });
+        if (!cancelled) setHistory(historyList);
+      } catch (e) {
+        if (!cancelled) toast(e instanceof Error ? e.message : "전투 기록 조회 실패", "error");
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
+      }
+    }
+
+    loadHistory();
     return () => { cancelled = true; };
   }, [reloadKey, historyMode, toast]);
 
@@ -519,7 +538,9 @@ export default function BattleTab() {
               </div>
             </CardHeader>
             <CardContent>
-              {history.length === 0 ? (
+              {historyLoading ? (
+                <EmptyState>전투 기록을 불러오는 중입니다.</EmptyState>
+              ) : history.length === 0 ? (
                 <EmptyState>{historyMode === "real" ? "실전 전투 기록이 없습니다." : "모의전 기록이 없습니다."}</EmptyState>
               ) : (
                 <div className="flex flex-col divide-y divide-line">
