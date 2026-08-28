@@ -204,6 +204,8 @@ def ensure_schema(engine: Engine) -> None:
             )
         if "applied_effects" not in unlock_columns:
             statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN applied_effects JSON NOT NULL DEFAULT '[]'")
+        if "custom_image_url" not in unlock_columns:
+            statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN custom_image_url VARCHAR")
 
     # heal_eff_p(치유 효율 증폭) 제거: 컬럼을 삭제하고, 효과 JSON에 남은 항목도 걷어낸다. (최초 1회)
     if "heal_eff_p" in character_columns:

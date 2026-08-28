@@ -30,6 +30,7 @@ from app.schemas import (
     ChallengeProgressRead,
     ChallengeUpdate,
     CharacterAchievedChallengeRead,
+    CharacterAchievedMissionRead,
     CharacterCreate,
     CharacterDetailRead,
     CharacterFlagsUpdate,
@@ -497,6 +498,25 @@ def update_character_flags(db: Session, character_id: int, data: CharacterFlagsU
     return _to_character_read(character)
 
 
+def delete_character(db: Session, character_id: int) -> str | None:
+    character = _get_character_or_404(db, character_id)
+
+    image_url = character.image_url
+    # rewards.id를 참조하는 정산 요청을 먼저 지워야 보상 이력을 안전하게 지울 수 있다.
+    db.query(SettlementRequest).filter(SettlementRequest.character_id == character_id).delete()
+    db.query(Reward).filter(Reward.character_id == character_id).delete()
+    db.query(CharacterItemState).filter(CharacterItemState.character_id == character_id).delete()
+    db.query(CharacterSkillUnlock).filter(CharacterSkillUnlock.character_id == character_id).delete()
+    db.query(Purchase).filter(Purchase.character_id == character_id).delete()
+    db.query(ItemUsage).filter(ItemUsage.character_id == character_id).delete()
+    db.query(ChallengeProgress).filter(ChallengeProgress.character_id == character_id).delete()
+    db.query(MissionProgress).filter(MissionProgress.character_id == character_id).delete()
+    db.query(AttendanceEntry).filter(AttendanceEntry.character_id == character_id).delete()
+    db.delete(character)
+    db.commit()
+    return image_url
+
+
 def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
     character = _get_character_or_404(db, character_id)
 
@@ -544,6 +564,23 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         .all()
     )
 
+    achieved_mission_rows = (
+        db.query(
+            Mission.id.label("mission_id"),
+            Mission.chapter,
+            Mission.name,
+            Mission.description,
+            Mission.image_url,
+            Mission.reward,
+            Mission.reward_items,
+        )
+        .join(MissionProgress, Mission.id == MissionProgress.mission_id)
+        .filter(MissionProgress.character_id == character.id)
+        .filter(MissionProgress.achieved.is_(True))
+        .order_by(Mission.chapter.asc(), Mission.id.asc())
+        .all()
+    )
+
     def _remaining_owned(row) -> int:
         used_quantity = item_states_by_id[row.item_id].used_quantity if row.item_id in item_states_by_id else 0
         if items_by_id[row.item_id].item_type == "consumable":
@@ -578,6 +615,18 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
                 reward_items=row.reward_items or [],
             )
             for row in achieved_challenge_rows
+        ],
+        achieved_missions=[
+            CharacterAchievedMissionRead(
+                mission_id=row.mission_id,
+                chapter=row.chapter,
+                name=row.name,
+                description=row.description,
+                image_url=row.image_url,
+                reward=row.reward,
+                reward_items=row.reward_items or [],
+            )
+            for row in achieved_mission_rows
         ],
         item_history=get_item_history(db, character.id),
         reward_history=get_rewards_by_character(db, character.id),
@@ -707,6 +756,20 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
     db.commit()
     db.refresh(item)
     return item
+
+
+def delete_item(db: Session, item_id: int) -> str | None:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
+
+    image_url = item.image_url
+    db.query(CharacterItemState).filter(CharacterItemState.item_id == item_id).delete()
+    db.query(Purchase).filter(Purchase.item_id == item_id).delete()
+    db.query(ItemUsage).filter(ItemUsage.item_id == item_id).delete()
+    db.delete(item)
+    db.commit()
+    return image_url
 
 
 def _apply_item_effects(character: Character, effects: list[dict], sign: int) -> None:
@@ -896,6 +959,18 @@ def update_challenge(db: Session, challenge_id: int, data: ChallengeUpdate) -> C
     db.commit()
     db.refresh(challenge)
     return challenge
+
+
+def delete_challenge(db: Session, challenge_id: int) -> str | None:
+    challenge = db.get(Challenge, challenge_id)
+    if not challenge:
+        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
+
+    image_url = challenge.image_url
+    db.query(ChallengeProgress).filter(ChallengeProgress.challenge_id == challenge_id).delete()
+    db.delete(challenge)
+    db.commit()
+    return image_url
 
 
 def get_challenges(db: Session, chapter: str | None = None) -> list[Challenge]:
@@ -1789,6 +1864,19 @@ def update_mission(db: Session, mission_id: int, data: MissionUpdate) -> Mission
     return mission
 
 
+def delete_mission(db: Session, mission_id: int) -> str | None:
+    mission = db.get(Mission, mission_id)
+    if not mission:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+
+    image_url = mission.image_url
+    db.query(Item).filter(Item.restricted_mission_id == mission_id).update({"restricted_mission_id": None})
+    db.query(MissionProgress).filter(MissionProgress.mission_id == mission_id).delete()
+    db.delete(mission)
+    db.commit()
+    return image_url
+
+
 def get_missions(db: Session, chapter: str | None = None) -> list[Mission]:
     query = db.query(Mission)
     if chapter is not None:
@@ -1987,6 +2075,19 @@ def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> Chapter
     return _to_chapter_read(chapter)
 
 
+def delete_chapter(db: Session, chapter_id: int) -> tuple[str | None, str | None]:
+    """챕터를 삭제한다. 임무·도전과제·에너미·아이템은 챕터를 이름 문자열로만 참조하므로 FK 제약이 없다."""
+    chapter = db.get(Chapter, chapter_id)
+    if not chapter:
+        raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
+
+    image_url = chapter.image_url
+    music_url = chapter.music_url
+    db.delete(chapter)
+    db.commit()
+    return image_url, music_url
+
+
 def get_active_chapter(db: Session) -> ChapterRead | None:
     today = _today()
     chapter = _get_active_chapter_model(db, today=today)
@@ -2068,6 +2169,17 @@ def update_enemy(db: Session, enemy_id: int, data: EnemyCreate) -> EnemyRead:
     db.commit()
     db.refresh(enemy)
     return _to_enemy_read(enemy)
+
+
+def delete_enemy(db: Session, enemy_id: int) -> str | None:
+    enemy = db.get(Enemy, enemy_id)
+    if not enemy:
+        raise HTTPException(status_code=404, detail="에너미를 찾을 수 없습니다.")
+
+    image_url = enemy.image_url
+    db.delete(enemy)
+    db.commit()
+    return image_url
 
 
 # ── Battle ───────────────────────────────────────────────────────────────────
@@ -2813,7 +2925,7 @@ def get_character_skill_tree(db: Session, character_id: int, book: str) -> Chara
                 tier=node.tier,
                 tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
                 default_name=node.default_name if is_public else "비공개 기술",
-                image_url=node.image_url if is_public else None,
+                image_url=(unlock.custom_image_url if unlock and unlock.custom_image_url else node.image_url) if is_public else None,
                 effects=(node.effects or []) if is_public else [],
                 trigger_type=node.trigger_type if is_public else None,
                 category=node.category if is_public else None,
@@ -2828,6 +2940,7 @@ def get_character_skill_tree(db: Session, character_id: int, book: str) -> Chara
                 is_public=is_public,
                 unlocked=unlocked,
                 custom_name=unlock.custom_name if unlock and is_public else None,
+                custom_image_url=unlock.custom_image_url if unlock and is_public else None,
                 display_name=(unlock.custom_name if unlock and unlock.custom_name else node.default_name) if is_public else "비공개 기술",
                 unlocked_at=unlock.unlocked_at if unlock else None,
             )
@@ -2942,18 +3055,37 @@ def _reset_character_skills(db: Session, character: Character) -> None:
         db.delete(unlock)
 
 
-def rename_character_skill(db: Session, character_id: int, node_id: int, custom_name: str) -> CharacterSkillTreeRead:
-    character = _get_character_or_404(db, character_id)
+def _get_character_skill_unlock_or_404(db: Session, character_id: int, node_id: int) -> tuple[SkillNode, CharacterSkillUnlock]:
+    """루트(0단계)는 CharacterSkillUnlock 행이 없으므로 이 조회에서 자연히 걸러진다."""
     node = db.get(SkillNode, node_id)
     if not node or not node.is_public:
         raise HTTPException(status_code=400, detail="아직 공개되지 않은 기술입니다.")
     unlock = (
         db.query(CharacterSkillUnlock)
-        .filter(CharacterSkillUnlock.character_id == character.id, CharacterSkillUnlock.node_id == node_id)
+        .filter(CharacterSkillUnlock.character_id == character_id, CharacterSkillUnlock.node_id == node_id)
         .first()
     )
     if not unlock:
         raise HTTPException(status_code=400, detail="습득하지 않은 기술입니다.")
+    return node, unlock
+
+
+def rename_character_skill(db: Session, character_id: int, node_id: int, custom_name: str) -> CharacterSkillTreeRead:
+    character = _get_character_or_404(db, character_id)
+    node, unlock = _get_character_skill_unlock_or_404(db, character.id, node_id)
     unlock.custom_name = custom_name.strip() or None
     db.commit()
     return get_character_skill_tree(db, character.id, node.book)
+
+
+def set_character_skill_image(db: Session, character_id: int, node_id: int, image_url: str) -> CharacterSkillTreeRead:
+    character = _get_character_or_404(db, character_id)
+    node, unlock = _get_character_skill_unlock_or_404(db, character.id, node_id)
+    unlock.custom_image_url = image_url
+    db.commit()
+    return get_character_skill_tree(db, character.id, node.book)
+
+
+def get_character_skill_unlock_image(db: Session, character_id: int, node_id: int) -> str | None:
+    _, unlock = _get_character_skill_unlock_or_404(db, character_id, node_id)
+    return unlock.custom_image_url

@@ -458,9 +458,25 @@ class CharacterAchievedChallengeRead(BaseModel):
         return v if v is not None else []
 
 
+class CharacterAchievedMissionRead(BaseModel):
+    mission_id: int
+    chapter: str
+    name: str
+    description: str
+    image_url: str | None = None
+    reward: str
+    reward_items: list = Field(default_factory=list)
+
+    @field_validator("reward_items", mode="before")
+    @classmethod
+    def coerce_reward_items(cls, v: object) -> list:
+        return v if v is not None else []
+
+
 class CharacterDetailRead(CharacterRead):
     owned_items: list[CharacterOwnedItemRead]
     achieved_challenges: list[CharacterAchievedChallengeRead]
+    achieved_missions: list[CharacterAchievedMissionRead]
     item_history: list[ItemHistoryEntry]
     reward_history: list[RewardRead]
     attendance_streak: int = 0
@@ -848,6 +864,7 @@ class SkillVisibilityUpdate(BaseModel):
 class CharacterSkillNodeRead(SkillNodeRead):
     unlocked: bool
     custom_name: str | None
+    custom_image_url: str | None = None
     display_name: str
     unlocked_at: datetime | None = None
 

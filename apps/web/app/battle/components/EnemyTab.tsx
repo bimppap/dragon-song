@@ -17,6 +17,7 @@ import {
 import Modal from "@/components/common/Modal";
 import {
   createEnemy,
+  deleteEnemy,
   fetchChapters,
   fetchEnemies,
   updateChapter,
@@ -26,6 +27,7 @@ import {
 } from "@/lib/api";
 import type { Chapter, Enemy, EnemyCreate, EnemySkill } from "@/lib/api";
 import { cn, parsePositiveInt, todayDateValue } from "@/lib/utils";
+import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import EmptyState from "@/components/common/EmptyState";
 
@@ -161,9 +163,11 @@ export default function EnemyTab() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEnemy, setEditingEnemy] = useState<Enemy | null>(null);
   const { toast } = useToast();
+  const { confirm } = useDialog();
   const [loading, setLoading] = useState(true);
   const [scheduleSaving, setScheduleSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const selectedChapterData = chapterList.find((chapter) => chapter.name === selectedChapter) ?? null;
   const battleDateDirty = (selectedChapterData?.battle_date ?? "") !== battleDateDraft;
@@ -245,6 +249,28 @@ export default function EnemyTab() {
     const file = e.target.files?.[0] ?? null;
     setImageFile(file);
     setImagePreview(file ? URL.createObjectURL(file) : (editingEnemy?.image_url ?? null));
+  }
+
+  async function handleDeleteEnemy() {
+    if (!editingEnemy) return;
+    const ok = await confirm({
+      title: "에너미 삭제",
+      description: "관련된 정보가 전부 사라집니다. 삭제하시겠습니까?",
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deleteEnemy(editingEnemy.id);
+      setEnemies((prev) => prev.filter((e) => e.id !== editingEnemy.id));
+      setEditingEnemy(null);
+      setModalOpen(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "에너미 삭제에 실패했습니다.", "error");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   function handleSummonImageChange(index: number, e: React.ChangeEvent<HTMLInputElement>) {
@@ -699,12 +725,20 @@ export default function EnemyTab() {
             })}
           </div>
 
-          <Button type="submit" className="w-full" disabled={submitting}>
-            {editingEnemy ? <Pencil size={15} /> : <Plus size={15} />}
-            {submitting
-              ? (editingEnemy ? "수정 중..." : "추가 중...")
-              : (editingEnemy ? "수정 완료" : "에너미 추가")}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button type="submit" className="flex-1" disabled={submitting || deleting}>
+              {editingEnemy ? <Pencil size={15} /> : <Plus size={15} />}
+              {submitting
+                ? (editingEnemy ? "수정 중..." : "추가 중...")
+                : (editingEnemy ? "수정 완료" : "에너미 추가")}
+            </Button>
+            {editingEnemy && (
+              <Button type="button" variant="destructive" onClick={handleDeleteEnemy} disabled={submitting || deleting}>
+                <Trash2 size={15} />
+                {deleting ? "삭제 중..." : "삭제"}
+              </Button>
+            )}
+          </div>
         </form>
       </Modal>
     </div>

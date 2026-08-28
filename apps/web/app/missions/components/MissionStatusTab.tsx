@@ -244,7 +244,12 @@ export default function MissionStatusTab() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-start gap-3">
-                        <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                        <div
+                          className={cn(
+                            "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                            !mission.image_url && "border border-line bg-inset",
+                          )}
+                        >
                           {mission.image_url ? (
                             <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
                           ) : (

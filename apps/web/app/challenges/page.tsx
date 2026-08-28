@@ -9,6 +9,7 @@ import {
   Pencil,
   PlusSquare,
   Target,
+  Trash2,
   Trophy,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -33,6 +34,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import {
   createChallenge,
+  deleteChallenge,
   fetchChallengeProgress,
   fetchChapters,
   fetchChallenges,
@@ -59,6 +61,7 @@ import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import RewardComposer, { type RewardFormEntry } from "@/components/common/RewardComposer";
 import RewardSummary from "@/components/common/RewardSummary";
+import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 
 const ALL_CHAPTERS = "__all__";
@@ -70,12 +73,13 @@ function statusCardNameFontSize(name: string): number {
 function RunnerChallengeList() {
   const { toast } = useToast();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    fetchChallenges()
-      .then((list) => { if (!cancelled) setChallenges(list); })
+    Promise.all([fetchChallenges(), fetchItems()])
+      .then(([list, itemList]) => { if (!cancelled) { setChallenges(list); setItems(itemList); } })
       .catch((error) => {
         if (cancelled) return;
         toast(error instanceof Error ? error.message : "도전과제 조회 실패", "error");
@@ -113,13 +117,26 @@ function RunnerChallengeList() {
                 .filter((c) => c.chapter === chapter)
                 .map((challenge) => (
                   <div key={challenge.id} className="rounded-2xl border border-line px-4 py-4">
-                    <div className="flex flex-col gap-1">
-                      <p className="font-semibold text-ivory">{challenge.name}</p>
-                      <p className="text-sm text-muted">{challenge.description}</p>
+                    <div className="flex min-w-0 items-start gap-3">
+                      <div
+                        className={cn(
+                          "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                          !challenge.image_url && "border border-line bg-inset",
+                        )}
+                      >
+                        {challenge.image_url ? (
+                          <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
+                        ) : (
+                          <ImageIcon size={16} className="text-muted" />
+                        )}
+                      </div>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <p className="font-semibold text-ivory">{challenge.name}</p>
+                        <p className="text-sm text-muted">{challenge.description}</p>
+                      </div>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-                      <Gift size={14} />
-                      {challenge.reward}
+                    <div className="mt-3">
+                      <RewardSummary entries={challenge.reward_items} items={items} />
                     </div>
                   </div>
                 ))}
@@ -206,6 +223,7 @@ function toChallengePayload(form: ChallengeFormState): ChallengeCreate {
 
 export function ChallengeAdmin() {
   const { toast } = useToast();
+  const { confirm } = useDialog();
   const [tab, setTab] = useState<PageTab>("status");
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [items, setItems] = useState<Item[]>([]);
@@ -224,6 +242,7 @@ export function ChallengeAdmin() {
   const [loadingChallenges, setLoadingChallenges] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [submittingChallenge, setSubmittingChallenge] = useState(false);
+  const [deletingChallenge, setDeletingChallenge] = useState(false);
   const [savingProgress, setSavingProgress] = useState(false);
   const [payingReward, setPayingReward] = useState(false);
 
@@ -390,6 +409,28 @@ export function ChallengeAdmin() {
     setModalOpen(true);
   }
 
+  async function handleDeleteChallenge() {
+    if (editingChallengeId == null) return;
+    const ok = await confirm({
+      title: "도전과제 삭제",
+      description: "관련된 정보가 전부 사라집니다. 삭제하시겠습니까?",
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setDeletingChallenge(true);
+    try {
+      await deleteChallenge(editingChallengeId);
+      setChallenges((prev) => prev.filter((c) => c.id !== editingChallengeId));
+      setEditingChallengeId(null);
+      setModalOpen(false);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "도전과제 삭제에 실패했습니다.", "error");
+    } finally {
+      setDeletingChallenge(false);
+    }
+  }
+
   async function handlePayChallengeReward() {
     if (!selectedChallenge) return;
     try {
@@ -535,7 +576,12 @@ export function ChallengeAdmin() {
                           className="border-t border-line align-top"
                         >
                           <td className="px-4 py-4">
-                            <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                            <div
+                              className={cn(
+                                "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                                !challenge.image_url && "border border-line bg-inset",
+                              )}
+                            >
                               {challenge.image_url ? (
                                 <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
                               ) : (
@@ -677,10 +723,23 @@ export function ChallengeAdmin() {
                   </Select>
                 </div>
 
-                <Button type="submit" className="w-full" disabled={submittingChallenge}>
-                  <PlusSquare size={15} />
-                  {submittingChallenge ? "저장 중..." : editingChallengeId != null ? "도전과제 수정 저장" : "도전과제 추가"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button type="submit" className="flex-1" disabled={submittingChallenge || deletingChallenge}>
+                    <PlusSquare size={15} />
+                    {submittingChallenge ? "저장 중..." : editingChallengeId != null ? "도전과제 수정 저장" : "도전과제 추가"}
+                  </Button>
+                  {editingChallengeId != null && (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={handleDeleteChallenge}
+                      disabled={submittingChallenge || deletingChallenge}
+                    >
+                      <Trash2 size={15} />
+                      {deletingChallenge ? "삭제 중..." : "삭제"}
+                    </Button>
+                  )}
+                </div>
               </form>
           </Modal>
         </section>
@@ -734,7 +793,12 @@ export function ChallengeAdmin() {
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex min-w-0 items-start gap-3">
-                          <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                          <div
+                            className={cn(
+                              "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                              !challenge.image_url && "border border-line bg-inset",
+                            )}
+                          >
                             {challenge.image_url ? (
                               <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
                             ) : (

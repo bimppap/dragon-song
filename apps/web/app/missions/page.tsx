@@ -1,18 +1,21 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ClipboardList, Gift, PlusSquare, ScrollText } from "lucide-react";
+import Image from "next/image";
+import { ClipboardList, Image as ImageIcon, PlusSquare, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRequireMember } from "@/lib/auth";
-import { fetchMissions } from "@/lib/api";
-import type { Mission } from "@/lib/api";
+import { fetchItems, fetchMissions } from "@/lib/api";
+import type { Item, Mission } from "@/lib/api";
 import MissionManageTab from "./components/MissionManageTab";
 import MissionStatusTab from "./components/MissionStatusTab";
 import EmptyState from "@/components/common/EmptyState";
+import RewardSummary from "@/components/common/RewardSummary";
 import { useToast } from "@/components/common/ToastProvider";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
+import { cn } from "@/lib/utils";
 
 type PageTab = "manage" | "status";
 
@@ -29,12 +32,13 @@ const MISSION_TYPE_VARIANT: Record<string, "default" | "warning"> = {
 function RunnerMissionList() {
   const { toast } = useToast();
   const [missions, setMissions] = useState<Mission[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    fetchMissions()
-      .then((list) => { if (!cancelled) setMissions(list); })
+    Promise.all([fetchMissions(), fetchItems()])
+      .then(([list, itemList]) => { if (!cancelled) { setMissions(list); setItems(itemList); } })
       .catch((error) => {
         if (cancelled) return;
         toast(error instanceof Error ? error.message : "임무 조회 실패", "error");
@@ -75,17 +79,30 @@ function RunnerMissionList() {
                 .map((mission) => (
                   <div key={mission.id} className="rounded-2xl border border-line px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-col gap-1">
-                        <p className="font-semibold text-ivory">{mission.name}</p>
-                        <p className="text-sm text-muted">{mission.description}</p>
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div
+                          className={cn(
+                            "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                            !mission.image_url && "border border-line bg-inset",
+                          )}
+                        >
+                          {mission.image_url ? (
+                            <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
+                          ) : (
+                            <ImageIcon size={16} className="text-muted" />
+                          )}
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <p className="font-semibold text-ivory">{mission.name}</p>
+                          <p className="text-sm text-muted">{mission.description}</p>
+                        </div>
                       </div>
                       <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type] ?? "default"}>
                         {mission.mission_type}
                       </Badge>
                     </div>
-                    <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-                      <Gift size={14} />
-                      {mission.reward}
+                    <div className="mt-3">
+                      <RewardSummary entries={mission.reward_items} items={items} />
                     </div>
                   </div>
                 ))}

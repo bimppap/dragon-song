@@ -18,6 +18,7 @@ import {
   Lock,
   Package,
   Shield,
+  Trash2,
   Trophy,
   Zap,
 } from "lucide-react";
@@ -47,8 +48,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { consumeItem, equipItem, fetchCharacterDetail, fetchItems, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterAchievedChallenge, CharacterDetail, CharacterOwnedItem, Faction, Item, ItemHistoryEntry, Reward } from "@/lib/api";
+import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadCharacterImage } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem, Faction, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
 
 const FACTION_POSITION_IMAGE: Record<Faction, string> = {
   공격: "/position/position_1.png",
@@ -64,6 +65,8 @@ interface Props {
   focusCharacterId?: number | null;
   /** 다른 러너의 캐릭터를 열람할 때: 편집·아이템 상호작용·이력 노출을 모두 막는다. */
   readOnly?: boolean;
+  /** 지정하면 캐릭터 삭제 버튼을 노출한다(관리자 콘솔 전용). */
+  onDeleted?: (characterId: number) => void;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -416,23 +419,36 @@ function OwnedItemTile({
   );
 }
 
-function AchievedChallengeTile({ challenge, items }: { challenge: CharacterAchievedChallenge; items: Item[] }) {
+/** 달성한 도전과제·임무 타일. UI를 동일하게 맞추기 위해 공용으로 쓴다. */
+function AchievedTile({
+  name,
+  description,
+  imageUrl,
+  rewardItems,
+  items,
+}: {
+  name: string;
+  description: string;
+  imageUrl: string | null;
+  rewardItems: RewardGrant[];
+  items: Item[];
+}) {
   return (
     <InfoTooltip
       side="top"
       content={
         <div className="max-w-56 text-left">
-          <div className="font-semibold">{challenge.name}</div>
-          {challenge.description && (
-            <div className="mt-1 text-muted">{challenge.description}</div>
+          <div className="font-semibold">{name}</div>
+          {description && (
+            <div className="mt-1 text-muted">{description}</div>
           )}
-          <RewardSummary entries={challenge.reward_items} items={items} className="mt-2" />
+          <RewardSummary entries={rewardItems} items={items} className="mt-2" />
         </div>
       }
     >
       <div className="relative flex size-14 shrink-0 cursor-default items-center justify-center overflow-hidden bg-gold/10 text-gold">
-        {challenge.image_url ? (
-          <Image src={challenge.image_url} alt={challenge.name} fill sizes="56px" className="object-cover" />
+        {imageUrl ? (
+          <Image src={imageUrl} alt={name} fill sizes="56px" className="object-cover" />
         ) : (
           <Trophy size={22} />
         )}
@@ -551,8 +567,10 @@ export default function CharacterInfo({
   showId = true,
   focusCharacterId = null,
   readOnly = false,
+  onDeleted,
 }: Props) {
   const { toast } = useToast();
+  const { confirm } = useDialog();
   const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
@@ -560,6 +578,7 @@ export default function CharacterInfo({
   const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
+  const [deletingCharacter, setDeletingCharacter] = useState(false);
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [itemHistoryModalOpen, setItemHistoryModalOpen] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
@@ -643,6 +662,26 @@ export default function CharacterInfo({
       setImageError(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
     } finally {
       setImageUploading(false);
+    }
+  }
+
+  async function handleDeleteCharacter() {
+    if (selectedDetail == null) return;
+    const ok = await confirm({
+      title: "캐릭터 삭제",
+      description: "관련된 정보가 전부 사라집니다. 삭제하시겠습니까?",
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setDeletingCharacter(true);
+    try {
+      await deleteCharacter(selectedDetail.id);
+      onDeleted?.(selectedDetail.id);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "캐릭터 삭제에 실패했습니다.", "error");
+    } finally {
+      setDeletingCharacter(false);
     }
   }
 
@@ -836,7 +875,7 @@ export default function CharacterInfo({
                 </div>
 
                 {/* 상세정보 (테두리 없는 펼치기 버튼) */}
-                <div className="border-t border-line pt-3">
+                <div>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -894,43 +933,70 @@ export default function CharacterInfo({
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between gap-3">
+              <CardTitle>보유 중인 아이템</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="gap-1 font-num">
+                  <Coins size={12} className="text-gold" />
+                  {numberFormatter.format(selectedDetail.gold)} G
+                </Badge>
+                <Badge variant="outline" className="gap-1 font-num">
+                  <Gem size={12} className="text-cyan-500" />
+                  {numberFormatter.format(selectedDetail.cp)} CP
+                </Badge>
+                <Badge variant="outline" className="gap-1 font-num">
+                  <Gauge size={12} className="text-gold" />
+                  AP {numberFormatter.format(selectedDetail.ap)}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-3">
+              {selectedDetail.owned_items.length > 0 ? (
+                <div className="flex flex-wrap gap-4">
+                  {selectedDetail.owned_items.map((item) => (
+                    <OwnedItemTile
+                      key={item.item_id}
+                      item={item}
+                      readOnly={readOnly}
+                      loading={itemActionLoadingId === item.item_id}
+                      onUse={(chosenStats) => handleItemAction(item.item_id, consumeItem, chosenStats)}
+                      onEquip={() => handleItemAction(item.item_id, equipItem)}
+                      onUnequip={() => handleItemAction(item.item_id, unequipItem)}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState className="rounded-2xl">
+                  보유 중인 아이템이 없습니다.
+                </EmptyState>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 xl:grid-cols-2">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-3">
-                <CardTitle>보유 중인 아이템</CardTitle>
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="gap-1 font-num">
-                    <Coins size={12} className="text-gold" />
-                    {numberFormatter.format(selectedDetail.gold)} G
-                  </Badge>
-                  <Badge variant="outline" className="gap-1 font-num">
-                    <Gem size={12} className="text-cyan-500" />
-                    {numberFormatter.format(selectedDetail.cp)} CP
-                  </Badge>
-                  <Badge variant="outline" className="gap-1 font-num">
-                    <Gauge size={12} className="text-gold" />
-                    AP {numberFormatter.format(selectedDetail.ap)}
-                  </Badge>
-                </div>
+                <CardTitle>달성한 임무</CardTitle>
+                <Badge variant="success" className="shrink-0 whitespace-nowrap">{selectedDetail.achieved_missions.length}개</Badge>
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
-                {selectedDetail.owned_items.length > 0 ? (
+                {selectedDetail.achieved_missions.length > 0 ? (
                   <div className="flex flex-wrap gap-4">
-                    {selectedDetail.owned_items.map((item) => (
-                      <OwnedItemTile
-                        key={item.item_id}
-                        item={item}
-                        readOnly={readOnly}
-                        loading={itemActionLoadingId === item.item_id}
-                        onUse={(chosenStats) => handleItemAction(item.item_id, consumeItem, chosenStats)}
-                        onEquip={() => handleItemAction(item.item_id, equipItem)}
-                        onUnequip={() => handleItemAction(item.item_id, unequipItem)}
+                    {selectedDetail.achieved_missions.map((mission) => (
+                      <AchievedTile
+                        key={mission.mission_id}
+                        name={mission.name}
+                        description={mission.description}
+                        imageUrl={mission.image_url}
+                        rewardItems={mission.reward_items}
+                        items={items}
                       />
                     ))}
                   </div>
                 ) : (
                   <EmptyState className="rounded-2xl">
-                    보유 중인 아이템이 없습니다.
+                    아직 달성한 임무가 없습니다.
                   </EmptyState>
                 )}
               </CardContent>
@@ -945,7 +1011,14 @@ export default function CharacterInfo({
                 {selectedDetail.achieved_challenges.length > 0 ? (
                   <div className="flex flex-wrap gap-4">
                     {selectedDetail.achieved_challenges.map((challenge) => (
-                      <AchievedChallengeTile key={challenge.challenge_id} challenge={challenge} items={items} />
+                      <AchievedTile
+                        key={challenge.challenge_id}
+                        name={challenge.name}
+                        description={challenge.description}
+                        imageUrl={challenge.image_url}
+                        rewardItems={challenge.reward_items}
+                        items={items}
+                      />
                     ))}
                   </div>
                 ) : (
@@ -1031,6 +1104,15 @@ export default function CharacterInfo({
               />
             )}
           </div>}
+
+          {!readOnly && onDeleted && (
+            <div className="flex justify-end">
+              <Button variant="destructive" onClick={handleDeleteCharacter} disabled={deletingCharacter}>
+                <Trash2 size={15} />
+                {deletingCharacter ? "삭제 중..." : "캐릭터 삭제하기"}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>

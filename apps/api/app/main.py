@@ -209,6 +209,15 @@ async def upload_character_image(
     return detail
 
 
+@app.delete("/characters/{character_id}")
+async def delete_character(character_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    image_url = crud.delete_character(db, character_id)
+    old_path = storage.public_url_to_path(image_url)
+    if old_path:
+        await storage.delete_from_bucket(old_path)
+    return {"deleted": True}
+
+
 @app.get("/attendance/entries", response_model=list[AttendanceEntryRead])
 def list_attendance_entries(
     member: Member = Depends(get_current_member),
@@ -298,6 +307,15 @@ async def upload_item_image(
     return item
 
 
+@app.delete("/items/{item_id}")
+async def delete_item(item_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    image_url = crud.delete_item(db, item_id)
+    old_path = storage.public_url_to_path(image_url)
+    if old_path:
+        await storage.delete_from_bucket(old_path)
+    return {"deleted": True}
+
+
 @app.get("/challenges", response_model=list[ChallengeRead])
 def list_challenges(
     chapter: str | None = None,
@@ -348,6 +366,15 @@ async def upload_challenge_image(
     db.commit()
     db.refresh(challenge)
     return challenge
+
+
+@app.delete("/challenges/{challenge_id}")
+async def delete_challenge(challenge_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    image_url = crud.delete_challenge(db, challenge_id)
+    old_path = storage.public_url_to_path(image_url)
+    if old_path:
+        await storage.delete_from_bucket(old_path)
+    return {"deleted": True}
 
 
 @app.get("/challenges/{challenge_id}/progress", response_model=list[ChallengeProgressRead])
@@ -523,6 +550,15 @@ async def upload_mission_image(
     return mission
 
 
+@app.delete("/missions/{mission_id}")
+async def delete_mission(mission_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    image_url = crud.delete_mission(db, mission_id)
+    old_path = storage.public_url_to_path(image_url)
+    if old_path:
+        await storage.delete_from_bucket(old_path)
+    return {"deleted": True}
+
+
 @app.get("/missions/{mission_id}/progress", response_model=list[MissionProgressRead])
 def list_mission_progress(mission_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_mission_progress(db, mission_id)
@@ -681,6 +717,16 @@ async def upload_chapter_music(
     return crud._to_chapter_read(chapter)
 
 
+@app.delete("/chapters/{chapter_id}")
+async def delete_chapter(chapter_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    image_url, music_url = crud.delete_chapter(db, chapter_id)
+    for url in (image_url, music_url):
+        path = storage.public_url_to_path(url)
+        if path:
+            await storage.delete_from_bucket(path)
+    return {"deleted": True}
+
+
 @app.get("/chapters/active", response_model=ChapterRead | None)
 def get_active_chapter(db: Session = Depends(get_db)):
     return crud.get_active_chapter(db)
@@ -761,6 +807,15 @@ async def upload_enemy_summon_image(
     db.commit()
     db.refresh(enemy)
     return enemy
+
+
+@app.delete("/enemies/{enemy_id}")
+async def delete_enemy(enemy_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    image_url = crud.delete_enemy(db, enemy_id)
+    old_path = storage.public_url_to_path(image_url)
+    if old_path:
+        await storage.delete_from_bucket(old_path)
+    return {"deleted": True}
 
 
 @app.get("/battles", response_model=list[BattleSessionSummary])
@@ -934,3 +989,25 @@ def rename_character_skill(
 ):
     _require_own_character_or_admin(db, member, character_id)
     return crud.rename_character_skill(db, character_id, node_id, data.custom_name)
+
+
+@app.post("/characters/{character_id}/skills/{node_id}/image", response_model=CharacterSkillTreeRead)
+async def upload_character_skill_image(
+    character_id: int,
+    node_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """러너가 습득한 기술의 이미지를 개인화한다. 루트(0단계) 노드는 습득 기록이 없어 자연히 제외된다."""
+    _require_own_character_or_admin(db, member, character_id)
+    old_image_url = crud.get_character_skill_unlock_image(db, character_id, node_id)
+
+    data = await file.read()
+    result = await storage.upload_image_to_bucket(storage.make_key("character-skill", character_id, f"{node_id}"), data)
+
+    old_path = storage.public_url_to_path(old_image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    return crud.set_character_skill_image(db, character_id, node_id, result["public_url"])

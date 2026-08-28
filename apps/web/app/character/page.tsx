@@ -41,7 +41,19 @@ function AdminCharacterConsole() {
   return <PageContainer max="4xl" className="space-y-8">
     <TabBar tabs={TABS} active={tab} onChange={setTab} />
     {tab === "list" && <CharacterList characters={characters} loading={loadingCharacters} showAdminFlags onSelectCharacter={(character) => { setFocusCharacterId(character.id); setTab("info"); }} />}
-    {tab === "info" && <CharacterInfo key={focusCharacterId ?? "info"} characters={characters} loading={loadingCharacters} focusCharacterId={focusCharacterId} />}
+    {tab === "info" && (
+      <CharacterInfo
+        key={focusCharacterId ?? "info"}
+        characters={characters}
+        loading={loadingCharacters}
+        focusCharacterId={focusCharacterId}
+        onDeleted={(characterId) => {
+          setCharacters((prev) => prev.filter((c) => c.id !== characterId));
+          setFocusCharacterId(null);
+          setTab("list");
+        }}
+      />
+    )}
     {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.name.localeCompare(b.name, "ko"))); setTab("list"); }} />}
   </PageContainer>;
 }

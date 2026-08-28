@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Image as ImageIcon, PlusCircle } from "lucide-react";
-import { createItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
+import { Image as ImageIcon, PlusCircle, Trash2 } from "lucide-react";
+import { createItem, deleteItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
 import type { Chapter, Item, ItemCreate, ItemType, Mission } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import EffectListEditor from "@/components/common/EffectListEditor";
 import { useDialog } from "@/components/common/DialogProvider";
+import { useToast } from "@/components/common/ToastProvider";
 import {
   Select,
   SelectContent,
@@ -67,6 +68,7 @@ interface Props {
   item?: Item | null;
   onSubmitted: () => void;
   onCancelEdit?: () => void;
+  onDeleted?: () => void;
   /** 모달 등 자체 제목이 있는 컨테이너 안에서 쓸 때 내부 제목/설명 블록을 숨긴다. */
   hideHeader?: boolean;
 }
@@ -83,15 +85,37 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, hideHeader = false }: Props) {
-  const { alert } = useDialog();
+export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, onDeleted, hideHeader = false }: Props) {
+  const { alert, confirm } = useDialog();
+  const { toast } = useToast();
   const [form, setForm] = useState<ItemCreate>(() => toItemForm(item));
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(item?.image_url ?? null);
   const editingItemId = item?.id ?? null;
+
+  async function handleDelete() {
+    if (editingItemId == null) return;
+    const ok = await confirm({
+      title: "아이템 삭제",
+      description: "관련된 정보가 전부 사라집니다. 삭제하시겠습니까?",
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deleteItem(editingItemId);
+      onDeleted?.();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "아이템 삭제에 실패했습니다.", "error");
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0] ?? null;
@@ -380,12 +404,20 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, hi
         <span className="text-xs text-muted">체크하면 시작/종료 챕터·재고와 무관하게 즉시 판매가 중단되고, 러너에게는 노출되지 않습니다.</span>
       </label>
 
-      <Button type="submit" disabled={loading}>
-        <PlusCircle size={15} />
-        {loading
-          ? isEditMode ? "수정 중..." : "생성 중..."
-          : isEditMode ? "아이템 수정" : "아이템 추가"}
-      </Button>
+      <div className="flex items-center gap-2">
+        <Button type="submit" disabled={loading || deleting} className="flex-1">
+          <PlusCircle size={15} />
+          {loading
+            ? isEditMode ? "수정 중..." : "생성 중..."
+            : isEditMode ? "아이템 수정" : "아이템 추가"}
+        </Button>
+        {isEditMode && (
+          <Button type="button" variant="destructive" onClick={handleDelete} disabled={loading || deleting}>
+            <Trash2 size={15} />
+            {deleting ? "삭제 중..." : "삭제"}
+          </Button>
+        )}
+      </div>
     </form>
   );
 }

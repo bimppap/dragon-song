@@ -70,6 +70,11 @@ export default function ShopAdminPanel() {
             setModalOpen(false);
             setEditingItem(null);
           }}
+          onDeleted={() => {
+            setRefreshKey((k) => k + 1);
+            setModalOpen(false);
+            setEditingItem(null);
+          }}
         />
       </Modal>
     </div>

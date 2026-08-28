@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ImagePlus, Music, Plus } from "lucide-react";
+import { ImagePlus, Music, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import Modal from "@/components/common/Modal";
-import { createChapter, fetchChapters, updateChapter, uploadChapterImage, uploadChapterMusic, type Chapter } from "@/lib/api";
+import { createChapter, deleteChapter, fetchChapters, updateChapter, uploadChapterImage, uploadChapterMusic, type Chapter } from "@/lib/api";
+import { useDialog } from "@/components/common/DialogProvider";
 
 interface ChapterFormState {
   name: string;
@@ -29,6 +30,7 @@ function chapterForm(chapter: Chapter): ChapterFormState {
 }
 
 export default function ChapterTab() {
+  const { confirm } = useDialog();
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [form, setForm] = useState<ChapterFormState>(EMPTY_FORM);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -38,6 +40,7 @@ export default function ChapterTab() {
   const [editImageFile, setEditImageFile] = useState<File | null>(null);
   const [editMusicFile, setEditMusicFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,6 +94,25 @@ export default function ChapterTab() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "챕터 수정 실패");
     } finally { setSaving(false); }
+  }
+
+  async function handleDelete() {
+    if (!editing) return;
+    const ok = await confirm({
+      title: "챕터 삭제",
+      description: "관련된 정보가 전부 사라집니다. 삭제하시겠습니까?",
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setDeleting(true); setError(null);
+    try {
+      await deleteChapter(editing.id);
+      setChapters((prev) => prev.filter((c) => c.id !== editing.id));
+      setEditing(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "챕터 삭제 실패");
+    } finally { setDeleting(false); }
   }
 
   return <div className="flex flex-col gap-8">
@@ -147,7 +169,16 @@ export default function ChapterTab() {
           <Input type="url" placeholder="외부 음원 URL (비우면 제거)" value={editForm.music_url} disabled={editMusicFile !== null} onChange={(event) => setEditForm((prev) => ({ ...prev, music_url: event.target.value }))} />
           <p className="text-xs text-muted">첨부 파일을 선택하면 외부 링크보다 우선하며, 교체 또는 제거 시 기존 버킷 파일은 삭제됩니다.</p>
         </div>
-        <div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setEditing(null)}>취소</Button><Button type="submit" disabled={saving}>{saving ? "저장 중..." : "저장"}</Button></div>
+        <div className="flex items-center justify-between gap-2">
+          <Button type="button" variant="destructive" onClick={handleDelete} disabled={saving || deleting}>
+            <Trash2 size={15} />
+            {deleting ? "삭제 중..." : "삭제"}
+          </Button>
+          <div className="flex gap-2">
+            <Button type="button" variant="ghost" onClick={() => setEditing(null)}>취소</Button>
+            <Button type="submit" disabled={saving || deleting}>{saving ? "저장 중..." : "저장"}</Button>
+          </div>
+        </div>
       </form>
     </Modal>
   </div>;

@@ -247,6 +247,7 @@ class CharacterSkillUnlock(Base):
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
     node_id: Mapped[int] = mapped_column(Integer, ForeignKey("skill_nodes.id"), nullable=False, index=True)
     custom_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    custom_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # 강화(unlock)에 실제로 소모한 AP. AP 초기화 아이템으로 리셋할 때 정확히 환급하기 위해 저장한다.
     ap_spent: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     # 해금 당시 실제로 적용한 효과 스냅샷. 이후 관리자가 노드 효과를 바꿔도 리셋 시 정확히 되돌린다.

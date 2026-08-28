@@ -384,9 +384,20 @@ export interface CharacterAchievedChallenge {
   reward_items: ChallengeRewardItemGrant[];
 }
 
+export interface CharacterAchievedMission {
+  mission_id: number;
+  chapter: string;
+  name: string;
+  description: string;
+  image_url: string | null;
+  reward: string;
+  reward_items: MissionRewardItemGrant[];
+}
+
 export interface CharacterDetail extends Character {
   owned_items: CharacterOwnedItem[];
   achieved_challenges: CharacterAchievedChallenge[];
+  achieved_missions: CharacterAchievedMission[];
   item_history: ItemHistoryEntry[];
   reward_history: Reward[];
   attendance_streak: number;
@@ -510,6 +521,10 @@ export async function uploadCharacterImage(characterId: number, file: File): Pro
   return uploadFile<CharacterDetail>(`/characters/${characterId}/image`, file, "file", "캐릭터 이미지 업로드 실패");
 }
 
+export async function deleteCharacter(characterId: number): Promise<void> {
+  await request(`/characters/${characterId}`, { method: "DELETE" }, "캐릭터 삭제 실패");
+}
+
 export async function updateCharacterFlags(
   characterId: number,
   flags: CharacterFlagsUpdate,
@@ -577,6 +592,10 @@ export async function uploadItemImage(itemId: number, file: File): Promise<Item>
   return uploadFile<Item>(`/items/${itemId}/image`, file, "file", "이미지 업로드 실패");
 }
 
+export async function deleteItem(itemId: number): Promise<void> {
+  await request(`/items/${itemId}`, { method: "DELETE" }, "아이템 삭제 실패");
+}
+
 /** 가능성/잠재성의 메달 사용 시 선택 가능한 능력치. */
 export const GRADE_CHOICE_STAT_OPTIONS: { value: "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom"; label: string }[] = [
   { value: "stat_courage", label: "용기" },
@@ -628,6 +647,10 @@ export async function updateChallenge(challengeId: number, data: ChallengeCreate
 
 export async function uploadChallengeImage(challengeId: number, file: File): Promise<Challenge> {
   return uploadFile<Challenge>(`/challenges/${challengeId}/image`, file, "file", "도전과제 이미지 업로드 실패");
+}
+
+export async function deleteChallenge(challengeId: number): Promise<void> {
+  await request(`/challenges/${challengeId}`, { method: "DELETE" }, "도전과제 삭제 실패");
 }
 
 export async function fetchChallengeProgress(challengeId: number): Promise<ChallengeProgress[]> {
@@ -823,6 +846,10 @@ export async function uploadMissionImage(missionId: number, file: File): Promise
   return uploadFile<Mission>(`/missions/${missionId}/image`, file, "file", "임무 이미지 업로드 실패");
 }
 
+export async function deleteMission(missionId: number): Promise<void> {
+  await request(`/missions/${missionId}`, { method: "DELETE" }, "임무 삭제 실패");
+}
+
 export async function fetchMissionProgress(missionId: number): Promise<MissionProgress[]> {
   return request<MissionProgress[]>(`/missions/${missionId}/progress`, undefined, "임무 현황 조회 실패");
 }
@@ -918,6 +945,11 @@ export async function uploadChapterMusic(chapterId: number, file: File): Promise
   return updated;
 }
 
+export async function deleteChapter(chapterId: number): Promise<void> {
+  await request(`/chapters/${chapterId}`, { method: "DELETE" }, "챕터 삭제 실패");
+  invalidateChapterCache();
+}
+
 export async function fetchActiveChapter(): Promise<Chapter | null> {
   return request<Chapter | null>("/chapters/active", undefined, "활성 챕터 조회 실패");
 }
@@ -980,6 +1012,10 @@ export async function updateEnemy(enemyId: number, data: EnemyCreate): Promise<E
 
 export async function uploadEnemyImage(enemyId: number, file: File): Promise<Enemy> {
   return uploadFile<Enemy>(`/enemies/${enemyId}/image`, file, "file", "에너미 이미지 업로드 실패");
+}
+
+export async function deleteEnemy(enemyId: number): Promise<void> {
+  await request(`/enemies/${enemyId}`, { method: "DELETE" }, "에너미 삭제 실패");
 }
 
 export async function uploadEnemySummonImage(enemyId: number, skillIndex: number, file: File): Promise<Enemy> {
@@ -1171,6 +1207,7 @@ export interface SkillNode {
 export interface CharacterSkillNode extends SkillNode {
   unlocked: boolean;
   custom_name: string | null;
+  custom_image_url: string | null;
   display_name: string;
   unlocked_at: string | null;
 }
@@ -1227,4 +1264,17 @@ export async function renameCharacterSkill(
     method: "PUT",
     body: JSON.stringify({ custom_name: customName }),
   }, "기술 이름 설정 실패");
+}
+
+export async function uploadCharacterSkillImage(
+  characterId: number,
+  nodeId: number,
+  file: File,
+): Promise<CharacterSkillTree> {
+  return uploadFile<CharacterSkillTree>(
+    `/characters/${characterId}/skills/${nodeId}/image`,
+    file,
+    "file",
+    "기술 이미지 설정 실패",
+  );
 }

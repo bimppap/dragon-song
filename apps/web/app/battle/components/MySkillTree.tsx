@@ -1,14 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
+import { Image as ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
+import Modal from "@/components/common/Modal";
 import {
   fetchCharacterSkillTree,
   formatEffect,
   renameCharacterSkill,
   unlockCharacterSkill,
+  uploadCharacterSkillImage,
   type CharacterSkillNode,
   type CharacterSkillTree,
   type SkillBook,
@@ -24,11 +30,16 @@ interface Props {
 }
 
 export default function MySkillTree({ characterId }: Props) {
-  const { confirm, prompt } = useDialog();
+  const { confirm } = useDialog();
   const { toast } = useToast();
   const [treesByBook, setTreesByBook] = useState<Record<SkillBook, CharacterSkillTree> | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyNodeId, setBusyNodeId] = useState<number | null>(null);
+  const [customizing, setCustomizing] = useState<{ book: SkillBook; node: CharacterSkillNode } | null>(null);
+  const [customName, setCustomName] = useState("");
+  const [customImageFile, setCustomImageFile] = useState<File | null>(null);
+  const [customImagePreview, setCustomImagePreview] = useState<string | null>(null);
+  const [savingCustomize, setSavingCustomize] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,19 +84,42 @@ export default function MySkillTree({ characterId }: Props) {
     }
   }
 
-  async function renameNode(book: SkillBook, node: CharacterSkillNode) {
-    const nextName = await prompt(
-      { title: "기술 이름 수정", description: "새로운 기술 이름을 입력해 주세요." },
-      node.custom_name ?? node.default_name,
-    );
-    if (nextName === null) return;
-    setBusyNodeId(node.id);
+  function openCustomize(book: SkillBook, node: CharacterSkillNode) {
+    setCustomizing({ book, node });
+    setCustomName(node.custom_name ?? node.default_name);
+    setCustomImageFile(null);
+    setCustomImagePreview(node.image_url);
+  }
+
+  function closeCustomize() {
+    setCustomizing(null);
+  }
+
+  function handleCustomImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setCustomImageFile(file);
+    setCustomImagePreview(file ? URL.createObjectURL(file) : (customizing?.node.image_url ?? null));
+  }
+
+  async function handleSaveCustomize() {
+    if (!customizing) return;
+    const { book, node } = customizing;
+    setSavingCustomize(true);
     try {
-      applyTreeUpdate(book, await renameCharacterSkill(characterId, node.id, nextName));
+      let tree: CharacterSkillTree | null = null;
+      const trimmedName = customName.trim();
+      if (trimmedName !== (node.custom_name ?? node.default_name)) {
+        tree = await renameCharacterSkill(characterId, node.id, trimmedName);
+      }
+      if (customImageFile) {
+        tree = await uploadCharacterSkillImage(characterId, node.id, customImageFile);
+      }
+      if (tree) applyTreeUpdate(book, tree);
+      closeCustomize();
     } catch (e) {
-      toast(e instanceof Error ? e.message : "기술 이름 설정 실패", "error");
+      toast(e instanceof Error ? e.message : "기술 커스터마이즈에 실패했습니다.", "error");
     } finally {
-      setBusyNodeId(null);
+      setSavingCustomize(false);
     }
   }
 
@@ -108,7 +142,9 @@ export default function MySkillTree({ characterId }: Props) {
 
   async function handleNodeClick(book: SkillBook, tree: CharacterSkillTree, node: CharacterSkillNode) {
     if (node.unlocked) {
-      await renameNode(book, node);
+      // 루트(0단계) 노드는 서 자체를 나타내는 자리표시자라 이름·이미지를 커스터마이즈할 수 없다.
+      if (node.tier === 0) return;
+      openCustomize(book, node);
       return;
     }
     if (!canUnlock(tree, node)) return;
@@ -129,7 +165,8 @@ export default function MySkillTree({ characterId }: Props) {
           <h2 className="text-lg font-bold text-ivory">기술트리</h2>
           <p className="text-sm text-muted">
             용맹·불굴·헌신·탐구 4개 서 전부에서 캐릭터의 역할과 무관하게 자유롭게 기술을 강화할 수 있습니다. 각 서의 1단계
-            계열과 2단계부터의 세부 경로는 각각 하나만 선택할 수 있습니다. 습득한 기술을 누르면 이름을 바꿀 수 있습니다.
+            계열과 2단계부터의 세부 경로는 각각 하나만 선택할 수 있습니다. 습득한 기술을 누르면 이름과 이미지를 바꿀 수
+            있습니다(루트 노드는 제외).
           </p>
         </div>
         {anyTree && (
@@ -167,6 +204,47 @@ export default function MySkillTree({ characterId }: Props) {
           })}
         </div></div>
       )}
+
+      <Modal
+        open={customizing !== null}
+        onClose={closeCustomize}
+        title={customizing ? `${customizing.node.default_name} 커스터마이즈` : undefined}
+      >
+        {customizing && (
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide">기술 이름</label>
+              <Input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="기술 이름" />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide">기술 이미지</label>
+              <div className="flex items-center gap-4">
+                <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                  {customImagePreview ? (
+                    <Image src={customImagePreview} alt="기술 이미지 미리보기" fill unoptimized className="object-cover" />
+                  ) : (
+                    <ImageIcon size={20} className="text-muted" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleCustomImageChange}
+                    className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
+                  />
+                  <p className="text-xs text-muted">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
+                </div>
+              </div>
+            </div>
+
+            <Button type="button" className="w-full" onClick={handleSaveCustomize} disabled={savingCustomize}>
+              {savingCustomize ? "저장 중..." : "저장"}
+            </Button>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

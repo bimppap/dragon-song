@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Image as ImageIcon, Pencil, PlusSquare, ScrollText } from "lucide-react";
+import { Image as ImageIcon, Pencil, PlusSquare, ScrollText, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,11 +23,13 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/common/Modal";
-import { createMission, fetchChapters, fetchItems, fetchMissions, updateMission, uploadMissionImage } from "@/lib/api";
+import { createMission, deleteMission, fetchChapters, fetchItems, fetchMissions, updateMission, uploadMissionImage } from "@/lib/api";
 import type { Chapter, Item, Mission, MissionCreate, RewardGrant } from "@/lib/api";
+import { cn } from "@/lib/utils";
 import EmptyState from "@/components/common/EmptyState";
 import RewardComposer, { type RewardFormEntry } from "@/components/common/RewardComposer";
 import RewardSummary from "@/components/common/RewardSummary";
+import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 
 const ALL_CHAPTERS = "__all__";
@@ -106,6 +108,7 @@ function toFormState(mission: Mission): MissionFormState {
 
 export default function MissionManageTab() {
   const { toast } = useToast();
+  const { confirm } = useDialog();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
@@ -118,6 +121,7 @@ export default function MissionManageTab() {
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -204,6 +208,28 @@ export default function MissionManageTab() {
     setModalOpen(true);
   }
 
+  async function handleDelete() {
+    if (editingId == null) return;
+    const ok = await confirm({
+      title: "임무 삭제",
+      description: "관련된 정보가 전부 사라집니다. 삭제하시겠습니까?",
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setDeleting(true);
+    try {
+      await deleteMission(editingId);
+      setMissions((prev) => prev.filter((m) => m.id !== editingId));
+      setEditingId(null);
+      setModalOpen(false);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "임무 삭제에 실패했습니다.", "error");
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   return (
     <section className="flex flex-col gap-6">
       <Card>
@@ -262,7 +288,12 @@ export default function MissionManageTab() {
                   {visibleMissions.map((mission) => (
                     <tr key={mission.id} className="border-t border-line align-top">
                       <td className="px-4 py-4">
-                        <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                        <div
+                          className={cn(
+                            "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                            !mission.image_url && "border border-line bg-inset",
+                          )}
+                        >
                           {mission.image_url ? (
                             <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
                           ) : (
@@ -403,10 +434,18 @@ export default function MissionManageTab() {
               </Select>
             </div>
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              <PlusSquare size={15} />
-              {submitting ? "저장 중..." : editingId != null ? "임무 수정 저장" : "임무 추가"}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button type="submit" className="flex-1" disabled={submitting || deleting}>
+                <PlusSquare size={15} />
+                {submitting ? "저장 중..." : editingId != null ? "임무 수정 저장" : "임무 추가"}
+              </Button>
+              {editingId != null && (
+                <Button type="button" variant="destructive" onClick={handleDelete} disabled={submitting || deleting}>
+                  <Trash2 size={15} />
+                  {deleting ? "삭제 중..." : "삭제"}
+                </Button>
+              )}
+            </div>
           </form>
       </Modal>
     </section>
