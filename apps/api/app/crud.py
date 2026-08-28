@@ -832,6 +832,14 @@ def _apply_item_effects(character: Character, effects: list[dict], sign: int) ->
             next_value = min(next_value, character.hp_max)
         setattr(character, attr, next_value)
 
+        # 최대 체력/마나가 바뀌면 현재 체력/마나도 같은 만큼 함께 움직인다(늘면 늘고, 줄면 줄어듦).
+        if attr == "hp_max":
+            character.hp = max(0, character.hp + (next_value - current))
+            if not character.over_heal:
+                character.hp = min(character.hp, character.hp_max)
+        elif attr == "mp_max":
+            character.mp = max(0, min(character.mp + (next_value - current), character.mp_max))
+
 
 # calculate_stat_grade_totals()의 결과 키 → Character 속성명 매핑 ("def"는 예약어 회피용 def_에 대응).
 _GRADE_TOTAL_TO_ATTR = {
@@ -859,8 +867,16 @@ def _apply_grade_choice(character: Character, chosen_stats: list[str], required_
     )
     for key, attr in _GRADE_TOTAL_TO_ATTR.items():
         delta = after[key] - before[key]
-        if delta:
-            setattr(character, attr, getattr(character, attr) + delta)
+        if not delta:
+            continue
+        setattr(character, attr, getattr(character, attr) + delta)
+        # 최대 체력/마나가 바뀌면 현재 체력/마나도 같은 만큼 함께 움직인다.
+        if attr == "hp_max":
+            character.hp = max(0, character.hp + delta)
+            if not character.over_heal:
+                character.hp = min(character.hp, character.hp_max)
+        elif attr == "mp_max":
+            character.mp = max(0, min(character.mp + delta, character.mp_max))
 
 
 def _get_or_create_item_state(db: Session, character_id: int, item_id: int) -> CharacterItemState:

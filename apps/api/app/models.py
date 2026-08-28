@@ -87,8 +87,8 @@ class Character(Base):
     ap: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
-        default=10,
-        server_default=text("10"),
+        default=0,
+        server_default=text("0"),
     )
     member_id: Mapped[int | None] = mapped_column(
         Integer,

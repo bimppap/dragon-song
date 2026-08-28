@@ -92,7 +92,7 @@ const EMPTY_FORM: CharacterCreateForm = {
   over_heal: false,
   gold: "0",
   cp: "0",
-  ap: "10",
+  ap: "0",
   lv: "1",
   rank: "1",
   exp: "0",

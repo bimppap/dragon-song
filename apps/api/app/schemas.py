@@ -207,7 +207,7 @@ class CharacterCreate(BaseModel):
     skill_node_ids: list[int] = Field(default_factory=list)
     gold: int = Field(default=0, ge=0)
     cp: int = Field(default=0, ge=0)
-    ap: int = Field(default=10, ge=0)
+    ap: int = Field(default=0, ge=0)
 
     # 성장 등급 배지
     lv: int = Field(default=1, ge=0)
