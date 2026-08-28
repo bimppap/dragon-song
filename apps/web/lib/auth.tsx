@@ -7,6 +7,7 @@ import {
   login as apiLogin,
   logoutRequest,
   signup as apiSignup,
+  SESSION_EXPIRED_EVENT,
   type LoginRequest,
   type Member,
   type SignupRequest,
@@ -60,6 +61,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     loadInitialMember();
     return () => { cancelled = true; };
+  }, []);
+
+  // API 호출 중 refresh token이 없거나 만료/무효화된 것으로 확인되면(lib/api.ts) 즉시 로그아웃 상태로
+  // 전환한다. 각 페이지의 useRequireMember/useRequireAdmin이 이 변화를 보고 /login으로 리다이렉트한다.
+  useEffect(() => {
+    function handleSessionExpired() {
+      setMember(null);
+    }
+    window.addEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
+    return () => window.removeEventListener(SESSION_EXPIRED_EVENT, handleSessionExpired);
   }, []);
 
   async function login(data: LoginRequest) {

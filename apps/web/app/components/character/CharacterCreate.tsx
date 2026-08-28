@@ -6,9 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { createCharacter, fetchSkillNodes, formatEffect } from "@/lib/api";
-import type { Character, Faction, SkillBook, SkillNode } from "@/lib/api";
+import { createCharacter, fetchCharacterSkillTree, fetchSkillNodes, formatEffect, updateCharacter } from "@/lib/api";
+import type { Character, CharacterDetail, Faction, SkillBook, SkillNode } from "@/lib/api";
 import { useToast } from "@/components/common/ToastProvider";
+
+const SKILL_BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 
 type CharacterCreateForm = {
   name: string;
@@ -96,6 +98,52 @@ const EMPTY_FORM: CharacterCreateForm = {
   exp: "0",
 };
 
+/** 편집 시 기존 캐릭터 값을 폼에 채운다. handleSubmit의 변환식(예: 퍼센트 필드는 ×100+100)을 그대로 되돌린다. */
+function toFormFromCharacter(character: Character): CharacterCreateForm {
+  const pct = (v: number) => String(Math.round((v + 1) * 100));
+  return {
+    name: character.name,
+    hp: String(character.hp),
+    hp_max: String(character.hp_max),
+    hp_max_p: pct(character.hp_max_p),
+    hp_regen_true: String(character.hp_regen_true),
+    hp_regen_fixed: pct(character.hp_regen_fixed),
+    mp: String(character.mp),
+    mp_max: String(character.mp_max),
+    mp_regen: String(character.mp_regen),
+    atk: String(character.atk),
+    atk_p: pct(character.atk_p),
+    def: String(character.def),
+    def_p: pct(character.def_p),
+    def_eff: pct(character.def_eff),
+    attn: String(character.attn),
+    presence: pct(character.presence),
+    heal_eff: pct(character.heal_eff),
+    sh: String(character.sh),
+    dmg_p: pct(character.dmg_p),
+    dmg_r: pct(character.dmg_r),
+    skill_lv: String(character.skill_lv),
+    skill_eff_true: String(character.skill_eff_true),
+    skill_eff_fixed: pct(character.skill_eff_fixed),
+    skill_cost: String(character.skill_cost),
+    skill_target: String(character.skill_target),
+    stat_courage: String(character.stat_courage),
+    stat_endurance: String(character.stat_endurance),
+    stat_charity: String(character.stat_charity),
+    stat_wisdom: String(character.stat_wisdom),
+    start_sh: String(character.start_sh ?? 0),
+    revive_hp: String(Math.round((character.revive_hp ?? 0.1) * 100)),
+    act_time: String(character.act_time ?? 1),
+    over_heal: character.over_heal ?? false,
+    gold: String(character.gold),
+    cp: String(character.cp),
+    ap: String(character.ap),
+    lv: String(character.lv),
+    rank: String(character.rank),
+    exp: String(character.exp),
+  };
+}
+
 const STAT_CONFIG = [
   { name: "hp_max", label: "최대 체력", icon: Heart,   color: "text-rose-500" },
   { name: "mp_max", label: "최대 마나", icon: Zap,      color: "text-sky-500" },
@@ -143,17 +191,39 @@ const ADMIN_STAT_CONFIG: { name: "start_sh" | "revive_hp" | "act_time"; label: s
 ];
 
 interface Props {
-  onCreated: (character: Character) => void;
+  /** 생성 모드: 새 캐릭터가 만들어지면 호출된다. */
+  onCreated?: (character: Character) => void;
+  /** 편집 모드: 이 캐릭터(관리자가 만든, 러너 계정 미연결)의 값을 폼에 채워 수정한다. */
+  character?: CharacterDetail;
+  onSaved?: (character: Character) => void;
+  onCancel?: () => void;
 }
 
-export default function CharacterCreate({ onCreated }: Props) {
+export default function CharacterCreate({ onCreated, character, onSaved, onCancel }: Props) {
   const { toast } = useToast();
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [faction, setFaction] = useState<Faction | null>(null);
+  const isEditing = character != null;
+  const [form, setForm] = useState(() => (character ? toFormFromCharacter(character) : EMPTY_FORM));
+  const [faction, setFaction] = useState<Faction | null>(character?.faction ?? null);
   const [skillBook, setSkillBook] = useState<SkillBook | null>(null);
   const [skillNodes, setSkillNodes] = useState<SkillNode[]>([]);
   const [selectedSkillIds, setSelectedSkillIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(false);
+  const [loadingExistingSkills, setLoadingExistingSkills] = useState(isEditing);
+
+  // 편집 모드: 서(book) 4개를 모두 조회해 이미 습득한 기술 id를 모아 미리 체크해 둔다.
+  useEffect(() => {
+    if (!character) return;
+    let cancelled = false;
+    Promise.all(SKILL_BOOKS.map((book) => fetchCharacterSkillTree(character.id, book)))
+      .then((trees) => {
+        if (cancelled) return;
+        const unlockedIds = trees.flatMap((tree) => tree.nodes.filter((n) => n.unlocked).map((n) => n.id));
+        setSelectedSkillIds(new Set(unlockedIds));
+      })
+      .catch((error) => { if (!cancelled) toast(error instanceof Error ? error.message : "기존 기술 조회에 실패했습니다.", "error"); })
+      .finally(() => { if (!cancelled) setLoadingExistingSkills(false); });
+    return () => { cancelled = true; };
+  }, [character, toast]);
 
   useEffect(() => {
     if (!skillBook) return;
@@ -171,14 +241,14 @@ export default function CharacterCreate({ onCreated }: Props) {
   function handleSkillBookChange(value: string) {
     setSkillBook(value === "none" ? null : value as SkillBook);
     setSkillNodes([]);
-    setSelectedSkillIds(new Set());
+    // 다른 서에서 이미 고른 기술은 그대로 유지한다(여러 서를 넘나들며 제한 없이 고를 수 있음).
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     try {
-      const createdCharacter = await createCharacter({
+      const payload = {
         name: form.name,
         faction,
         skill_node_ids: [...selectedSkillIds],
@@ -220,15 +290,22 @@ export default function CharacterCreate({ onCreated }: Props) {
         lv: Number(form.lv),
         rank: Number(form.rank),
         exp: Number(form.exp),
-      });
-      setForm(EMPTY_FORM);
-      setFaction(null);
-      setSkillBook(null);
-      setSelectedSkillIds(new Set());
-      onCreated(createdCharacter);
+      };
+
+      if (isEditing && character) {
+        const updatedCharacter = await updateCharacter(character.id, payload);
+        onSaved?.(updatedCharacter);
+      } else {
+        const createdCharacter = await createCharacter(payload);
+        setForm(EMPTY_FORM);
+        setFaction(null);
+        setSkillBook(null);
+        setSelectedSkillIds(new Set());
+        onCreated?.(createdCharacter);
+      }
     } catch (error) {
       console.error(error);
-      toast(error instanceof Error ? error.message : "캐릭터 생성에 실패했습니다.", "error");
+      toast(error instanceof Error ? error.message : (isEditing ? "캐릭터 수정에 실패했습니다." : "캐릭터 생성에 실패했습니다."), "error");
     } finally {
       setLoading(false);
     }
@@ -267,14 +344,17 @@ export default function CharacterCreate({ onCreated }: Props) {
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold uppercase tracking-wide text-muted">초기 기술 서</label>
-          <p className="text-xs text-muted">기술트리는 역할(진영)과 무관합니다. 기술을 선택할 서를 골라주세요.</p>
+          <label className="text-xs font-semibold uppercase tracking-wide text-muted">기술 서</label>
+          <p className="text-xs text-muted">
+            기술트리는 역할(진영)과 무관합니다. 서를 넘나들며 원하는 기술을 자유롭게 고를 수 있습니다.
+            {isEditing && selectedSkillIds.size > 0 && ` (현재 ${selectedSkillIds.size}개 습득됨)`}
+          </p>
           <Select value={skillBook ?? "none"} onValueChange={handleSkillBookChange}>
             <SelectTrigger><SelectValue placeholder="서 선택" /></SelectTrigger>
             <SelectContent>
               <SelectGroup>
                 <SelectItem value="none">선택 안 함</SelectItem>
-                {(["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"] as SkillBook[]).map((value) => (
+                {SKILL_BOOKS.map((value) => (
                   <SelectItem key={value} value={value}>{value}</SelectItem>
                 ))}
               </SelectGroup>
@@ -285,7 +365,7 @@ export default function CharacterCreate({ onCreated }: Props) {
         {skillBook && (
           <div className="flex flex-col gap-2">
             <div>
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted">초기 기술</p>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted">{skillBook} 기술</p>
               <p className="mt-1 text-xs text-muted">선행 기술, 계열, AP 제한 없이 원하는 기술을 선택할 수 있습니다.</p>
             </div>
             <div className="grid max-h-64 grid-cols-1 gap-2 overflow-y-auto border-y border-line py-2 sm:grid-cols-2">
@@ -386,10 +466,15 @@ export default function CharacterCreate({ onCreated }: Props) {
           </div>
         </div>
 
-        <Button type="submit" disabled={loading}>
-          <UserPlus size={15} />
-          {loading ? "생성 중..." : "생성하기"}
-        </Button>
+        <div className="flex gap-2">
+          <Button type="submit" disabled={loading || loadingExistingSkills} className="flex-1">
+            <UserPlus size={15} />
+            {loading ? (isEditing ? "수정 중..." : "생성 중...") : isEditing ? "수정하기" : "생성하기"}
+          </Button>
+          {isEditing && onCancel && (
+            <Button type="button" variant="ghost" onClick={onCancel}>취소</Button>
+          )}
+        </div>
       </form>
     </section>
   );

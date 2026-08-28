@@ -2,6 +2,18 @@ import { clearToken, getRefreshToken, getToken, setToken } from "./token";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+/** refresh token이 없거나 만료/무효화돼 세션을 더 이상 유지할 수 없을 때 전역으로 알린다.
+ *  AuthProvider가 이 이벤트를 구독해 member를 null로 만들면, 각 페이지의
+ *  useRequireMember/useRequireAdmin이 즉시 /login으로 리다이렉트한다. */
+export const SESSION_EXPIRED_EVENT = "dragon-song:session-expired";
+
+function notifySessionExpired() {
+  clearToken();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(SESSION_EXPIRED_EVENT));
+  }
+}
+
 // 액세스 토큰(1시간) 만료 시 refresh token(7일)으로 한 번 재발급을 시도한 뒤 재요청한다.
 // 동시에 여러 요청이 401을 받아도 재발급은 한 번만 일어나도록 진행 중인 시도를 공유한다.
 let refreshInFlight: Promise<boolean> | null = null;
@@ -10,7 +22,10 @@ async function tryRefreshAccessToken(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       const refreshToken = getRefreshToken();
-      if (!refreshToken) return false;
+      if (!refreshToken) {
+        notifySessionExpired();
+        return false;
+      }
       try {
         const res = await fetch(`${API_URL}/auth/refresh`, {
           method: "POST",
@@ -18,7 +33,7 @@ async function tryRefreshAccessToken(): Promise<boolean> {
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
         if (!res.ok) {
-          clearToken();
+          notifySessionExpired();
           return false;
         }
         const data = await res.json();
@@ -48,7 +63,8 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
   };
 
   let res = await attempt();
-  if (res.status === 401 && getRefreshToken() && (await tryRefreshAccessToken())) {
+  // refresh token이 없거나 재발급이 실패하면 tryRefreshAccessToken 내부에서 notifySessionExpired()가 처리한다.
+  if (res.status === 401 && (await tryRefreshAccessToken())) {
     res = await attempt();
   }
   return res;
@@ -542,6 +558,14 @@ export async function createCharacter(data: CharacterCreate): Promise<Character>
   }, "캐릭터 생성 실패");
 }
 
+/** 관리자가 만든 캐릭터(러너 계정 미연결)만 능력치·기술을 제한 없이 통째로 수정할 수 있다. */
+export async function updateCharacter(characterId: number, data: CharacterCreate): Promise<Character> {
+  return request<Character>(`/characters/${characterId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }, "캐릭터 수정 실패");
+}
+
 export async function fetchAttendanceEntries(): Promise<AttendanceEntry[]> {
   return request<AttendanceEntry[]>("/attendance/entries", undefined, "출석 목록 조회 실패");
 }
@@ -884,6 +908,9 @@ export interface Chapter {
   battle_date: string | null;
   image_url: string | null;
   music_url: string | null;
+  battle_victory_reward_gold: number;
+  battle_action_reward_gold: number;
+  battle_participation_reward_exp: number;
   is_active: boolean;
   is_battle_day: boolean;
   created_at: string;
@@ -895,6 +922,9 @@ export interface ChapterCreate {
   end_date: string;
   battle_date?: string | null;
   music_url?: string | null;
+  battle_victory_reward_gold?: number;
+  battle_action_reward_gold?: number;
+  battle_participation_reward_exp?: number;
 }
 
 // 챕터 목록은 자주 조회되지만 거의 바뀌지 않으므로 짧게 캐싱해 페이지 이동마다 재조회하지 않는다.
@@ -1022,6 +1052,46 @@ export async function uploadEnemySummonImage(enemyId: number, skillIndex: number
   return uploadFile<Enemy>(`/enemies/${enemyId}/skills/${skillIndex}/summon-image`, file, "file", "소환수 이미지 업로드 실패");
 }
 
+/** 챕터 전투 환경 효과. 매 라운드 "적의 행동 암시" 턴마다 스택이 쌓이고 (스택-1)×스택당 피해를 입힌다. */
+export interface Environment {
+  id: number;
+  chapter: string;
+  name: string;
+  stacks_per_round: number;
+  damage_per_stack: number;
+  created_at: string;
+}
+
+export interface EnvironmentCreate {
+  chapter: string;
+  name: string;
+  stacks_per_round: number;
+  damage_per_stack: number;
+}
+
+export async function fetchEnvironments(chapter?: string): Promise<Environment[]> {
+  const params = chapter ? `?chapter=${encodeURIComponent(chapter)}` : "";
+  return request<Environment[]>(`/environments${params}`, undefined, "환경 조회 실패");
+}
+
+export async function createEnvironment(data: EnvironmentCreate): Promise<Environment> {
+  return request<Environment>("/environments", {
+    method: "POST",
+    body: JSON.stringify(data),
+  }, "환경 생성 실패");
+}
+
+export async function updateEnvironment(environmentId: number, data: EnvironmentCreate): Promise<Environment> {
+  return request<Environment>(`/environments/${environmentId}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  }, "환경 수정 실패");
+}
+
+export async function deleteEnvironment(environmentId: number): Promise<void> {
+  await request(`/environments/${environmentId}`, { method: "DELETE" }, "환경 삭제 실패");
+}
+
 export type BattleMode = "practice" | "real";
 export type BattleStatus = "in_progress" | "victory" | "defeat" | "early_terminated";
 // 한 라운드는 3턴으로 나뉜다: "telegraph"(적의 행동 암시) → "ally"(아군 턴) → "enemy"(에너미 턴).
@@ -1101,8 +1171,26 @@ export interface BattleSessionSummary {
   status: BattleStatus;
   round: number;
   enemy_names: string[];
+  rewards_sent: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export interface BattleRewardEntry {
+  character_id: number;
+  character_name: string;
+  victory_gold: number;
+  action_rounds: number;
+  action_gold: number;
+  total_gold: number;
+  participation_exp: number;
+}
+
+export interface BattleRewardPreview {
+  session_id: number;
+  chapter: string | null;
+  already_sent: boolean;
+  entries: BattleRewardEntry[];
 }
 
 export interface BattleStartRequest {
@@ -1114,6 +1202,7 @@ export interface BattleStartRequest {
 export interface BattleCharacterActionInput {
   character_id: number;
   kind: CharacterActionKind;
+  skill_node_id?: number | null;
   target_enemy_id?: number | null;
   target_character_id?: number | null;
   protect_target_character_id?: number | null;
@@ -1211,6 +1300,18 @@ export async function deleteBattle(sessionId: number): Promise<void> {
   await request(`/battles/${sessionId}`, { method: "DELETE" }, "전투 기록 삭제 실패");
 }
 
+/** 실전 전투 종료 후 러너별로 지급될 승리/행동/전원 보상을 미리 확인한다. */
+export async function fetchBattleRewardPreview(sessionId: number): Promise<BattleRewardPreview> {
+  return request<BattleRewardPreview>(`/battles/${sessionId}/rewards`, undefined, "전투 보상 조회 실패");
+}
+
+/** 실전 전투 보상을 실제로 지급한다(전투당 1회만 가능). */
+export async function sendBattleRewards(sessionId: number): Promise<BattleRewardPreview> {
+  return request<BattleRewardPreview>(`/battles/${sessionId}/rewards/send`, {
+    method: "POST",
+  }, "전투 보상 전송 실패");
+}
+
 /** 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다. */
 export type SkillBook = "용맹의 서" | "불굴의 서" | "헌신의 서" | "탐구의 서";
 
@@ -1259,7 +1360,7 @@ export async function fetchSkillNodes(book: SkillBook): Promise<SkillNode[]> {
 
 export async function updateSkillNode(
   nodeId: number,
-  data: { default_name: string; effects: ItemEffect[] },
+  data: { default_name: string; description: string | null },
 ): Promise<SkillNode> {
   return request<SkillNode>(`/skills/${nodeId}`, {
     method: "PUT",

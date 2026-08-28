@@ -17,6 +17,7 @@ import {
   Image as ImageIcon,
   Lock,
   Package,
+  Pencil,
   Shield,
   Trash2,
   Trophy,
@@ -67,6 +68,8 @@ interface Props {
   readOnly?: boolean;
   /** 지정하면 캐릭터 삭제 버튼을 노출한다(관리자 콘솔 전용). */
   onDeleted?: (characterId: number) => void;
+  /** 지정하면, 관리자가 만든 캐릭터(러너 계정 미연결)에 한해 수정 버튼을 노출한다(관리자 콘솔 전용). */
+  onEdit?: (character: CharacterDetail) => void;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -563,6 +566,7 @@ export default function CharacterInfo({
   focusCharacterId = null,
   readOnly = false,
   onDeleted,
+  onEdit,
 }: Props) {
   const { toast } = useToast();
   const { confirm } = useDialog();
@@ -1100,12 +1104,20 @@ export default function CharacterInfo({
             )}
           </div>}
 
-          {!readOnly && onDeleted && (
-            <div className="flex justify-end">
-              <Button variant="destructive" onClick={handleDeleteCharacter} disabled={deletingCharacter}>
-                <Trash2 size={15} />
-                {deletingCharacter ? "삭제 중..." : "캐릭터 삭제하기"}
-              </Button>
+          {!readOnly && (onDeleted || (onEdit && selectedDetail.member_id === null)) && (
+            <div className="flex justify-end gap-2">
+              {onEdit && selectedDetail.member_id === null && (
+                <Button variant="outline" onClick={() => onEdit(selectedDetail)}>
+                  <Pencil size={15} />
+                  능력치·기술 수정하기
+                </Button>
+              )}
+              {onDeleted && (
+                <Button variant="destructive" onClick={handleDeleteCharacter} disabled={deletingCharacter}>
+                  <Trash2 size={15} />
+                  {deletingCharacter ? "삭제 중..." : "캐릭터 삭제하기"}
+                </Button>
+              )}
             </div>
           )}
         </>

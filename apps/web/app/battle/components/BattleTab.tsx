@@ -25,6 +25,7 @@ import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
 import BattleArena from "./BattleArena";
+import BattleRewardCard from "./BattleRewardCard";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
@@ -41,21 +42,21 @@ const BATTLE_FORMULAS: { label: string; icon: React.ElementType; accent: string;
     icon: Shield,
     accent: "text-gold",
     formula:
-      "받는 피해 = max(0, 에너미 피해 × (1 − 피해 감소) − 방어력 × (1 + 방어력 증폭) × 방어 효율) × (1 − 피해 감소율(수비 포지션 50%, 그 외 30%)), 남은 피해는 보호막(보호막 + 시작 보호막)이 먼저 흡수. 수비 포지션은 본인 대신 다른 캐릭터가 맞도록 지정할 수 있음(기본값 본인)",
+      "받는 피해 = max(0, 에너미 피해 × (1 − 피해 감소) − 방어력 × (1 + 방어력 증폭) × 방어 효율) × (1 − 피해 감소율(수비 포지션 0.5, 그 외 0.3)), 남은 피해는 보호막(보호막 + 시작 보호막)이 먼저 흡수. 수비 포지션은 본인 대신 다른 캐릭터가 맞도록 지정할 수 있음(기본값 본인)",
   },
   {
     label: "치유",
     icon: Heart,
     accent: "text-emerald-500",
     formula:
-      "치유 포지션만 사용 가능. 치유량 = 25% × 대상 최대 체력 × (100 + 치유 효율(%)) / 100, 자신 또는 다른 캐릭터 한 명에게만 적용(오버힐 대상은 최대 체력 초과 회복)",
+      "치유 포지션만 사용 가능. 치유량 = 0.25 × 대상 최대 체력 × (1 + 치유 효율), 자신 또는 다른 캐릭터 한 명에게만 적용(오버힐 대상은 최대 체력 초과 회복)",
   },
   {
     label: "구조",
     icon: Ambulance,
     accent: "text-fuchsia-500",
     formula:
-      "기절한 아군이 1명 이상일 때만 사용 가능. 지정한 기절 캐릭터를 최대 체력의 10%로 부활시킴(포지션 제한 없음)",
+      "기절한 아군이 1명 이상일 때만 사용 가능. 지정한 기절 캐릭터를 (최대 체력 × 0.1)로 부활시킴(포지션 제한 없음)",
   },
 ];
 
@@ -131,6 +132,7 @@ export default function BattleTab() {
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [resumable, setResumable] = useState<BattleSessionSummary[]>([]);
+  const [rewardPending, setRewardPending] = useState<BattleSessionSummary[]>([]);
   const [history, setHistory] = useState<BattleSessionSummary[]>([]);
   const [historyMode, setHistoryMode] = useState<BattleMode>("real");
   const [loading, setLoading] = useState(true);
@@ -149,17 +151,26 @@ export default function BattleTab() {
     async function load() {
       try {
         setLoading(true);
-        const [enemyList, activeChapterData, characterList, resumableList] = await Promise.all([
+        const [enemyList, activeChapterData, characterList, resumableList, realBattles, practiceBattles] = await Promise.all([
           fetchEnemies(),
           fetchActiveChapter(),
           fetchCharacters(),
           fetchBattles({ mode: "real", status: "in_progress" }),
+          fetchBattles({ mode: "real" }),
+          fetchBattles({ mode: "practice" }),
         ]);
         if (cancelled) return;
         setEnemies(enemyList);
         setActiveChapter(activeChapterData);
         setCharacters(characterList);
         setResumable(resumableList);
+        // 실전: 아직 보상을 안 보낸 완료 전투는 전부 카드로 보여준다.
+        // 모의전: 보상을 실제로 보낼 수는 없지만, 가장 최근에 끝난 한 건만 미리보기용으로 보여준다.
+        const finishedPractice = practiceBattles.filter((s) => s.status !== "in_progress").slice(0, 1);
+        setRewardPending([
+          ...realBattles.filter((s) => s.status !== "in_progress" && !s.rewards_sent),
+          ...finishedPractice,
+        ]);
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "전투 데이터 조회 실패", "error");
       } finally {
@@ -272,6 +283,18 @@ export default function BattleTab() {
 
   return (
     <div className="space-y-8">
+      {rewardPending.length > 0 && (
+        <div className="space-y-3">
+          {rewardPending.map((session) => (
+            <BattleRewardCard
+              key={session.id}
+              session={session}
+              onSent={() => setRewardPending((prev) => prev.filter((s) => s.id !== session.id))}
+            />
+          ))}
+        </div>
+      )}
+
       <div className="space-y-2 border-b border-line pb-5">
         <h2 className="text-sm font-bold uppercase tracking-wide text-muted">전투 계산식</h2>
         <div className="space-y-1.5">

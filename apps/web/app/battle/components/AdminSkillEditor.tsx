@@ -6,7 +6,7 @@ import { Check, Image as ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import EffectListEditor from "@/components/common/EffectListEditor";
+import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/common/Modal";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
@@ -15,7 +15,6 @@ import {
   updateSkillNode,
   updateSkillVisibility,
   uploadSkillImage,
-  type ItemEffect,
   type SkillBook,
   type SkillNode,
 } from "@/lib/api";
@@ -24,7 +23,7 @@ const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "
 
 interface Draft {
   name: string;
-  effects: ItemEffect[];
+  description: string;
 }
 
 export default function AdminSkillEditor() {
@@ -32,7 +31,7 @@ export default function AdminSkillEditor() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<SkillNode | null>(null);
-  const [draft, setDraft] = useState<Draft>({ name: "", effects: [] });
+  const [draft, setDraft] = useState<Draft>({ name: "", description: "" });
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -63,7 +62,7 @@ export default function AdminSkillEditor() {
 
   function startEdit(node: SkillNode) {
     setEditing(node);
-    setDraft({ name: node.default_name, effects: node.effects });
+    setDraft({ name: node.default_name, description: node.description ?? "" });
     setImageFile(null);
     setImagePreview(node.image_url);
   }
@@ -93,7 +92,7 @@ export default function AdminSkillEditor() {
     setSaving(true);
     setError(null);
     try {
-      let updated = await updateSkillNode(editing.id, { default_name: draft.name, effects: draft.effects });
+      let updated = await updateSkillNode(editing.id, { default_name: draft.name, description: draft.description.trim() || null });
       if (imageFile) {
         updated = await uploadSkillImage(editing.id, imageFile);
       }
@@ -214,10 +213,15 @@ export default function AdminSkillEditor() {
             </div>
           </div>
 
-          <EffectListEditor
-            effects={draft.effects}
-            onChange={(effects) => setDraft((prev) => ({ ...prev, effects }))}
-          />
+          <div className="space-y-1.5">
+            <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 설명</label>
+            <Textarea
+              value={draft.description}
+              onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
+              placeholder="러너에게 보여지는 기술 설명을 입력하세요."
+              rows={4}
+            />
+          </div>
 
           <div className="flex items-center justify-end gap-2">
             <Button size="sm" variant="ghost" onClick={closeEdit} disabled={saving}>

@@ -124,6 +124,12 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE chapters ADD COLUMN image_url VARCHAR")
         if "music_url" not in chapter_columns:
             statements.append("ALTER TABLE chapters ADD COLUMN music_url VARCHAR")
+        if "battle_victory_reward_gold" not in chapter_columns:
+            statements.append("ALTER TABLE chapters ADD COLUMN battle_victory_reward_gold INTEGER NOT NULL DEFAULT 0")
+        if "battle_action_reward_gold" not in chapter_columns:
+            statements.append("ALTER TABLE chapters ADD COLUMN battle_action_reward_gold INTEGER NOT NULL DEFAULT 0")
+        if "battle_participation_reward_exp" not in chapter_columns:
+            statements.append("ALTER TABLE chapters ADD COLUMN battle_participation_reward_exp INTEGER NOT NULL DEFAULT 0")
 
     if "challenges" in table_names:
         challenge_columns = {col["name"] for col in inspector.get_columns("challenges")}

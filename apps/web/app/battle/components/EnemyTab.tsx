@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Image as ImageIcon, Pencil, Plus, Trash2 } from "lucide-react";
+import { CloudFog, Image as ImageIcon, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -17,15 +17,19 @@ import {
 import Modal from "@/components/common/Modal";
 import {
   createEnemy,
+  createEnvironment,
   deleteEnemy,
+  deleteEnvironment,
   fetchChapters,
   fetchEnemies,
+  fetchEnvironments,
   updateChapter,
   updateEnemy,
+  updateEnvironment,
   uploadEnemyImage,
   uploadEnemySummonImage,
 } from "@/lib/api";
-import type { Chapter, Enemy, EnemyCreate, EnemySkill } from "@/lib/api";
+import type { Chapter, Enemy, EnemyCreate, EnemySkill, Environment } from "@/lib/api";
 import { cn, parsePositiveInt, todayDateValue } from "@/lib/utils";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
@@ -156,6 +160,8 @@ export default function EnemyTab() {
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<string>(ALL_CHAPTERS);
   const [battleDateDraft, setBattleDateDraft] = useState("");
+  const [rewardDraft, setRewardDraft] = useState({ victory: "0", action: "0", exp: "0" });
+  const [rewardSaving, setRewardSaving] = useState(false);
   const [chaptersLoaded, setChaptersLoaded] = useState(false);
   const [form, setForm] = useState<EnemyFormState>(DEFAULT_FORM);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -169,8 +175,28 @@ export default function EnemyTab() {
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
+  const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environmentsLoading, setEnvironmentsLoading] = useState(false);
+  const [environmentDraft, setEnvironmentDraft] = useState({ name: "", stacks_per_round: "1", damage_per_stack: "0" });
+  const [editingEnvironmentId, setEditingEnvironmentId] = useState<number | null>(null);
+  const [environmentSaving, setEnvironmentSaving] = useState(false);
+  const [deletingEnvironmentId, setDeletingEnvironmentId] = useState<number | null>(null);
+
   const selectedChapterData = chapterList.find((chapter) => chapter.name === selectedChapter) ?? null;
   const battleDateDirty = (selectedChapterData?.battle_date ?? "") !== battleDateDraft;
+  const rewardDirty = selectedChapterData != null && (
+    String(selectedChapterData.battle_victory_reward_gold) !== rewardDraft.victory
+    || String(selectedChapterData.battle_action_reward_gold) !== rewardDraft.action
+    || String(selectedChapterData.battle_participation_reward_exp) !== rewardDraft.exp
+  );
+
+  function rewardDraftFrom(chapter: Chapter) {
+    return {
+      victory: String(chapter.battle_victory_reward_gold),
+      action: String(chapter.battle_action_reward_gold),
+      exp: String(chapter.battle_participation_reward_exp),
+    };
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -185,6 +211,7 @@ export default function EnemyTab() {
           ) ?? chapList[0];
           setSelectedChapter(defaultChapter.name);
           setBattleDateDraft(defaultChapter.battle_date ?? "");
+          setRewardDraft(rewardDraftFrom(defaultChapter));
         }
       })
       .catch((e) => { if (!cancelled) toast(e instanceof Error ? e.message : "챕터를 불러오지 못했습니다.", "error"); })
@@ -209,6 +236,85 @@ export default function EnemyTab() {
     load();
     return () => { cancelled = true; };
   }, [chaptersLoaded, selectedChapter, toast]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function load() {
+      setEnvironmentDraft({ name: "", stacks_per_round: "1", damage_per_stack: "0" });
+      setEditingEnvironmentId(null);
+      if (!chaptersLoaded || selectedChapter === ALL_CHAPTERS) { setEnvironments([]); return; }
+      setEnvironmentsLoading(true);
+      try {
+        const list = await fetchEnvironments(selectedChapter);
+        if (!cancelled) setEnvironments(list);
+      } catch (e) {
+        if (!cancelled) toast(e instanceof Error ? e.message : "환경을 불러오지 못했습니다.", "error");
+      } finally {
+        if (!cancelled) setEnvironmentsLoading(false);
+      }
+    }
+    load();
+    return () => { cancelled = true; };
+  }, [chaptersLoaded, selectedChapter, toast]);
+
+  function startEditEnvironment(environment: Environment) {
+    setEditingEnvironmentId(environment.id);
+    setEnvironmentDraft({
+      name: environment.name,
+      stacks_per_round: String(environment.stacks_per_round),
+      damage_per_stack: String(environment.damage_per_stack),
+    });
+  }
+
+  function resetEnvironmentDraft() {
+    setEditingEnvironmentId(null);
+    setEnvironmentDraft({ name: "", stacks_per_round: "1", damage_per_stack: "0" });
+  }
+
+  async function handleEnvironmentSubmit() {
+    if (selectedChapter === ALL_CHAPTERS || !environmentDraft.name.trim()) return;
+    setEnvironmentSaving(true);
+    try {
+      const payload = {
+        chapter: selectedChapter,
+        name: environmentDraft.name.trim(),
+        stacks_per_round: parsePositiveInt(environmentDraft.stacks_per_round),
+        damage_per_stack: parsePositiveInt(environmentDraft.damage_per_stack),
+      };
+      if (editingEnvironmentId != null) {
+        const updated = await updateEnvironment(editingEnvironmentId, payload);
+        setEnvironments((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+      } else {
+        const created = await createEnvironment(payload);
+        setEnvironments((prev) => [...prev, created]);
+      }
+      resetEnvironmentDraft();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "환경 저장에 실패했습니다.", "error");
+    } finally {
+      setEnvironmentSaving(false);
+    }
+  }
+
+  async function handleDeleteEnvironment(environment: Environment) {
+    const ok = await confirm({
+      title: "환경 삭제",
+      description: `'${environment.name}' 환경을 삭제할까요?`,
+      confirmText: "삭제",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setDeletingEnvironmentId(environment.id);
+    try {
+      await deleteEnvironment(environment.id);
+      setEnvironments((prev) => prev.filter((e) => e.id !== environment.id));
+      if (editingEnvironmentId === environment.id) resetEnvironmentDraft();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "환경 삭제에 실패했습니다.", "error");
+    } finally {
+      setDeletingEnvironmentId(null);
+    }
+  }
 
   function setField<K extends keyof EnemyFormState>(key: K, value: EnemyFormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -285,23 +391,56 @@ export default function EnemyTab() {
     }));
   }
 
+  /** updateChapter는 챕터 레코드를 통째로 교체하므로, 지금 건드리지 않는 필드도 항상 현재 값으로 함께 보내야 한다. */
+  function chapterPayloadBase(chapter: Chapter) {
+    return {
+      name: chapter.name,
+      start_date: chapter.start_date,
+      end_date: chapter.end_date,
+      battle_date: chapter.battle_date,
+      music_url: chapter.music_url,
+      battle_victory_reward_gold: chapter.battle_victory_reward_gold,
+      battle_action_reward_gold: chapter.battle_action_reward_gold,
+      battle_participation_reward_exp: chapter.battle_participation_reward_exp,
+    };
+  }
+
   async function handleBattleDateSave() {
     if (!selectedChapterData) return;
     setScheduleSaving(true);
     try {
       const updatedChapter = await updateChapter(selectedChapterData.id, {
-        name: selectedChapterData.name,
-        start_date: selectedChapterData.start_date,
-        end_date: selectedChapterData.end_date,
+        ...chapterPayloadBase(selectedChapterData),
         battle_date: battleDateDraft || null,
-        music_url: selectedChapterData.music_url,
       });
       setChapterList((prev) => prev.map((chapter) => (chapter.id === updatedChapter.id ? updatedChapter : chapter)));
       setBattleDateDraft(updatedChapter.battle_date ?? "");
+      setRewardDraft(rewardDraftFrom(updatedChapter));
     } catch (e) {
       toast(e instanceof Error ? e.message : "전투 일정 저장에 실패했습니다.", "error");
     } finally {
       setScheduleSaving(false);
+    }
+  }
+
+  async function handleRewardSave() {
+    if (!selectedChapterData) return;
+    setRewardSaving(true);
+    try {
+      const updatedChapter = await updateChapter(selectedChapterData.id, {
+        ...chapterPayloadBase(selectedChapterData),
+        battle_victory_reward_gold: parsePositiveInt(rewardDraft.victory),
+        battle_action_reward_gold: parsePositiveInt(rewardDraft.action),
+        battle_participation_reward_exp: parsePositiveInt(rewardDraft.exp),
+      });
+      setChapterList((prev) => prev.map((chapter) => (chapter.id === updatedChapter.id ? updatedChapter : chapter)));
+      setBattleDateDraft(updatedChapter.battle_date ?? "");
+      setRewardDraft(rewardDraftFrom(updatedChapter));
+      toast("보상 설정을 저장했습니다.", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "보상 설정 저장에 실패했습니다.", "error");
+    } finally {
+      setRewardSaving(false);
     }
   }
 
@@ -359,6 +498,7 @@ export default function EnemyTab() {
                 setSelectedChapter(value);
                 const chapter = chapterList.find((item) => item.name === value) ?? null;
                 setBattleDateDraft(chapter?.battle_date ?? "");
+                setRewardDraft(chapter ? rewardDraftFrom(chapter) : { victory: "0", action: "0", exp: "0" });
               }}
             >
               <SelectTrigger className="w-44">
@@ -412,6 +552,151 @@ export default function EnemyTab() {
                 >
                   {scheduleSaving ? "저장 중..." : "전투 일정 저장"}
                 </Button>
+              </div>
+            </div>
+          )}
+
+          {selectedChapterData && (
+            <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-inset/30 px-4 py-4">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-ivory">{selectedChapterData.name} 실전 전투 보상</p>
+                <p className="text-xs text-muted">
+                  실전 전투가 끝나면 전투 페이지 상단의 보상 전송 카드에서 이 값을 기준으로 계산된 보상을 확인하고 지급할 수 있습니다.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">승리보상 (골드, 1라운드 이상 참여한 전원)</label>
+                  <Input
+                    type="number" min={0}
+                    value={rewardDraft.victory}
+                    onChange={(e) => setRewardDraft((prev) => ({ ...prev, victory: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">행동보상 (골드, 무반응 제외 행동 라운드당)</label>
+                  <Input
+                    type="number" min={0}
+                    value={rewardDraft.action}
+                    onChange={(e) => setRewardDraft((prev) => ({ ...prev, action: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">전원보상 (경험치, 참여 여부 무관 전체 러너)</label>
+                  <Input
+                    type="number" min={0}
+                    value={rewardDraft.exp}
+                    onChange={(e) => setRewardDraft((prev) => ({ ...prev, exp: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="self-end"
+                onClick={handleRewardSave}
+                disabled={rewardSaving || !rewardDirty}
+              >
+                {rewardSaving ? "저장 중..." : "보상 설정 저장"}
+              </Button>
+            </div>
+          )}
+
+          {selectedChapterData && (
+            <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-inset/30 px-4 py-4">
+              <div className="space-y-1">
+                <p className="flex items-center gap-1.5 text-sm font-semibold text-ivory">
+                  <CloudFog size={14} className="text-muted" />
+                  {selectedChapterData.name} 환경
+                </p>
+                <p className="text-xs text-muted">
+                  매 라운드 &ldquo;적의 행동 암시&rdquo; 턴마다 캐릭터에게 스택이 쌓이고, (스택 수 − 1) × 스택당 피해를 입힙니다. 한 챕터에 여러 환경을 등록할 수 있습니다.
+                </p>
+              </div>
+
+              {environmentsLoading ? (
+                <p className="text-xs text-muted">환경을 불러오는 중입니다.</p>
+              ) : environments.length > 0 && (
+                <div className="flex flex-col gap-2">
+                  {environments.map((environment) => (
+                    <div key={environment.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+                      <div className="flex flex-wrap items-center gap-2 text-sm">
+                        <span className="font-semibold text-ivory">{environment.name}</span>
+                        <span className="text-xs text-muted">
+                          라운드당 스택 +{environment.stacks_per_round} · 스택당 {environment.damage_per_stack} 피해
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => startEditEnvironment(environment)}
+                          className="h-7 w-7 text-muted hover:text-gold"
+                          aria-label={`${environment.name} 수정`}
+                        >
+                          <Pencil size={13} />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleDeleteEnvironment(environment)}
+                          disabled={deletingEnvironmentId === environment.id}
+                          className="h-7 w-7 text-muted hover:text-red-500"
+                          aria-label={`${environment.name} 삭제`}
+                        >
+                          <Trash2 size={13} />
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">스택 이름</label>
+                  <Input
+                    value={environmentDraft.name}
+                    onChange={(e) => setEnvironmentDraft((prev) => ({ ...prev, name: e.target.value }))}
+                    placeholder="예: 독개스"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">라운드당 쌓이는 스택</label>
+                  <Input
+                    type="number" min={0}
+                    value={environmentDraft.stacks_per_round}
+                    onChange={(e) => setEnvironmentDraft((prev) => ({ ...prev, stacks_per_round: e.target.value }))}
+                    placeholder="1"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">스택당 피해량</label>
+                  <Input
+                    type="number" min={0}
+                    value={environmentDraft.damage_per_stack}
+                    onChange={(e) => setEnvironmentDraft((prev) => ({ ...prev, damage_per_stack: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex items-end gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={handleEnvironmentSubmit}
+                    disabled={environmentSaving || !environmentDraft.name.trim()}
+                  >
+                    {environmentSaving ? "저장 중..." : editingEnvironmentId != null ? "수정 완료" : "환경 추가"}
+                  </Button>
+                  {editingEnvironmentId != null && (
+                    <Button type="button" variant="ghost" onClick={resetEnvironmentDraft}>취소</Button>
+                  )}
+                </div>
               </div>
             </div>
           )}

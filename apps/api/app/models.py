@@ -14,6 +14,10 @@ class Chapter(Base):
     battle_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     music_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 이 챕터의 실전 전투가 끝났을 때 지급되는 보상 설정(전투 페이지 "보상 전송" 카드에서 사용).
+    battle_victory_reward_gold: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    battle_action_reward_gold: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    battle_participation_reward_exp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -399,6 +403,23 @@ class Enemy(Base):
     hp_per_healer: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     attack: Mapped[int] = mapped_column(Integer, nullable=False)
     skills: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class Environment(Base):
+    """챕터에 딸린 전투 환경 효과. 라운드마다(적 행동 암시 턴) 참가자에게 스택이 쌓이고, (스택-1)×스택당 피해를 입힌다."""
+
+    __tablename__ = "environments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    chapter: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    stacks_per_round: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    damage_per_stack: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

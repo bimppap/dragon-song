@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Ban, Eye, Heart, HeartPulse, ListChecks, type LucideIcon, Megaphone, Skull, Sparkles, Swords, Undo2, UserPlus, Zap } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ArrowLeft, Ban, Eye, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -18,6 +18,7 @@ import { cn } from "@/lib/utils";
 import {
   fetchBattle,
   fetchCharacterDetail,
+  fetchCharacterSkillTree,
   fetchCharacters,
   fetchEnemies,
   joinBattle,
@@ -32,11 +33,14 @@ import {
   type BattleEnemyState,
   type BattleParticipant,
   type BattleSession,
+  type CharacterSkillNode,
+  type CharacterSkillTree,
   type CharacterActionKind,
   type CharacterOwnedItem,
   type Character,
   type Enemy,
   type EnemyActionKind,
+  type SkillBook,
 } from "@/lib/api";
 import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
@@ -54,6 +58,7 @@ interface Props {
 
 interface CharDraft {
   kind: CharacterActionKind;
+  skill_node_id: number | null;
   target_enemy_id: number | null;
   target_character_id: number | null; // 치유/구조 지정 대상
   protect_target_character_id: number | null; // 방어(수비 포지션 한정) 시 대신 맞아줄 대상
@@ -155,6 +160,53 @@ const PHASE_LABEL: Record<BattleSession["phase"], string> = {
   enemy: "에너미 턴",
 };
 
+const BATTLE_SKILL_BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
+const SELF_TARGET_SKILL_NAMES = new Set(["모루", "불굴"]);
+const SINGLE_ENEMY_SKILL_NAMES = new Set(["강타", "격류", "위해"]);
+const MULTI_ENEMY_SKILL_NAMES = new Set(["분쇄", "파괴"]);
+const SINGLE_ALLY_SKILL_NAMES = new Set(["반격", "보호", "수호", "회복", "생명", "정화", "승화"]);
+const MULTI_ALLY_SKILL_NAMES = new Set(["구호"]);
+
+type BattleSkillTargetMode = "enemy-single" | "enemy-multi" | "ally-single" | "ally-multi" | "self" | "none";
+
+function pickBattleSkillsFromTrees(trees: CharacterSkillTree[]): CharacterSkillNode[] {
+  return trees.flatMap((tree) => {
+    const unlocked = tree.nodes
+      .filter((node) => node.is_public && node.unlocked && node.tier > 0)
+      .toSorted((a, b) => {
+        if (a.tier !== b.tier) return b.tier - a.tier;
+        return (b.unlocked_at ?? "").localeCompare(a.unlocked_at ?? "");
+      });
+    return unlocked[0] ? [unlocked[0]] : [];
+  });
+}
+
+function getBattleSkillTargetMode(skill: CharacterSkillNode): BattleSkillTargetMode {
+  if (SELF_TARGET_SKILL_NAMES.has(skill.default_name) || skill.target === "SELF") return "self";
+  if (MULTI_ALLY_SKILL_NAMES.has(skill.default_name)) return "ally-multi";
+  if (MULTI_ENEMY_SKILL_NAMES.has(skill.default_name) || (skill.category === "피해" && skill.target === "1 + N")) {
+    return "enemy-multi";
+  }
+  if (
+    SINGLE_ENEMY_SKILL_NAMES.has(skill.default_name)
+    || (skill.category === "피해" && skill.target === "1")
+  ) {
+    return "enemy-single";
+  }
+  if (
+    SINGLE_ALLY_SKILL_NAMES.has(skill.default_name)
+    || skill.category === "회복"
+    || skill.category === "강화"
+  ) {
+    return "ally-single";
+  }
+  return "none";
+}
+
+function firstBattleSkillId(skills: CharacterSkillNode[]) {
+  return skills[0]?.id ?? null;
+}
+
 function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
   switch (kind) {
     case "attack":
@@ -177,8 +229,9 @@ function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
   }
 }
 
-function allowedKinds(p: BattleParticipant, hasDowned: boolean): CharacterActionKind[] {
+function allowedKinds(p: BattleParticipant, hasDowned: boolean, hasBattleSkills: boolean): CharacterActionKind[] {
   return (Object.keys(CHAR_ACTION_LABEL) as CharacterActionKind[]).filter((kind) => {
+    if (kind === "skill") return hasBattleSkills;
     if (kind === "heal") return p.faction === "치유";
     if (kind === "rescue") return hasDowned;
     return true;
@@ -219,6 +272,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
   const [bulkActionKind, setBulkActionKind] = useState<CharacterActionKind>("attack");
   const [telegraphDrafts, setTelegraphDrafts] = useState<Record<number, TelegraphDraft>>({});
   const [itemsByCharacter, setItemsByCharacter] = useState<Record<number, CharacterOwnedItem[]>>({});
+  const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, CharacterSkillNode[]>>({});
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCandidates, setJoinCandidates] = useState<Character[]>([]);
@@ -266,12 +320,83 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
     return () => { cancelled = true; clearInterval(interval); };
   }, [readOnly, sessionId]);
 
+  useEffect(() => {
+    if (readOnly || !session || session.status !== "in_progress") return;
+    const missingIds = session.participants
+      .map((participant) => participant.character_id)
+      .filter((characterId) => skillsByCharacter[characterId] == null);
+    if (missingIds.length === 0) return;
+
+    let cancelled = false;
+
+    async function loadSkills() {
+      const loaded = await Promise.all(missingIds.map(async (characterId) => {
+        try {
+          const trees = await Promise.all(
+            BATTLE_SKILL_BOOKS.map((book) => fetchCharacterSkillTree(characterId, book)),
+          );
+          return [characterId, pickBattleSkillsFromTrees(trees)] as const;
+        } catch {
+          return [characterId, []] as const;
+        }
+      }));
+      if (cancelled) return;
+      setSkillsByCharacter((prev) => ({
+        ...prev,
+        ...Object.fromEntries(loaded),
+      }));
+    }
+
+    void loadSkills();
+    return () => { cancelled = true; };
+  }, [readOnly, session, skillsByCharacter]);
+
+  useEffect(() => {
+    function syncCharDraftsWithSkills() {
+      if (!session) return;
+      const hasDowned = session.participants.some((participant) => participant.downed);
+      setCharDrafts((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const participant of session.participants) {
+        if (!isTargetable(participant, session.round)) continue;
+        const draft = next[participant.character_id];
+        if (!draft) continue;
+        const battleSkills = skillsByCharacter[participant.character_id];
+        if (battleSkills == null) continue;
+        const hasBattleSkills = battleSkills.length > 0;
+        const kinds = allowedKinds(participant, hasDowned, hasBattleSkills);
+        if (!kinds.includes(draft.kind)) {
+          next[participant.character_id] = {
+            ...draft,
+            kind: defaultCharKind(participant.faction),
+            skill_node_id: firstBattleSkillId(battleSkills),
+          };
+          changed = true;
+          continue;
+        }
+        if (draft.kind !== "skill") continue;
+        const selectedExists = battleSkills.some((skill) => skill.id === draft.skill_node_id);
+        const defaultSkillId = firstBattleSkillId(battleSkills);
+        if (!selectedExists && draft.skill_node_id !== defaultSkillId) {
+          next[participant.character_id] = { ...draft, skill_node_id: defaultSkillId };
+          changed = true;
+        }
+        }
+        return changed ? next : prev;
+      });
+    }
+    syncCharDraftsWithSkills();
+  }, [session, skillsByCharacter]);
+
   function resetCharDrafts(data: BattleSession) {
     const next: Record<number, CharDraft> = {};
     for (const p of data.participants) {
       if (!isTargetable(p, data.round)) continue;
+      const battleSkills = skillsByCharacter[p.character_id] ?? [];
       next[p.character_id] = {
         kind: defaultCharKind(p.faction),
+        skill_node_id: firstBattleSkillId(battleSkills),
         target_enemy_id: data.enemies.find((enemy) => isEnemyTargetable(enemy, data.round))?.enemy_id ?? null,
         target_character_id: p.character_id,
         protect_target_character_id: p.character_id,
@@ -338,11 +463,15 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
     setCharDrafts((prev) => Object.fromEntries(
       Object.entries(prev).map(([characterId, draft]) => {
         const p = session.participants.find((c) => c.character_id === Number(characterId));
-        if (!p || !allowedKinds(p, hasDowned).includes(bulkActionKind)) return [characterId, draft];
+        const battleSkills = skillsByCharacter[Number(characterId)] ?? [];
+        if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) return [characterId, draft];
         if (bulkActionKind === "item") characterIds.push(Number(characterId));
         return [characterId, {
           ...draft,
           kind: bulkActionKind,
+          skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(battleSkills) : draft.skill_node_id,
+          target_character_id: bulkActionKind === "skill" ? Number(characterId) : draft.target_character_id,
+          protect_target_character_id: bulkActionKind === "defend" ? Number(characterId) : draft.protect_target_character_id,
           item_id: bulkActionKind === "item" ? draft.item_id : null,
         }];
       }),
@@ -378,6 +507,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
     const characterActions: BattleCharacterActionInput[] = Object.entries(charDrafts).map(([id, draft]) => ({
       character_id: Number(id),
       kind: draft.kind,
+      skill_node_id: draft.kind === "skill" ? (draft.skill_node_id ?? undefined) : undefined,
       target_enemy_id: draft.target_enemy_id ?? undefined,
       target_character_id: draft.target_character_id ?? undefined,
       protect_target_character_id: draft.kind === "defend" ? (draft.protect_target_character_id ?? undefined) : undefined,
@@ -626,7 +756,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
             {joining ? "처리 중..." : "난입 확정"}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setJoinOpen(false)}>취소</Button>
-          <p className="text-xs text-muted">난입한 캐릭터는 이번 라운드에는 공격/치유 대상이 되지 않습니다.</p>
+          <p className="text-xs text-muted">난입한 캐릭터는 이번 라운드에는 행동할 수 없고, 공격/치유 대상도 되지 않습니다.</p>
         </div>
       )}
 
@@ -789,112 +919,254 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
         {sortedParticipants.map((p) => {
           const draft = charDrafts[p.character_id];
           const active = isActive(p);
+          const battleSkills = skillsByCharacter[p.character_id] ?? [];
           const items = itemsByCharacter[p.character_id] ?? [];
           const showActionUi = canAct && phase === "ally" && active && draft;
-          const kindOptions = allowedKinds(p, hasDowned);
+          const kindOptions = allowedKinds(p, hasDowned, battleSkills.length > 0);
+          const selectedSkill = draft?.skill_node_id != null
+            ? battleSkills.find((skill) => skill.id === draft.skill_node_id) ?? battleSkills[0] ?? null
+            : battleSkills[0] ?? null;
+          const selectedSkillTargetMode = draft?.kind === "skill" && selectedSkill
+            ? getBattleSkillTargetMode(selectedSkill)
+            : null;
+          const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
-          let secondaryActionControl: React.ReactNode = null;
-          if (draft && (draft.kind === "attack" || draft.kind === "skill") && targetableEnemies.length > 1) {
-            secondaryActionControl = (
-              <Select
-                value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
-                onValueChange={(v) => patchChar(p.character_id, { target_enemy_id: Number(v) })}
-              >
-                <SelectTrigger className="h-8 w-full text-[11px]">
-                  <SelectValue placeholder="대상 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {targetableEnemies.map((e) => (
-                      <SelectItem key={e.enemy_id} value={String(e.enemy_id)}>{e.name}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            );
+          if (draft?.kind === "skill" && battleSkills.length > 0) {
+            extraControls.push({
+              key: "skill",
+              icon: Sparkles,
+              control: (
+                <Select
+                  value={draft.skill_node_id != null ? String(draft.skill_node_id) : String(battleSkills[0].id)}
+                  onValueChange={(value) => patchChar(p.character_id, {
+                    skill_node_id: Number(value),
+                    target_character_id: p.character_id,
+                  })}
+                >
+                  <SelectTrigger className="h-8 w-full text-[11px]">
+                    <SelectValue placeholder="기술 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {battleSkills.map((skill) => (
+                        <SelectItem key={skill.id} value={String(skill.id)}>{skill.display_name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ),
+            });
+
+            if (selectedSkillTargetMode === "enemy-single" && targetableEnemies.length > 1) {
+              extraControls.push({
+                key: "enemy-target",
+                icon: Skull,
+                control: (
+                  <Select
+                    value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
+                    onValueChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
+                  >
+                    <SelectTrigger className="h-8 w-full text-[11px]">
+                      <SelectValue placeholder="대상 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {targetableEnemies.map((enemy) => (
+                          <SelectItem key={enemy.enemy_id} value={String(enemy.enemy_id)}>{enemy.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                ),
+              });
+            } else if (selectedSkillTargetMode === "ally-single") {
+              const targetCandidates = selectedSkill?.category === "강화"
+                ? session.participants.filter((target) => isTargetable(target, session.round))
+                : session.participants.filter((target) => isHealable(target, session.round));
+              if (targetCandidates.length > 1) {
+                extraControls.push({
+                  key: "ally-target",
+                  icon: HeartPulse,
+                  control: (
+                    <Select
+                      value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
+                      onValueChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
+                    >
+                      <SelectTrigger className="h-8 w-full text-[11px]">
+                        <SelectValue placeholder="대상 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {targetCandidates.map((target) => (
+                            <SelectItem key={target.character_id} value={String(target.character_id)}>
+                              {target.name}{target.downed ? " (기절)" : target.character_id === p.character_id ? " (본인)" : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  ),
+                });
+              }
+            }
+          } else if (draft && draft.kind === "attack" && targetableEnemies.length > 1) {
+            extraControls.push({
+              key: "enemy-target",
+              icon: Skull,
+              control: (
+                <Select
+                  value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
+                  onValueChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
+                >
+                  <SelectTrigger className="h-8 w-full text-[11px]">
+                    <SelectValue placeholder="대상 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {targetableEnemies.map((enemy) => (
+                        <SelectItem key={enemy.enemy_id} value={String(enemy.enemy_id)}>{enemy.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ),
+            });
           } else if (draft?.kind === "heal") {
-            secondaryActionControl = (
-              <Select
-                value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
-                onValueChange={(v) => patchChar(p.character_id, { target_character_id: Number(v) })}
-              >
-                <SelectTrigger className="h-8 w-full text-[11px]">
-                  <SelectValue placeholder="치유 대상 선택 (자신 또는 1명)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {session.participants.filter((t) => isHealable(t, session.round)).map((t) => (
-                      <SelectItem key={t.character_id} value={String(t.character_id)}>
-                        {t.name}{t.downed ? " (기절)" : ""}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            );
-          } else if (draft?.kind === "rescue") {
-            secondaryActionControl = (
-              <Select
-                value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
-                onValueChange={(v) => patchChar(p.character_id, { target_character_id: Number(v) })}
-              >
-                <SelectTrigger className="h-8 w-full text-[11px]">
-                  <SelectValue placeholder="구조 대상 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {downedParticipants.map((t) => (
-                      <SelectItem key={t.character_id} value={String(t.character_id)}>{t.name}</SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            );
-          } else if (draft?.kind === "item") {
-            secondaryActionControl = (
-              <Select
-                value={draft.item_id != null ? String(draft.item_id) : ""}
-                onValueChange={(v) => patchChar(p.character_id, { item_id: Number(v) })}
-              >
-                <SelectTrigger className="h-8 w-full text-[11px]">
-                  <SelectValue placeholder="아이템 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {items.length === 0 ? (
-                      <SelectItem value="__none__" disabled>보유 아이템 없음</SelectItem>
-                    ) : (
-                      items.map((item) => (
-                        <SelectItem key={item.item_id} value={String(item.item_id)}>
-                          {item.item_name} ({item.quantity - item.used_quantity}개)
+            extraControls.push({
+              key: "heal-target",
+              icon: HeartPulse,
+              control: (
+                <Select
+                  value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
+                  onValueChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
+                >
+                  <SelectTrigger className="h-8 w-full text-[11px]">
+                    <SelectValue placeholder="치유 대상 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {session.participants.filter((target) => isHealable(target, session.round)).map((target) => (
+                        <SelectItem key={target.character_id} value={String(target.character_id)}>
+                          {target.name}{target.downed ? " (기절)" : ""}
                         </SelectItem>
-                      ))
-                    )}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            );
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ),
+            });
+          } else if (draft?.kind === "rescue") {
+            extraControls.push({
+              key: "rescue-target",
+              icon: UserPlus,
+              control: (
+                <Select
+                  value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
+                  onValueChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
+                >
+                  <SelectTrigger className="h-8 w-full text-[11px]">
+                    <SelectValue placeholder="구조 대상 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {downedParticipants.map((target) => (
+                        <SelectItem key={target.character_id} value={String(target.character_id)}>{target.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ),
+            });
+          } else if (draft?.kind === "item") {
+            extraControls.push({
+              key: "item",
+              icon: Package,
+              control: (
+                <Select
+                  value={draft.item_id != null ? String(draft.item_id) : ""}
+                  onValueChange={(value) => patchChar(p.character_id, { item_id: Number(value) })}
+                >
+                  <SelectTrigger className="h-8 w-full text-[11px]">
+                    <SelectValue placeholder="아이템 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {items.length === 0 ? (
+                        <SelectItem value="__none__" disabled>보유 아이템 없음</SelectItem>
+                      ) : (
+                        items.map((item) => (
+                          <SelectItem key={item.item_id} value={String(item.item_id)}>
+                            {item.item_name} ({item.quantity - item.used_quantity}개)
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ),
+            });
           } else if (draft?.kind === "defend" && p.faction === "수비") {
-            secondaryActionControl = (
-              <Select
-                value={draft.protect_target_character_id != null ? String(draft.protect_target_character_id) : String(p.character_id)}
-                onValueChange={(v) => patchChar(p.character_id, { protect_target_character_id: Number(v) })}
-              >
-                <SelectTrigger className="h-8 w-full text-[11px]">
-                  <SelectValue placeholder="보호 대상 (기본 본인)" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {session.participants.filter((t) => isTargetable(t, session.round)).map((t) => (
-                      <SelectItem key={t.character_id} value={String(t.character_id)}>
-                        {t.character_id === p.character_id ? `${t.name} (본인)` : t.name}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            );
+            extraControls.push({
+              key: "protect-target",
+              icon: Shield,
+              control: (
+                <Select
+                  value={draft.protect_target_character_id != null ? String(draft.protect_target_character_id) : String(p.character_id)}
+                  onValueChange={(value) => patchChar(p.character_id, { protect_target_character_id: Number(value) })}
+                >
+                  <SelectTrigger className="h-8 w-full text-[11px]">
+                    <SelectValue placeholder="보호 대상" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {session.participants.filter((target) => isTargetable(target, session.round)).map((target) => (
+                        <SelectItem key={target.character_id} value={String(target.character_id)}>
+                          {target.character_id === p.character_id ? `${target.name} (본인)` : target.name}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ),
+            });
           }
+
+          const actionControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [
+            {
+              key: "action",
+              icon: ListChecks,
+              control: (
+                <Select
+                  value={draft?.kind}
+                  onValueChange={(kind: CharacterActionKind) => {
+                    const nextPatch: Partial<CharDraft> = {
+                      kind,
+                      item_id: kind === "item" ? draft?.item_id ?? null : null,
+                      protect_target_character_id: kind === "defend" ? p.character_id : draft?.protect_target_character_id ?? p.character_id,
+                    };
+                    if (kind === "skill") {
+                      nextPatch.skill_node_id = firstBattleSkillId(battleSkills);
+                      nextPatch.target_character_id = p.character_id;
+                    }
+                    patchChar(p.character_id, nextPatch);
+                    if (kind === "item") void ensureItemsLoaded(p.character_id);
+                  }}
+                >
+                  <SelectTrigger className="h-8 w-full text-[11px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {kindOptions.map((kind) => (
+                        <SelectItem key={kind} value={kind}>{CHAR_ACTION_LABEL[kind]}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              ),
+            },
+            ...extraControls,
+          ];
 
           return (
             <div
@@ -971,33 +1243,25 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                   <div
                     className={cn(
                       "grid w-full gap-2",
-                      secondaryActionControl
-                        ? "grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-start"
-                        : "grid-cols-1",
+                      actionControls.length >= 3
+                        ? "grid-cols-2 items-start"
+                        : actionControls.length === 2
+                          ? "grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-start"
+                          : "grid-cols-1",
                     )}
                   >
-                    <div className="flex min-w-0 items-center gap-2">
-                      <ListChecks className="h-3.5 w-3.5 shrink-0 text-muted" />
-                      <Select
-                        value={draft.kind}
-                        onValueChange={(kind: CharacterActionKind) => {
-                          patchChar(p.character_id, { kind });
-                          if (kind === "item") void ensureItemsLoaded(p.character_id);
-                        }}
+                    {actionControls.map(({ key, icon: Icon, control }, index) => (
+                      <div
+                        key={key}
+                        className={cn(
+                          "flex min-w-0 items-center gap-2",
+                          actionControls.length >= 3 && index === actionControls.length - 1 && "col-span-2",
+                        )}
                       >
-                        <SelectTrigger className="h-8 w-full text-[11px]">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {kindOptions.map((kind) => (
-                              <SelectItem key={kind} value={kind}>{CHAR_ACTION_LABEL[kind]}</SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {secondaryActionControl && <div className="min-w-0">{secondaryActionControl}</div>}
+                        <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
+                        {control}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

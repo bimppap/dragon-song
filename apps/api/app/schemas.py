@@ -141,6 +141,10 @@ class ChapterCreate(BaseModel):
     end_date: date
     battle_date: date | None = None
     music_url: str | None = None
+    # 이 챕터의 실전 전투 종료 후 지급되는 보상 설정.
+    battle_victory_reward_gold: int = Field(default=0, ge=0)
+    battle_action_reward_gold: int = Field(default=0, ge=0)
+    battle_participation_reward_exp: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_dates(self):
@@ -159,6 +163,9 @@ class ChapterRead(BaseModel):
     battle_date: date | None = None
     image_url: str | None = None
     music_url: str | None = None
+    battle_victory_reward_gold: int
+    battle_action_reward_gold: int
+    battle_participation_reward_exp: int
     is_active: bool
     is_battle_day: bool
     created_at: datetime
@@ -668,6 +675,24 @@ class EnemyRead(BaseModel):
         return v if v is not None else []
 
 
+class EnvironmentCreate(BaseModel):
+    chapter: str
+    name: str
+    stacks_per_round: int = Field(default=1, ge=0)
+    damage_per_stack: int = Field(default=0, ge=0)
+
+
+class EnvironmentRead(BaseModel):
+    id: int
+    chapter: str
+    name: str
+    stacks_per_round: int
+    damage_per_stack: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 BattleMode = Literal["practice", "real"]
 BattleStatus = Literal["in_progress", "victory", "defeat", "early_terminated"]
 # 한 라운드는 3턴으로 나뉜다: "telegraph"(적의 행동 암시) → "ally"(아군 턴) → "enemy"(에너미 턴).
@@ -686,6 +711,7 @@ class BattleStartRequest(BaseModel):
 class CharacterActionInput(BaseModel):
     character_id: int
     kind: CharacterActionKind
+    skill_node_id: int | None = None
     target_enemy_id: int | None = None
     target_character_id: int | None = None  # 치유/구조 지정 대상
     protect_target_character_id: int | None = None  # 방어(수비 포지션 한정) 시 대신 맞아줄 대상. 기본값은 본인
@@ -741,8 +767,26 @@ class BattleSessionSummary(BaseModel):
     status: BattleStatus
     round: int
     enemy_names: list[str] = Field(default_factory=list)
+    rewards_sent: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class BattleRewardEntry(BaseModel):
+    character_id: int
+    character_name: str
+    victory_gold: int = 0
+    action_rounds: int = 0
+    action_gold: int = 0
+    total_gold: int = 0
+    participation_exp: int = 0
+
+
+class BattleRewardPreview(BaseModel):
+    session_id: int
+    chapter: str | None
+    already_sent: bool
+    entries: list[BattleRewardEntry] = Field(default_factory=list)
 
 
 SettlementType = Literal["board", "log"]
@@ -864,7 +908,7 @@ class SkillNodeRead(BaseModel):
 
 class SkillNodeUpdate(BaseModel):
     default_name: str = Field(min_length=1, max_length=50)
-    effects: list[ItemEffect] = Field(default_factory=list)
+    description: str | None = Field(default=None, max_length=2000)
 
 
 class SkillVisibilityUpdate(BaseModel):

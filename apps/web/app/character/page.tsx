@@ -6,12 +6,12 @@ import { useRequireMember } from "@/lib/auth";
 import CharacterList from "../components/character/CharacterList";
 import CharacterInfo from "../components/character/CharacterInfo";
 import CharacterCreate from "../components/character/CharacterCreate";
-import { fetchCharacters, fetchMyCharacter, type Character } from "@/lib/api";
+import { fetchCharacters, fetchMyCharacter, type Character, type CharacterDetail } from "@/lib/api";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { useToast } from "@/components/common/ToastProvider";
 
-type Tab = "list" | "info" | "create";
+type Tab = "list" | "info" | "create" | "edit";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "list", label: "캐릭터 목록", icon: List },
@@ -25,6 +25,7 @@ function AdminCharacterConsole() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loadingCharacters, setLoadingCharacters] = useState(true);
   const [focusCharacterId, setFocusCharacterId] = useState<number | null>(null);
+  const [editingCharacter, setEditingCharacter] = useState<CharacterDetail | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -52,9 +53,22 @@ function AdminCharacterConsole() {
           setFocusCharacterId(null);
           setTab("list");
         }}
+        onEdit={(character) => { setEditingCharacter(character); setTab("edit"); }}
       />
     )}
     {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.name.localeCompare(b.name, "ko"))); setTab("list"); }} />}
+    {tab === "edit" && editingCharacter && (
+      <CharacterCreate
+        key={editingCharacter.id}
+        character={editingCharacter}
+        onSaved={(character) => {
+          setCharacters((prev) => prev.map((c) => (c.id === character.id ? character : c)));
+          setEditingCharacter(null);
+          setTab("info");
+        }}
+        onCancel={() => { setEditingCharacter(null); setTab("info"); }}
+      />
+    )}
   </PageContainer>;
 }
 

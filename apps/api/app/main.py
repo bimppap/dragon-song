@@ -19,6 +19,7 @@ from app.schemas import (
     BattleAllyTurnRequest,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
+    BattleRewardPreview,
     BattleSessionRead,
     BattleSessionSummary,
     BattleStartRequest,
@@ -29,6 +30,8 @@ from app.schemas import (
     CharacterOnboardingCreate,
     EnemyCreate,
     EnemyRead,
+    EnvironmentCreate,
+    EnvironmentRead,
     CharacterDetailRead,
     CharacterFlagsUpdate,
     CharacterRead,
@@ -144,10 +147,24 @@ def create_character(data: CharacterCreate, member: Member = Depends(require_adm
     return crud.create_character(db, data)
 
 
+@app.put("/characters/{character_id}", response_model=CharacterRead)
+def update_character(
+    character_id: int,
+    data: CharacterCreate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자가 만든 캐릭터(러너 계정 미연결)만 능력치·기술을 제한 없이 통째로 수정할 수 있다."""
+    return crud.update_character(db, character_id, data)
+
+
 @app.get("/characters", response_model=list[CharacterRead])
 def list_characters(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     characters = crud.get_characters(db)
     if member.role != "ADMIN":
+        # 관리자가 만든 캐릭터(러너 계정에 연결되지 않음)는 러너 목록에 노출하지 않는다.
+        # 단, 전투에 참여하면 전투 세션 스냅샷을 통해 전투 화면에서는 그대로 보인다.
+        characters = [c for c in characters if c.member_id is not None]
         characters = [crud.scrub_admin_only_stats(c) for c in characters]
     return characters
 
@@ -819,6 +836,32 @@ async def delete_enemy(enemy_id: int, member: Member = Depends(require_admin), d
     return {"deleted": True}
 
 
+@app.get("/environments", response_model=list[EnvironmentRead])
+def list_environments(chapter: str | None = None, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.get_environments(db, chapter)
+
+
+@app.post("/environments", response_model=EnvironmentRead)
+def create_environment(data: EnvironmentCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.create_environment(db, data)
+
+
+@app.put("/environments/{environment_id}", response_model=EnvironmentRead)
+def update_environment(
+    environment_id: int,
+    data: EnvironmentCreate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_environment(db, environment_id, data)
+
+
+@app.delete("/environments/{environment_id}")
+def delete_environment(environment_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    crud.delete_environment(db, environment_id)
+    return {"deleted": True}
+
+
 @app.get("/battles", response_model=list[BattleSessionSummary])
 def list_battles(
     mode: str | None = None,
@@ -893,6 +936,18 @@ def submit_battle_enemy_turn(
 def undo_battle_round(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     """직전 라운드를 되돌려 그 라운드를 다시 진행할 수 있게 한다(실전 전투만 가능)."""
     return crud.undo_last_round(db, session_id)
+
+
+@app.get("/battles/{session_id}/rewards", response_model=BattleRewardPreview)
+def get_battle_rewards(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """실전 전투 종료 후 러너별로 지급될 승리/행동/전원 보상을 미리 계산해 보여준다."""
+    return crud.get_battle_reward_preview(db, session_id)
+
+
+@app.post("/battles/{session_id}/rewards/send", response_model=BattleRewardPreview)
+def send_battle_rewards(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """실전 전투 보상을 실제로 지급한다(전투당 1회만 가능)."""
+    return crud.send_battle_rewards(db, session_id)
 
 
 @app.post("/battles/{session_id}/join", response_model=BattleSessionRead)

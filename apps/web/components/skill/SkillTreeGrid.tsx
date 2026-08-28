@@ -68,8 +68,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * 기술 정보 툴팁. 러너에게는 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서만 보여주고,
- * 관리자에게는 변수명을 제외한 모든 정보(기술 비용·위력·계산 공식·개요 포함)를 보여준다.
+ * 기술 정보 툴팁. 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서·기술 설명은 러너에게도 보여주고,
+ * 관리자에게는 그 외 관리자 전용 정보(기술 비용·위력·계산 공식)를 추가로 보여준다.
  */
 export function SkillTooltipContent({
   node,
@@ -116,7 +116,7 @@ export function SkillTooltipContent({
           </>
         )}
       </ul>
-      {variant === "admin" && node.description && (
+      {node.description && (
         <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-muted">{node.description}</p>
       )}
       {footer ? <div className="mt-2">{footer}</div> : null}
