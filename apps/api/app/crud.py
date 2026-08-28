@@ -1,4 +1,5 @@
 import math
+import re
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -2315,7 +2316,7 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
     spec = _skill_spec_for_node(node) or {}
     current = getattr(node, field)
     if field == "default_name" and _skill_node_is_unsynced(node, spec):
-        return spec.get("default_name", current)
+        return current if current not in (None, "") else spec.get("default_name")
     if current is None or current == "":
         return spec.get(field)
     return current
@@ -2352,16 +2353,63 @@ def _romanize(value: int) -> str:
     return "".join(pieces)
 
 
+def _strip_trailing_roman_suffix(name: str) -> str:
+    stripped = name.strip()
+    match = re.match(r"^(.*?)(?:\s+([IVXLCDM]+))?$", stripped)
+    if not match:
+        return stripped
+    base, suffix = match.group(1), match.group(2)
+    return base if suffix else stripped
+
+
 def _format_skill_name_for_level(name: str, var_name: str | None, skill_lv: int) -> str:
     if var_name not in SKILL_LEVEL_SUFFIX_VAR_NAMES or skill_lv <= 0:
         return name
     suffix = _romanize(skill_lv)
-    return f"{name} {suffix}" if suffix else name
+    if not suffix:
+        return name
+    separator = " · " if re.search(r"\b[IVXLCDM]+$", name) else " "
+    return f"{name}{separator}{suffix}"
 
 
 def _skill_display_name(node: SkillNode, *, skill_lv: int, custom_name: str | None = None) -> str:
     base_name = custom_name if custom_name else _resolved_skill_node_name(node)
     return _format_skill_name_for_level(base_name, _resolved_skill_node_value(node, "var_name"), skill_lv)
+
+
+def _normalize_duplicate_skill_node_names(db: Session, *, book: str | None = None) -> bool:
+    query = db.query(SkillNode).filter(SkillNode.tier > 0)
+    if book is not None:
+        query = query.filter(SkillNode.book == book)
+
+    nodes = (
+        query
+        .order_by(
+            SkillNode.book.asc(),
+            SkillNode.tier.asc(),
+            SkillNode.branch.asc(),
+            SkillNode.col.asc(),
+            SkillNode.id.asc(),
+        )
+        .all()
+    )
+
+    groups: dict[tuple[str, str], list[SkillNode]] = {}
+    for node in nodes:
+        base_name = _strip_trailing_roman_suffix(node.default_name)
+        groups.setdefault((node.book, base_name), []).append(node)
+
+    changed = False
+    for (_book, base_name), same_name_nodes in groups.items():
+        if len(same_name_nodes) <= 1:
+            continue
+        for node in same_name_nodes:
+            normalized_name = f"{base_name} {_romanize(node.tier)}"
+            if node.default_name != normalized_name:
+                node.default_name = normalized_name
+                changed = True
+
+    return changed
 
 
 def _korean_subject_particle(name: str) -> str:
@@ -4133,10 +4181,14 @@ def _seed_skill_tree_if_empty(db: Session, book: str) -> None:
     for spec in specs:
         db.add(SkillNode(book=book, **spec))
     db.commit()
+    if _normalize_duplicate_skill_node_names(db, book=book):
+        db.commit()
 
 
 def get_skill_nodes(db: Session, book: str) -> list[SkillNodeRead]:
     _seed_skill_tree_if_empty(db, book)
+    if _normalize_duplicate_skill_node_names(db, book=book):
+        db.commit()
     nodes = (
         db.query(SkillNode)
         .filter(SkillNode.book == book)
@@ -4152,6 +4204,7 @@ def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> Skill
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
     node.default_name = data.default_name.strip()
     node.description = data.description.strip() if data.description else None
+    _normalize_duplicate_skill_node_names(db, book=node.book)
     db.commit()
     db.refresh(node)
     return _to_skill_node_read(node)
@@ -4167,6 +4220,7 @@ def update_skill_visibility(db: Session, data: SkillVisibilityUpdate) -> list[Sk
     )
     for node in nodes:
         node.is_public = node.tier <= data.max_public_tier
+    _normalize_duplicate_skill_node_names(db)
     db.commit()
     return [_to_skill_node_read(node) for node in nodes]
 
@@ -4192,6 +4246,8 @@ def get_character_skill_tree(db: Session, character_id: int, book: str) -> Chara
     character = _get_character_or_404(db, character_id)
 
     _seed_skill_tree_if_empty(db, book)
+    if _normalize_duplicate_skill_node_names(db, book=book):
+        db.commit()
 
     nodes = (
         db.query(SkillNode)

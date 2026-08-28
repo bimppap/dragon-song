@@ -94,14 +94,7 @@ export function SkillTooltipContent({
 
   return (
     <div className="max-w-64 text-left">
-      <div className={cn("flex items-center gap-1.5 font-semibold", node.is_placeholder ? "text-ivory" : "text-emerald-400")}>
-        {node.default_name}
-        {node.is_placeholder && (
-          <span className="rounded-full border border-line px-1.5 py-0.5 text-[9px] font-medium text-muted">
-            임시값
-          </span>
-        )}
-      </div>
+      <div className="flex items-center gap-1.5 font-semibold text-emerald-400">{node.default_name}</div>
       <ul className="mt-1.5 space-y-0.5 text-muted">
         <InfoRow label="발동 타입:" value={node.trigger_type ?? "정보 없음"} />
         <InfoRow label="분류:" value={node.category ?? "정보 없음"} />
@@ -222,7 +215,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                   highlighted
                     ? "border-gold bg-[#3b321f] text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
                     : disabled ? "border-line bg-inset text-muted" : "border-line text-muted",
-                  !locked && !highlighted && node.tier !== 0 && !node.is_placeholder ? accent.border : "",
+                  !locked && !highlighted && node.tier !== 0 ? accent.border : "",
                   clickable && !highlighted ? "hover:border-gold" : "",
                 )}
               >
@@ -238,7 +231,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 <span
                   className={cn(
                     "line-clamp-2 text-[10px] font-semibold leading-tight",
-                    highlighted ? "text-gold" : (node.tier !== 0 && !node.is_placeholder) ? accent.text : "text-ivory/85",
+                    highlighted ? "text-gold" : node.tier !== 0 ? accent.text : "text-ivory/85",
                   )}
                 >
                   {getLabel(node)}

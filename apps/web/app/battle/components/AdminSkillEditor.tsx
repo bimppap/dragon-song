@@ -79,14 +79,6 @@ export default function AdminSkillEditor() {
     setImagePreview(file ? URL.createObjectURL(file) : editing?.image_url ?? null);
   }
 
-  function replaceNode(updated: SkillNode) {
-    setNodesByBook((prev) =>
-      prev
-        ? { ...prev, [updated.book]: prev[updated.book].map((n) => (n.id === updated.id ? updated : n)) }
-        : prev,
-    );
-  }
-
   async function saveEdit() {
     if (!editing) return;
     setSaving(true);
@@ -96,7 +88,12 @@ export default function AdminSkillEditor() {
       if (imageFile) {
         updated = await uploadSkillImage(editing.id, imageFile);
       }
-      replaceNode(updated);
+      const refreshedBookNodes = await fetchSkillNodes(updated.book);
+      setNodesByBook((prev) => (
+        prev
+          ? { ...prev, [updated.book]: refreshedBookNodes }
+          : prev
+      ));
       closeEdit();
     } catch (e) {
       setError(e instanceof Error ? e.message : "기술 수정 실패");
