@@ -643,7 +643,7 @@ class EnemyRead(BaseModel):
 
 
 BattleMode = Literal["practice", "real"]
-BattleStatus = Literal["in_progress", "victory", "defeat"]
+BattleStatus = Literal["in_progress", "victory", "defeat", "early_terminated"]
 # "skill"(기술 사용)은 현재는 "attack"과 동일하게 처리되는 자리만 갖춘 행동이다.
 CharacterActionKind = Literal["attack", "skill", "defend", "heal", "item", "none", "retreat"]
 EnemyActionKind = Literal["attack", "summon", "none"]

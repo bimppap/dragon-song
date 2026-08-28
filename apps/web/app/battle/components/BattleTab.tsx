@@ -114,6 +114,7 @@ function CharacterFactionIcon({ faction }: { faction: Character["faction"] }) {
 function statusBadge(status: BattleSessionSummary["status"]) {
   if (status === "victory") return <Badge variant="success">승리</Badge>;
   if (status === "defeat") return <Badge variant="destructive">패배</Badge>;
+  if (status === "early_terminated") return <Badge variant="secondary">조기 종료</Badge>;
   return <Badge variant="warning">진행 중</Badge>;
 }
 

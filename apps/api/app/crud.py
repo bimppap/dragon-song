@@ -2250,6 +2250,26 @@ def delete_battle_session(db: Session, session_id: int) -> None:
     db.commit()
 
 
+def terminate_battle(db: Session, session_id: int) -> BattleSessionRead:
+    session = db.get(BattleSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="이미 종료된 전투입니다.")
+
+    session.status = "early_terminated"
+    session.log = list(session.log) + [{
+        "round": session.round,
+        "events": ["⏹️ 전투 조기 종료"],
+    }]
+    if session.mode == "real":
+        _finalize_real_battle(db, list(session.participants))
+
+    db.commit()
+    db.refresh(session)
+    return _to_battle_session_read(session)
+
+
 def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> BattleSessionRead:
     session = db.get(BattleSession, session_id)
     if not session:

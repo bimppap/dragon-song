@@ -745,6 +745,12 @@ def delete_battle(session_id: int, member: Member = Depends(require_admin), db: 
     return {"deleted": True}
 
 
+@app.post("/battles/{session_id}/terminate", response_model=BattleSessionRead)
+def terminate_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """관리자가 승패와 관계없이 진행 중인 전투를 조기 종료한다."""
+    return crud.terminate_battle(db, session_id)
+
+
 @app.post("/battles/{session_id}/actions", response_model=BattleSessionRead)
 def submit_battle_actions(
     session_id: int,

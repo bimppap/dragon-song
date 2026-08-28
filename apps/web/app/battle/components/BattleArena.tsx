@@ -22,6 +22,7 @@ import {
   joinBattle,
   joinBattleEnemy,
   submitBattleActions,
+  terminateBattle,
   undoLastBattleRound,
   type BattleCharacterActionInput,
   type BattleEnemyActionInput,
@@ -160,6 +161,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [undoing, setUndoing] = useState(false);
+  const [terminating, setTerminating] = useState(false);
 
   const [charDrafts, setCharDrafts] = useState<Record<number, CharDraft>>({});
   const [bulkActionKind, setBulkActionKind] = useState<CharacterActionKind>("attack");
@@ -318,6 +320,27 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       toast(e instanceof Error ? e.message : "라운드 되돌리기 실패", "error");
     } finally {
       setUndoing(false);
+    }
+  }
+
+  async function handleTerminateBattle() {
+    if (!session) return;
+    const ok = await confirm({
+      title: "전투 종료",
+      description: "정말 종료하시겠습니까?",
+      confirmText: "종료",
+      tone: "danger",
+    });
+    if (!ok) return;
+    try {
+      setTerminating(true);
+      const updated = await terminateBattle(session.id);
+      setSession(updated);
+      toast("전투가 조기 종료되었습니다.", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "전투 종료 실패", "error");
+    } finally {
+      setTerminating(false);
     }
   }
 
@@ -751,15 +774,21 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
             "flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold",
             session.status === "victory"
               ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
-              : "border-red-500/40 bg-red-500/15 text-red-600",
+              : session.status === "early_terminated"
+                ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
+                : "border-red-500/40 bg-red-500/15 text-red-600",
           )}
         >
           {session.status === "victory" ? <Swords size={16} /> : <Ban size={16} />}
-          {session.status === "victory" ? "전투 승리! 에너미를 격파했습니다." : "전투 패배... 모든 캐릭터가 기절/퇴각했습니다."}
+          {session.status === "victory"
+            ? "전투 승리! 에너미를 격파했습니다."
+            : session.status === "early_terminated"
+              ? "전투가 조기 종료되었습니다."
+              : "전투 패배... 모든 캐릭터가 기절/퇴각했습니다."}
         </div>
       ) : canAct ? (
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={handleSubmitRound} disabled={submitting || undoing}>
+          <Button onClick={handleSubmitRound} disabled={submitting || undoing || terminating}>
             <Sparkles size={15} />
             {submitting ? "진행 중..." : `라운드 ${session.round} 진행`}
           </Button>
@@ -767,12 +796,20 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
             <Button
               variant="outline"
               onClick={handleUndoRound}
-              disabled={submitting || undoing}
+              disabled={submitting || undoing || terminating}
             >
               <Undo2 size={15} />
               {undoing ? "되돌리는 중..." : "이전 라운드 다시 진행하기"}
             </Button>
           )}
+          <Button
+            variant="destructive"
+            onClick={handleTerminateBattle}
+            disabled={submitting || undoing || terminating}
+          >
+            <Ban size={15} />
+            {terminating ? "종료 중..." : "전투 종료"}
+          </Button>
         </div>
       ) : null}
 

@@ -974,7 +974,7 @@ export async function uploadEnemySummonImage(enemyId: number, skillIndex: number
 }
 
 export type BattleMode = "practice" | "real";
-export type BattleStatus = "in_progress" | "victory" | "defeat";
+export type BattleStatus = "in_progress" | "victory" | "defeat" | "early_terminated";
 export type CharacterActionKind = "attack" | "skill" | "defend" | "heal" | "item" | "none" | "retreat";
 export type EnemyActionKind = "attack" | "summon" | "none";
 
@@ -1096,6 +1096,12 @@ export async function submitBattleActions(
     method: "POST",
     body: JSON.stringify({ character_actions: characterActions, enemy_actions: enemyActions }),
   }, "라운드 진행 실패");
+}
+
+export async function terminateBattle(sessionId: number): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/terminate`, {
+    method: "POST",
+  }, "전투 종료 실패");
 }
 
 export async function joinBattle(sessionId: number, characterId: number): Promise<BattleSession> {

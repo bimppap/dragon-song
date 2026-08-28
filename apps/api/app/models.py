@@ -488,7 +488,7 @@ class BattleSession(Base):
     chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(
         String, nullable=False, default="in_progress", server_default=text("'in_progress'")
-    )  # "in_progress" | "victory" | "defeat"
+    )  # "in_progress" | "victory" | "defeat" | "early_terminated"
     round: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     enemies: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     summons: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
