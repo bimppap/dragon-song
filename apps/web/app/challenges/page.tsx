@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import {
   ClipboardList,
   Gift,
+  Image as ImageIcon,
   Pencil,
   PlusSquare,
   Target,
@@ -38,6 +40,7 @@ import {
   payChallengeRewards,
   saveChallengeProgress,
   updateChallenge,
+  uploadChallengeImage,
 } from "@/lib/api";
 import type {
   Challenge,
@@ -210,6 +213,9 @@ export function ChallengeAdmin() {
   const [manageChapterFilter, setManageChapterFilter] = useState(ALL_CHAPTERS);
   const [form, setForm] = useState<ChallengeFormState>(DEFAULT_FORM);
   const [editingChallengeId, setEditingChallengeId] = useState<number | null>(null);
+  const [editingChallenge, setEditingChallenge] = useState<Challenge | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
@@ -330,16 +336,23 @@ export function ChallengeAdmin() {
 
     try {
       setSubmittingChallenge(true);
+      let saved: Challenge;
       if (editingChallengeId != null) {
-        const updated = await updateChallenge(editingChallengeId, payload);
-        setChallenges((prev) => prev.map((c) => (c.id === editingChallengeId ? updated : c)));
+        saved = await updateChallenge(editingChallengeId, payload);
         setEditingChallengeId(null);
       } else {
-        const createdChallenge = await createChallenge(payload);
-        setChallenges((prev) => [...prev, createdChallenge]);
-        setSelectedChapter(createdChallenge.chapter);
-        setSelectedChallengeId(createdChallenge.id);
+        saved = await createChallenge(payload);
+        setSelectedChapter(saved.chapter);
+        setSelectedChallengeId(saved.id);
       }
+      if (imageFile) {
+        saved = await uploadChallengeImage(saved.id, imageFile);
+      }
+      setChallenges((prev) => (
+        prev.some((c) => c.id === saved.id)
+          ? prev.map((c) => (c.id === saved.id ? saved : c))
+          : [...prev, saved]
+      ));
       setForm({ ...DEFAULT_FORM, chapter: payload.chapter });
       setModalOpen(false);
     } catch (error) {
@@ -353,15 +366,27 @@ export function ChallengeAdmin() {
     }
   }
 
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : (editingChallenge?.image_url ?? null));
+  }
+
   function openAddChallengeModal() {
     setEditingChallengeId(null);
+    setEditingChallenge(null);
     setForm(DEFAULT_FORM);
+    setImageFile(null);
+    setImagePreview(null);
     setModalOpen(true);
   }
 
   function handleEditChallengeClick(challenge: Challenge) {
     setEditingChallengeId(challenge.id);
+    setEditingChallenge(challenge);
     setForm(toChallengeFormState(challenge));
+    setImageFile(null);
+    setImagePreview(challenge.image_url);
     setModalOpen(true);
   }
 
@@ -495,6 +520,7 @@ export function ChallengeAdmin() {
                   <table className="min-w-full text-sm">
                     <thead className="bg-inset text-muted">
                       <tr>
+                        <th className="px-4 py-3 text-left font-semibold" />
                         <th className="px-4 py-3 text-left font-semibold">이름</th>
                         <th className="px-4 py-3 text-left font-semibold">내용</th>
                         <th className="px-4 py-3 text-left font-semibold">보상 구성</th>
@@ -508,6 +534,15 @@ export function ChallengeAdmin() {
                           key={challenge.id}
                           className="border-t border-line align-top"
                         >
+                          <td className="px-4 py-4">
+                            <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                              {challenge.image_url ? (
+                                <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
+                              ) : (
+                                <ImageIcon size={16} className="text-muted" />
+                              )}
+                            </div>
+                          </td>
                           <td className="px-4 py-4 text-ivory">{challenge.name}</td>
                           <td className="px-4 py-4 text-muted">
                             {challenge.description}
@@ -594,6 +629,28 @@ export function ChallengeAdmin() {
                   />
                 </div>
 
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-ivory">이미지</label>
+                  <div className="flex items-center gap-4">
+                    <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+                      {imagePreview ? (
+                        <Image src={imagePreview} alt="도전과제 이미지 미리보기" fill unoptimized className="object-cover object-top" />
+                      ) : (
+                        <ImageIcon size={22} className="text-muted" />
+                      )}
+                    </div>
+                    <div className="space-y-1">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleImageChange}
+                        className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
+                      />
+                      <p className="text-xs text-muted">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
+                    </div>
+                  </div>
+                </div>
+
                 <RewardComposer
                   entries={form.reward_entries}
                   items={items}
@@ -676,9 +733,18 @@ export function ChallengeAdmin() {
                       )}
                     >
                       <div className="flex items-start justify-between gap-3">
-                        <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-ivory">{challenge.name}</p>
-                          <p className="text-sm text-muted">{challenge.description}</p>
+                        <div className="flex min-w-0 items-start gap-3">
+                          <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                            {challenge.image_url ? (
+                              <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
+                            ) : (
+                              <ImageIcon size={16} className="text-muted" />
+                            )}
+                          </div>
+                          <div className="flex min-w-0 flex-col gap-1">
+                            <p className="font-semibold text-ivory">{challenge.name}</p>
+                            <p className="text-sm text-muted">{challenge.description}</p>
+                          </div>
                         </div>
                         <Badge
                           variant={challenge.is_public ? "outline" : "secondary"}

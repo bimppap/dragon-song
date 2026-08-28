@@ -121,6 +121,7 @@ class RefreshTokenRequest(BaseModel):
 class CharacterOnboardingCreate(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     faction: Faction
+    rank: Literal[1, 4] = 1
     stat_courage: int = Field(default=0, ge=0, le=2)
     stat_endurance: int = Field(default=0, ge=0, le=2)
     stat_charity: int = Field(default=0, ge=0, le=2)
@@ -447,7 +448,14 @@ class CharacterAchievedChallengeRead(BaseModel):
     chapter: str
     name: str
     description: str
+    image_url: str | None = None
     reward: str
+    reward_items: list = Field(default_factory=list)
+
+    @field_validator("reward_items", mode="before")
+    @classmethod
+    def coerce_reward_items(cls, v: object) -> list:
+        return v if v is not None else []
 
 
 class CharacterDetailRead(CharacterRead):
@@ -483,6 +491,7 @@ class ChallengeRead(BaseModel):
     chapter: str
     name: str
     description: str
+    image_url: str | None = None
     reward: str
     reward_gold: int
     reward_experience: int
@@ -554,6 +563,7 @@ class MissionRead(BaseModel):
     mission_type: str
     name: str
     description: str
+    image_url: str | None = None
     reward: str
     reward_gold: int
     reward_experience: int

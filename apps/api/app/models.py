@@ -295,6 +295,7 @@ class Challenge(Base):
     chapter: Mapped[str] = mapped_column(String, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     reward: Mapped[str] = mapped_column(String, nullable=False)
     reward_gold: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     reward_experience: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
@@ -348,6 +349,7 @@ class Mission(Base):
     mission_type: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "일일" | "중요"
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     reward: Mapped[str] = mapped_column(String, nullable=False)
     reward_gold: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     reward_experience: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))

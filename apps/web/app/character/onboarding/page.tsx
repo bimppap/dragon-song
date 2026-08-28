@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 import { Minus, Plus, Sparkles, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -21,10 +21,15 @@ import { useToast } from "@/components/common/ToastProvider";
 
 const TOTAL_POINTS = 2;
 
-const FACTIONS: { value: Faction; label: string; description: string }[] = [
-  { value: "공격", label: "공격", description: "적에게 강한 피해를 입히는 진영" },
-  { value: "수비", label: "수비", description: "파티를 보호하는 진영" },
-  { value: "치유", label: "치유", description: "파티를 회복시키는 진영" },
+const FACTIONS: { value: Faction; label: string; image: string }[] = [
+  { value: "공격", label: "공격", image: "/position/position_1.png" },
+  { value: "수비", label: "수비", image: "/position/position_2.png" },
+  { value: "치유", label: "치유", image: "/position/position_3.png" },
+];
+
+const RANKS: { value: 1 | 4; label: string; image: string }[] = [
+  { value: 1, label: "동패", image: "/medal/medal_1.png" },
+  { value: 4, label: "은패", image: "/medal/medal_2.png" },
 ];
 
 type StatKey = "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom";
@@ -49,6 +54,7 @@ export default function CharacterOnboardingPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [faction, setFaction] = useState<Faction | "">("");
+  const [rank, setRank] = useState<1 | 4>(1);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [loading, setLoading] = useState(false);
 
@@ -81,7 +87,7 @@ export default function CharacterOnboardingPage() {
 
     setLoading(true);
     try {
-      await createMyCharacter({ name: name.trim(), faction, ...stats });
+      await createMyCharacter({ name: name.trim(), faction, rank, ...stats });
       await refresh();
       router.replace("/");
     } catch (error) {
@@ -100,15 +106,13 @@ export default function CharacterOnboardingPage() {
       <Card>
         <CardHeader>
           <CardTitle>캐릭터 생성</CardTitle>
-          <CardDescription>
-            이름과 진영을 정하고, AP 포인트 2를 용기·인내·자애·지혜에 투자해 주세요.
-          </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="flex flex-col gap-6">
             <div className="flex flex-col gap-1.5">
               <label className="text-xs font-semibold text-muted uppercase tracking-wide">캐릭터 이름</label>
               <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="캐릭터 이름" required />
+              <p className="text-xs text-muted">한 번 정하면 이후에는 변경할 수 없습니다.</p>
             </div>
 
             <div className="flex flex-col gap-2">
@@ -122,17 +126,40 @@ export default function CharacterOnboardingPage() {
                   <label
                     key={f.value}
                     className={cn(
-                      "flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors",
-                      faction === f.value
-                        ? "border-gold bg-gold/10"
-                        : "border-line hover:border-line",
+                      "flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-transparent px-3 py-3 text-center transition-colors",
+                      faction === f.value && "border-gold bg-gold/10",
                     )}
                   >
+                    <Image src={f.image} alt={f.label} width={40} height={40} />
                     <div className="flex items-center gap-2">
                       <RadioGroupItem value={f.value} />
                       <span className="font-semibold text-ivory">{f.label}</span>
                     </div>
-                    <span className="text-xs text-muted">{f.description}</span>
+                  </label>
+                ))}
+              </RadioGroup>
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide">모험가 등급</label>
+              <RadioGroup
+                value={String(rank)}
+                onValueChange={(value) => setRank(Number(value) as 1 | 4)}
+                className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+              >
+                {RANKS.map((r) => (
+                  <label
+                    key={r.value}
+                    className={cn(
+                      "flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-transparent px-3 py-3 text-center transition-colors",
+                      rank === r.value && "border-gold bg-gold/10",
+                    )}
+                  >
+                    <Image src={r.image} alt={r.label} width={40} height={40} />
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value={String(r.value)} />
+                      <span className="font-semibold text-ivory">{r.label}</span>
+                    </div>
                   </label>
                 ))}
               </RadioGroup>

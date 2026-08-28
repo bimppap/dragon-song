@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import EffectListEditor from "@/components/common/EffectListEditor";
 import Modal from "@/components/common/Modal";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
+import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import {
   fetchSkillNodes,
   updateSkillNode,
@@ -158,7 +159,7 @@ export default function AdminSkillEditor() {
         <div className="no-scrollbar overflow-x-auto pb-2"><div className="mx-auto flex w-max gap-6">
           {BOOKS.map((book) => (
             <div key={book} className="flex flex-col items-center gap-3">
-              <h3 className="text-sm font-semibold text-ivory">{book}</h3>
+              <h3 className={`text-sm font-semibold ${BOOK_ACCENT[book].text}`}>{book}</h3>
               <div className="rounded-xl border border-line bg-surface p-4">
                 <SkillTreeGrid
                   nodes={nodesByBook[book]}
@@ -167,6 +168,7 @@ export default function AdminSkillEditor() {
                   onNodeClick={startEdit}
                   showLabels={false}
                   tooltipVariant="admin"
+                  accent={BOOK_ACCENT[book]}
                 />
               </div>
             </div>
@@ -192,7 +194,7 @@ export default function AdminSkillEditor() {
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 이미지</label>
             <div className="flex items-center gap-4">
-              <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+              <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
                 {imagePreview ? (
                   // blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다.
                   <Image src={imagePreview} alt="기술 이미지 미리보기" fill unoptimized className="object-cover" />

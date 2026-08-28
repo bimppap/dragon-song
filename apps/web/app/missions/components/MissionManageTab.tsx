@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Pencil, PlusSquare, ScrollText } from "lucide-react";
+import Image from "next/image";
+import { Image as ImageIcon, Pencil, PlusSquare, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/common/Modal";
-import { createMission, fetchChapters, fetchItems, fetchMissions, updateMission } from "@/lib/api";
+import { createMission, fetchChapters, fetchItems, fetchMissions, updateMission, uploadMissionImage } from "@/lib/api";
 import type { Chapter, Item, Mission, MissionCreate, RewardGrant } from "@/lib/api";
 import EmptyState from "@/components/common/EmptyState";
 import RewardComposer, { type RewardFormEntry } from "@/components/common/RewardComposer";
@@ -111,6 +112,9 @@ export default function MissionManageTab() {
   const [chapterFilter, setChapterFilter] = useState(ALL_CHAPTERS);
   const [form, setForm] = useState<MissionFormState>(DEFAULT_FORM);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingMission, setEditingMission] = useState<Mission | null>(null);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -152,14 +156,21 @@ export default function MissionManageTab() {
     if (!payload.chapter || !payload.name || !payload.description) return;
     try {
       setSubmitting(true);
+      let saved: Mission;
       if (editingId != null) {
-        const updated = await updateMission(editingId, payload);
-        setMissions((prev) => prev.map((m) => (m.id === editingId ? updated : m)));
+        saved = await updateMission(editingId, payload);
         setEditingId(null);
       } else {
-        const created = await createMission(payload);
-        setMissions((prev) => [...prev, created]);
+        saved = await createMission(payload);
       }
+      if (imageFile) {
+        saved = await uploadMissionImage(saved.id, imageFile);
+      }
+      setMissions((prev) => (
+        prev.some((m) => m.id === saved.id)
+          ? prev.map((m) => (m.id === saved.id ? saved : m))
+          : [...prev, saved]
+      ));
       setForm({ ...DEFAULT_FORM, chapter: payload.chapter, mission_type: form.mission_type });
       setModalOpen(false);
     } catch (e) {
@@ -169,15 +180,27 @@ export default function MissionManageTab() {
     }
   }
 
+  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    setImageFile(file);
+    setImagePreview(file ? URL.createObjectURL(file) : (editingMission?.image_url ?? null));
+  }
+
   function openAddModal() {
     setEditingId(null);
+    setEditingMission(null);
     setForm(DEFAULT_FORM);
+    setImageFile(null);
+    setImagePreview(null);
     setModalOpen(true);
   }
 
   function handleEditClick(mission: Mission) {
     setEditingId(mission.id);
+    setEditingMission(mission);
     setForm(toFormState(mission));
+    setImageFile(null);
+    setImagePreview(mission.image_url);
     setModalOpen(true);
   }
 
@@ -227,6 +250,7 @@ export default function MissionManageTab() {
               <table className="min-w-full text-sm">
                 <thead className="bg-inset text-muted">
                   <tr>
+                    <th className="px-4 py-3 text-left font-semibold" />
                     <th className="px-4 py-3 text-left font-semibold">유형 / 상태</th>
                     <th className="px-4 py-3 text-left font-semibold">이름</th>
                     <th className="px-4 py-3 text-left font-semibold">내용</th>
@@ -237,6 +261,15 @@ export default function MissionManageTab() {
                 <tbody>
                   {visibleMissions.map((mission) => (
                     <tr key={mission.id} className="border-t border-line align-top">
+                      <td className="px-4 py-4">
+                        <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                          {mission.image_url ? (
+                            <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
+                          ) : (
+                            <ImageIcon size={16} className="text-muted" />
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-1.5">
                           <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type as MissionType] ?? "secondary"}>
@@ -325,6 +358,28 @@ export default function MissionManageTab() {
                 className="min-h-24"
                 required
               />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-semibold text-ivory">이미지</label>
+              <div className="flex items-center gap-4">
+                <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+                  {imagePreview ? (
+                    <Image src={imagePreview} alt="임무 이미지 미리보기" fill unoptimized className="object-cover object-top" />
+                  ) : (
+                    <ImageIcon size={22} className="text-muted" />
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleImageChange}
+                    className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
+                  />
+                  <p className="text-xs text-muted">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
+                </div>
+              </div>
             </div>
 
             <RewardComposer

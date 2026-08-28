@@ -8,7 +8,7 @@ from app import storage
 from app.auth import create_access_token, get_current_member, require_admin
 from app.db import engine, get_db
 from app.migrations import ensure_schema
-from app.models import Chapter, Character, Enemy, Item, Member, SkillNode
+from app.models import Chapter, Challenge, Character, Enemy, Item, Member, Mission, SkillNode
 from app.schemas import (
     AccessTokenResponse,
     AdminGiftRequest,
@@ -325,6 +325,31 @@ def update_challenge(
     return crud.update_challenge(db, challenge_id, data)
 
 
+@app.post("/challenges/{challenge_id}/image", response_model=ChallengeRead)
+async def upload_challenge_image(
+    challenge_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """도전과제 이미지를 WebP로 변환해 버킷 challenge/ 디렉토리에 업로드하고, 기존 이미지는 삭제한다."""
+    challenge = db.get(Challenge, challenge_id)
+    if not challenge:
+        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
+
+    data = await file.read()
+    result = await storage.upload_image_to_bucket(storage.make_key("challenge", challenge.id, challenge.name), data)
+
+    old_path = storage.public_url_to_path(challenge.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    challenge.image_url = result["public_url"]
+    db.commit()
+    db.refresh(challenge)
+    return challenge
+
+
 @app.get("/challenges/{challenge_id}/progress", response_model=list[ChallengeProgressRead])
 def list_challenge_progress(challenge_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_challenge_progress(db, challenge_id)
@@ -471,6 +496,31 @@ def update_mission(
     db: Session = Depends(get_db),
 ):
     return crud.update_mission(db, mission_id, data)
+
+
+@app.post("/missions/{mission_id}/image", response_model=MissionRead)
+async def upload_mission_image(
+    mission_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """임무 이미지를 WebP로 변환해 버킷 mission/ 디렉토리에 업로드하고, 기존 이미지는 삭제한다."""
+    mission = db.get(Mission, mission_id)
+    if not mission:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+
+    data = await file.read()
+    result = await storage.upload_image_to_bucket(storage.make_key("mission", mission.id, mission.name), data)
+
+    old_path = storage.public_url_to_path(mission.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    mission.image_url = result["public_url"]
+    db.commit()
+    db.refresh(mission)
+    return mission
 
 
 @app.get("/missions/{mission_id}/progress", response_model=list[MissionProgressRead])

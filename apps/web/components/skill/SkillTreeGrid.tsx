@@ -6,6 +6,13 @@ import { Lock, Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
 import type { SkillNode } from "@/lib/api";
+import { type BookAccent } from "@/components/skill/bookAccent";
+
+const DEFAULT_ACCENT: BookAccent = {
+  text: "text-emerald-400",
+  border: "border-emerald-500/60 text-emerald-500",
+  line: "#e2e8f0",
+};
 
 export interface SkillTreeGridNode extends SkillNode {
   unlocked?: boolean;
@@ -127,6 +134,8 @@ interface SkillTreeGridProps<T extends SkillTreeGridNode> {
   showLabels?: boolean;
   /** 툴팁에 노출할 정보 범위. 러너는 제한된 필드만, 관리자는 변수명을 제외한 전부를 본다. */
   tooltipVariant?: "runner" | "admin";
+  /** 서(book)별 테마 색상. 미지정 시 기본 에메랄드 색상을 사용한다. */
+  accent?: BookAccent;
 }
 
 export default function SkillTreeGrid<T extends SkillTreeGridNode>({
@@ -138,13 +147,15 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
   onNodeClick,
   showLabels = true,
   tooltipVariant = "runner",
+  accent = DEFAULT_ACCENT,
 }: SkillTreeGridProps<T>) {
   const width = COLS * CELL_W;
   const height = ROWS * CELL_H;
 
   // 부모(하위 tier)와 잇는 연결선. tier1→기본, tier≥2→같은 계열/열의 한 단계 아래.
+  // 마지막 단계(최고 티어)는 선행 관계가 로직상으로만 존재하고, 화면에는 선을 그리지 않는다.
   const lines = nodes
-    .filter((node) => node.tier >= 1)
+    .filter((node) => node.tier >= 1 && node.tier < ROWS - 1)
     .map((node) => {
       const child = cellFor(node.branch, node.col, node.tier);
       const parent =
@@ -162,17 +173,20 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
         height={height}
         aria-hidden
       >
-        {lines.map((line) => (
-          <line
-            key={line.id}
-            x1={line.parent.cx}
-            y1={line.parent.cy}
-            x2={line.child.cx}
-            y2={line.child.cy}
-            stroke={line.active ? "#d97706" : "#e2e8f0"}
-            strokeWidth={2}
-          />
-        ))}
+        {lines.map((line) => {
+          // 부모-자식 x좌표가 다르면(계열 분기 등) 대각선 대신 수직-수평-수직 꺾임선으로 잇는다.
+          const midY = (line.parent.cy + line.child.cy) / 2;
+          const d = `M ${line.parent.cx} ${line.parent.cy} V ${midY} H ${line.child.cx} V ${line.child.cy}`;
+          return (
+            <path
+              key={line.id}
+              d={d}
+              fill="none"
+              stroke={line.active ? "#d97706" : accent.line}
+              strokeWidth={2}
+            />
+          );
+        })}
       </svg>
 
       {nodes.map((node) => {
@@ -204,11 +218,11 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
             >
               <span
                 className={cn(
-                  "relative flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-xl border-2 bg-surface transition-colors",
+                  "relative flex size-10 shrink-0 items-center justify-center overflow-hidden border-2 bg-surface transition-colors",
                   highlighted
                     ? "border-gold bg-[#3b321f] text-gold shadow-[0_0_0_3px_rgba(245,158,11,0.25)]"
                     : disabled ? "border-line bg-inset text-muted" : "border-line text-muted",
-                  !locked && !highlighted && node.tier !== 0 && !node.is_placeholder ? "border-emerald-500/60 text-emerald-500" : "",
+                  !locked && !highlighted && node.tier !== 0 && !node.is_placeholder ? accent.border : "",
                   clickable && !highlighted ? "hover:border-gold" : "",
                 )}
               >
@@ -224,7 +238,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 <span
                   className={cn(
                     "line-clamp-2 text-[10px] font-semibold leading-tight",
-                    highlighted ? "text-gold" : (node.tier !== 0 && !node.is_placeholder) ? "text-emerald-400" : "text-ivory/85",
+                    highlighted ? "text-gold" : (node.tier !== 0 && !node.is_placeholder) ? accent.text : "text-ivory/85",
                   )}
                 >
                   {getLabel(node)}

@@ -112,6 +112,7 @@ export interface TokenResponse {
 export interface CharacterOnboardingCreate {
   name: string;
   faction: Faction;
+  rank: 1 | 4;
   stat_courage: number;
   stat_endurance: number;
   stat_charity: number;
@@ -378,7 +379,9 @@ export interface CharacterAchievedChallenge {
   chapter: string;
   name: string;
   description: string;
+  image_url: string | null;
   reward: string;
+  reward_items: ChallengeRewardItemGrant[];
 }
 
 export interface CharacterDetail extends Character {
@@ -400,6 +403,7 @@ export interface Challenge {
   chapter: string;
   name: string;
   description: string;
+  image_url: string | null;
   reward: string;
   reward_gold: number;
   reward_experience: number;
@@ -622,6 +626,10 @@ export async function updateChallenge(challengeId: number, data: ChallengeCreate
   }, "도전과제 수정 실패");
 }
 
+export async function uploadChallengeImage(challengeId: number, file: File): Promise<Challenge> {
+  return uploadFile<Challenge>(`/challenges/${challengeId}/image`, file, "file", "도전과제 이미지 업로드 실패");
+}
+
 export async function fetchChallengeProgress(challengeId: number): Promise<ChallengeProgress[]> {
   return request<ChallengeProgress[]>(`/challenges/${challengeId}/progress`, undefined, "도전과제 현황 조회 실패");
 }
@@ -746,6 +754,7 @@ export interface Mission {
   mission_type: string;
   name: string;
   description: string;
+  image_url: string | null;
   reward: string;
   reward_gold: number;
   reward_experience: number;
@@ -808,6 +817,10 @@ export async function updateMission(missionId: number, data: MissionCreate): Pro
     method: "PUT",
     body: JSON.stringify(data),
   }, "임무 수정 실패");
+}
+
+export async function uploadMissionImage(missionId: number, file: File): Promise<Mission> {
+  return uploadFile<Mission>(`/missions/${missionId}/image`, file, "file", "임무 이미지 업로드 실패");
 }
 
 export async function fetchMissionProgress(missionId: number): Promise<MissionProgress[]> {

@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Gift,
+  Image as ImageIcon,
   Target,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -241,9 +243,18 @@ export default function MissionStatusTab() {
                     )}
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex flex-col gap-1">
-                        <p className="font-semibold text-ivory">{mission.name}</p>
-                        <p className="text-sm text-muted">{mission.description}</p>
+                      <div className="flex min-w-0 items-start gap-3">
+                        <div className="relative flex size-10 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
+                          {mission.image_url ? (
+                            <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
+                          ) : (
+                            <ImageIcon size={16} className="text-muted" />
+                          )}
+                        </div>
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <p className="font-semibold text-ivory">{mission.name}</p>
+                          <p className="text-sm text-muted">{mission.description}</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
                         <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type as MissionType] ?? "secondary"}>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
+import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import {
   fetchCharacterSkillTree,
   formatEffect,
@@ -16,14 +17,6 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
-// 서별 제목 색 — 보유 기술 목록의 테두리 색(BOOK_BORDER_CLASS)과 같은 순서다.
-// 어두운 배경(ground)에서 작은 글씨 대비를 확보하려고 500이 아닌 400을 쓴다
-const BOOK_TEXT_CLASS: Record<SkillBook, string> = {
-  "용맹의 서": "text-red-400",
-  "불굴의 서": "text-blue-400",
-  "헌신의 서": "text-green-400",
-  "탐구의 서": "text-purple-400",
-};
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 interface Props {
@@ -155,7 +148,7 @@ export default function MySkillTree({ characterId }: Props) {
             const tree = treesByBook[book];
             return (
               <div key={book} className="flex flex-col items-center gap-3">
-                <h3 className={`text-sm font-semibold ${BOOK_TEXT_CLASS[book]}`}>{book}</h3>
+                <h3 className={`text-sm font-semibold ${BOOK_ACCENT[book].text}`}>{book}</h3>
                 <div className="rounded-xl border border-gold bg-surface p-4">
                   <SkillTreeGrid
                     nodes={tree.nodes}
@@ -166,6 +159,7 @@ export default function MySkillTree({ characterId }: Props) {
                     onNodeClick={(node) => handleNodeClick(book, tree, node)}
                     showLabels={false}
                     tooltipVariant="runner"
+                    accent={BOOK_ACCENT[book]}
                   />
                 </div>
               </div>

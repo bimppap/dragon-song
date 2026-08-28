@@ -397,6 +397,7 @@ def create_character_for_member(
         mp_regen=stats["mp_regen"],
         member_id=member.id,
         faction=data.faction,
+        rank=data.rank,
         stat_courage=data.stat_courage,
         stat_endurance=data.stat_endurance,
         stat_charity=data.stat_charity,
@@ -532,7 +533,9 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             Challenge.chapter,
             Challenge.name,
             Challenge.description,
+            Challenge.image_url,
             Challenge.reward,
+            Challenge.reward_items,
         )
         .join(ChallengeProgress, Challenge.id == ChallengeProgress.challenge_id)
         .filter(ChallengeProgress.character_id == character.id)
@@ -570,7 +573,9 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
                 chapter=row.chapter,
                 name=row.name,
                 description=row.description,
+                image_url=row.image_url,
                 reward=row.reward,
+                reward_items=row.reward_items or [],
             )
             for row in achieved_challenge_rows
         ],

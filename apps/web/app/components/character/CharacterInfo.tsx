@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import {
-  Award,
   Backpack,
   BookOpen,
   ChevronDown,
@@ -26,6 +25,7 @@ import CharacterOwnedSkills from "./CharacterOwnedSkills";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import Modal from "@/components/common/Modal";
+import RewardSummary from "@/components/common/RewardSummary";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 
@@ -47,8 +47,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { consumeItem, equipItem, fetchCharacterDetail, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem, ItemHistoryEntry, Reward } from "@/lib/api";
+import { consumeItem, equipItem, fetchCharacterDetail, fetchItems, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadCharacterImage } from "@/lib/api";
+import type { Character, CharacterAchievedChallenge, CharacterDetail, CharacterOwnedItem, Faction, Item, ItemHistoryEntry, Reward } from "@/lib/api";
+
+const FACTION_POSITION_IMAGE: Record<Faction, string> = {
+  공격: "/position/position_1.png",
+  수비: "/position/position_2.png",
+  치유: "/position/position_3.png",
+};
 
 interface Props {
   characters: Character[];
@@ -79,17 +85,17 @@ const RANK_GRADES = [
   {
     name: "동",
     description: "기본적인 전투 감각을 익히는 입문 등급입니다.",
-    medalClass: "fill-amber-600 text-amber-800",
+    medalImage: "/medal/medal_1.png",
   },
   {
     name: "은",
     description: "기본 전투를 안정적으로 수행할 수 있는 숙련 등급입니다.",
-    medalClass: "fill-slate-300 text-slate-500",
+    medalImage: "/medal/medal_2.png",
   },
   {
     name: "금",
     description: "전투와 파티 운영에서 중심 역할을 맡는 상위 등급입니다.",
-    medalClass: "fill-yellow-400 text-yellow-600",
+    medalImage: "/medal/medal_3.png",
   },
 ] as const;
 
@@ -345,20 +351,24 @@ function OwnedItemTile({
           </div>
         }
       >
-        <div
-          className={cn(
-            "relative flex size-14 shrink-0 cursor-default items-center justify-center overflow-hidden rounded-2xl bg-gold/10 text-gold",
-            item.equipped && "ring-2 ring-gold",
+        <div className="relative flex size-14 shrink-0 cursor-default">
+          <div
+            className={cn(
+              "relative flex size-full items-center justify-center overflow-hidden rounded-2xl bg-gold/10 text-gold",
+              item.equipped && "ring-2 ring-gold",
+            )}
+          >
+            {item.item_image_url ? (
+              <Image src={item.item_image_url} alt={item.item_name} fill sizes="56px" className="object-cover" />
+            ) : (
+              <Package size={22} />
+            )}
+          </div>
+          {badgeCount > 0 && (
+            <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 z-10 text-sm font-bold text-ivory [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
+              {badgeCount}
+            </span>
           )}
-        >
-          {item.item_image_url ? (
-            <Image src={item.item_image_url} alt={item.item_name} fill sizes="56px" className="object-cover" />
-          ) : (
-            <Package size={22} />
-          )}
-          <span className="font-num pointer-events-none absolute -bottom-1.5 -right-1.5 z-10 text-sm font-bold text-ivory [text-shadow:0_0_3px_white,0_0_3px_white,0_0_3px_white]">
-            {badgeCount}
-          </span>
         </div>
       </InfoTooltip>
       {readOnly ? null : isConsumable ? (
@@ -403,6 +413,31 @@ function OwnedItemTile({
         </Button>
       )}
     </div>
+  );
+}
+
+function AchievedChallengeTile({ challenge, items }: { challenge: CharacterAchievedChallenge; items: Item[] }) {
+  return (
+    <InfoTooltip
+      side="top"
+      content={
+        <div className="max-w-56 text-left">
+          <div className="font-semibold">{challenge.name}</div>
+          {challenge.description && (
+            <div className="mt-1 text-muted">{challenge.description}</div>
+          )}
+          <RewardSummary entries={challenge.reward_items} items={items} className="mt-2" />
+        </div>
+      }
+    >
+      <div className="relative flex size-14 shrink-0 cursor-default items-center justify-center overflow-hidden bg-gold/10 text-gold">
+        {challenge.image_url ? (
+          <Image src={challenge.image_url} alt={challenge.name} fill sizes="56px" className="object-cover" />
+        ) : (
+          <Trophy size={22} />
+        )}
+      </div>
+    </InfoTooltip>
   );
 }
 
@@ -527,6 +562,11 @@ export default function CharacterInfo({
   const [imageError, setImageError] = useState<string | null>(null);
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [itemHistoryModalOpen, setItemHistoryModalOpen] = useState(false);
+  const [items, setItems] = useState<Item[]>([]);
+
+  useEffect(() => {
+    fetchItems().then(setItems).catch(console.error);
+  }, []);
 
   const selectedCharacterId = characters.some(
     (character) => character.id === selectedCharacterIdState,
@@ -685,13 +725,12 @@ export default function CharacterInfo({
                     </div>
                   }
                 >
-                  <Award
-                    size={48}
-                    strokeWidth={2}
-                    className={cn(
-                      "absolute -left-3 -top-3 z-10 cursor-help drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]",
-                      getRankGrade(selectedDetail.rank).medalClass,
-                    )}
+                  <Image
+                    src={getRankGrade(selectedDetail.rank).medalImage}
+                    alt={`모험가 등급 ${getRankGrade(selectedDetail.rank).name}패`}
+                    width={48}
+                    height={48}
+                    className="absolute -left-3 -top-3 z-10 cursor-help drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
                   />
                 </InfoTooltip>
                 <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-line bg-inset">
@@ -725,9 +764,21 @@ export default function CharacterInfo({
               {/* 명함 우측: 정보 */}
               <div className="flex min-w-0 flex-1 flex-col gap-4">
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {selectedDetail.faction && <Badge variant="secondary">{selectedDetail.faction}</Badge>}
-                    <CardTitle className="text-xl">{selectedDetail.name}</CardTitle>
+                  <div className="inline-flex w-fit items-center bg-linear-to-b from-gold/90 via-gold/55 to-gold/85 p-0.75 shadow-[0_2px_5px_rgba(0,0,0,0.55)] [clip-path:polygon(6%_0,94%_0,100%_50%,94%_100%,6%_100%,0_50%)]">
+                    <div className="flex items-center gap-2 bg-linear-to-b from-primary-light/45 via-surface to-inset px-4 py-1.5 [clip-path:polygon(6%_0,94%_0,100%_50%,94%_100%,6%_100%,0_50%)]">
+                      {selectedDetail.faction && (
+                        <Image
+                          src={FACTION_POSITION_IMAGE[selectedDetail.faction]}
+                          alt={selectedDetail.faction}
+                          width={28}
+                          height={28}
+                          className="[image-rendering:pixelated]"
+                        />
+                      )}
+                      <CardTitle className="text-xl text-gold drop-shadow-[0_1px_1px_rgba(0,0,0,0.6)]">
+                        {selectedDetail.name}
+                      </CardTitle>
+                    </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
@@ -892,24 +943,11 @@ export default function CharacterInfo({
               </CardHeader>
               <CardContent className="flex flex-col gap-3">
                 {selectedDetail.achieved_challenges.length > 0 ? (
-                  selectedDetail.achieved_challenges.map((challenge) => (
-                    <div
-                      key={challenge.challenge_id}
-                      className="rounded-2xl border border-line px-4 py-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex flex-col gap-1">
-                          <p className="font-semibold text-ivory">{challenge.name}</p>
-                          <p className="text-sm text-muted">{challenge.description}</p>
-                        </div>
-                        <Badge variant="outline">{challenge.chapter}</Badge>
-                      </div>
-                      <div className="mt-3 flex items-center gap-2 text-sm text-muted">
-                        <Trophy size={14} className="text-gold" />
-                        {challenge.reward}
-                      </div>
-                    </div>
-                  ))
+                  <div className="flex flex-wrap gap-4">
+                    {selectedDetail.achieved_challenges.map((challenge) => (
+                      <AchievedChallengeTile key={challenge.challenge_id} challenge={challenge} items={items} />
+                    ))}
+                  </div>
                 ) : (
                   <EmptyState className="rounded-2xl">
                     아직 달성한 도전과제가 없습니다.

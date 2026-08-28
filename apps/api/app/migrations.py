@@ -141,6 +141,13 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE challenges ADD COLUMN reward_defense INTEGER NOT NULL DEFAULT 0")
         if "reward_items" not in challenge_columns:
             statements.append("ALTER TABLE challenges ADD COLUMN reward_items JSON")
+        if "image_url" not in challenge_columns:
+            statements.append("ALTER TABLE challenges ADD COLUMN image_url VARCHAR")
+
+    if "missions" in table_names:
+        mission_columns = {col["name"] for col in inspector.get_columns("missions")}
+        if "image_url" not in mission_columns:
+            statements.append("ALTER TABLE missions ADD COLUMN image_url VARCHAR")
 
     if "skill_nodes" in table_names:
         skill_node_columns = {col["name"] for col in inspector.get_columns("skill_nodes")}
