@@ -56,12 +56,35 @@ function useCartEntries() {
 
 function ShopCurtain() {
   return (
-    <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden rounded-2xl border border-gold/30 bg-primary/90 shadow-inner backdrop-blur-[1px]">
+    <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden [image-rendering:pixelated]">
+      {/* 커튼 봉: 픽셀 밴드(하드엣지 스텝) */}
+      <div className="absolute inset-x-0 top-0 z-10 h-2.5 bg-[repeating-linear-gradient(90deg,#a16207_0px,#a16207_4px,#fde047_4px,#fde047_6px,#eab308_6px,#eab308_10px)]" />
+      {/* 커튼 고리: 패널 폭(54px)에 맞춰 듬성듬성 배치, 각진 픽셀 사각형 */}
+      <div className="absolute inset-x-0 top-0 z-10 h-2.5 bg-[linear-gradient(90deg,#78350f_0px_8px,transparent_8px_54px)] bg-repeat-x" />
+
+      {/* 커튼 원단: 세로 픽셀 스트라이프(색상 경계가 번지지 않도록 하드 스톱) + 패널 경계선 */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 opacity-60 bg-[radial-gradient(circle,rgba(245,158,11,0.45)_1px,transparent_1.5px)] bg-size-[12px_12px]"
+        className="absolute inset-x-0 top-2.5 bottom-0 bg-[repeating-linear-gradient(90deg,#000_0px,#000_2px,transparent_2px,transparent_54px),repeating-linear-gradient(90deg,#4c1d95_0px,#4c1d95_10px,#6d28d9_10px,#6d28d9_16px,#7c3aed_16px,#7c3aed_22px,#5b21b6_22px,#5b21b6_34px)]"
       />
-      <div className="relative rounded-lg border border-gold/40 bg-primary px-5 py-3 text-sm font-semibold text-ivory shadow-lg">
+      {/* 커튼 원단 위 픽셀 노이즈(체크무늬 디더링, 픽셀아트 느낌) */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-2.5 bottom-0 bg-[linear-gradient(0deg,#000_50%,transparent_50%),linear-gradient(90deg,#000_50%,transparent_50%)] bg-size-[4px_4px] opacity-10"
+      />
+
+      {/* 위쪽 톱니(스캘럽) 가장자리: 픽셀 계단형 */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 top-2.5 h-2 bg-black mask-[linear-gradient(135deg,transparent_50%,black_50%),linear-gradient(45deg,transparent_50%,black_50%)] mask-position-[0_0,4px_0] mask-repeat-x mask-size-[8px_8px]"
+      />
+      {/* 아래쪽 톱니(스캘럽) 가장자리: 픽셀 계단형 */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-x-0 bottom-0 h-2 bg-black mask-[linear-gradient(-135deg,transparent_50%,black_50%),linear-gradient(-45deg,transparent_50%,black_50%)] mask-position-[0_0,4px_0] mask-repeat-x mask-size-[8px_8px]"
+      />
+
+      <div className="relative z-30 rounded-lg border border-fuchsia-300/50 bg-primary px-5 py-3 text-sm font-semibold text-ivory shadow-lg">
         지금은 상점 이용이 불가능합니다.
       </div>
     </div>
