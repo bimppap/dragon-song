@@ -1792,8 +1792,8 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
         return RewardPayResult(paid_count=0, rewards=[])
 
     already_paid_ids = {
-        r.character_id
-        for r, in db.query(Reward.character_id)
+        character_id
+        for character_id, in db.query(Reward.character_id)
         .filter(Reward.type == "challenge")
         .filter(Reward.source_id == challenge_id)
         .all()
@@ -2031,8 +2031,8 @@ def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
         return RewardPayResult(paid_count=0, rewards=[])
 
     already_paid_ids = {
-        r.character_id
-        for r, in db.query(Reward.character_id)
+        character_id
+        for character_id, in db.query(Reward.character_id)
         .filter(Reward.type == "mission")
         .filter(Reward.source_id == mission_id)
         .all()
