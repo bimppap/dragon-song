@@ -120,13 +120,32 @@ def _get_character_or_404(db: Session, character_id: int) -> Character:
     return character
 
 
-def _to_reward_read(db: Session, r: Reward) -> RewardRead:
+def _reward_item_ids(rewards: list[Reward]) -> set[int]:
+    item_ids: set[int] = set()
+    for reward in rewards:
+        for item in reward.reward_items or []:
+            if item.get("type") == "item" and item.get("item_id") is not None:
+                item_ids.add(int(item["item_id"]))
+    return item_ids
+
+
+def _reward_item_names(db: Session, rewards: list[Reward]) -> dict[int, str]:
+    item_ids = _reward_item_ids(rewards)
+    if not item_ids:
+        return {}
+    return {
+        item_id: name
+        for item_id, name in db.query(Item.id, Item.name).filter(Item.id.in_(item_ids)).all()
+    }
+
+
+def _to_reward_read(r: Reward, item_names: dict[int, str] | None = None) -> RewardRead:
+    names = item_names or {}
     reward_items: list[RewardItemEntry] = []
     for item in r.reward_items or []:
         entry = RewardItemEntry(**item)
         if entry.type == "item" and entry.item_id is not None:
-            found = db.get(Item, entry.item_id)
-            entry.item_name = found.name if found else None
+            entry.item_name = names.get(entry.item_id)
         reward_items.append(entry)
     return RewardRead(
         id=r.id,
@@ -1531,7 +1550,8 @@ def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]
         .order_by(Reward.created_at.desc())
         .all()
     )
-    return [_to_reward_read(db, r) for r in rewards]
+    item_names = _reward_item_names(db, rewards)
+    return [_to_reward_read(r, item_names) for r in rewards]
 
 
 # ── Settlement (정산) ────────────────────────────────────────────────────────
@@ -1561,6 +1581,13 @@ def _settlement_suggestion(db: Session, req: SettlementRequest) -> tuple[int, in
         return 0, len(req.links or []) * SETTLEMENT_CP_PER_LINK
 
     prev = _latest_paid_board_settlement(db, req.character_id, before_id=req.id)
+    return _settlement_suggestion_from_previous(req, prev)
+
+
+def _settlement_suggestion_from_previous(
+    req: SettlementRequest,
+    prev: SettlementRequest | None,
+) -> tuple[int, int]:
     prev_posts = prev.total_posts if prev else 0
     prev_comments = prev.total_comments if prev else 0
     gold = (req.total_posts or 0) - (prev_posts or 0)
@@ -1568,8 +1595,13 @@ def _settlement_suggestion(db: Session, req: SettlementRequest) -> tuple[int, in
     return max(0, gold) * SETTLEMENT_GOLD_PER_POST, max(0, cp)
 
 
-def _to_settlement_read(db: Session, req: SettlementRequest, character: Character | None) -> SettlementRead:
-    suggested_gold, suggested_cp = _settlement_suggestion(db, req)
+def _to_settlement_read(
+    db: Session,
+    req: SettlementRequest,
+    character: Character | None,
+    suggestion: tuple[int, int] | None = None,
+) -> SettlementRead:
+    suggested_gold, suggested_cp = suggestion if suggestion is not None else _settlement_suggestion(db, req)
     return SettlementRead(
         id=req.id,
         character_id=req.character_id,
@@ -1602,7 +1634,37 @@ def get_settlement_requests(
     characters = {
         c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
     } if character_ids else {}
-    return [_to_settlement_read(db, r, characters.get(r.character_id)) for r in requests]
+
+    paid_board_requests_by_character: dict[int, list[SettlementRequest]] = {}
+    if character_ids:
+        paid_board_requests = (
+            db.query(SettlementRequest)
+            .filter(SettlementRequest.character_id.in_(character_ids))
+            .filter(SettlementRequest.type == "board")
+            .filter(SettlementRequest.status == "paid")
+            .order_by(SettlementRequest.character_id.asc(), SettlementRequest.id.desc())
+            .all()
+        )
+        for paid in paid_board_requests:
+            paid_board_requests_by_character.setdefault(paid.character_id, []).append(paid)
+
+    def suggestion_for(req: SettlementRequest) -> tuple[int, int]:
+        if req.type == "log":
+            return 0, len(req.links or []) * SETTLEMENT_CP_PER_LINK
+        prev = next(
+            (
+                paid
+                for paid in paid_board_requests_by_character.get(req.character_id, [])
+                if paid.id != req.id
+            ),
+            None,
+        )
+        return _settlement_suggestion_from_previous(req, prev)
+
+    return [
+        _to_settlement_read(db, r, characters.get(r.character_id), suggestion_for(r))
+        for r in requests
+    ]
 
 
 def create_settlement_request(db: Session, member: Member, data: SettlementCreate) -> list[SettlementRead]:
@@ -1681,9 +1743,11 @@ def get_all_rewards(
         for source_id, in db.query(Reward.source_id).filter(Reward.type == "revoke").all()
         if source_id is not None
     }
+    rewards = [reward for reward, _, _ in rows]
+    item_names = _reward_item_names(db, rewards)
     return [
         RewardWithCharacterRead(
-            **_to_reward_read(db, reward).model_dump(),
+            **_to_reward_read(reward, item_names).model_dump(),
             character_name=character_name,
             character_image_url=character_image_url,
             revoked=reward.id in revoked_ids,
@@ -1749,8 +1813,9 @@ def revoke_reward(db: Session, reward_id: int) -> RewardWithCharacterRead:
     )
     db.add(revoke)
     db.flush()
+    item_names = _reward_item_names(db, [revoke])
     result = RewardWithCharacterRead(
-        **_to_reward_read(db, revoke).model_dump(),
+        **_to_reward_read(revoke, item_names).model_dump(),
         character_name=character.name,
         character_image_url=character.image_url,
         revoked=False,
@@ -1761,7 +1826,15 @@ def revoke_reward(db: Session, reward_id: int) -> RewardWithCharacterRead:
 
 def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
     """관리자가 하나 이상의 캐릭터에게 골드·CP·아이템을 지급하고, 캐릭터별로 '관리자의 선물' 보상 이력을 남긴다."""
-    characters = [_get_character_or_404(db, character_id) for character_id in data.character_ids]
+    requested_character_ids = list(dict.fromkeys(data.character_ids))
+    characters = db.query(Character).filter(Character.id.in_(requested_character_ids)).all()
+    characters_by_id = {character.id: character for character in characters}
+    missing_character_ids = [character_id for character_id in requested_character_ids if character_id not in characters_by_id]
+    if missing_character_ids:
+        raise HTTPException(
+            status_code=404,
+            detail=f"캐릭터를 찾을 수 없습니다: {', '.join(map(str, missing_character_ids))}",
+        )
 
     item_ids = [cart_item.item_id for cart_item in data.items]
     items_map: dict[int, Item] = {}
@@ -1775,7 +1848,8 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
             )
 
     rewards: list[Reward] = []
-    for character in characters:
+    for character_id in requested_character_ids:
+        character = characters_by_id[character_id]
         reward_items: list[dict] = []
         if data.gold > 0:
             character.gold += data.gold
@@ -1802,7 +1876,8 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
         rewards.append(reward)
 
     db.flush()
-    reward_reads = [_to_reward_read(db, reward) for reward in rewards]
+    item_names = {item.id: item.name for item in items_map.values()}
+    reward_reads = [_to_reward_read(reward, item_names) for reward in rewards]
     db.commit()
     return reward_reads
 
@@ -1869,7 +1944,8 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
         _apply_growth_from_exp(db, character)
 
     db.flush()
-    rewards_read = [_to_reward_read(db, r) for r in created_rewards]
+    item_names = _reward_item_names(db, created_rewards)
+    rewards_read = [_to_reward_read(r, item_names) for r in created_rewards]
     db.commit()
     return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
 
@@ -2107,7 +2183,8 @@ def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
         _apply_growth_from_exp(db, character)
 
     db.flush()
-    rewards_read = [_to_reward_read(db, r) for r in created_rewards]
+    item_names = _reward_item_names(db, created_rewards)
+    rewards_read = [_to_reward_read(r, item_names) for r in created_rewards]
     db.commit()
     return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
 
@@ -3445,6 +3522,16 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         queued_actions.append((priority, order_index, p, action, selected_skill))
     queued_actions.sort(key=lambda entry: (entry[0], entry[1]))
 
+    # 아이템 사용 행동에 쓰일 아이템을 미리 한 번에 조회해 행동 처리 루프에서의 개별 조회(N+1)를 없앤다.
+    item_action_ids = {
+        entry[3].item_id for entry in queued_actions if entry[3].kind == "item" and entry[3].item_id
+    }
+    items_by_id: dict[int, Item] = (
+        {item.id: item for item in db.query(Item).filter(Item.id.in_(item_action_ids)).all()}
+        if item_action_ids
+        else {}
+    )
+
     # 2) 지원 기술은 activation_order대로 먼저 처리하고, 나머지는 기존 규칙대로 이어서 처리한다.
     for _priority, _order_index, p, action, selected_skill in queued_actions:
         if p["retreated"]:
@@ -3792,7 +3879,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 events.append(f"💀 {target_enemy['name']} 격파")
 
         elif action.kind == "item":
-            item = db.get(Item, action.item_id) if action.item_id else None
+            item = items_by_id.get(action.item_id) if action.item_id else None
             if item is None or item.item_type != "consumable":
                 events.append(f"⚠️ {p['name']} 사용할 아이템이 지정되지 않았습니다.")
                 continue

@@ -59,11 +59,7 @@ function ShopCurtain() {
     <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden rounded-2xl border border-gold/30 bg-primary/90 shadow-inner backdrop-blur-[1px]">
       <div
         aria-hidden="true"
-        className="absolute inset-0 opacity-60"
-        style={{
-          backgroundImage: "radial-gradient(circle, rgba(245, 158, 11, 0.45) 1px, transparent 1.5px)",
-          backgroundSize: "12px 12px",
-        }}
+        className="absolute inset-0 opacity-60 bg-[radial-gradient(circle,rgba(245,158,11,0.45)_1px,transparent_1.5px)] bg-size-[12px_12px]"
       />
       <div className="relative rounded-lg border border-gold/40 bg-primary px-5 py-3 text-sm font-semibold text-ivory shadow-lg">
         지금은 상점 이용이 불가능합니다.

@@ -41,6 +41,7 @@ import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import RewardSummary from "@/components/common/RewardSummary";
 import { useToast } from "@/components/common/ToastProvider";
+import { useEditableProgressList } from "@/lib/useEditableProgressList";
 
 type MissionType = "일일" | "중요";
 
@@ -59,19 +60,26 @@ export default function MissionStatusTab() {
   const [items, setItems] = useState<Item[]>([]);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
-  const [progressEntries, setProgressEntries] = useState<MissionProgress[]>([]);
-  const [progressBackup, setProgressBackup] = useState<MissionProgress[] | null>(null);
-  const [isEditingProgress, setIsEditingProgress] = useState(false);
   const [showAchievedOnly, setShowAchievedOnly] = useState(false);
   const [loadingMissions, setLoadingMissions] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
-  const [savingProgress, setSavingProgress] = useState(false);
   const [payingReward, setPayingReward] = useState(false);
 
   const chapters = [...new Set(missions.map((m) => m.chapter))];
   const chapterMissions = missions.filter((m) => m.chapter === selectedChapter);
   const selectedMission = chapterMissions.find((m) => m.id === selectedMissionId) ?? null;
-  const activeProgress = progressEntries;
+
+  const progress = useEditableProgressList<MissionProgress>({
+    onSave: (entries) =>
+      saveMissionProgress(
+        selectedMission!.id,
+        entries.map((e) => ({ character_id: e.character_id, achieved: e.achieved, memo: e.memo })),
+      ),
+    successMessage: "임무 현황을 저장했습니다.",
+    errorMessage: "임무 현황 저장에 실패했습니다.",
+    toast,
+  });
+  const activeProgress = progress.entries;
   const visibleProgress = showAchievedOnly
     ? activeProgress.filter((e) => e.achieved)
     : activeProgress;
@@ -107,14 +115,13 @@ export default function MissionStatusTab() {
     async function loadProgress() {
       try {
         setLoadingProgress(true);
-        setIsEditingProgress(false);
-        setProgressBackup(null);
+        progress.resetEditing();
         const entries = await fetchMissionProgress(missionId);
         if (cancelled) return;
-        setProgressEntries(entries);
+        progress.setEntries(entries);
       } catch (e) {
         if (!cancelled) {
-          setProgressEntries([]);
+          progress.setEntries([]);
           toast(e instanceof Error ? e.message : "임무 현황을 불러오지 못했습니다.", "error");
         }
       } finally {
@@ -123,7 +130,10 @@ export default function MissionStatusTab() {
     }
     loadProgress();
     return () => { cancelled = true; };
-  }, [selectedMissionId, toast]);
+    // progress 객체 전체는 매 렌더마다 새로 만들어져 의존성에 넣으면 매번 재실행되므로
+    // 실제로 쓰는 안정적인 멤버(resetEditing/setEntries)만 넣는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMissionId, toast, progress.resetEditing, progress.setEntries]);
 
   function handleSelectChapter(value: string) {
     const next = missions.find((m) => m.chapter === value);
@@ -137,60 +147,13 @@ export default function MissionStatusTab() {
     setShowAchievedOnly(false);
   }
 
-  function handleStartEditProgress() {
-    setProgressBackup(progressEntries);
-    setIsEditingProgress(true);
-  }
-
-  function handleCancelEditProgress() {
-    if (progressBackup) setProgressEntries(progressBackup);
-    setProgressBackup(null);
-    setIsEditingProgress(false);
-  }
-
-  /** 편집 모드에서 체크박스를 누르면 서버에 바로 반영하지 않고 화면에만 표시한다. "저장"을 눌러야 한꺼번에 저장된다. */
-  function handleProgressToggle(characterId: number, achieved: boolean) {
-    const targetEntry = progressEntries.find((entry) => entry.character_id === characterId);
-    if (targetEntry?.reward_paid && !achieved) return;
-    setProgressEntries((prev) => prev.map((entry) => (
-      entry.character_id === characterId ? { ...entry, achieved } : entry
-    )));
-  }
-
-  async function handleSaveProgress() {
-    if (!selectedMission) return;
-    try {
-      setSavingProgress(true);
-      const updated = await saveMissionProgress(
-        selectedMission.id,
-        progressEntries.map((e) => ({
-          character_id: e.character_id,
-          achieved: e.achieved,
-          memo: e.memo,
-        })),
-      );
-      setProgressEntries(updated);
-      setProgressBackup(null);
-      setIsEditingProgress(false);
-      toast("임무 현황을 저장했습니다.", "success");
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "임무 현황 저장에 실패했습니다.", "error");
-    } finally {
-      setSavingProgress(false);
-    }
-  }
-
   async function handlePayReward() {
     if (!selectedMission) return;
     try {
       setPayingReward(true);
       const result = await payMissionRewards(selectedMission.id);
       const newlyPaidIds = new Set(result.rewards.map((reward) => reward.character_id));
-      if (newlyPaidIds.size > 0) {
-        setProgressEntries((prev) => prev.map((entry) => (
-          newlyPaidIds.has(entry.character_id) ? { ...entry, reward_paid: true } : entry
-        )));
-      }
+      progress.markRewardPaid(newlyPaidIds);
       if (result.paid_count === 0) {
         toast("이미 모든 달성자에게 보상이 지급되었거나 달성자가 없습니다.", "info");
       } else {
@@ -310,7 +273,7 @@ export default function MissionStatusTab() {
             <CardHeader className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
               <div className="flex flex-col gap-1.5">
                 <CardTitle>{selectedMission?.name ?? "임무를 선택하세요"}</CardTitle>
-                {isEditingProgress && (
+                {progress.isEditing && (
                   <span className="text-xs font-semibold text-gold">편집 중 · 저장을 눌러야 반영됩니다</span>
                 )}
               </div>
@@ -333,15 +296,15 @@ export default function MissionStatusTab() {
                     />
                     달성 캐릭터만 보기
                   </label>
-                  {isEditingProgress ? (
+                  {progress.isEditing ? (
                     <>
-                      <Button size="sm" variant="ghost" disabled={savingProgress} onClick={handleCancelEditProgress}>
+                      <Button size="sm" variant="ghost" disabled={progress.saving} onClick={progress.cancelEdit}>
                         <X size={15} />
                         취소
                       </Button>
-                      <Button size="sm" disabled={savingProgress} onClick={() => void handleSaveProgress()}>
+                      <Button size="sm" disabled={progress.saving} onClick={() => void progress.save()}>
                         <Check size={15} />
-                        {savingProgress ? "저장 중..." : "저장"}
+                        {progress.saving ? "저장 중..." : "저장"}
                       </Button>
                     </>
                   ) : (
@@ -349,13 +312,13 @@ export default function MissionStatusTab() {
                       size="sm"
                       variant="outline"
                       disabled={!selectedMission || loadingProgress}
-                      onClick={handleStartEditProgress}
+                      onClick={progress.startEdit}
                     >
                       <Pencil size={15} />
                       편집
                     </Button>
                   )}
-                  {savingProgress ? <span className="text-xs text-muted">저장 중...</span> : null}
+                  {progress.saving ? <span className="text-xs text-muted">저장 중...</span> : null}
                 </div>
               </div>
 
@@ -380,10 +343,10 @@ export default function MissionStatusTab() {
                         <div className="absolute right-2 top-2">
                           <Checkbox
                             checked={entry.achieved}
-                            disabled={!isEditingProgress || savingProgress || entry.reward_paid}
+                            disabled={!progress.isEditing || progress.saving || entry.reward_paid}
                             className="size-5 border-2 bg-surface shadow-md"
                             onCheckedChange={(checked) =>
-                              handleProgressToggle(entry.character_id, checked === true)
+                              progress.toggle(entry.character_id, checked === true)
                             }
                           />
                         </div>

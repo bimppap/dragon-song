@@ -86,6 +86,67 @@ async function request<T>(path: string, init?: RequestInit, errorMessage = "요�
   return res.json();
 }
 
+interface CachedApiEntry<T> {
+  data: T;
+  expiresAt: number;
+}
+
+const apiResponseCache = new Map<string, CachedApiEntry<unknown>>();
+const apiInFlightCache = new Map<string, Promise<unknown>>();
+let apiCacheVersion = 0;
+
+async function cachedRequest<T>(
+  cacheKey: string,
+  path: string,
+  ttlMs: number,
+  errorMessage: string,
+): Promise<T> {
+  const now = Date.now();
+  const cached = apiResponseCache.get(cacheKey) as CachedApiEntry<T> | undefined;
+  if (cached && now < cached.expiresAt) return cached.data;
+
+  const inFlight = apiInFlightCache.get(cacheKey) as Promise<T> | undefined;
+  if (inFlight) return inFlight;
+
+  const cacheVersion = apiCacheVersion;
+  const promise = request<T>(path, undefined, errorMessage)
+    .then((data) => {
+      if (cacheVersion === apiCacheVersion) {
+        apiResponseCache.set(cacheKey, { data, expiresAt: Date.now() + ttlMs });
+      }
+      return data;
+    })
+    .finally(() => {
+      apiInFlightCache.delete(cacheKey);
+    });
+  apiInFlightCache.set(cacheKey, promise);
+  return promise;
+}
+
+function invalidateApiCache(...prefixes: string[]) {
+  apiCacheVersion += 1;
+  if (prefixes.length === 0) {
+    apiResponseCache.clear();
+    apiInFlightCache.clear();
+    return;
+  }
+  for (const key of [...apiResponseCache.keys()]) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) apiResponseCache.delete(key);
+  }
+  for (const key of [...apiInFlightCache.keys()]) {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) apiInFlightCache.delete(key);
+  }
+}
+
+const AUTH_CACHE_TTL_MS = 30_000;
+const CHARACTER_CACHE_TTL_MS = 30_000;
+const CHAPTER_CACHE_TTL_MS = 60_000;
+const ITEM_CACHE_TTL_MS = 30_000;
+const SHOP_STATUS_CACHE_TTL_MS = 15_000;
+const ENEMY_ENVIRONMENT_CACHE_TTL_MS = 60_000;
+const SKILL_NODE_CACHE_TTL_MS = 5 * 60_000;
+const CHARACTER_SKILL_CACHE_TTL_MS = 60_000;
+
 /** 파일 업로드 전용: FormData 본문 + 인증 헤더 재시도를 공유한다(캐릭터/아이템/챕터/기술 이미지 업로드에서 재사용). */
 async function uploadFile<T>(path: string, file: File, fieldName = "file", errorMessage = "업로드 실패"): Promise<T> {
   const formData = new FormData();
@@ -144,14 +205,16 @@ export async function signup(data: SignupRequest): Promise<Member> {
 }
 
 export async function login(data: LoginRequest): Promise<TokenResponse> {
-  return request<TokenResponse>("/auth/login", {
+  const response = await request<TokenResponse>("/auth/login", {
     method: "POST",
     body: JSON.stringify(data),
   }, "로그인 실패");
+  invalidateApiCache();
+  return response;
 }
 
 export async function fetchMe(): Promise<Member> {
-  return request<Member>("/auth/me", undefined, "내 정보 조회 실패");
+  return cachedRequest<Member>("auth:me", "/auth/me", AUTH_CACHE_TTL_MS, "내 정보 조회 실패");
 }
 
 export async function logoutRequest(refreshToken: string): Promise<void> {
@@ -159,17 +222,25 @@ export async function logoutRequest(refreshToken: string): Promise<void> {
     method: "POST",
     body: JSON.stringify({ refresh_token: refreshToken }),
   }, "로그아웃 실패");
+  invalidateApiCache();
 }
 
 export async function createMyCharacter(data: CharacterOnboardingCreate): Promise<Character> {
-  return request<Character>("/members/me/character", {
+  const character = await request<Character>("/members/me/character", {
     method: "POST",
     body: JSON.stringify(data),
   }, "캐릭터 생성 실패");
+  invalidateApiCache("auth:", "characters:");
+  return character;
 }
 
 export async function fetchMyCharacter(): Promise<CharacterDetail> {
-  return request<CharacterDetail>("/members/me/character", undefined, "내 캐릭터 조회 실패");
+  return cachedRequest<CharacterDetail>(
+    "characters:me",
+    "/members/me/character",
+    CHARACTER_CACHE_TTL_MS,
+    "내 캐릭터 조회 실패",
+  );
 }
 
 export type ItemType = "consumable" | "equipment";
@@ -535,44 +606,58 @@ export interface CartItem {
 }
 
 export async function fetchCharacters(): Promise<Character[]> {
-  return request<Character[]>("/characters", undefined, "캐릭터 조회 실패");
+  return cachedRequest<Character[]>("characters:list", "/characters", CHARACTER_CACHE_TTL_MS, "캐릭터 조회 실패");
 }
 
 export async function fetchCharacterDetail(characterId: number): Promise<CharacterDetail> {
-  return request<CharacterDetail>(`/characters/${characterId}`, undefined, "캐릭터 상세 조회 실패");
+  return cachedRequest<CharacterDetail>(
+    `characters:detail:${characterId}`,
+    `/characters/${characterId}`,
+    CHARACTER_CACHE_TTL_MS,
+    "캐릭터 상세 조회 실패",
+  );
 }
 
 export async function uploadCharacterImage(characterId: number, file: File): Promise<CharacterDetail> {
-  return uploadFile<CharacterDetail>(`/characters/${characterId}/image`, file, "file", "캐릭터 이미지 업로드 실패");
+  const detail = await uploadFile<CharacterDetail>(`/characters/${characterId}/image`, file, "file", "캐릭터 이미지 업로드 실패");
+  invalidateApiCache("characters:", "auth:");
+  return detail;
 }
 
 export async function deleteCharacter(characterId: number): Promise<void> {
   await request(`/characters/${characterId}`, { method: "DELETE" }, "캐릭터 삭제 실패");
+  invalidateApiCache("characters:", "auth:", "items:", "skills:character:", "battles:");
 }
 
 export async function updateCharacterFlags(
   characterId: number,
   flags: CharacterFlagsUpdate,
 ): Promise<Character> {
-  return request<Character>(`/characters/${characterId}/flags`, {
+  const character = await request<Character>(`/characters/${characterId}/flags`, {
     method: "PATCH",
     body: JSON.stringify(flags),
   }, "관리 플래그 저장 실패");
+  invalidateApiCache("characters:");
+  return character;
 }
 
 export async function createCharacter(data: CharacterCreate): Promise<Character> {
-  return request<Character>("/characters", {
+  const character = await request<Character>("/characters", {
     method: "POST",
     body: JSON.stringify(data),
   }, "캐릭터 생성 실패");
+  invalidateApiCache("characters:", "skills:character:");
+  return character;
 }
 
 /** 관리자가 만든 캐릭터(러너 계정 미연결)만 능력치·기술을 제한 없이 통째로 수정할 수 있다. */
 export async function updateCharacter(characterId: number, data: CharacterCreate): Promise<Character> {
-  return request<Character>(`/characters/${characterId}`, {
+  const character = await request<Character>(`/characters/${characterId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "캐릭터 수정 실패");
+  invalidateApiCache("characters:", "auth:", "skills:character:");
+  return character;
 }
 
 export async function fetchAttendanceEntries(): Promise<AttendanceEntry[]> {
@@ -580,22 +665,28 @@ export async function fetchAttendanceEntries(): Promise<AttendanceEntry[]> {
 }
 
 export async function createAttendanceEntry(characterId: number, attendanceDate: string): Promise<AttendanceEntry[]> {
-  return request<AttendanceEntry[]>("/attendance/entries", {
+  const entries = await request<AttendanceEntry[]>("/attendance/entries", {
     method: "POST",
     body: JSON.stringify({ character_id: characterId, attendance_date: attendanceDate }),
   }, "출석 처리 실패");
+  invalidateApiCache("attendance:");
+  return entries;
 }
 
 export async function deleteAttendanceEntry(entryId: number): Promise<AttendanceEntry[]> {
-  return request<AttendanceEntry[]>(`/attendance/entries/${entryId}`, {
+  const entries = await request<AttendanceEntry[]>(`/attendance/entries/${entryId}`, {
     method: "DELETE",
   }, "출석 기록 삭제 실패");
+  invalidateApiCache("attendance:");
+  return entries;
 }
 
 export async function payAttendanceRewards(): Promise<AttendanceRewardPayResult> {
-  return request<AttendanceRewardPayResult>("/attendance/rewards/pay", {
+  const result = await request<AttendanceRewardPayResult>("/attendance/rewards/pay", {
     method: "POST",
   }, "출석 보상 전송 실패");
+  invalidateApiCache("attendance:", "characters:", "rewards:");
+  return result;
 }
 
 export async function fetchAttendanceStreakRanking(): Promise<AttendanceStreakEntry[]> {
@@ -604,40 +695,50 @@ export async function fetchAttendanceStreakRanking(): Promise<AttendanceStreakEn
 
 export async function fetchItems(character_id?: number): Promise<Item[]> {
   const params = character_id != null ? `?character_id=${character_id}` : "";
-  return request<Item[]>(`/items${params}`, undefined, "아이템 조회 실패");
+  const cacheKey = character_id != null ? `items:character:${character_id}` : "items:all";
+  return cachedRequest<Item[]>(cacheKey, `/items${params}`, ITEM_CACHE_TTL_MS, "아이템 조회 실패");
 }
 
 export async function createItem(data: ItemCreate): Promise<Item> {
-  return request<Item>("/items", {
+  const item = await request<Item>("/items", {
     method: "POST",
     body: JSON.stringify(data),
   }, "아이템 생성 실패");
+  invalidateApiCache("items:", "characters:");
+  return item;
 }
 
 export async function updateItem(itemId: number, data: ItemCreate): Promise<Item> {
-  return request<Item>(`/items/${itemId}`, {
+  const item = await request<Item>(`/items/${itemId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "아이템 수정 실패");
+  invalidateApiCache("items:", "characters:");
+  return item;
 }
 
 export async function uploadItemImage(itemId: number, file: File): Promise<Item> {
-  return uploadFile<Item>(`/items/${itemId}/image`, file, "file", "이미지 업로드 실패");
+  const item = await uploadFile<Item>(`/items/${itemId}/image`, file, "file", "이미지 업로드 실패");
+  invalidateApiCache("items:", "characters:");
+  return item;
 }
 
 export async function deleteItem(itemId: number): Promise<void> {
   await request(`/items/${itemId}`, { method: "DELETE" }, "아이템 삭제 실패");
+  invalidateApiCache("items:", "characters:");
 }
 
 export async function fetchShopStatus(): Promise<ShopStatus> {
-  return request<ShopStatus>("/shop/status", undefined, "상점 상태 조회 실패");
+  return cachedRequest<ShopStatus>("shop:status", "/shop/status", SHOP_STATUS_CACHE_TTL_MS, "상점 상태 조회 실패");
 }
 
 export async function updateShopStatus(isOpen: boolean): Promise<ShopStatus> {
-  return request<ShopStatus>("/shop/status", {
+  const status = await request<ShopStatus>("/shop/status", {
     method: "PUT",
     body: JSON.stringify({ is_open: isOpen }),
   }, "상점 상태 변경 실패");
+  invalidateApiCache("shop:");
+  return status;
 }
 
 /** 가능성/잠재성의 메달 사용 시 선택 가능한 능력치. */
@@ -650,22 +751,28 @@ export const GRADE_CHOICE_STAT_OPTIONS: { value: "stat_courage" | "stat_enduranc
 
 // "use"로 시작하면 React Hook으로 오인되어 rules-of-hooks 린트 오탐이 발생하므로 consumeItem으로 명명한다.
 export async function consumeItem(characterId: number, itemId: number, chosenStats?: string[]): Promise<CharacterDetail> {
-  return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
+  const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
     method: "POST",
     body: JSON.stringify({ chosen_stats: chosenStats ?? [] }),
   }, "아이템 사용 실패");
+  invalidateApiCache("characters:", "items:", "skills:character:");
+  return detail;
 }
 
 export async function equipItem(characterId: number, itemId: number): Promise<CharacterDetail> {
-  return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/equip`, {
+  const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/equip`, {
     method: "POST",
   }, "아이템 장착 실패");
+  invalidateApiCache("characters:");
+  return detail;
 }
 
 export async function unequipItem(characterId: number, itemId: number): Promise<CharacterDetail> {
-  return request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/unequip`, {
+  const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/unequip`, {
     method: "POST",
   }, "아이템 장착 해제 실패");
+  invalidateApiCache("characters:");
+  return detail;
 }
 
 export async function fetchChallenges(chapter?: string): Promise<Challenge[]> {
@@ -715,10 +822,12 @@ export async function bulkPurchase(
   character_id: number,
   items: CartItem[]
 ): Promise<Purchase[]> {
-  return request<Purchase[]>("/purchases/bulk", {
+  const purchases = await request<Purchase[]>("/purchases/bulk", {
     method: "POST",
     body: JSON.stringify({ character_id, items }),
   }, "구매 실패");
+  invalidateApiCache("items:", "characters:", "purchases:");
+  return purchases;
 }
 
 export type SettlementType = "board" | "log";
@@ -753,17 +862,21 @@ export async function fetchSettlements(): Promise<Settlement[]> {
 }
 
 export async function createSettlement(data: SettlementCreate): Promise<Settlement[]> {
-  return request<Settlement[]>("/settlements", {
+  const settlements = await request<Settlement[]>("/settlements", {
     method: "POST",
     body: JSON.stringify(data),
   }, "정산 요청 실패");
+  invalidateApiCache("settlements:");
+  return settlements;
 }
 
 export async function paySettlement(settlementId: number, gold: number, cp: number): Promise<Settlement> {
-  return request<Settlement>(`/settlements/${settlementId}/pay`, {
+  const settlement = await request<Settlement>(`/settlements/${settlementId}/pay`, {
     method: "POST",
     body: JSON.stringify({ gold, cp }),
   }, "정산 지급 실패");
+  invalidateApiCache("settlements:", "characters:", "rewards:");
+  return settlement;
 }
 
 export interface RewardWithCharacter extends Reward {
@@ -786,9 +899,11 @@ export async function fetchAllRewards(filters?: {
 }
 
 export async function revokeReward(rewardId: number): Promise<RewardWithCharacter> {
-  return request<RewardWithCharacter>(`/rewards/${rewardId}/revoke`, {
+  const reward = await request<RewardWithCharacter>(`/rewards/${rewardId}/revoke`, {
     method: "POST",
   }, "보상 회수 실패");
+  invalidateApiCache("rewards:", "characters:", "items:");
+  return reward;
 }
 
 export interface AdminGiftRequest {
@@ -799,10 +914,12 @@ export interface AdminGiftRequest {
 }
 
 export async function sendAdminGift(data: AdminGiftRequest): Promise<Reward[]> {
-  return request<Reward[]>("/rewards/admin-gift", {
+  const rewards = await request<Reward[]>("/rewards/admin-gift", {
     method: "POST",
     body: JSON.stringify(data),
   }, "선물 보내기 실패");
+  invalidateApiCache("characters:", "items:", "rewards:");
+  return rewards;
 }
 
 export async function fetchPurchases(character_id?: number, item_id?: number): Promise<Purchase[]> {
@@ -810,7 +927,12 @@ export async function fetchPurchases(character_id?: number, item_id?: number): P
   if (character_id != null) params.set("character_id", String(character_id));
   if (item_id != null) params.set("item_id", String(item_id));
   const query = params.toString() ? `?${params}` : "";
-  return request<Purchase[]>(`/purchases${query}`, undefined, "구매 내역 조회 실패");
+  return cachedRequest<Purchase[]>(
+    `purchases:${query || "all"}`,
+    `/purchases${query}`,
+    ITEM_CACHE_TTL_MS,
+    "구매 내역 조회 실패",
+  );
 }
 
 export type MissionRewardItemGrant = RewardGrant;
@@ -873,25 +995,32 @@ export async function fetchMissions(chapter?: string): Promise<Mission[]> {
 }
 
 export async function createMission(data: MissionCreate): Promise<Mission> {
-  return request<Mission>("/missions", {
+  const mission = await request<Mission>("/missions", {
     method: "POST",
     body: JSON.stringify(data),
   }, "임무 생성 실패");
+  invalidateApiCache("missions:");
+  return mission;
 }
 
 export async function updateMission(missionId: number, data: MissionCreate): Promise<Mission> {
-  return request<Mission>(`/missions/${missionId}`, {
+  const mission = await request<Mission>(`/missions/${missionId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "임무 수정 실패");
+  invalidateApiCache("missions:");
+  return mission;
 }
 
 export async function uploadMissionImage(missionId: number, file: File): Promise<Mission> {
-  return uploadFile<Mission>(`/missions/${missionId}/image`, file, "file", "임무 이미지 업로드 실패");
+  const mission = await uploadFile<Mission>(`/missions/${missionId}/image`, file, "file", "임무 이미지 업로드 실패");
+  invalidateApiCache("missions:");
+  return mission;
 }
 
 export async function deleteMission(missionId: number): Promise<void> {
   await request(`/missions/${missionId}`, { method: "DELETE" }, "임무 삭제 실패");
+  invalidateApiCache("missions:", "items:");
 }
 
 export async function fetchMissionProgress(missionId: number): Promise<MissionProgress[]> {
@@ -909,15 +1038,19 @@ export async function saveMissionProgress(
 }
 
 export async function payMissionRewards(missionId: number): Promise<RewardPayResult> {
-  return request<RewardPayResult>(`/rewards/mission/${missionId}`, {
+  const result = await request<RewardPayResult>(`/rewards/mission/${missionId}`, {
     method: "POST",
   }, "임무 보상 지급 실패");
+  invalidateApiCache("characters:", "items:", "rewards:", "missions:");
+  return result;
 }
 
 export async function payChallengeRewards(challengeId: number): Promise<RewardPayResult> {
-  return request<RewardPayResult>(`/rewards/challenge/${challengeId}`, {
+  const result = await request<RewardPayResult>(`/rewards/challenge/${challengeId}`, {
     method: "POST",
   }, "도전과제 보상 지급 실패");
+  invalidateApiCache("characters:", "items:", "rewards:", "challenges:");
+  return result;
 }
 
 export interface Chapter {
@@ -947,22 +1080,8 @@ export interface ChapterCreate {
   battle_participation_reward_exp?: number;
 }
 
-// 챕터 목록은 자주 조회되지만 거의 바뀌지 않으므로 짧게 캐싱해 페이지 이동마다 재조회하지 않는다.
-// 생성/수정/이미지·음원 업로드 시에는 즉시 무효화해 관리자가 바로 최신 상태를 본다.
-const CHAPTER_CACHE_TTL_MS = 60_000;
-let chapterCache: { data: Chapter[]; expiresAt: number } | null = null;
-
-function invalidateChapterCache() {
-  chapterCache = null;
-}
-
 export async function fetchChapters(): Promise<Chapter[]> {
-  if (chapterCache && Date.now() < chapterCache.expiresAt) {
-    return chapterCache.data;
-  }
-  const data = await request<Chapter[]>("/chapters", undefined, "챕터 조회 실패");
-  chapterCache = { data, expiresAt: Date.now() + CHAPTER_CACHE_TTL_MS };
-  return data;
+  return cachedRequest<Chapter[]>("chapters:list", "/chapters", CHAPTER_CACHE_TTL_MS, "챕터 조회 실패");
 }
 
 export async function createChapter(data: ChapterCreate): Promise<Chapter> {
@@ -970,7 +1089,7 @@ export async function createChapter(data: ChapterCreate): Promise<Chapter> {
     method: "POST",
     body: JSON.stringify(data),
   }, "챕터 생성 실패");
-  invalidateChapterCache();
+  invalidateApiCache("chapters:", "items:", "enemies:", "environments:");
   return created;
 }
 
@@ -979,29 +1098,34 @@ export async function updateChapter(chapterId: number, data: ChapterCreate): Pro
     method: "PUT",
     body: JSON.stringify(data),
   }, "챕터 수정 실패");
-  invalidateChapterCache();
+  invalidateApiCache("chapters:", "items:", "enemies:", "environments:");
   return updated;
 }
 
 export async function uploadChapterImage(chapterId: number, file: File): Promise<Chapter> {
   const updated = await uploadFile<Chapter>(`/chapters/${chapterId}/image`, file, "file", "챕터 이미지 업로드 실패");
-  invalidateChapterCache();
+  invalidateApiCache("chapters:");
   return updated;
 }
 
 export async function uploadChapterMusic(chapterId: number, file: File): Promise<Chapter> {
   const updated = await uploadFile<Chapter>(`/chapters/${chapterId}/music`, file, "file", "챕터 음원 업로드 실패");
-  invalidateChapterCache();
+  invalidateApiCache("chapters:");
   return updated;
 }
 
 export async function deleteChapter(chapterId: number): Promise<void> {
   await request(`/chapters/${chapterId}`, { method: "DELETE" }, "챕터 삭제 실패");
-  invalidateChapterCache();
+  invalidateApiCache("chapters:", "items:", "enemies:", "environments:");
 }
 
 export async function fetchActiveChapter(): Promise<Chapter | null> {
-  return request<Chapter | null>("/chapters/active", undefined, "활성 챕터 조회 실패");
+  return cachedRequest<Chapter | null>(
+    "chapters:active",
+    "/chapters/active",
+    CHAPTER_CACHE_TTL_MS,
+    "활성 챕터 조회 실패",
+  );
 }
 
 export interface EnemySkill {
@@ -1043,33 +1167,47 @@ export interface EnemyCreate {
 
 export async function fetchEnemies(chapter?: string): Promise<Enemy[]> {
   const params = chapter ? `?chapter=${encodeURIComponent(chapter)}` : "";
-  return request<Enemy[]>(`/enemies${params}`, undefined, "에너미 조회 실패");
+  return cachedRequest<Enemy[]>(
+    `enemies:${chapter ?? "all"}`,
+    `/enemies${params}`,
+    ENEMY_ENVIRONMENT_CACHE_TTL_MS,
+    "에너미 조회 실패",
+  );
 }
 
 export async function createEnemy(data: EnemyCreate): Promise<Enemy> {
-  return request<Enemy>("/enemies", {
+  const enemy = await request<Enemy>("/enemies", {
     method: "POST",
     body: JSON.stringify(data),
   }, "에너미 생성 실패");
+  invalidateApiCache("enemies:");
+  return enemy;
 }
 
 export async function updateEnemy(enemyId: number, data: EnemyCreate): Promise<Enemy> {
-  return request<Enemy>(`/enemies/${enemyId}`, {
+  const enemy = await request<Enemy>(`/enemies/${enemyId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "에너미 수정 실패");
+  invalidateApiCache("enemies:");
+  return enemy;
 }
 
 export async function uploadEnemyImage(enemyId: number, file: File): Promise<Enemy> {
-  return uploadFile<Enemy>(`/enemies/${enemyId}/image`, file, "file", "에너미 이미지 업로드 실패");
+  const enemy = await uploadFile<Enemy>(`/enemies/${enemyId}/image`, file, "file", "에너미 이미지 업로드 실패");
+  invalidateApiCache("enemies:");
+  return enemy;
 }
 
 export async function deleteEnemy(enemyId: number): Promise<void> {
   await request(`/enemies/${enemyId}`, { method: "DELETE" }, "에너미 삭제 실패");
+  invalidateApiCache("enemies:");
 }
 
 export async function uploadEnemySummonImage(enemyId: number, skillIndex: number, file: File): Promise<Enemy> {
-  return uploadFile<Enemy>(`/enemies/${enemyId}/skills/${skillIndex}/summon-image`, file, "file", "소환수 이미지 업로드 실패");
+  const enemy = await uploadFile<Enemy>(`/enemies/${enemyId}/skills/${skillIndex}/summon-image`, file, "file", "소환수 이미지 업로드 실패");
+  invalidateApiCache("enemies:");
+  return enemy;
 }
 
 /** 챕터 전투 환경 효과. 매 라운드 "적의 행동 암시" 턴마다 스택이 쌓이고 (스택-1)×스택당 피해를 입힌다. */
@@ -1091,25 +1229,35 @@ export interface EnvironmentCreate {
 
 export async function fetchEnvironments(chapter?: string): Promise<Environment[]> {
   const params = chapter ? `?chapter=${encodeURIComponent(chapter)}` : "";
-  return request<Environment[]>(`/environments${params}`, undefined, "환경 조회 실패");
+  return cachedRequest<Environment[]>(
+    `environments:${chapter ?? "all"}`,
+    `/environments${params}`,
+    ENEMY_ENVIRONMENT_CACHE_TTL_MS,
+    "환경 조회 실패",
+  );
 }
 
 export async function createEnvironment(data: EnvironmentCreate): Promise<Environment> {
-  return request<Environment>("/environments", {
+  const environment = await request<Environment>("/environments", {
     method: "POST",
     body: JSON.stringify(data),
   }, "환경 생성 실패");
+  invalidateApiCache("environments:");
+  return environment;
 }
 
 export async function updateEnvironment(environmentId: number, data: EnvironmentCreate): Promise<Environment> {
-  return request<Environment>(`/environments/${environmentId}`, {
+  const environment = await request<Environment>(`/environments/${environmentId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "환경 수정 실패");
+  invalidateApiCache("environments:");
+  return environment;
 }
 
 export async function deleteEnvironment(environmentId: number): Promise<void> {
   await request(`/environments/${environmentId}`, { method: "DELETE" }, "환경 삭제 실패");
+  invalidateApiCache("environments:");
 }
 
 export type BattleMode = "practice" | "real";
@@ -1375,38 +1523,56 @@ export interface CharacterSkillTree {
 }
 
 export async function fetchSkillNodes(book: SkillBook): Promise<SkillNode[]> {
-  return request<SkillNode[]>(`/skills?book=${encodeURIComponent(book)}`, undefined, "기술트리 조회 실패");
+  return cachedRequest<SkillNode[]>(
+    `skills:nodes:${book}`,
+    `/skills?book=${encodeURIComponent(book)}`,
+    SKILL_NODE_CACHE_TTL_MS,
+    "기술트리 조회 실패",
+  );
 }
 
 export async function updateSkillNode(
   nodeId: number,
   data: { default_name: string; description: string | null },
 ): Promise<SkillNode> {
-  return request<SkillNode>(`/skills/${nodeId}`, {
+  const node = await request<SkillNode>(`/skills/${nodeId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "기술 수정 실패");
+  invalidateApiCache("skills:");
+  return node;
 }
 
 export async function updateSkillVisibility(maxPublicTier: number): Promise<SkillNode[]> {
-  return request<SkillNode[]>("/skills/visibility", {
+  const nodes = await request<SkillNode[]>("/skills/visibility", {
     method: "PUT",
     body: JSON.stringify({ max_public_tier: maxPublicTier }),
   }, "기술 공개 단계 저장 실패");
+  invalidateApiCache("skills:");
+  return nodes;
 }
 
 export async function uploadSkillImage(nodeId: number, file: File): Promise<SkillNode> {
-  return uploadFile<SkillNode>(`/skills/${nodeId}/image`, file, "file", "기술 이미지 업로드 실패");
+  const node = await uploadFile<SkillNode>(`/skills/${nodeId}/image`, file, "file", "기술 이미지 업로드 실패");
+  invalidateApiCache("skills:");
+  return node;
 }
 
 export async function fetchCharacterSkillTree(characterId: number, book: SkillBook): Promise<CharacterSkillTree> {
-  return request<CharacterSkillTree>(`/characters/${characterId}/skills?book=${encodeURIComponent(book)}`, undefined, "캐릭터 기술트리 조회 실패");
+  return cachedRequest<CharacterSkillTree>(
+    `skills:character:${characterId}:${book}`,
+    `/characters/${characterId}/skills?book=${encodeURIComponent(book)}`,
+    CHARACTER_SKILL_CACHE_TTL_MS,
+    "캐릭터 기술트리 조회 실패",
+  );
 }
 
 export async function unlockCharacterSkill(characterId: number, nodeId: number): Promise<CharacterSkillTree> {
-  return request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/unlock`, {
+  const tree = await request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/unlock`, {
     method: "POST",
   }, "기술 강화 실패");
+  invalidateApiCache(`skills:character:${characterId}:`, "characters:");
+  return tree;
 }
 
 export async function renameCharacterSkill(
@@ -1414,10 +1580,12 @@ export async function renameCharacterSkill(
   nodeId: number,
   customName: string,
 ): Promise<CharacterSkillTree> {
-  return request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/name`, {
+  const tree = await request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/name`, {
     method: "PUT",
     body: JSON.stringify({ custom_name: customName }),
   }, "기술 이름 설정 실패");
+  invalidateApiCache(`skills:character:${characterId}:`, "characters:");
+  return tree;
 }
 
 export async function uploadCharacterSkillImage(
@@ -1425,10 +1593,12 @@ export async function uploadCharacterSkillImage(
   nodeId: number,
   file: File,
 ): Promise<CharacterSkillTree> {
-  return uploadFile<CharacterSkillTree>(
+  const tree = await uploadFile<CharacterSkillTree>(
     `/characters/${characterId}/skills/${nodeId}/image`,
     file,
     "file",
     "기술 이미지 설정 실패",
   );
+  invalidateApiCache(`skills:character:${characterId}:`, "characters:");
+  return tree;
 }

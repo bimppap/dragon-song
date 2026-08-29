@@ -239,8 +239,11 @@ function allowedKinds(p: BattleParticipant, hasDowned: boolean, hasBattleSkills:
 }
 
 /** 에너미가 이번 라운드에 예고한 행동을 사람이 읽을 수 있는 문구로 만든다. */
-function describePendingAction(enemy: BattleEnemyState, session: BattleSession): string | null {
-  const pending = session.pending_enemy_actions.find((a) => a.enemy_id === enemy.enemy_id);
+function describePendingAction(
+  enemy: BattleEnemyState,
+  pending: BattleSession["pending_enemy_actions"][number] | undefined,
+  participantsById: Map<number, BattleParticipant>,
+): string | null {
   if (!pending) return null;
   if (pending.kind === "none" || pending.skill_index == null) return "예고: 무반응";
   const skill = enemy.skills[pending.skill_index];
@@ -252,7 +255,7 @@ function describePendingAction(enemy: BattleEnemyState, session: BattleSession):
   const targetLabel = isAoe
     ? "전원"
     : pending.target_character_ids
-        .map((id) => session.participants.find((p) => p.character_id === id)?.name)
+        .map((id) => participantsById.get(id)?.name)
         .filter((name): name is string => Boolean(name))
         .join(", ") || "대상 없음";
   const base = Math.floor((enemy.attack * skill.damage_percent) / 100);
@@ -462,16 +465,17 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
     const characterIds: number[] = [];
     setCharDrafts((prev) => Object.fromEntries(
       Object.entries(prev).map(([characterId, draft]) => {
-        const p = session.participants.find((c) => c.character_id === Number(characterId));
-        const battleSkills = skillsByCharacter[Number(characterId)] ?? [];
+        const numericCharacterId = Number(characterId);
+        const p = participantsById.get(numericCharacterId);
+        const battleSkills = skillsByCharacter[numericCharacterId] ?? [];
         if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) return [characterId, draft];
-        if (bulkActionKind === "item") characterIds.push(Number(characterId));
+        if (bulkActionKind === "item") characterIds.push(numericCharacterId);
         return [characterId, {
           ...draft,
           kind: bulkActionKind,
           skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(battleSkills) : draft.skill_node_id,
-          target_character_id: bulkActionKind === "skill" ? Number(characterId) : draft.target_character_id,
-          protect_target_character_id: bulkActionKind === "defend" ? Number(characterId) : draft.protect_target_character_id,
+          target_character_id: bulkActionKind === "skill" ? numericCharacterId : draft.target_character_id,
+          protect_target_character_id: bulkActionKind === "defend" ? numericCharacterId : draft.protect_target_character_id,
           item_id: bulkActionKind === "item" ? draft.item_id : null,
         }];
       }),
@@ -697,6 +701,35 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
     ));
   }, [session?.participants]);
 
+  const participantsById = useMemo(
+    () => new Map((session?.participants ?? []).map((participant) => [participant.character_id, participant])),
+    [session?.participants],
+  );
+  const targetableParticipants = useMemo(
+    () => (session?.participants ?? []).filter((participant) => isTargetable(participant, session?.round ?? 0)),
+    [session?.participants, session?.round],
+  );
+  const healableParticipants = useMemo(
+    () => (session?.participants ?? []).filter((participant) => isHealable(participant, session?.round ?? 0)),
+    [session?.participants, session?.round],
+  );
+  const downedParticipants = useMemo(
+    () => (session?.participants ?? []).filter((participant) => participant.downed),
+    [session?.participants],
+  );
+  const targetableEnemies = useMemo(
+    () => (session?.enemies ?? []).filter((enemy) => isEnemyTargetable(enemy, session?.round ?? 0)),
+    [session?.enemies, session?.round],
+  );
+  const pendingActionsByEnemy = useMemo(
+    () => new Map((session?.pending_enemy_actions ?? []).map((action) => [action.enemy_id, action])),
+    [session?.pending_enemy_actions],
+  );
+  const enemyTitle = useMemo(
+    () => (session?.enemies ?? []).map((enemy) => enemy.name).join(", "),
+    [session?.enemies],
+  );
+
   if (loading || !session) {
     return (
       <div className="space-y-4">
@@ -708,9 +741,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
   const inProgress = session.status === "in_progress";
   const canAct = inProgress && !readOnly;
   const phase = session.phase;
-  const targetableEnemies = session.enemies.filter((enemy) => isEnemyTargetable(enemy, session.round));
-  const hasDowned = session.participants.some((p) => p.downed);
-  const downedParticipants = session.participants.filter((p) => p.downed);
+  const hasDowned = downedParticipants.length > 0;
 
   return (
     <div className="space-y-6">
@@ -720,7 +751,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
             <ArrowLeft size={15} />
           </Button>
           <h2 className="text-lg font-bold text-ivory">
-            {session.enemies.map((e) => e.name).join(", ")} 전투
+            {enemyTitle} 전투
           </h2>
           <Badge>{session.mode === "real" ? "실전" : "모의전"}</Badge>
           <Badge variant="outline">라운드 {session.round}</Badge>
@@ -789,7 +820,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
           const selectedSkill = draft?.skill_index != null ? enemy.skills[draft.skill_index] : null;
           const needsManualTargets = draft?.kind === "attack" && selectedSkill && !selectedSkill.skill_type.startsWith("광역");
           const targetCount = selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
-          const pendingLabel = !dead && phase !== "telegraph" ? describePendingAction(enemy, session) : null;
+          const pendingLabel = !dead && phase !== "telegraph"
+            ? describePendingAction(enemy, pendingActionsByEnemy.get(enemy.enemy_id), participantsById)
+            : null;
           return (
             <div
               key={enemy.enemy_id}
@@ -843,7 +876,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                         공격 대상 선택 ({draft.target_character_ids.length}/{targetCount}명, 비워두면 자동 선정)
                       </p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                        {session.participants.filter((p) => isTargetable(p, session.round)).map((p) => {
+                        {targetableParticipants.map((p) => {
                           const checked = draft.target_character_ids.includes(p.character_id);
                           const disabled = !checked && draft.target_character_ids.length >= targetCount;
                           return (
@@ -981,8 +1014,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
               });
             } else if (selectedSkillTargetMode === "ally-single") {
               const targetCandidates = selectedSkill?.category === "강화"
-                ? session.participants.filter((target) => isTargetable(target, session.round))
-                : session.participants.filter((target) => isHealable(target, session.round));
+                ? targetableParticipants
+                : healableParticipants;
               if (targetCandidates.length > 1) {
                 extraControls.push({
                   key: "ally-target",
@@ -1045,7 +1078,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {session.participants.filter((target) => isHealable(target, session.round)).map((target) => (
+                      {healableParticipants.map((target) => (
                         <SelectItem key={target.character_id} value={String(target.character_id)}>
                           {target.name}{target.downed ? " (기절)" : ""}
                         </SelectItem>
@@ -1119,7 +1152,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {session.participants.filter((target) => isTargetable(target, session.round)).map((target) => (
+                      {targetableParticipants.map((target) => (
                         <SelectItem key={target.character_id} value={String(target.character_id)}>
                           {target.character_id === p.character_id ? `${target.name} (본인)` : target.name}
                         </SelectItem>
@@ -1227,7 +1260,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                             <HeartPulse size={10} className="mr-0.5" />
                             방어 중
                             {p.protect_target != null && p.protect_target !== p.character_id
-                              ? ` · ${session.participants.find((t) => t.character_id === p.protect_target)?.name ?? ""} 보호`
+                              ? ` · ${participantsById.get(p.protect_target)?.name ?? ""} 보호`
                               : ""}
                           </Badge>
                         )}

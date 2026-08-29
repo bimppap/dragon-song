@@ -6,7 +6,7 @@ import { Package, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import InfoTooltip from "@/components/common/InfoTooltip";
-import { fetchItems, formatEffect, type Item } from "@/lib/api";
+import { fetchChapters, fetchItems, formatEffect, type Chapter, type Item } from "@/lib/api";
 
 interface Props {
   characterId?: number;
@@ -71,8 +71,20 @@ function ItemTooltip({ item }: { item: Item }) {
   );
 }
 
+/** 아이템이 아직 시작되지 않은 챕터부터 판매되는(=곧 열릴) 상태인지 판정한다.
+ *  종료 챕터가 이미 지났거나(만료) 활성 챕터가 없으면(판정 불가) 곧 열림으로 표시하지 않는다. */
+function isUpcoming(item: Item, chaptersByName: Map<string, Chapter>, activeChapter: Chapter | null): boolean {
+  if (!item.available_from_chapter || !activeChapter) return false;
+  const fromChapter = chaptersByName.get(item.available_from_chapter);
+  if (!fromChapter || activeChapter.start_date >= fromChapter.start_date) return false;
+  const untilChapter = item.available_until_chapter ? chaptersByName.get(item.available_until_chapter) : null;
+  if (untilChapter && activeChapter.start_date > untilChapter.start_date) return false;
+  return true;
+}
+
 export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refreshKey }: Props) {
   const [items, setItems] = useState<Item[]>([]);
+  const [chapters, setChapters] = useState<Chapter[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -81,8 +93,11 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
     async function load() {
       setLoading(true);
       try {
-        const list = await fetchItems(characterId);
-        if (!cancelled) setItems(list);
+        const [list, chapterList] = await Promise.all([fetchItems(characterId), fetchChapters()]);
+        if (!cancelled) {
+          setItems(list);
+          setChapters(chapterList);
+        }
       } catch (e) {
         console.error(e);
       } finally {
@@ -98,13 +113,16 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
   if (items.length === 0)
     return <p className="py-12 text-center text-sm text-muted">판매 중인 아이템이 없습니다.</p>;
 
+  const chaptersByName = new Map(chapters.map((c) => [c.name, c]));
+  const activeChapter = chapters.find((c) => c.is_active) ?? null;
+
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {items.map((item) => {
         const stock = remainingStock(item);
         const soldOut = stock === 0;
         const inCart = cartItemIds.has(item.id);
-        const notYetAvailable = !item.sale_paused && !item.purchasable && item.available_from_chapter != null;
+        const notYetAvailable = !item.sale_paused && !item.purchasable && isUpcoming(item, chaptersByName, activeChapter);
         const dimmed = item.sale_paused || notYetAvailable;
         return (
           <InfoTooltip key={item.id} side="top" content={<ItemTooltip item={item} />}>

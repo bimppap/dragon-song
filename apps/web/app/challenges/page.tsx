@@ -65,6 +65,7 @@ import RewardComposer, { type RewardFormEntry } from "@/components/common/Reward
 import RewardSummary from "@/components/common/RewardSummary";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import { useEditableProgressList } from "@/lib/useEditableProgressList";
 
 const ALL_CHAPTERS = "__all__";
 
@@ -239,15 +240,11 @@ export function ChallengeAdmin() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
-  const [progressEntries, setProgressEntries] = useState<ChallengeProgress[]>([]);
-  const [progressBackup, setProgressBackup] = useState<ChallengeProgress[] | null>(null);
-  const [isEditingProgress, setIsEditingProgress] = useState(false);
   const [showAchievedOnly, setShowAchievedOnly] = useState(false);
   const [loadingChallenges, setLoadingChallenges] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [submittingChallenge, setSubmittingChallenge] = useState(false);
   const [deletingChallenge, setDeletingChallenge] = useState(false);
-  const [savingProgress, setSavingProgress] = useState(false);
   const [payingReward, setPayingReward] = useState(false);
 
   const chapters = [...new Set(challenges.map((challenge) => challenge.chapter))];
@@ -259,7 +256,18 @@ export function ChallengeAdmin() {
     : challenges.filter((challenge) => challenge.chapter === manageChapterFilter);
   const selectedChallenge =
     chapterChallenges.find((challenge) => challenge.id === selectedChallengeId) ?? null;
-  const activeProgress = progressEntries;
+
+  const progress = useEditableProgressList<ChallengeProgress>({
+    onSave: (entries) =>
+      saveChallengeProgress(
+        selectedChallenge!.id,
+        entries.map((entry) => ({ character_id: entry.character_id, achieved: entry.achieved, memo: entry.memo })),
+      ),
+    successMessage: "도전과제 현황을 저장했습니다.",
+    errorMessage: "도전과제 현황 저장에 실패했습니다.",
+    toast,
+  });
+  const activeProgress = progress.entries;
   const visibleProgress = showAchievedOnly
     ? activeProgress.filter((entry) => entry.achieved)
     : activeProgress;
@@ -317,17 +325,16 @@ export function ChallengeAdmin() {
     async function loadProgress(currentChallengeId: number) {
       try {
         setLoadingProgress(true);
-        setIsEditingProgress(false);
-        setProgressBackup(null);
+        progress.resetEditing();
         const entries = await fetchChallengeProgress(currentChallengeId);
 
         if (cancelled) return;
 
-        setProgressEntries(entries);
+        progress.setEntries(entries);
       } catch (error) {
         if (cancelled) return;
         console.error(error);
-        setProgressEntries([]);
+        progress.setEntries([]);
         toast(
           error instanceof Error ? error.message : "도전과제 현황을 불러오지 못했습니다.",
           "error",
@@ -344,7 +351,10 @@ export function ChallengeAdmin() {
     return () => {
       cancelled = true;
     };
-  }, [selectedChallengeId, toast]);
+    // progress 객체 전체는 매 렌더마다 새로 만들어져 의존성에 넣으면 매번 재실행되므로
+    // 실제로 쓰는 안정적인 멤버(resetEditing/setEntries)만 넣는다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedChallengeId, toast, progress.resetEditing, progress.setEntries]);
 
   function handleFormChange<K extends keyof ChallengeFormState>(
     key: K,
@@ -443,11 +453,7 @@ export function ChallengeAdmin() {
       setPayingReward(true);
       const result = await payChallengeRewards(selectedChallenge.id);
       const newlyPaidIds = new Set(result.rewards.map((reward) => reward.character_id));
-      if (newlyPaidIds.size > 0) {
-        setProgressEntries((prev) => prev.map((entry) => (
-          newlyPaidIds.has(entry.character_id) ? { ...entry, reward_paid: true } : entry
-        )));
-      }
+      progress.markRewardPaid(newlyPaidIds);
       if (result.paid_count === 0) {
         toast("이미 모든 달성자에게 보상이 지급되었거나 달성자가 없습니다.", "info");
       } else {
@@ -480,53 +486,6 @@ export function ChallengeAdmin() {
   function handleSelectChallenge(challengeId: number) {
     setSelectedChallengeId(challengeId);
     setShowAchievedOnly(false);
-  }
-
-  function handleStartEditProgress() {
-    setProgressBackup(progressEntries);
-    setIsEditingProgress(true);
-  }
-
-  function handleCancelEditProgress() {
-    if (progressBackup) setProgressEntries(progressBackup);
-    setProgressBackup(null);
-    setIsEditingProgress(false);
-  }
-
-  /** 편집 모드에서 체크박스를 누르면 서버에 바로 반영하지 않고 화면에만 표시한다. "저장"을 눌러야 한꺼번에 저장된다. */
-  function handleProgressToggle(characterId: number, achieved: boolean) {
-    const targetEntry = progressEntries.find((entry) => entry.character_id === characterId);
-    if (targetEntry?.reward_paid && !achieved) return;
-    setProgressEntries((prev) => prev.map((entry) => (
-      entry.character_id === characterId ? { ...entry, achieved } : entry
-    )));
-  }
-
-  async function handleSaveProgress() {
-    if (!selectedChallenge) return;
-    try {
-      setSavingProgress(true);
-      const updatedEntries = await saveChallengeProgress(
-        selectedChallenge.id,
-        progressEntries.map((entry) => ({
-          character_id: entry.character_id,
-          achieved: entry.achieved,
-          memo: entry.memo,
-        })),
-      );
-      setProgressEntries(updatedEntries);
-      setProgressBackup(null);
-      setIsEditingProgress(false);
-      toast("도전과제 현황을 저장했습니다.", "success");
-    } catch (error) {
-      console.error(error);
-      toast(
-        error instanceof Error ? error.message : "도전과제 현황 저장에 실패했습니다.",
-        "error",
-      );
-    } finally {
-      setSavingProgress(false);
-    }
   }
 
   return (
@@ -856,7 +815,7 @@ export function ChallengeAdmin() {
                   <CardTitle>
                     {selectedChallenge?.name ?? "도전과제를 선택하세요"}
                   </CardTitle>
-                  {isEditingProgress && (
+                  {progress.isEditing && (
                     <span className="text-xs font-semibold text-gold">편집 중 · 저장을 눌러야 반영됩니다</span>
                   )}
                 </div>
@@ -884,15 +843,15 @@ export function ChallengeAdmin() {
                       />
                       달성 캐릭터만 보기
                     </label>
-                    {isEditingProgress ? (
+                    {progress.isEditing ? (
                       <>
-                        <Button size="sm" variant="ghost" disabled={savingProgress} onClick={handleCancelEditProgress}>
+                        <Button size="sm" variant="ghost" disabled={progress.saving} onClick={progress.cancelEdit}>
                           <X size={15} />
                           취소
                         </Button>
-                        <Button size="sm" disabled={savingProgress} onClick={() => void handleSaveProgress()}>
+                        <Button size="sm" disabled={progress.saving} onClick={() => void progress.save()}>
                           <Check size={15} />
-                          {savingProgress ? "저장 중..." : "저장"}
+                          {progress.saving ? "저장 중..." : "저장"}
                         </Button>
                       </>
                     ) : (
@@ -900,13 +859,13 @@ export function ChallengeAdmin() {
                         size="sm"
                         variant="outline"
                         disabled={!selectedChallenge || loadingProgress}
-                        onClick={handleStartEditProgress}
+                        onClick={progress.startEdit}
                       >
                         <Pencil size={15} />
                         편집
                       </Button>
                     )}
-                    {savingProgress ? <span className="text-xs text-muted">저장 중...</span> : null}
+                    {progress.saving ? <span className="text-xs text-muted">저장 중...</span> : null}
                   </div>
                 </div>
 
@@ -934,10 +893,10 @@ export function ChallengeAdmin() {
                           <div className="absolute right-2 top-2">
                             <Checkbox
                               checked={entry.achieved}
-                              disabled={!isEditingProgress || savingProgress || entry.reward_paid}
+                              disabled={!progress.isEditing || progress.saving || entry.reward_paid}
                               className="size-5 border-2 bg-surface shadow-md"
                               onCheckedChange={(checked) =>
-                                handleProgressToggle(entry.character_id, checked === true)
+                                progress.toggle(entry.character_id, checked === true)
                               }
                             />
                           </div>
