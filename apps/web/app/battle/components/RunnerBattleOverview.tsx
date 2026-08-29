@@ -86,12 +86,12 @@ export default function RunnerBattleOverview() {
               <Badge variant="outline">전투 일정 미정</Badge>
             )}
           </div>
-          <CardDescription className="flex items-center gap-2">
-            <CalendarClock size={15} />
-            {chapter
-              ? "전투 일정일 때만 현재 챕터의 에너미가 나타납니다."
-              : "현재 날짜에 진행 중인 챕터가 없어 전투 정보를 표시할 수 없습니다."}
-          </CardDescription>
+          {!chapter && (
+            <CardDescription className="flex items-center gap-2">
+              <CalendarClock size={15} />
+              현재 날짜에 진행 중인 챕터가 없어 전투 정보를 표시할 수 없습니다.
+            </CardDescription>
+          )}
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -105,17 +105,17 @@ export default function RunnerBattleOverview() {
           ) : enemies.length === 0 ? (
             <EmptyState>이 챕터에 등록된 에너미가 없습니다.</EmptyState>
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {enemies.map((enemy) => (
-                <div key={enemy.id} className="overflow-hidden rounded-2xl border border-line bg-surface/80">
-                  <div className="relative aspect-[4/5] bg-inset/60">
+                <div key={enemy.id} className="flex flex-col items-center gap-2">
+                  <div className="relative flex aspect-4/5 w-full items-center justify-center">
                     {enemy.image_url ? (
                       <Image
                         src={enemy.image_url}
                         alt={`${enemy.name} 이미지`}
                         fill
                         sizes="(min-width: 1024px) 20vw, (min-width: 640px) 40vw, 90vw"
-                        className="object-cover object-top"
+                        className="object-contain"
                       />
                     ) : (
                       <div className="flex h-full items-center justify-center text-muted">
@@ -123,9 +123,7 @@ export default function RunnerBattleOverview() {
                       </div>
                     )}
                   </div>
-                  <div className="px-4 py-3">
-                    <p className="text-base font-semibold text-ivory">{enemy.name}</p>
-                  </div>
+                  <p className="text-center text-base font-semibold text-ivory">{enemy.name}</p>
                 </div>
               ))}
             </div>
