@@ -806,7 +806,11 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
         )}
       </div>
 
-      {readOnly && <AlertBanner tone="success">완료된 실전 전투 기록입니다. (읽기 전용)</AlertBanner>}
+      {readOnly && (
+        <AlertBanner tone="success">
+          {inProgress ? "실전 전투가 진행 중입니다. (관전 전용)" : "완료된 실전 전투 기록입니다. (읽기 전용)"}
+        </AlertBanner>
+      )}
 
       {joinOpen && (
         <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gold/40 bg-gold/5 p-3">
