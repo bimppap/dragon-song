@@ -6,7 +6,6 @@ import { CalendarClock, Image as ImageIcon } from "lucide-react";
 import EmptyState from "@/components/common/EmptyState";
 import { useToast } from "@/components/common/ToastProvider";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type Chapter, type Enemy } from "@/lib/api";
 import BattleArena from "./BattleArena";
 
@@ -74,62 +73,57 @@ export default function RunnerBattleOverview() {
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="gap-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>{chapter?.name ?? "진행 중인 챕터 없음"}</CardTitle>
-            {chapter?.battle_date ? (
-              <Badge variant={chapter.is_battle_day ? "success" : "outline"} className="font-num">
-                전투 일정 {chapter.battle_date}
-              </Badge>
-            ) : (
-              <Badge variant="outline">전투 일정 미정</Badge>
-            )}
-          </div>
-          {!chapter && (
-            <CardDescription className="flex items-center gap-2">
-              <CalendarClock size={15} />
-              현재 날짜에 진행 중인 챕터가 없어 전투 정보를 표시할 수 없습니다.
-            </CardDescription>
-          )}
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <p className="text-sm text-muted">전투 정보를 불러오는 중입니다.</p>
-          ) : !chapter ? (
-            <EmptyState>진행 중인 챕터가 없습니다.</EmptyState>
-          ) : !chapter.is_battle_day ? (
-            <div className="rounded-xl border border-dashed border-line bg-inset/40 px-6 py-10 text-center text-lg font-semibold text-muted">
-              적의 동향을 살피는 중입니다...
-            </div>
-          ) : enemies.length === 0 ? (
-            <EmptyState>이 챕터에 등록된 에너미가 없습니다.</EmptyState>
-          ) : (
-            <div className="grid justify-items-center gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {enemies.map((enemy) => (
-                <div key={enemy.id} className="flex flex-col items-center gap-2">
-                  <div className="relative flex aspect-4/5 w-full items-center justify-center">
-                    {enemy.image_url ? (
-                      <Image
-                        src={enemy.image_url}
-                        alt={`${enemy.name} 이미지`}
-                        fill
-                        sizes="(min-width: 1024px) 20vw, (min-width: 640px) 40vw, 90vw"
-                        className="object-contain"
-                      />
-                    ) : (
-                      <div className="flex h-full items-center justify-center text-muted">
-                        <ImageIcon size={28} />
-                      </div>
-                    )}
+      <div className="flex flex-col items-center gap-2 text-center">
+        <h1 className="text-xl font-semibold text-ivory">{chapter?.name ?? "진행 중인 챕터 없음"}</h1>
+        {chapter?.battle_date ? (
+          <Badge variant={chapter.is_battle_day ? "success" : "outline"} className="font-num">
+            전투 일정 {chapter.battle_date}
+          </Badge>
+        ) : (
+          <Badge variant="outline">전투 일정 미정</Badge>
+        )}
+        {!chapter && (
+          <p className="flex items-center gap-2 text-sm text-muted">
+            <CalendarClock size={15} />
+            현재 날짜에 진행 중인 챕터가 없어 전투 정보를 표시할 수 없습니다.
+          </p>
+        )}
+      </div>
+
+      {loading ? (
+        <p className="text-center text-sm text-muted">전투 정보를 불러오는 중입니다.</p>
+      ) : !chapter ? (
+        <EmptyState>진행 중인 챕터가 없습니다.</EmptyState>
+      ) : !chapter.is_battle_day ? (
+        <div className="rounded-xl border border-dashed border-line bg-inset/40 px-6 py-10 text-center text-lg font-semibold text-muted">
+          적의 동향을 살피는 중입니다...
+        </div>
+      ) : enemies.length === 0 ? (
+        <EmptyState>이 챕터에 등록된 에너미가 없습니다.</EmptyState>
+      ) : (
+        <div className="flex flex-wrap justify-center gap-8">
+          {enemies.map((enemy) => (
+            <div key={enemy.id} className="flex w-full flex-col items-center gap-2 sm:w-[45%]">
+              <div className="relative flex aspect-4/5 w-full items-center justify-center">
+                {enemy.image_url ? (
+                  <Image
+                    src={enemy.image_url}
+                    alt={`${enemy.name} 이미지`}
+                    fill
+                    sizes="(min-width: 640px) 45vw, 90vw"
+                    className="object-contain"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center text-muted">
+                    <ImageIcon size={28} />
                   </div>
-                  <p className="text-center text-base font-semibold text-ivory">{enemy.name}</p>
-                </div>
-              ))}
+                )}
+              </div>
+              <p className="text-center text-base font-semibold text-ivory">{enemy.name}</p>
             </div>
-          )}
-        </CardContent>
-      </Card>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
