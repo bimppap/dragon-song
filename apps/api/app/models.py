@@ -175,10 +175,25 @@ class Item(Base):
     effects: Mapped[list] = mapped_column(JSON, nullable=False, default=list)  # [{"stat": "atk", "delta": 5}, ...]
     # 챕터·재고와 무관하게 즉시 판매를 중단한다. 러너에게는 노출 자체를 하지 않는다.
     sale_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # 전투 중(아이템 사용 행동)에만 사용할 수 있다. 캐릭터 페이지의 보유 아이템 "사용" 버튼은 비활성화된다.
+    battle_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         default=lambda: datetime.now(timezone.utc),
+    )
+
+
+class ShopState(Base):
+    __tablename__ = "shop_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    is_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
     )
 
 

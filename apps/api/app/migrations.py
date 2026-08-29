@@ -115,6 +115,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE items ADD COLUMN restricted_mission_id INTEGER REFERENCES missions(id)")
         if "sale_paused" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN sale_paused BOOLEAN NOT NULL DEFAULT false")
+        if "battle_only" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN battle_only BOOLEAN NOT NULL DEFAULT false")
 
     if "chapters" in table_names:
         chapter_columns = {col["name"] for col in inspector.get_columns("chapters")}

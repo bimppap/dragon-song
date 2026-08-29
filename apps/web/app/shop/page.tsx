@@ -1,13 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Settings } from "lucide-react";
+import { useState, useEffect, type ReactNode } from "react";
+import { Lock, Settings, Unlock } from "lucide-react";
 import ShopGrid from "./components/ShopGrid";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
 import GiftCart from "./components/GiftCart";
 import ShopAdminPanel from "./components/ShopAdminPanel";
-import { fetchCharacterDetail, fetchCharacters, bulkPurchase, consumeItem, equipItem, sendAdminGift } from "@/lib/api";
+import {
+  fetchCharacterDetail,
+  fetchCharacters,
+  fetchShopStatus,
+  bulkPurchase,
+  consumeItem,
+  equipItem,
+  sendAdminGift,
+  updateShopStatus,
+} from "@/lib/api";
 import type { Character, Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/common/PageContainer";
@@ -45,12 +54,43 @@ function useCartEntries() {
   return { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove };
 }
 
-function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
+function ShopCurtain() {
+  return (
+    <div className="absolute inset-0 z-20 flex items-center justify-center overflow-hidden rounded-2xl border border-gold/30 bg-primary/90 shadow-inner backdrop-blur-[1px]">
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-60"
+        style={{
+          backgroundImage: "radial-gradient(circle, rgba(245, 158, 11, 0.45) 1px, transparent 1.5px)",
+          backgroundSize: "12px 12px",
+        }}
+      />
+      <div className="relative rounded-lg border border-gold/40 bg-primary px-5 py-3 text-sm font-semibold text-ivory shadow-lg">
+        지금은 상점 이용이 불가능합니다.
+      </div>
+    </div>
+  );
+}
+
+function ShopContentFrame({ closed, children }: { closed: boolean; children: ReactNode }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl">
+      {children}
+      {closed && <ShopCurtain />}
+    </div>
+  );
+}
+
+function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurchased: () => void) {
   const { confirm, alert } = useDialog();
   const { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove } = useCartEntries();
   const [cartLoading, setCartLoading] = useState(false);
 
   async function handlePurchase() {
+    if (!shopOpen) {
+      await alert("지금은 상점 이용이 불가능합니다.");
+      return;
+    }
     if (!characterId || cart.length === 0) return;
     setCartLoading(true);
     try {
@@ -84,11 +124,11 @@ function usePurchaseCart(characterId: number | null, onPurchased: () => void) {
   return { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase };
 }
 
-function RunnerShop({ characterId }: { characterId: number }) {
+function RunnerShop({ characterId, shopOpen }: { characterId: number; shopOpen: boolean }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [balance, setBalance] = useState<{ gold: number; cp: number } | null>(null);
   const { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
-    usePurchaseCart(characterId, () => setRefreshKey((k) => k + 1));
+    usePurchaseCart(characterId, shopOpen, () => setRefreshKey((k) => k + 1));
   const cartItemIds = new Set(cart.map((e) => e.item.id));
 
   useEffect(() => {
@@ -110,35 +150,37 @@ function RunnerShop({ characterId }: { characterId: number }) {
         <p className="text-sm text-muted">보유 골드로 아이템을 구매할 수 있습니다.</p>
       </div>
 
-      <div className="flex flex-col items-start gap-6 lg:flex-row">
-        <div className="w-full min-w-0 flex-1">
-          <ShopGrid
-            characterId={characterId}
-            cartItemIds={cartItemIds}
-            onAddToCart={handleAddToCart}
-            refreshKey={refreshKey}
-          />
+      <ShopContentFrame closed={!shopOpen}>
+        <div className="flex flex-col items-start gap-6 lg:flex-row">
+          <div className="w-full min-w-0 flex-1">
+            <ShopGrid
+              characterId={characterId}
+              cartItemIds={cartItemIds}
+              onAddToCart={handleAddToCart}
+              refreshKey={refreshKey}
+            />
+          </div>
+          <div className="flex w-full shrink-0 flex-col gap-2 lg:w-72">
+            <p className="text-sm text-muted" aria-live="polite">
+              보유 골드 <span className="font-num font-semibold text-gold">{balance ? `${balance.gold.toLocaleString()} G` : "-"}</span>
+              <span className="px-2 text-line">·</span>
+              보유 CP <span className="font-num font-semibold text-cyan-600">{balance ? balance.cp.toLocaleString() : "-"}</span>
+            </p>
+            <Cart
+              entries={cart}
+              loading={cartLoading}
+              onUpdateQty={handleUpdateQty}
+              onRemove={handleRemove}
+              onPurchase={handlePurchase}
+            />
+          </div>
         </div>
-        <div className="flex w-full shrink-0 flex-col gap-2 lg:w-72">
-          <p className="text-sm text-muted" aria-live="polite">
-            보유 골드 <span className="font-num font-semibold text-gold">{balance ? `${balance.gold.toLocaleString()} G` : "-"}</span>
-            <span className="px-2 text-line">·</span>
-            보유 CP <span className="font-num font-semibold text-cyan-600">{balance ? balance.cp.toLocaleString() : "-"}</span>
-          </p>
-          <Cart
-            entries={cart}
-            loading={cartLoading}
-            onUpdateQty={handleUpdateQty}
-            onRemove={handleRemove}
-            onPurchase={handlePurchase}
-          />
-        </div>
-      </div>
+      </ShopContentFrame>
     </PageContainer>
   );
 }
 
-function AdminShop() {
+function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOpenChange: (isOpen: boolean) => void }) {
   const { confirm, alert } = useDialog();
   const [managing, setManaging] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -148,6 +190,7 @@ function AdminShop() {
   const [gold, setGold] = useState(0);
   const [cp, setCp] = useState(0);
   const [sending, setSending] = useState(false);
+  const [shopStatusSaving, setShopStatusSaving] = useState(false);
 
   useEffect(() => {
     fetchCharacters().then(setCharacters).catch(console.error);
@@ -161,6 +204,19 @@ function AdminShop() {
 
   function handleUnselectCharacter(id: number) {
     setSelectedCharacterIds((prev) => prev.filter((existing) => existing !== id));
+  }
+
+  async function handleToggleShopOpen() {
+    const nextOpen = !shopOpen;
+    setShopStatusSaving(true);
+    try {
+      const status = await updateShopStatus(nextOpen);
+      onShopOpenChange(status.is_open);
+    } catch (e) {
+      await alert(e instanceof Error ? e.message : "상점 상태 변경 실패");
+    } finally {
+      setShopStatusSaving(false);
+    }
   }
 
   async function handleSend() {
@@ -213,39 +269,52 @@ function AdminShop() {
               : "캐릭터를 선택해 골드·CP·아이템을 선물로 보낼 수 있습니다."}
           </p>
         </div>
-        <Button variant="link" className="gap-1.5 px-0" onClick={() => setManaging((v) => !v)}>
-          <Settings size={15} />
-          {managing ? "상점으로 돌아가기" : "상점 관리"}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant={shopOpen ? "outline" : "cta"}
+            className="gap-1.5"
+            disabled={shopStatusSaving}
+            onClick={handleToggleShopOpen}
+          >
+            {shopOpen ? <Lock size={15} /> : <Unlock size={15} />}
+            {shopStatusSaving ? "변경 중..." : shopOpen ? "상점 닫기" : "상점 열기"}
+          </Button>
+          <Button variant="link" className="gap-1.5 px-0" onClick={() => setManaging((v) => !v)}>
+            <Settings size={15} />
+            {managing ? "상점으로 돌아가기" : "상점 관리"}
+          </Button>
+        </div>
       </div>
 
       {managing ? (
         <ShopAdminPanel />
       ) : (
-        <div className="flex flex-col items-start gap-6 lg:flex-row">
-          <div className="w-full min-w-0 flex-1">
-            <ShopGrid
-              cartItemIds={cartItemIds}
-              onAddToCart={handleAddToCart}
-              refreshKey={refreshKey}
+        <ShopContentFrame closed={!shopOpen}>
+          <div className="flex flex-col items-start gap-6 lg:flex-row">
+            <div className="w-full min-w-0 flex-1">
+              <ShopGrid
+                cartItemIds={cartItemIds}
+                onAddToCart={handleAddToCart}
+                refreshKey={refreshKey}
+              />
+            </div>
+            <GiftCart
+              characters={characters}
+              selectedCharacterIds={selectedCharacterIds}
+              onSelectCharacter={handleSelectCharacter}
+              onUnselectCharacter={handleUnselectCharacter}
+              entries={cart}
+              gold={gold}
+              cp={cp}
+              loading={sending}
+              onGoldChange={setGold}
+              onCpChange={setCp}
+              onUpdateQty={handleUpdateQty}
+              onRemove={handleRemove}
+              onSend={handleSend}
             />
           </div>
-          <GiftCart
-            characters={characters}
-            selectedCharacterIds={selectedCharacterIds}
-            onSelectCharacter={handleSelectCharacter}
-            onUnselectCharacter={handleUnselectCharacter}
-            entries={cart}
-            gold={gold}
-            cp={cp}
-            loading={sending}
-            onGoldChange={setGold}
-            onCpChange={setCp}
-            onUpdateQty={handleUpdateQty}
-            onRemove={handleRemove}
-            onSend={handleSend}
-          />
-        </div>
+        </ShopContentFrame>
       )}
     </PageContainer>
   );
@@ -253,12 +322,24 @@ function AdminShop() {
 
 export default function ShopPage() {
   const member = useRequireMember();
+  const [shopOpen, setShopOpen] = useState(true);
+
+  useEffect(() => {
+    if (!member) return;
+    let cancelled = false;
+    fetchShopStatus()
+      .then((status) => {
+        if (!cancelled) setShopOpen(status.is_open);
+      })
+      .catch(console.error);
+    return () => { cancelled = true; };
+  }, [member?.id]);
 
   if (!member) return null;
 
   return member.role === "ADMIN" ? (
-    <AdminShop />
+    <AdminShop shopOpen={shopOpen} onShopOpenChange={setShopOpen} />
   ) : (
-    <RunnerShop characterId={member.character_id!} />
+    <RunnerShop characterId={member.character_id!} shopOpen={shopOpen} />
   );
 }

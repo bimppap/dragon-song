@@ -54,6 +54,7 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
   const attempt = () => {
     const token = getToken();
     return fetch(`${API_URL}${path}`, {
+      cache: "no-store",
       ...init,
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -184,7 +185,7 @@ export type ItemEffectStat =
   | "skill_lv" | "skill_eff_true" | "skill_eff_fixed"
   | "skill_cost" | "skill_target"
   | "start_sh" | "revive_hp" | "act_time"
-  | "ap_reset" | "grade_choice_1" | "grade_choice_2";
+  | "ap_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -228,6 +229,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "ap_reset", label: "AP 초기화(기술 리셋)" },
   { value: "grade_choice_1", label: "능력치 1개 선택 +1" },
   { value: "grade_choice_2", label: "능력치 2개 선택 +1" },
+  { value: "cleanse_debuffs", label: "전투 중 약화 전부 해제" },
 ];
 
 /** ItemEffectStat → 한글 라벨 조회 맵. */
@@ -238,7 +240,7 @@ export const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
 /** 효과 하나를 "라벨 +N" 형태의 문자열로 표현한다. */
 export function formatEffect(effect: ItemEffect): string {
   const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
-  if (effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2") return label;
+  if (effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2" || effect.stat === "cleanse_debuffs") return label;
   const sign = effect.delta >= 0 ? "+" : "";
   return `${label} ${sign}${effect.delta}`;
 }
@@ -263,6 +265,7 @@ export interface Item {
   image_url: string | null;
   effects: ItemEffect[];
   sale_paused: boolean;
+  battle_only: boolean;
   created_at: string;
   purchased_by_character: number;
   purchased_total: number;
@@ -284,6 +287,11 @@ export interface ItemCreate {
   restricted_mission_id: number | null;
   effects: ItemEffect[];
   sale_paused: boolean;
+  battle_only: boolean;
+}
+
+export interface ShopStatus {
+  is_open: boolean;
 }
 
 export interface Purchase {
@@ -388,6 +396,7 @@ export interface CharacterOwnedItem {
   quantity: number;
   used_quantity: number;
   equipped: boolean;
+  battle_only: boolean;
 }
 
 export interface CharacterAchievedChallenge {
@@ -618,6 +627,17 @@ export async function uploadItemImage(itemId: number, file: File): Promise<Item>
 
 export async function deleteItem(itemId: number): Promise<void> {
   await request(`/items/${itemId}`, { method: "DELETE" }, "아이템 삭제 실패");
+}
+
+export async function fetchShopStatus(): Promise<ShopStatus> {
+  return request<ShopStatus>("/shop/status", undefined, "상점 상태 조회 실패");
+}
+
+export async function updateShopStatus(isOpen: boolean): Promise<ShopStatus> {
+  return request<ShopStatus>("/shop/status", {
+    method: "PUT",
+    body: JSON.stringify({ is_open: isOpen }),
+  }, "상점 상태 변경 실패");
 }
 
 /** 가능성/잠재성의 메달 사용 시 선택 가능한 능력치. */

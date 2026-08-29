@@ -104,11 +104,25 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
         const stock = remainingStock(item);
         const soldOut = stock === 0;
         const inCart = cartItemIds.has(item.id);
+        const notYetAvailable = !item.sale_paused && !item.purchasable && item.available_from_chapter != null;
+        const dimmed = item.sale_paused || notYetAvailable;
         return (
           <InfoTooltip key={item.id} side="top" content={<ItemTooltip item={item} />}>
             <div className="flex cursor-default flex-col overflow-hidden rounded-xl border border-line bg-surface transition hover:border-gold hover:shadow-sm">
               <div className="relative aspect-square w-full shrink-0">
-                <ItemImage url={item.image_url} className="absolute inset-0 size-full" />
+                <ItemImage
+                  url={item.image_url}
+                  className={`absolute inset-0 size-full ${dimmed ? "grayscale" : ""}`}
+                />
+                {item.sale_paused ? (
+                  <div className="absolute inset-0 flex items-center justify-center bg-primary/40">
+                    <Badge variant="destructive">비공개</Badge>
+                  </div>
+                ) : notYetAvailable && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-primary/40">
+                    <Badge variant="secondary">{item.available_from_chapter}~</Badge>
+                  </div>
+                )}
               </div>
               <div className="flex shrink-0 flex-col gap-1 p-2.5">
                 <p className="truncate text-xs font-semibold text-ivory">{item.name}</p>

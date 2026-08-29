@@ -43,6 +43,7 @@ function createEmptyItemForm(): ItemCreate {
     restricted_mission_id: null,
     effects: [],
     sale_paused: false,
+    battle_only: false,
   };
 }
 
@@ -61,6 +62,7 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     restricted_mission_id: item.restricted_mission_id,
     effects: item.effects,
     sale_paused: item.sale_paused,
+    battle_only: item.battle_only,
   };
 }
 
@@ -400,8 +402,17 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
           checked={form.sale_paused}
           onCheckedChange={(checked) => setForm((prev) => ({ ...prev, sale_paused: checked === true }))}
         />
-        <span className="font-semibold">판매 중단</span>
-        <span className="text-xs text-muted">체크하면 시작/종료 챕터·재고와 무관하게 즉시 판매가 중단되고, 러너에게는 노출되지 않습니다.</span>
+        <span className="font-semibold">비공개</span>
+        <span className="text-xs text-muted">즉시 판매가 중단되고, 러너에게는 노출되지 않습니다.</span>
+      </label>
+
+      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
+        <Checkbox
+          checked={form.battle_only}
+          onCheckedChange={(checked) => setForm((prev) => ({ ...prev, battle_only: checked === true }))}
+        />
+        <span className="font-semibold">전투 중에만 사용 가능</span>
+        <span className="text-xs text-muted">전투에서만 소비할 수 있습니다.</span>
       </label>
 
       <div className="flex items-center gap-2">

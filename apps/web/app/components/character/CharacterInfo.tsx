@@ -395,9 +395,9 @@ function OwnedItemTile({
             }
             if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse();
           }}
-          disabled={loading || remainingUses <= 0}
+          disabled={loading || remainingUses <= 0 || item.battle_only}
         >
-          사용
+          {item.battle_only ? "전투 중 사용" : "사용"}
         </Button>
       ) : item.equipped ? (
         <Button size="sm" variant="secondary" onClick={onUnequip} disabled={loading}>

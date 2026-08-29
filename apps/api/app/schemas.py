@@ -30,7 +30,9 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 # "hp_heal_p": 최대 체력 대비 퍼센트만큼 현재 체력을 회복한다(_apply_item_effects에서 특수 처리).
 # "grade_choice_1"/"grade_choice_2": 사용 시 용기/인내/자애/지혜 중 1개/2개(중복 불가)를 선택해 각각 1등급 올린다
 #   (가능성의 메달 / 잠재성의 메달). 선택값은 사용 요청의 chosen_stats로 받는다.
-ITEM_EFFECT_SPECIAL_STATS = {"ap_reset", "grade_choice_1", "grade_choice_2"}
+# "cleanse_debuffs": 전투 중 사용 시 자신에게 걸린 디버프(status_effects, affinity="debuff")와
+#   챕터 환경 스택(env_stacks)을 전부 제거한다. 전투 밖에서 사용하면 지울 대상이 없어 아무 효과가 없다.
+ITEM_EFFECT_SPECIAL_STATS = {"ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs"}
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap",
     "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
@@ -42,7 +44,7 @@ ItemEffectStat = Literal[
     "skill_lv", "skill_eff_true", "skill_eff_fixed",
     "skill_cost", "skill_target",
     "start_sh", "revive_hp", "act_time",
-    "ap_reset", "grade_choice_1", "grade_choice_2",
+    "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
 ]
 ItemType = Literal["consumable", "equipment"]
 
@@ -327,6 +329,7 @@ class ItemCreate(BaseModel):
     restricted_mission_id: int | None = None  # 이 임무의 보상 수령자는 구매 불가
     effects: list[ItemEffect] = Field(default_factory=list)
     sale_paused: bool = False
+    battle_only: bool = False
 
     @model_validator(mode="after")
     def check_at_least_one_price(self):
@@ -350,6 +353,7 @@ class ItemRead(BaseModel):
     image_url: str | None = None
     effects: list[ItemEffect] = Field(default_factory=list)
     sale_paused: bool = False
+    battle_only: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}
@@ -366,6 +370,16 @@ class ItemWithStock(ItemRead):
     remaining_per_character: int | None
     remaining_global: int | None
     purchasable: bool
+
+
+class ShopStatusRead(BaseModel):
+    is_open: bool
+
+    model_config = {"from_attributes": True}
+
+
+class ShopStatusUpdate(BaseModel):
+    is_open: bool
 
 
 class CartItem(BaseModel):
@@ -443,6 +457,7 @@ class CharacterOwnedItemRead(BaseModel):
     quantity: int
     used_quantity: int
     equipped: bool
+    battle_only: bool = False
 
     @field_validator("effects", mode="before")
     @classmethod

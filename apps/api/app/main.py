@@ -64,6 +64,8 @@ from app.schemas import (
     SkillNodeRead,
     SkillNodeUpdate,
     SkillVisibilityUpdate,
+    ShopStatusRead,
+    ShopStatusUpdate,
     CharacterSkillTreeRead,
     TokenResponse,
     UseItemRequest,
@@ -332,6 +334,20 @@ async def delete_item(item_id: int, member: Member = Depends(require_admin), db:
     if old_path:
         await storage.delete_from_bucket(old_path)
     return {"deleted": True}
+
+
+@app.get("/shop/status", response_model=ShopStatusRead)
+def get_shop_status(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_shop_status(db)
+
+
+@app.put("/shop/status", response_model=ShopStatusRead)
+def update_shop_status(
+    data: ShopStatusUpdate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_shop_status(db, data.is_open)
 
 
 @app.get("/challenges", response_model=list[ChallengeRead])

@@ -112,7 +112,7 @@ export default function ItemGrid({
             {formatAvailability(p.data!)}
           </span>
           {p.data!.sale_paused ? (
-            <Badge variant="destructive">판매 중단</Badge>
+            <Badge variant="destructive">비공개</Badge>
           ) : (
             !p.data!.purchasable && <Badge variant="secondary">비활성</Badge>
           )}

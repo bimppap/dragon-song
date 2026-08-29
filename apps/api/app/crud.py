@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, verify_password
 from app.game_data import build_skill_node_specs, calculate_stat_grade_totals, get_level_grade_stats
-from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, Purchase, RefreshToken, Reward, SettlementRequest, SkillNode
+from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
     GRADE_STAT_FIELDS,
     ITEM_EFFECT_SPECIAL_STATS,
@@ -20,6 +20,7 @@ from app.schemas import (
     AttendanceRewardPayResult,
     AttendanceStreakEntry,
     BattleAllyTurnRequest,
+    CharacterActionInput,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
     BattleRewardEntry,
@@ -72,6 +73,9 @@ from app.schemas import (
     SkillNodeUpdate,
     SkillVisibilityUpdate,
 )
+
+
+SHOP_STATE_ID = 1
 
 
 def _today() -> date:
@@ -636,6 +640,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
                 quantity=row.quantity,
                 used_quantity=item_states_by_id[row.item_id].used_quantity if row.item_id in item_states_by_id else 0,
                 equipped=item_states_by_id[row.item_id].equipped if row.item_id in item_states_by_id else False,
+                battle_only=items_by_id[row.item_id].battle_only,
             )
             for row in owned_item_rows
             if _remaining_owned(row) > 0
@@ -711,6 +716,24 @@ def _active_chapter(chapters_by_name: dict[str, Chapter]) -> Chapter | None:
     return None
 
 
+def get_shop_status(db: Session) -> ShopState:
+    state = db.get(ShopState, SHOP_STATE_ID)
+    if state is None:
+        state = ShopState(id=SHOP_STATE_ID, is_open=True)
+        db.add(state)
+        db.commit()
+        db.refresh(state)
+    return state
+
+
+def update_shop_status(db: Session, is_open: bool) -> ShopState:
+    state = get_shop_status(db)
+    state.is_open = is_open
+    db.commit()
+    db.refresh(state)
+    return state
+
+
 def _is_item_purchasable(
     item: Item,
     chapters_by_name: dict[str, Chapter],
@@ -766,6 +789,7 @@ def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.restricted_mission_id = data.restricted_mission_id
     item.effects = [effect.model_dump() for effect in data.effects]
     item.sale_paused = data.sale_paused
+    item.battle_only = data.battle_only
 
 
 def create_item(db: Session, data: ItemCreate) -> Item:
@@ -904,6 +928,8 @@ def use_item(
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
     if item.item_type != "consumable":
         raise HTTPException(status_code=400, detail="소모형 아이템만 사용할 수 있습니다.")
+    if item.battle_only:
+        raise HTTPException(status_code=400, detail="전투 중에만 사용할 수 있는 아이템입니다.")
 
     owned_quantity = _sum_quantity(db, item_id, character_id)
     state = _get_or_create_item_state(db, character_id, item_id)
@@ -1099,6 +1125,8 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
             restricted_mission_id=item.restricted_mission_id,
             image_url=item.image_url,
             effects=item.effects or [],
+            sale_paused=item.sale_paused,
+            battle_only=item.battle_only,
             created_at=item.created_at,
             purchased_by_character=char_purchased,
             purchased_total=total_purchased,
@@ -1113,6 +1141,9 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
 
 
 def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False) -> list[Purchase]:
+    if not is_admin and not get_shop_status(db).is_open:
+        raise HTTPException(status_code=400, detail="지금은 상점 이용이 불가능합니다.")
+
     # 1. 캐릭터 조회
     character = db.query(Character).filter(Character.id == data.character_id).first()
     if not character:
@@ -2819,7 +2850,9 @@ def _snapshot_enemy(enemy: Enemy, party: list[Character]) -> dict:
     }
 
 
-def _apply_item_effects_to_snapshot(p: dict, effects: list[dict], sign: int) -> None:
+def _apply_item_effects_to_snapshot(db: Session, p: dict, effects: list[dict], sign: int) -> list[str]:
+    """전투 중 아이템 사용 시 참가자 스냅샷에 효과를 적용한다. 로그에 덧붙일 부가 설명(있다면)을 반환한다."""
+    notes: list[str] = []
     for effect in effects:
         stat = effect["stat"]
         if stat == "hp_heal_p":
@@ -2828,6 +2861,20 @@ def _apply_item_effects_to_snapshot(p: dict, effects: list[dict], sign: int) -> 
             if not p["over_heal"]:
                 next_hp = min(next_hp, p["max_hp"])
             p["hp"] = next_hp
+            continue
+        if stat == "cleanse_debuffs":
+            if sign > 0:
+                debuff_effects = _ensure_status_effects(p)
+                _, removed_names = _remove_status_effects_by_affinity(p, "debuff", len(debuff_effects))
+                env_ids = [int(eid) for eid, stacks in p.get("env_stacks", {}).items() if stacks]
+                env_names = (
+                    [name for _id, name in db.query(Environment.id, Environment.name).filter(Environment.id.in_(env_ids)).all()]
+                    if env_ids else []
+                )
+                p["env_stacks"] = {}
+                cleared_names = removed_names + env_names
+                if cleared_names:
+                    notes.append(f"{', '.join(cleared_names)} 약화 해제!")
             continue
         key = BATTLE_ITEM_EFFECT_KEYS.get(stat)
         if key is None or stat not in ITEM_EFFECT_STAT_TYPES:
@@ -2839,6 +2886,7 @@ def _apply_item_effects_to_snapshot(p: dict, effects: list[dict], sign: int) -> 
         if key == "hp" and not p["over_heal"]:
             next_value = min(next_value, p["max_hp"])
         p[key] = next_value
+    return notes
 
 
 def _get_active_battle_skills_by_character(db: Session, character_ids: list[int]) -> dict[int, dict[int, dict]]:
@@ -3756,8 +3804,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 state.used_quantity += 1
                 db.add(ItemUsage(character_id=p["character_id"], item_id=item.id, quantity=1))
-            _apply_item_effects_to_snapshot(p, item.effects or [], sign=1)
-            events.append(f"🎒 {p['name']} {item.name} 사용")
+            cleanse_notes = _apply_item_effects_to_snapshot(db, p, item.effects or [], sign=1)
+            log = f"🎒 {p['name']} {item.name} 사용"
+            if cleanse_notes:
+                log += " · " + " · ".join(cleanse_notes)
+            events.append(log)
 
         elif action.kind == "rescue":
             target = by_char_id.get(action.target_character_id) if action.target_character_id else None

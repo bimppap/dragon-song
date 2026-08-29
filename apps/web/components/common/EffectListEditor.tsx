@@ -20,7 +20,7 @@ interface Props {
   allowSpecialStats?: boolean;
 }
 
-const SPECIAL_STATS = new Set<ItemEffect["stat"]>(["ap_reset", "grade_choice_1", "grade_choice_2"]);
+const SPECIAL_STATS = new Set<ItemEffect["stat"]>(["ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs"]);
 
 /** 아이템·기술 등에서 공용으로 쓰는 효과 목록 편집 UI. */
 export default function EffectListEditor({ effects, onChange, allowSpecialStats = false }: Props) {
