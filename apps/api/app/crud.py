@@ -2829,19 +2829,24 @@ def _apply_damage_to_enemy(enemy: dict, damage: int) -> tuple[int, bool]:
     return dealt, overkill
 
 
-def _multi_target_skill_count(actor: dict) -> int:
-    return max(1, _floor_amount(2 + actor["skill_lv"] * 0.34 + actor["skill_target"]))
+def _multi_target_skill_count(actor: dict, skill_lv: int) -> int:
+    return max(1, _floor_amount(2 + skill_lv * 0.34 + actor["skill_target"]))
 
 
 def _skill_has_tier6_bonus(skill: dict) -> bool:
     return int(skill.get("tier") or 0) >= 6
 
 
-def _battle_skill_name(actor: dict, skill: dict) -> str:
+def _skill_lv_from_tier(skill: dict) -> int:
+    """기술의 발동 강도(skill_lv)는 기술트리 depth에서 도출된다: 루트(1단계)만 있으면 0, 다음 depth를 하나 더 활성화할 때마다 1씩 오른다."""
+    return max(0, int(skill.get("tier") or 1) - 1)
+
+
+def _battle_skill_name(skill: dict) -> str:
     return _format_skill_name_for_level(
         str(skill.get("display_name") or skill.get("default_name") or "기술"),
         skill.get("var_name"),
-        int(actor.get("skill_lv") or 0),
+        _skill_lv_from_tier(skill),
     )
 
 
@@ -3587,7 +3592,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         if selected is None:
             return None
         resolved = dict(selected)
-        resolved["display_name"] = _battle_skill_name(actor, resolved)
+        resolved["display_name"] = _battle_skill_name(resolved)
         return resolved
 
     def _spend_skill_cost(actor: dict, skill: dict | None) -> None:
@@ -3638,7 +3643,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         if supported_skill:
             skill_name = str(selected_skill["display_name"])
             var_name = str(selected_skill.get("var_name") or "")
-            skill_lv = max(0, int(p["skill_lv"]))
+            skill_lv = _skill_lv_from_tier(selected_skill)
             skill_power = float(selected_skill.get("power") or 0.0)
             skill_eff_fixed = float(p["skill_eff_fixed"] or 0.0)
             tier6_bonus = _skill_has_tier6_bonus(selected_skill)
@@ -3674,7 +3679,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_crushing":
-                targets = _resolve_damage_targets(action.target_enemy_id, _multi_target_skill_count(p))
+                targets = _resolve_damage_targets(action.target_enemy_id, _multi_target_skill_count(p, skill_lv))
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
@@ -3855,7 +3860,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_aid":
-                targets = _multi_ally_targets(_multi_target_skill_count(p))
+                targets = _multi_ally_targets(_multi_target_skill_count(p, skill_lv))
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
