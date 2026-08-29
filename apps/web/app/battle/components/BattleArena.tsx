@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Ban, Eye, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, Undo2, UserPlus, Zap } from "lucide-react";
+import { ArrowLeft, Ban, Eye, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -1267,6 +1267,29 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                         {active && p.joined_round === session.round && (
                           <Badge variant="outline" className="text-[10px]">난입 · 이번 라운드 행동 불가</Badge>
                         )}
+                      </div>
+                    )}
+
+                    {p.status_effects != null && p.status_effects.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {p.status_effects.map((effect, index) => {
+                          const isBuff = effect.affinity === "buff";
+                          const label = effect.skill_name || effect.var_name || effect.effect_type;
+                          return (
+                            <Badge
+                              key={`${effect.effect_type}-${index}`}
+                              variant="outline"
+                              className={cn(
+                                "text-[10px]",
+                                isBuff ? "border-emerald-500/50 text-emerald-400" : "border-fuchsia-500/50 text-fuchsia-400",
+                              )}
+                            >
+                              {isBuff ? <TrendingUp size={10} className="mr-0.5" /> : <TrendingDown size={10} className="mr-0.5" />}
+                              {label}
+                              {effect.stacks != null && effect.stacks > 1 ? ` ×${effect.stacks}` : ""}
+                            </Badge>
+                          );
+                        })}
                       </div>
                     )}
                   </div>

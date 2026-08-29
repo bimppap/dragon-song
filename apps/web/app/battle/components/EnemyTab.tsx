@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { CloudFog, Image as ImageIcon, Pencil, Plus, Trash2 } from "lucide-react";
+import { CloudFog, Footprints, Image as ImageIcon, Pencil, Plus, Sparkles, Trash2, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -159,7 +159,6 @@ export default function EnemyTab() {
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [selectedChapter, setSelectedChapter] = useState<string>(ALL_CHAPTERS);
-  const [battleDateDraft, setBattleDateDraft] = useState("");
   const [rewardDraft, setRewardDraft] = useState({ victory: "0", action: "0", exp: "0" });
   const [rewardSaving, setRewardSaving] = useState(false);
   const [chaptersLoaded, setChaptersLoaded] = useState(false);
@@ -171,7 +170,6 @@ export default function EnemyTab() {
   const { toast } = useToast();
   const { confirm } = useDialog();
   const [loading, setLoading] = useState(true);
-  const [scheduleSaving, setScheduleSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -183,7 +181,6 @@ export default function EnemyTab() {
   const [deletingEnvironmentId, setDeletingEnvironmentId] = useState<number | null>(null);
 
   const selectedChapterData = chapterList.find((chapter) => chapter.name === selectedChapter) ?? null;
-  const battleDateDirty = (selectedChapterData?.battle_date ?? "") !== battleDateDraft;
   const rewardDirty = selectedChapterData != null && (
     String(selectedChapterData.battle_victory_reward_gold) !== rewardDraft.victory
     || String(selectedChapterData.battle_action_reward_gold) !== rewardDraft.action
@@ -210,7 +207,6 @@ export default function EnemyTab() {
             (chapter) => chapter.start_date <= today && today <= chapter.end_date,
           ) ?? chapList[0];
           setSelectedChapter(defaultChapter.name);
-          setBattleDateDraft(defaultChapter.battle_date ?? "");
           setRewardDraft(rewardDraftFrom(defaultChapter));
         }
       })
@@ -405,24 +401,6 @@ export default function EnemyTab() {
     };
   }
 
-  async function handleBattleDateSave() {
-    if (!selectedChapterData) return;
-    setScheduleSaving(true);
-    try {
-      const updatedChapter = await updateChapter(selectedChapterData.id, {
-        ...chapterPayloadBase(selectedChapterData),
-        battle_date: battleDateDraft || null,
-      });
-      setChapterList((prev) => prev.map((chapter) => (chapter.id === updatedChapter.id ? updatedChapter : chapter)));
-      setBattleDateDraft(updatedChapter.battle_date ?? "");
-      setRewardDraft(rewardDraftFrom(updatedChapter));
-    } catch (e) {
-      toast(e instanceof Error ? e.message : "전투 일정 저장에 실패했습니다.", "error");
-    } finally {
-      setScheduleSaving(false);
-    }
-  }
-
   async function handleRewardSave() {
     if (!selectedChapterData) return;
     setRewardSaving(true);
@@ -434,7 +412,6 @@ export default function EnemyTab() {
         battle_participation_reward_exp: parsePositiveInt(rewardDraft.exp),
       });
       setChapterList((prev) => prev.map((chapter) => (chapter.id === updatedChapter.id ? updatedChapter : chapter)));
-      setBattleDateDraft(updatedChapter.battle_date ?? "");
       setRewardDraft(rewardDraftFrom(updatedChapter));
       toast("보상 설정을 저장했습니다.", "success");
     } catch (e) {
@@ -497,7 +474,6 @@ export default function EnemyTab() {
               onValueChange={(value) => {
                 setSelectedChapter(value);
                 const chapter = chapterList.find((item) => item.name === value) ?? null;
-                setBattleDateDraft(chapter?.battle_date ?? "");
                 setRewardDraft(chapter ? rewardDraftFrom(chapter) : { victory: "0", action: "0", exp: "0" });
               }}
             >
@@ -526,83 +502,83 @@ export default function EnemyTab() {
           </div>
         </CardHeader>
         <CardContent>
-          {selectedChapterData && (
-            <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-inset/30 px-4 py-4 sm:flex-row sm:items-end sm:justify-between">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-ivory">{selectedChapterData.name} 전투 일정</p>
-                <p className="text-xs text-muted">
-                  챕터 기간 {selectedChapterData.start_date} ~ {selectedChapterData.end_date} 안에서 지정할 수 있습니다. 비워두면 러너 전투
-                  페이지에 대기 문구가 표시됩니다.
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                <Input
-                  type="date"
-                  value={battleDateDraft}
-                  min={selectedChapterData.start_date}
-                  max={selectedChapterData.end_date}
-                  onChange={(event) => setBattleDateDraft(event.target.value)}
-                  className="sm:w-44"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleBattleDateSave}
-                  disabled={scheduleSaving || !battleDateDirty}
-                >
-                  {scheduleSaving ? "저장 중..." : "전투 일정 저장"}
-                </Button>
-              </div>
-            </div>
-          )}
 
-          {selectedChapterData && (
-            <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-inset/30 px-4 py-4">
-              <div className="space-y-1">
-                <p className="text-sm font-semibold text-ivory">{selectedChapterData.name} 실전 전투 보상</p>
-                <p className="text-xs text-muted">
-                  실전 전투가 끝나면 전투 페이지 상단의 보상 전송 카드에서 이 값을 기준으로 계산된 보상을 확인하고 지급할 수 있습니다.
-                </p>
+          {loading ? (
+            <EmptyState>
+              에너미 목록을 불러오는 중입니다.
+            </EmptyState>
+          ) : enemies.length === 0 ? (
+            <EmptyState>
+              {selectedChapter === ALL_CHAPTERS ? "등록된 에너미가 없습니다." : "이 챕터에 등록된 에너미가 없습니다."}
+            </EmptyState>
+          ) : (
+          <div className="mb-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+            {enemies.map((enemy) => (
+              <div key={enemy.id} className="rounded-xl border border-line px-4 py-4 flex flex-col gap-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-line bg-inset">
+                      {enemy.image_url ? (
+                        <Image src={enemy.image_url} alt={enemy.name} fill className="object-cover object-top" />
+                      ) : (
+                        <div className="flex h-full w-full items-center justify-center">
+                          <ImageIcon size={16} className="text-muted" />
+                        </div>
+                      )}
+                    </div>
+                    <span className="font-semibold text-ivory">{enemy.name}</span>
+                    {enemy.chapter && (
+                      <span className="text-xs text-muted border border-line rounded px-1.5 py-0.5">
+                        {enemy.chapter}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-muted">
+                    <span>HP {enemy.base_hp.toLocaleString()}</span>
+                    <span>공격 {enemy.attack.toLocaleString()}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => openEditModal(enemy)}
+                      className="h-7 w-7 text-muted hover:text-gold"
+                      aria-label={`${enemy.name} 수정`}
+                    >
+                      <Pencil size={14} />
+                    </Button>
+                  </div>
+                </div>
+
+                {(enemy.hp_per_attacker > 0 || enemy.hp_per_defender > 0 || enemy.hp_per_healer > 0) && (
+                  <div className="flex gap-3 text-xs text-muted">
+                    {enemy.hp_per_attacker > 0 && <span>공격 인원당 +{enemy.hp_per_attacker.toLocaleString()} HP</span>}
+                    {enemy.hp_per_defender > 0 && <span>수비 인원당 +{enemy.hp_per_defender.toLocaleString()} HP</span>}
+                    {enemy.hp_per_healer > 0 && <span>치유 인원당 +{enemy.hp_per_healer.toLocaleString()} HP</span>}
+                  </div>
+                )}
+
+                <div className="flex flex-col gap-1.5">
+                  {enemy.skills.map((skill, idx) => (
+                    <div key={idx} className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", SKILL_TYPE_COLOR[skill.skill_type as SkillType] ?? "bg-primary-light/20 text-ivory/85")}>
+                        {skill.skill_type}
+                      </span>
+                      <span className="font-medium text-ivory">{skill.name}</span>
+                      {skill.skill_type === "소환" ? (
+                        <span className="text-muted">
+                          {skill.summon_name} (HP {(skill.summon_hp ?? 0).toLocaleString()} / 공격 {skill.summon_attack ?? 0}) ×{skill.summon_count ?? 1}
+                        </span>
+                      ) : (
+                        <span className="text-muted">
+                          타겟 {skill.target_count}명 / 피해 {skill.damage_percent}%
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-ivory/85">승리보상 (골드, 1라운드 이상 참여한 전원)</label>
-                  <Input
-                    type="number" min={0}
-                    value={rewardDraft.victory}
-                    onChange={(e) => setRewardDraft((prev) => ({ ...prev, victory: e.target.value }))}
-                    placeholder="0"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-ivory/85">행동보상 (골드, 무반응 제외 행동 라운드당)</label>
-                  <Input
-                    type="number" min={0}
-                    value={rewardDraft.action}
-                    onChange={(e) => setRewardDraft((prev) => ({ ...prev, action: e.target.value }))}
-                    placeholder="0"
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-ivory/85">전원보상 (경험치, 참여 여부 무관 전체 러너)</label>
-                  <Input
-                    type="number" min={0}
-                    value={rewardDraft.exp}
-                    onChange={(e) => setRewardDraft((prev) => ({ ...prev, exp: e.target.value }))}
-                    placeholder="0"
-                  />
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                className="self-end"
-                onClick={handleRewardSave}
-                disabled={rewardSaving || !rewardDirty}
-              >
-                {rewardSaving ? "저장 중..." : "보상 설정 저장"}
-              </Button>
-            </div>
+            ))}
+          </div>
           )}
 
           {selectedChapterData && (
@@ -610,7 +586,7 @@ export default function EnemyTab() {
               <div className="space-y-1">
                 <p className="flex items-center gap-1.5 text-sm font-semibold text-ivory">
                   <CloudFog size={14} className="text-muted" />
-                  {selectedChapterData.name} 환경
+                  환경
                 </p>
                 <p className="text-xs text-muted">
                   매 라운드 &ldquo;적의 행동 암시&rdquo; 턴마다 캐릭터에게 스택이 쌓이고, (스택 수 − 1) × 스택당 피해를 입힙니다. 한 챕터에 여러 환경을 등록할 수 있습니다.
@@ -701,82 +677,70 @@ export default function EnemyTab() {
             </div>
           )}
 
-          {loading ? (
-            <EmptyState>
-              에너미 목록을 불러오는 중입니다.
-            </EmptyState>
-          ) : enemies.length === 0 ? (
-            <EmptyState>
-              {selectedChapter === ALL_CHAPTERS ? "등록된 에너미가 없습니다." : "이 챕터에 등록된 에너미가 없습니다."}
-            </EmptyState>
-          ) : (
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {enemies.map((enemy) => (
-              <div key={enemy.id} className="rounded-xl border border-line px-4 py-4 flex flex-col gap-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-line bg-inset">
-                      {enemy.image_url ? (
-                        <Image src={enemy.image_url} alt={enemy.name} fill className="object-cover object-top" />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center">
-                          <ImageIcon size={16} className="text-muted" />
-                        </div>
-                      )}
-                    </div>
-                    <span className="font-semibold text-ivory">{enemy.name}</span>
-                    {enemy.chapter && (
-                      <span className="text-xs text-muted border border-line rounded px-1.5 py-0.5">
-                        {enemy.chapter}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-xs text-muted">
-                    <span>HP {enemy.base_hp.toLocaleString()}</span>
-                    <span>공격 {enemy.attack.toLocaleString()}</span>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => openEditModal(enemy)}
-                      className="h-7 w-7 text-muted hover:text-gold"
-                      aria-label={`${enemy.name} 수정`}
-                    >
-                      <Pencil size={14} />
-                    </Button>
+          {selectedChapterData && (
+            <div className="mb-5 flex flex-col gap-3 rounded-xl border border-line bg-inset/30 px-4 py-4">
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-ivory">실전 전투 보상</p>
+                <p className="text-xs text-muted">
+                  실전 전투가 끝나면 전투 페이지 상단의 보상 전송 카드에서 이 값을 기준으로 계산된 보상을 확인하고 지급할 수 있습니다.
+                </p>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-ivory/85">
+                    <Trophy size={13} className="text-gold" />
+                    승리보상 (골드, 1라운드 이상 참여한 전원)
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="number" min={0}
+                      value={rewardDraft.victory}
+                      onChange={(e) => setRewardDraft((prev) => ({ ...prev, victory: e.target.value }))}
+                      placeholder="0"
+                      className="pr-8"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">G</span>
                   </div>
                 </div>
-
-                {(enemy.hp_per_attacker > 0 || enemy.hp_per_defender > 0 || enemy.hp_per_healer > 0) && (
-                  <div className="flex gap-3 text-xs text-muted">
-                    {enemy.hp_per_attacker > 0 && <span>공격 인원당 +{enemy.hp_per_attacker.toLocaleString()} HP</span>}
-                    {enemy.hp_per_defender > 0 && <span>수비 인원당 +{enemy.hp_per_defender.toLocaleString()} HP</span>}
-                    {enemy.hp_per_healer > 0 && <span>치유 인원당 +{enemy.hp_per_healer.toLocaleString()} HP</span>}
-                  </div>
-                )}
-
                 <div className="flex flex-col gap-1.5">
-                  {enemy.skills.map((skill, idx) => (
-                    <div key={idx} className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", SKILL_TYPE_COLOR[skill.skill_type as SkillType] ?? "bg-primary-light/20 text-ivory/85")}>
-                        {skill.skill_type}
-                      </span>
-                      <span className="font-medium text-ivory">{skill.name}</span>
-                      {skill.skill_type === "소환" ? (
-                        <span className="text-muted">
-                          {skill.summon_name} (HP {(skill.summon_hp ?? 0).toLocaleString()} / 공격 {skill.summon_attack ?? 0}) ×{skill.summon_count ?? 1}
-                        </span>
-                      ) : (
-                        <span className="text-muted">
-                          타겟 {skill.target_count}명 / 피해 {skill.damage_percent}%
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-ivory/85">
+                    <Footprints size={13} className="text-emerald-400" />
+                    행동보상 (골드, 무반응 제외 행동 라운드당)
+                  </label>
+                  <div className="relative">
+                    <Input
+                      type="number" min={0}
+                      value={rewardDraft.action}
+                      onChange={(e) => setRewardDraft((prev) => ({ ...prev, action: e.target.value }))}
+                      placeholder="0"
+                      className="pr-8"
+                    />
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted">G</span>
+                  </div>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="flex items-center gap-1.5 text-xs font-semibold text-ivory/85">
+                    <Sparkles size={13} className="text-cyan-400" />
+                    전원보상 (경험치, 참여 여부 무관 전체 러너)
+                  </label>
+                  <Input
+                    type="number" min={0}
+                    value={rewardDraft.exp}
+                    onChange={(e) => setRewardDraft((prev) => ({ ...prev, exp: e.target.value }))}
+                    placeholder="0"
+                  />
                 </div>
               </div>
-            ))}
-          </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="self-end"
+                onClick={handleRewardSave}
+                disabled={rewardSaving || !rewardDirty}
+              >
+                {rewardSaving ? "저장 중..." : "보상 설정 저장"}
+              </Button>
+            </div>
           )}
         </CardContent>
       </Card>

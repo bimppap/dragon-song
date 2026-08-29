@@ -1284,9 +1284,20 @@ export interface BattleSummonState {
   attack: number;
 }
 
+export interface BattleStatusEffect {
+  affinity: "buff" | "debuff";
+  effect_type: string;
+  skill_name?: string | null;
+  var_name?: string | null;
+  stackable?: boolean;
+  stacks?: number;
+  value?: number;
+}
+
 export interface BattleParticipant {
   character_id: number;
   name: string;
+  status_effects?: BattleStatusEffect[];
   image_url: string | null;
   faction: Faction | null;
   atk: number; atk_p: number; dmg_p: number;
