@@ -257,6 +257,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN phase VARCHAR NOT NULL DEFAULT 'telegraph'")
         if "pending_enemy_actions" not in battle_columns:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN pending_enemy_actions JSON NOT NULL DEFAULT '[]'")
+        if "rollback_state" not in battle_columns:
+            statements.append("ALTER TABLE battle_sessions ADD COLUMN rollback_state JSON NOT NULL DEFAULT '{}'")
 
     if "attendance_missions" in table_names:
         statements.append("DROP TABLE attendance_missions")

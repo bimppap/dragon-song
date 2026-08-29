@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { Ambulance, CalendarClock, Eye, Flag, Heart, History, Image as ImageIcon, ListOrdered, PlayCircle, Shield, Sparkles, Swords, Trash2, Zap } from "lucide-react";
+import { Ambulance, CalendarClock, Eye, Flag, Heart, History, Image as ImageIcon, ListOrdered, PlayCircle, RotateCcw, Shield, Sparkles, Swords, Trash2, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -14,6 +14,7 @@ import {
   fetchBattles,
   fetchCharacters,
   fetchEnemies,
+  rollbackBattle,
   type BattleMode,
   type BattleSessionSummary,
   type Chapter,
@@ -25,7 +26,6 @@ import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
 import BattleArena from "./BattleArena";
-import BattleRewardCard from "./BattleRewardCard";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
@@ -152,13 +152,13 @@ export default function BattleTab() {
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [resumable, setResumable] = useState<BattleSessionSummary[]>([]);
-  const [rewardPending, setRewardPending] = useState<BattleSessionSummary[]>([]);
   const [history, setHistory] = useState<BattleSessionSummary[]>([]);
   const [historyMode, setHistoryMode] = useState<BattleMode>("real");
   const [loading, setLoading] = useState(true);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [starting, setStarting] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [rollingBackId, setRollingBackId] = useState<number | null>(null);
 
   const [selectedEnemyIds, setSelectedEnemyIds] = useState<Set<number>>(new Set());
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<number>>(new Set());
@@ -171,26 +171,17 @@ export default function BattleTab() {
     async function load() {
       try {
         setLoading(true);
-        const [enemyList, activeChapterData, characterList, resumableList, realBattles, practiceBattles] = await Promise.all([
+        const [enemyList, activeChapterData, characterList, resumableList] = await Promise.all([
           fetchEnemies(),
           fetchActiveChapter(),
           fetchCharacters(),
           fetchBattles({ mode: "real", status: "in_progress" }),
-          fetchBattles({ mode: "real" }),
-          fetchBattles({ mode: "practice" }),
         ]);
         if (cancelled) return;
         setEnemies(enemyList);
         setActiveChapter(activeChapterData);
         setCharacters(characterList);
         setResumable(resumableList);
-        // 실전: 아직 보상을 안 보낸 완료 전투는 전부 카드로 보여준다.
-        // 모의전: 보상을 실제로 보낼 수는 없지만, 가장 최근에 끝난 한 건만 미리보기용으로 보여준다.
-        const finishedPractice = practiceBattles.filter((s) => s.status !== "in_progress").slice(0, 1);
-        setRewardPending([
-          ...realBattles.filter((s) => s.status !== "in_progress" && !s.rewards_sent),
-          ...finishedPractice,
-        ]);
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "전투 데이터 조회 실패", "error");
       } finally {
@@ -239,6 +230,27 @@ export default function BattleTab() {
       toast(e instanceof Error ? e.message : "전투 기록 삭제 실패", "error");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleRollback(session: BattleSessionSummary) {
+    const ok = await confirm({
+      title: "실전 전투 롤백",
+      description: `${session.enemy_names.join(", ") || `전투 #${session.id}`} 실전 테스트를 롤백할까요?\n참가자 HP/MP, 전투 중 사용한 아이템, 이미 지급한 전투 보상을 테스트 전 상태로 되돌리고 전투 기록도 함께 삭제합니다.\n테스트 직후에만 사용하는 것을 권장합니다.`,
+      confirmText: "롤백",
+      tone: "danger",
+    });
+    if (!ok) return;
+    setRollingBackId(session.id);
+    try {
+      await rollbackBattle(session.id);
+      setHistory((prev) => prev.filter((s) => s.id !== session.id));
+      setResumable((prev) => prev.filter((s) => s.id !== session.id));
+      toast("실전 테스트 데이터를 롤백했습니다.", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "실전 전투 롤백 실패", "error");
+    } finally {
+      setRollingBackId(null);
     }
   }
 
@@ -303,18 +315,6 @@ export default function BattleTab() {
 
   return (
     <div className="space-y-8">
-      {rewardPending.length > 0 && (
-        <div className="space-y-3">
-          {rewardPending.map((session) => (
-            <BattleRewardCard
-              key={session.id}
-              session={session}
-              onSent={() => setRewardPending((prev) => prev.filter((s) => s.id !== session.id))}
-            />
-          ))}
-        </div>
-      )}
-
       <div className="space-y-2 border-b border-line pb-5">
         <h2 className="text-sm font-bold uppercase tracking-wide text-muted">전투 설명</h2>
         <p className="text-xs text-muted">※ 증폭률/효율은 모두 0으로 시작하고 시전자의 것을 기준으로 한다는 전제.</p>
@@ -604,17 +604,31 @@ export default function BattleTab() {
                         </div>
                         {statusBadge(session.status)}
                       </button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="shrink-0 text-muted hover:text-red-500"
-                        disabled={deletingId === session.id}
-                        onClick={() => handleDelete(session)}
-                        aria-label="전투 기록 삭제"
-                      >
-                        <Trash2 size={15} />
-                      </Button>
+                      {session.mode === "real" ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="shrink-0"
+                          disabled={rollingBackId === session.id}
+                          onClick={() => handleRollback(session)}
+                        >
+                          <RotateCcw size={14} />
+                          {rollingBackId === session.id ? "롤백 중..." : "실전 롤백"}
+                        </Button>
+                      ) : (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="shrink-0 text-muted hover:text-red-500"
+                          disabled={deletingId === session.id}
+                          onClick={() => handleDelete(session)}
+                          aria-label="전투 기록 삭제"
+                        >
+                          <Trash2 size={15} />
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>

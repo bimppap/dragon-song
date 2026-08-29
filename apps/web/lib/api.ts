@@ -1475,6 +1475,12 @@ export async function undoLastBattleRound(sessionId: number): Promise<BattleSess
 
 export async function deleteBattle(sessionId: number): Promise<void> {
   await request(`/battles/${sessionId}`, { method: "DELETE" }, "전투 기록 삭제 실패");
+  invalidateApiCache("battles:");
+}
+
+export async function rollbackBattle(sessionId: number): Promise<void> {
+  await request(`/battles/${sessionId}/rollback`, { method: "POST" }, "실전 전투 롤백 실패");
+  invalidateApiCache("battles:", "characters:", "items:", "rewards:");
 }
 
 /** 실전 전투 종료 후 러너별로 지급될 승리/행동/전원 보상을 미리 확인한다. */

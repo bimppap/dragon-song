@@ -8,18 +8,28 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import {
+  type BattleMode,
   fetchBattleRewardPreview,
   sendBattleRewards,
+  type BattleStatus,
   type BattleRewardPreview,
-  type BattleSessionSummary,
 } from "@/lib/api";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(n);
 
+export interface BattleRewardCardSession {
+  id: number;
+  mode: BattleMode;
+  chapter: string | null;
+  status: BattleStatus;
+  round: number;
+  enemy_names: string[];
+}
+
 interface Props {
-  session: BattleSessionSummary;
-  onSent: () => void;
+  session: BattleRewardCardSession;
+  onSent?: () => void;
 }
 
 export default function BattleRewardCard({ session, onSent }: Props) {
@@ -42,7 +52,7 @@ export default function BattleRewardCard({ session, onSent }: Props) {
     if (!preview) return;
     const ok = await confirm({
       title: "전투 보상 전송",
-      description: `${session.enemy_names.join(", ") || `전투 #${session.id}`}의 보상을 러너들에게 지급합니다. 되돌릴 수 없습니다.`,
+      description: `${session.enemy_names.join(", ") || `전투 #${session.id}`}의 보상을 러너들에게 지급합니다. 실전 테스트 정리가 필요하면 전투 기록의 "실전 롤백"으로 함께 되돌릴 수 있습니다.`,
       confirmText: "전송",
     });
     if (!ok) return;
@@ -51,7 +61,7 @@ export default function BattleRewardCard({ session, onSent }: Props) {
       const updated = await sendBattleRewards(session.id);
       setPreview(updated);
       toast("전투 보상을 전송했습니다.", "success");
-      onSent();
+      onSent?.();
     } catch (e) {
       toast(e instanceof Error ? e.message : "전투 보상 전송 실패", "error");
     } finally {

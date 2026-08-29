@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
 import { ArrowLeft, Ban, Eye, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import BattleRewardCard from "./BattleRewardCard";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
@@ -293,6 +294,10 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
   const [enemyJoinCandidates, setEnemyJoinCandidates] = useState<Enemy[]>([]);
   const [joinEnemyId, setJoinEnemyId] = useState<string | null>(null);
   const [joiningEnemy, setJoiningEnemy] = useState(false);
+  const syncDraftsFromBattle = useEffectEvent((data: BattleSession) => {
+    resetCharDrafts(data);
+    resetTelegraphDrafts(data);
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -303,8 +308,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
         const data = await fetchBattle(sessionId);
         if (cancelled) return;
         setSession(data);
-        resetCharDrafts(data);
-        resetTelegraphDrafts(data);
+        syncDraftsFromBattle(data);
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "전투 조회 실패", "error");
       } finally {
@@ -748,6 +752,17 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
   const enemyTitle = useMemo(
     () => (session?.enemies ?? []).map((enemy) => enemy.name).join(", "),
     [session?.enemies],
+  );
+  const rewardCardSession = useMemo(
+    () => ({
+      id: session?.id ?? 0,
+      mode: session?.mode ?? "practice",
+      chapter: session?.chapter ?? null,
+      status: session?.status ?? "in_progress",
+      round: session?.round ?? 1,
+      enemy_names: (session?.enemies ?? []).map((enemy) => enemy.name),
+    }),
+    [session?.chapter, session?.enemies, session?.id, session?.mode, session?.round, session?.status],
   );
 
   if (loading || !session) {
@@ -1354,22 +1369,25 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
 
       {/* 진행 / 결과 */}
       {!inProgress ? (
-        <div
-          className={cn(
-            "flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold",
-            session.status === "victory"
-              ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+        <div className="space-y-4">
+          <div
+            className={cn(
+              "flex items-center gap-2 rounded-xl border px-4 py-3 text-sm font-semibold",
+              session.status === "victory"
+                ? "border-emerald-500/40 bg-emerald-500/15 text-emerald-300"
+                : session.status === "early_terminated"
+                  ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
+                  : "border-red-500/40 bg-red-500/15 text-red-600",
+            )}
+          >
+            {session.status === "victory" ? <Swords size={16} /> : <Ban size={16} />}
+            {session.status === "victory"
+              ? "전투 승리! 에너미를 격파했습니다."
               : session.status === "early_terminated"
-                ? "border-amber-500/40 bg-amber-500/15 text-amber-300"
-                : "border-red-500/40 bg-red-500/15 text-red-600",
-          )}
-        >
-          {session.status === "victory" ? <Swords size={16} /> : <Ban size={16} />}
-          {session.status === "victory"
-            ? "전투 승리! 에너미를 격파했습니다."
-            : session.status === "early_terminated"
-              ? "전투가 조기 종료되었습니다."
-              : "전투 패배... 모든 캐릭터가 기절/퇴각했습니다."}
+                ? "전투가 조기 종료되었습니다."
+                : "전투 패배... 모든 캐릭터가 기절/퇴각했습니다."}
+          </div>
+          <BattleRewardCard session={rewardCardSession} />
         </div>
       ) : canAct ? (
         <div className="flex flex-wrap items-center gap-2">

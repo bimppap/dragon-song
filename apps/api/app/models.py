@@ -540,6 +540,8 @@ class BattleSession(Base):
     # 라운드 시작 시점(그 라운드의 행동이 반영되기 전) 스냅샷. [{"round", "participants", "enemies", "summons"}, ...]
     # "이전 라운드 다시 진행하기"에서 되돌릴 상태로 쓰인다. 실전(real)에서만 채워진다.
     round_snapshots: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # 실전 테스트 롤백용 메타데이터. 참가자 원상복구, 아이템 사용 복구, 보상 회수에 쓴다.
+    rollback_state: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     created_by: Mapped[int | None] = mapped_column(Integer, ForeignKey("members.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

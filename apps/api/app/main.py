@@ -910,6 +910,13 @@ def delete_battle(session_id: int, member: Member = Depends(require_admin), db: 
     return {"deleted": True}
 
 
+@app.post("/battles/{session_id}/rollback")
+def rollback_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """실전 테스트 전투를 원상복구하고 기록까지 삭제한다."""
+    crud.rollback_battle_session(db, session_id)
+    return {"rolled_back": True}
+
+
 @app.post("/battles/{session_id}/terminate", response_model=BattleSessionRead)
 def terminate_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     """관리자가 승패와 관계없이 진행 중인 전투를 조기 종료한다."""

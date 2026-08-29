@@ -162,27 +162,29 @@ GROWTH_EXP_PER_LEVEL = 20  # 경험치가 이만큼 쌓일 때마다 성장등�
 GROWTH_AP_PER_LEVEL = 2    # 성장등급 1당 지급되는 AP.
 
 
-def _apply_growth_from_exp(db: Session, character: Character) -> None:
+def _apply_growth_from_exp(db: Session, character: Character, source_id: int | None = None) -> Reward | None:
     """경험치가 20 쌓일 때마다 성장등급(lv)과 AP를 자동 지급하고, 초과분은 다음 등급으로 이월한다(경험치는 0~19로 리셋).
 
     '성장' 보상 이력을 남긴다.
     """
     gained = character.exp // GROWTH_EXP_PER_LEVEL
     if gained <= 0:
-        return
+        return None
     character.exp -= gained * GROWTH_EXP_PER_LEVEL
     character.lv += gained
     character.ap += gained * GROWTH_AP_PER_LEVEL
-    db.add(Reward(
+    reward = Reward(
         type="growth",
         character_id=character.id,
-        source_id=None,
+        source_id=source_id,
         reward_items=[
             {"type": "lv", "amount": gained},
             {"type": "ap", "amount": gained * GROWTH_AP_PER_LEVEL},
         ],
         rewarded_at=_today_kst(),
-    ))
+    )
+    db.add(reward)
+    return reward
 
 
 def _apply_stat_rewards(
@@ -2413,6 +2415,9 @@ SKILL_LEVEL_SUFFIX_VAR_NAMES = {
     "ab_cure",
     "ab_aid",
     "ab_purification",
+    "ab_encourage",
+    "ab_curse",
+    "ab_charge",
 }
 SUPPORTED_BATTLE_SKILL_VAR_NAMES = set(SKILL_LEVEL_SUFFIX_VAR_NAMES)
 SKILL_BOOK_ORDER = ("용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서")
@@ -3042,6 +3047,66 @@ def _to_battle_session_read(session: BattleSession) -> BattleSessionRead:
     )
 
 
+def _new_battle_rollback_state() -> dict:
+    return {
+        "version": 1,
+        "battle_characters": {},
+        "reward_characters": {},
+        "item_usages": [],
+    }
+
+
+def _get_battle_rollback_state(session: BattleSession) -> dict:
+    raw = session.rollback_state if isinstance(session.rollback_state, dict) else {}
+    if raw.get("version") != 1:
+        return {"version": raw.get("version", 0)}
+    return {
+        "version": 1,
+        "battle_characters": dict(raw.get("battle_characters") or {}),
+        "reward_characters": dict(raw.get("reward_characters") or {}),
+        "item_usages": list(raw.get("item_usages") or []),
+    }
+
+
+def _remember_battle_character_state(state: dict, character: Character) -> dict:
+    battle_characters = dict(state.get("battle_characters") or {})
+    battle_characters.setdefault(
+        str(character.id),
+        {
+            "hp": character.hp,
+            "mp": character.mp,
+        },
+    )
+    return {**state, "battle_characters": battle_characters}
+
+
+def _remember_reward_character_state(state: dict, character: Character) -> dict:
+    reward_characters = dict(state.get("reward_characters") or {})
+    reward_characters.setdefault(
+        str(character.id),
+        {
+            "gold": character.gold,
+            "exp": character.exp,
+            "lv": character.lv,
+            "ap": character.ap,
+        },
+    )
+    return {**state, "reward_characters": reward_characters}
+
+
+def _remember_item_usage(state: dict, usage: ItemUsage) -> dict:
+    item_usages = list(state.get("item_usages") or [])
+    item_usages.append(
+        {
+            "item_usage_id": usage.id,
+            "character_id": usage.character_id,
+            "item_id": usage.item_id,
+            "quantity": usage.quantity,
+        }
+    )
+    return {**state, "item_usages": item_usages}
+
+
 def start_battle(db: Session, member: Member, data: BattleStartRequest) -> BattleSessionRead:
     characters = db.query(Character).filter(Character.id.in_(data.character_ids)).all()
     if len(characters) != len(set(data.character_ids)):
@@ -3049,6 +3114,10 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
     enemies_db = db.query(Enemy).filter(Enemy.id.in_(data.enemy_ids)).all()
     if len(enemies_db) != len(set(data.enemy_ids)):
         raise HTTPException(status_code=400, detail="존재하지 않는 에너미가 포함되어 있습니다.")
+    rollback_state = _new_battle_rollback_state()
+    if data.mode == "real":
+        for character in characters:
+            rollback_state = _remember_battle_character_state(rollback_state, character)
 
     session = BattleSession(
         mode=data.mode,
@@ -3059,6 +3128,7 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
         summons=[],
         participants=[_snapshot_combatant(c) for c in characters],
         log=[],
+        rollback_state=rollback_state,
         created_by=member.id,
     )
     db.add(session)
@@ -3124,6 +3194,8 @@ def delete_battle_session(db: Session, session_id: int) -> None:
     session = db.get(BattleSession, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    if session.mode == "real":
+        raise HTTPException(status_code=400, detail="실전 전투는 삭제 대신 롤백을 사용해 주세요.")
     db.delete(session)
     db.commit()
 
@@ -3166,6 +3238,10 @@ def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> Battle
     snapshot["joined_round"] = session.round
     participants.append(snapshot)
     session.participants = participants
+    if session.mode == "real":
+        rollback_state = _get_battle_rollback_state(session)
+        if rollback_state.get("version") == 1:
+            session.rollback_state = _remember_battle_character_state(rollback_state, character)
     db.commit()
     db.refresh(session)
     return _to_battle_session_read(session)
@@ -3378,6 +3454,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     participants = [dict(p) for p in session.participants]
     enemies = [dict(e) for e in session.enemies]
     summons = [dict(s) for s in session.summons]
+    rollback_state = _get_battle_rollback_state(session) if session.mode == "real" else None
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
     for enemy in enemies:
@@ -3415,6 +3492,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         action = actions_by_char.get(p["character_id"])
         if action and action.kind != "none":
             p["action_reward_rounds"] += 1
+
+    # 0.5) 반격 태세는 시전한 그 라운드에만 유지되고, 다음 라운드 시작 시 자동으로 사라진다.
+    for p in participants:
+        effects = _ensure_status_effects(p)
+        kept = [e for e in effects if not (e.get("effect_type") == "counter" and e.get("round") != round_no)]
+        if len(kept) != len(effects):
+            p["status_effects"] = kept
 
     # 1) 방어 태세 표시 (수비 포지션 한정으로 다른 캐릭터를 지정해 대신 맞아줄 수 있음. 기본값은 본인)
     for p in participants:
@@ -3481,8 +3565,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         return next((p for p in participants if _healable(p, round_no)), None)
 
     def _multi_ally_targets(count: int) -> list[dict]:
+        # 체력 낮은 순 → 동률이면 주목도 높은 순 → 그것도 같으면 이름 가나다순.
         healable = [p for p in participants if _healable(p, round_no)]
-        return sorted(healable, key=lambda target: (target["hp"], target["name"]))[:count]
+        return sorted(healable, key=lambda target: (target["hp"], -target["attn"], target["name"]))[:count]
 
     def _selected_skill(actor: dict, action: CharacterActionInput) -> dict | None:
         available = battle_skills_by_character.get(actor["character_id"], {})
@@ -3543,8 +3628,6 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             and selected_skill is not None
             and selected_skill.get("var_name") in SUPPORTED_BATTLE_SKILL_VAR_NAMES
         )
-        if action.kind == "heal" and all(enemy["hp"] <= 0 for enemy in enemies):
-            continue
 
         if action.kind == "skill" and selected_skill is not None:
             skill_cost = _battle_skill_cost(p, selected_skill)
@@ -3693,10 +3776,14 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 heal_ratio = ((skill_lv * skill_power) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
                 healed, revived = _apply_skill_heal(p, p, heal_ratio)
                 p["attn"] += healed * skill_lv
-                events.append(
+                removed, removed_names = _remove_status_effects_by_affinity(p, "debuff", skill_lv)
+                log = (
                     f"🪨 {p['name']}의 {skill_name} → {healed} 치유"
                     f"{' (부활)' if revived else ''} · [{p['hp']}/{p['max_hp']}]"
                 )
+                if removed > 0:
+                    log += f" / 약화 {removed}개 해제 ({', '.join(removed_names)})"
+                events.append(log)
                 continue
 
             if var_name == "ab_counter":
@@ -3718,6 +3805,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         "skill_lv": skill_lv,
                         "skill_eff_fixed": skill_eff_fixed,
                         "damage_reduction": reduction_bonus,
+                        "round": round_no,
                     },
                     participants=participants,
                     enemies=enemies,
@@ -3735,8 +3823,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 heal_ratio = (((skill_lv + 1) * skill_power) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
                 healed, revived = _apply_skill_heal(p, target, heal_ratio)
-                attn_loss = max(0, _floor_amount((skill_lv * skill_power * 2) * (1 + skill_eff_fixed)))
-                reduced_attn = min(max(0, target["attn"]), attn_loss)
+                attn_reduction_pct = min(1.0, max(0.0, (skill_lv * 0.10) * (1 + skill_eff_fixed)))
+                reduced_attn = _floor_amount(max(0, target["attn"]) * attn_reduction_pct)
                 target["attn"] -= reduced_attn
                 gained_attn = round((reduced_attn * 2) * (1 + p["presence"]))
                 p["attn"] += gained_attn
@@ -3836,6 +3924,85 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 events.append(log)
                 continue
 
+            if var_name == "ab_encourage":
+                target = _single_ally_target(p, action, active_only=True)
+                if target is None:
+                    continue
+                _spend_skill_cost(p, selected_skill)
+                bonus = max(0.0, (skill_lv * skill_power) * (1 + skill_eff_fixed))
+                _add_status_effect(
+                    target,
+                    {
+                        "effect_type": "outgoing_damage_bonus_once",
+                        "affinity": "buff",
+                        "source_character_id": p["character_id"],
+                        "source_name": p["name"],
+                        "skill_name": skill_name,
+                        "var_name": var_name,
+                        "stackable": bool(selected_skill.get("stackable")),
+                        "value": bonus,
+                    },
+                    participants=participants,
+                    enemies=enemies,
+                )
+                events.append(
+                    f"📣 {p['name']}의 {skill_name} → {target['name']} 피해 증폭 +{int(round(bonus * 100))}%"
+                )
+                continue
+
+            if var_name == "ab_curse":
+                target_enemy = enemies_by_id.get(action.target_enemy_id) if action.target_enemy_id else None
+                if target_enemy is None or not _enemy_targetable(target_enemy, round_no):
+                    target_enemy = next((enemy for enemy in enemies if _enemy_targetable(enemy, round_no)), None)
+                if target_enemy is None:
+                    continue
+                _spend_skill_cost(p, selected_skill)
+                penalty = max(0.0, ((skill_lv + 1) * skill_power) * (1 + skill_eff_fixed))
+                _add_status_effect(
+                    target_enemy,
+                    {
+                        "effect_type": "outgoing_damage_penalty_once",
+                        "affinity": "debuff",
+                        "source_character_id": p["character_id"],
+                        "source_name": p["name"],
+                        "skill_name": skill_name,
+                        "var_name": var_name,
+                        "stackable": bool(selected_skill.get("stackable")),
+                        "value": penalty,
+                    },
+                    participants=participants,
+                    enemies=enemies,
+                )
+                events.append(
+                    f"🔮 {p['name']}의 {skill_name} → {target_enemy['name']} 공격값 -{int(round(penalty * 100))}%"
+                )
+                continue
+
+            if var_name == "ab_charge":
+                chosen = by_char_id.get(action.target_character_id) if action.target_character_id else None
+                if chosen is not None and chosen["character_id"] != p["character_id"] and _combatant_targetable(chosen, round_no):
+                    target = chosen
+                else:
+                    target = next(
+                        (
+                            ally for ally in participants
+                            if ally["character_id"] != p["character_id"] and _combatant_targetable(ally, round_no)
+                        ),
+                        None,
+                    )
+                if target is None:
+                    continue
+                _spend_skill_cost(p, selected_skill)
+                mana_restored = max(0, _floor_amount((2 + skill_lv * 0.34) * (1 + skill_eff_fixed)))
+                before_mp = target["mp"]
+                target["mp"] = min(target["max_mp"], target["mp"] + mana_restored)
+                actually_restored = target["mp"] - before_mp
+                events.append(
+                    f"🔋 {p['name']}의 {skill_name} → {target['name']} 마나 {actually_restored} 회복 · "
+                    f"[{target['mp']}/{target['max_mp']}]"
+                )
+                continue
+
         if action.kind in ("attack", "skill"):
             target_enemy = enemies_by_id.get(action.target_enemy_id) if action.target_enemy_id else None
             if target_enemy is None or not _enemy_targetable(target_enemy, round_no):
@@ -3897,7 +4064,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     events.append(f"⚠️ {p['name']}: {item.name}을(를) 보유하고 있지 않습니다.")
                     continue
                 state.used_quantity += 1
-                db.add(ItemUsage(character_id=p["character_id"], item_id=item.id, quantity=1))
+                usage = ItemUsage(character_id=p["character_id"], item_id=item.id, quantity=1)
+                db.add(usage)
+                db.flush()
+                if rollback_state and rollback_state.get("version") == 1:
+                    rollback_state = _remember_item_usage(rollback_state, usage)
             cleanse_notes = _apply_item_effects_to_snapshot(db, p, item.effects or [], sign=1)
             log = f"🎒 {p['name']} {item.name} 사용"
             if cleanse_notes:
@@ -3917,12 +4088,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             p["retreated"] = True
             events.append(f"🏳️ {p['name']} 퇴각")
 
-    victory = all(e["hp"] <= 0 for e in enemies)
-
-    # 3) 기본 치유 (치유 포지션만 가능. 자신 또는 다른 캐릭터 한 명. 승리 확정 시 생략)
-    if not victory:
-        for _priority, _order_index, p, action, _selected_skill_unused in queued_actions:
-            if p["retreated"] or action.kind != "heal":
+        elif action.kind == "heal":
+            # 이 시점에 에너미가 전부 죽어 승리가 확정됐다면 치유는 생략한다.
+            if all(enemy["hp"] <= 0 for enemy in enemies):
                 continue
             if p["faction"] != "치유":
                 events.append(f"⚠️ {p['name']}: 치유 포지션만 치유를 사용할 수 있습니다.")
@@ -3947,6 +4115,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 f"{target['name']} [{before}→{target['hp']}/{target['max_hp']}]"
             )
 
+    victory = all(e["hp"] <= 0 for e in enemies)
     no_active_left = not any(_combatant_active(p) for p in participants)
 
     if victory:
@@ -3961,6 +4130,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     session.participants = participants
     session.enemies = enemies
     session.summons = summons
+    if rollback_state and rollback_state.get("version") == 1:
+        session.rollback_state = rollback_state
     session.log = list(session.log) + [{"round": round_no, "phase": "ally", "events": events}]
 
     if session.status != "in_progress" and session.mode == "real":
@@ -4269,6 +4440,9 @@ def send_battle_rewards(db: Session, session_id: int) -> BattleRewardPreview:
         raise HTTPException(status_code=400, detail="실전 전투만 보상을 지급할 수 있습니다.")
     if db.query(Reward.id).filter(Reward.type == "battle", Reward.source_id == session_id).first() is not None:
         raise HTTPException(status_code=400, detail="이미 지급된 보상입니다.")
+    rollback_state = _get_battle_rollback_state(session)
+    if rollback_state.get("version") != 1:
+        raise HTTPException(status_code=400, detail="이 실전 전투는 보상 롤백을 지원하지 않는 이전 기록입니다.")
 
     entries = _compute_battle_rewards(db, session)
     payable_ids = [e.character_id for e in entries if e.total_gold > 0 or e.participation_exp > 0]
@@ -4283,6 +4457,7 @@ def send_battle_rewards(db: Session, session_id: int) -> BattleRewardPreview:
         character = characters.get(entry.character_id)
         if character is None:
             continue
+        rollback_state = _remember_reward_character_state(rollback_state, character)
 
         reward_items: list[dict] = []
         if entry.total_gold > 0:
@@ -4300,10 +4475,130 @@ def send_battle_rewards(db: Session, session_id: int) -> BattleRewardPreview:
             rewarded_at=_today(),
         ))
         if entry.participation_exp > 0:
-            _apply_growth_from_exp(db, character)
+            _apply_growth_from_exp(db, character, source_id=session.id)
 
+    session.rollback_state = rollback_state
     db.commit()
     return BattleRewardPreview(session_id=session.id, chapter=session.chapter, already_sent=True, entries=entries)
+
+
+def rollback_battle_session(db: Session, session_id: int) -> None:
+    session = db.get(BattleSession, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    if session.mode != "real":
+        raise HTTPException(status_code=400, detail="실전 전투만 롤백할 수 있습니다.")
+
+    rollback_state = _get_battle_rollback_state(session)
+    if rollback_state.get("version") != 1:
+        raise HTTPException(status_code=400, detail="이 실전 전투는 자동 롤백을 지원하지 않는 이전 기록입니다.")
+
+    battle_characters = {
+        int(character_id): snapshot
+        for character_id, snapshot in (rollback_state.get("battle_characters") or {}).items()
+        if isinstance(snapshot, dict)
+    }
+    reward_characters = {
+        int(character_id): snapshot
+        for character_id, snapshot in (rollback_state.get("reward_characters") or {}).items()
+        if isinstance(snapshot, dict)
+    }
+    item_usages = [
+        entry for entry in (rollback_state.get("item_usages") or [])
+        if isinstance(entry, dict)
+    ]
+
+    reward_rows = db.query(Reward).filter(
+        Reward.type.in_(("battle", "growth")),
+        Reward.source_id == session.id,
+    ).all()
+    reward_row_ids = [reward.id for reward in reward_rows]
+
+    character_ids = sorted({
+        *battle_characters.keys(),
+        *reward_characters.keys(),
+        *(int(entry["character_id"]) for entry in item_usages if entry.get("character_id") is not None),
+    })
+    characters_by_id = {
+        character.id: character
+        for character in db.query(Character).filter(Character.id.in_(character_ids)).all()
+    } if character_ids else {}
+
+    reward_deltas: dict[int, dict[str, int]] = {}
+    for reward in reward_rows:
+        delta = reward_deltas.setdefault(
+            reward.character_id,
+            {"gold": 0, "experience": 0, "growth_lv": 0, "growth_ap": 0},
+        )
+        for entry in reward.reward_items or []:
+            entry_type = entry.get("type")
+            amount = int(entry.get("amount", 0) or 0)
+            if reward.type == "battle":
+                if entry_type == "gold":
+                    delta["gold"] += amount
+                elif entry_type == "experience":
+                    delta["experience"] += amount
+            elif reward.type == "growth":
+                if entry_type == "lv":
+                    delta["growth_lv"] += amount
+                elif entry_type == "ap":
+                    delta["growth_ap"] += amount
+
+    for character_id, delta in reward_deltas.items():
+        character = characters_by_id.get(character_id)
+        if character is None:
+            continue
+        character.gold -= delta["gold"]
+        character.lv = max(1, character.lv - delta["growth_lv"])
+        character.ap -= delta["growth_ap"]
+        character.exp += delta["growth_lv"] * GROWTH_EXP_PER_LEVEL
+        character.exp -= delta["experience"]
+
+    for character_id, snapshot in battle_characters.items():
+        character = characters_by_id.get(character_id)
+        if character is None:
+            continue
+        character.hp = int(snapshot.get("hp", character.hp))
+        character.mp = int(snapshot.get("mp", character.mp))
+
+    usage_totals: dict[tuple[int, int], int] = {}
+    usage_row_ids: list[int] = []
+    for entry in item_usages:
+        item_usage_id = entry.get("item_usage_id")
+        character_id = entry.get("character_id")
+        item_id = entry.get("item_id")
+        quantity = int(entry.get("quantity", 0) or 0)
+        if item_usage_id is not None:
+            usage_row_ids.append(int(item_usage_id))
+        if character_id is None or item_id is None or quantity <= 0:
+            continue
+        key = (int(character_id), int(item_id))
+        usage_totals[key] = usage_totals.get(key, 0) + quantity
+
+    if usage_totals:
+        character_id_filters = sorted({character_id for character_id, _item_id in usage_totals})
+        item_id_filters = sorted({item_id for _character_id, item_id in usage_totals})
+        item_states = {
+            (state.character_id, state.item_id): state
+            for state in db.query(CharacterItemState).filter(
+                CharacterItemState.character_id.in_(character_id_filters),
+                CharacterItemState.item_id.in_(item_id_filters),
+            ).all()
+        }
+        for key, quantity in usage_totals.items():
+            item_state = item_states.get(key)
+            if item_state is None:
+                continue
+            item_state.used_quantity = max(0, item_state.used_quantity - quantity)
+
+    if usage_row_ids:
+        db.query(ItemUsage).filter(ItemUsage.id.in_(usage_row_ids)).delete(synchronize_session=False)
+    if reward_row_ids:
+        db.query(Reward).filter(Reward.type == "revoke", Reward.source_id.in_(reward_row_ids)).delete(synchronize_session=False)
+        db.query(Reward).filter(Reward.id.in_(reward_row_ids)).delete(synchronize_session=False)
+
+    db.delete(session)
+    db.commit()
 
 
 # ── Skill Tree ───────────────────────────────────────────────────────────────
