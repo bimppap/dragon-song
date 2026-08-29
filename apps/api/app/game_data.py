@@ -98,12 +98,16 @@ def calculate_stat_grade_totals(
     stat_endurance: int,
     stat_charity: int,
     stat_wisdom: int,
+    faction: str | None = None,
 ) -> dict:
     """용기/인내/자애/지혜 등급으로부터 기본 능력치를 계산한다.
 
     각 등급의 보너스는 누적이 아니라 해당 등급의 값만 그대로 더해진다.
+    faction이 주어지면 "피해 감소"(dmg_r) 시작값을 포지션 기본값(수비 50%, 그 외 30%)으로 맞춘다.
     """
     totals = dict(STAT_GRADE_BASE)
+    if faction is not None:
+        totals["dmg_r"] = 0.5 if faction == "수비" else 0.3
     tracks = (
         (stat_courage, COURAGE_GRADE_BONUS),
         (stat_endurance, ENDURANCE_GRADE_BONUS),
@@ -195,7 +199,7 @@ SKILL_BOOKS: dict[str, dict] = {
             },
             {
                 "root": _skill(
-                    "분쇄", trigger_type="즉발형", category="피해", stackable=True, var_name="ab_crushing",
+                    "분쇄", trigger_type="즉발형", category="피해", stackable=False, var_name="ab_crushing",
                     cost=3, power=0.75, target="1+N", order=4,
                     formula="((1+skill_lv)*skill_power)*(1+skill_eff_fixed)",
                     description="복수의 적에게 즉발성 피해를 주는 기술입니다.",
@@ -203,7 +207,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     tier6_effect="피격 대상에게 일회성 약화(피해 감소 -5%) 부여",
                 ),
                 "derived": _skill(
-                    "제압", trigger_type="즉발형", category="피해", stackable=True, var_name="ab_suppressing",
+                    "제압", trigger_type="즉발형", category="피해", stackable=False, var_name="ab_suppressing",
                     cost=4, target="ALL",
                     description="적 전체에게 [고정] 타입 피해를 주는 기술입니다.",
                     tier6_name="초토화",
@@ -233,7 +237,7 @@ SKILL_BOOKS: dict[str, dict] = {
         "branches": [
             {
                 "root": _skill(
-                    "모루", trigger_type="즉발형", category="복합", var_name="ab_anvil",
+                    "모루", trigger_type="즉발형", category="복합", stackable=False, var_name="ab_anvil",
                     cost=3, power=0.15, target="SELF", order=3,
                     formula="회복: ((skill_lv*skill_power)*(1+skill_eff_fixed))*(1+heal_eff)",
                     description="자가 회복 + 기술 등급만큼 자신의 약화 스택 제거, 주목도 상승(상승량: 회복 수치*skill_lv).",
@@ -263,14 +267,14 @@ SKILL_BOOKS: dict[str, dict] = {
             },
             {
                 "root": _skill(
-                    "보호", trigger_type="즉발형", category="회복", var_name="ab_protect",
+                    "보호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_protect",
                     cost=2, power=0.05, target="1", order=7,
                     formula="회복: (((skill_lv+1)*skill_power)*(1+skill_eff_fixed))*(1+heal_eff)",
                     description="지정한 아군의 체력을 회복시키며 주목도를 감소시키고, 감소량의 2배만큼 자신의 주목도를 높입니다.",
                     tier6_name="수호",
                 ),
                 "derived": _skill(
-                    "장막", trigger_type="즉발형", category="회복",
+                    "장막", trigger_type="즉발형", category="회복", stackable=False,
                     power=2.0,
                     description="아군 전체에게 [고정] 타입 보호막을 부여하는 기술입니다.",
                     tier6_effect="아군 전체 [고정] 타입 보호막",
@@ -283,7 +287,7 @@ SKILL_BOOKS: dict[str, dict] = {
         "branches": [
             {
                 "root": _skill(
-                    "회복", trigger_type="즉발형", category="회복", var_name="ab_cure",
+                    "회복", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_cure",
                     cost=2, power=0.2, target="1", order=5,
                     formula="회복: (((skill_lv*skill_power)+0.15)*(1+skill_eff_fixed))*(1+heal_eff)",
                     description="지정한 아군의 체력을 회복시키는 기본 회복 기술입니다.",
@@ -298,7 +302,7 @@ SKILL_BOOKS: dict[str, dict] = {
             },
             {
                 "root": _skill(
-                    "구호", trigger_type="즉발형", category="회복", stackable=True, var_name="ab_aid",
+                    "구호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_aid",
                     cost=3, power=0.1, target="2+N", order=2,
                     formula="회복: ((skill_lv*skill_power)*(1+skill_eff_fixed))*(1+heal_eff)",
                     description="복수의 아군을 체력이 낮은 순서대로 회복시킵니다.",
@@ -311,7 +315,7 @@ SKILL_BOOKS: dict[str, dict] = {
             },
             {
                 "root": _skill(
-                    "정화", trigger_type="즉발형", category="회복", stackable=True, var_name="ab_purification",
+                    "정화", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_purification",
                     cost=2, power=0.15, target="1", order=2,
                     formula="회복: (((skill_lv*skill_power)+0.1)*(1+skill_eff_fixed))*(1+heal_eff)",
                     description="지정한 아군의 체력을 회복시키고 기술 등급만큼 약화 스택을 제거합니다.",
@@ -328,7 +332,7 @@ SKILL_BOOKS: dict[str, dict] = {
         "branches": [
             {
                 "root": _skill(
-                    "격려", trigger_type="즉발형", category="강화", stackable=True, var_name="ab_encourage",
+                    "격려", trigger_type="즉발형", category="강화", stackable=False, var_name="ab_encourage",
                     cost=2, power=0.2, target="1", order=2,
                     formula="강화 수치: (skill_lv*skill_power)*(1+skill_eff_fixed)",
                     description="지정한 아군에게 일회성 강화를 부여합니다.",
@@ -344,7 +348,7 @@ SKILL_BOOKS: dict[str, dict] = {
             },
             {
                 "root": _skill(
-                    "저주", trigger_type="즉발형", category="약화", stackable=True, var_name="ab_curse",
+                    "저주", trigger_type="즉발형", category="약화", stackable=False, var_name="ab_curse",
                     cost=3, power=0.05, target="1", order=3,
                     formula="약화 수치: ((skill_lv+1)*skill_power)*(1+skill_eff_fixed)",
                     description="지정한 적군의 피해 증폭을 감소시킵니다.",
@@ -358,7 +362,7 @@ SKILL_BOOKS: dict[str, dict] = {
             },
             {
                 "root": _skill(
-                    "충전", trigger_type="즉발형", category="회복", var_name="ab_charge",
+                    "충전", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",
                     cost=4, target="자신 제외", order=1,
                     formula="기술 비용 감소: skill_lv*0.34 / 마나 회복: 2+skill_lv*0.34",
                     description="지정한 아군의 마나를 회복시킵니다.",

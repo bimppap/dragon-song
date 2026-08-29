@@ -207,6 +207,14 @@ function firstBattleSkillId(skills: CharacterSkillNode[]) {
   return skills[0]?.id ?? null;
 }
 
+function battleSkillCost(skill: CharacterSkillNode, p: BattleParticipant): number {
+  return Math.max(0, Math.floor((skill.cost ?? 0) + p.skill_cost));
+}
+
+function affordableBattleSkills(skills: CharacterSkillNode[], p: BattleParticipant): CharacterSkillNode[] {
+  return skills.filter((skill) => p.mp >= battleSkillCost(skill, p));
+}
+
 function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
   switch (kind) {
     case "attack":
@@ -373,14 +381,24 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
           next[participant.character_id] = {
             ...draft,
             kind: defaultCharKind(participant.faction),
-            skill_node_id: firstBattleSkillId(battleSkills),
+            skill_node_id: firstBattleSkillId(affordableBattleSkills(battleSkills, participant)),
           };
           changed = true;
           continue;
         }
         if (draft.kind !== "skill") continue;
-        const selectedExists = battleSkills.some((skill) => skill.id === draft.skill_node_id);
-        const defaultSkillId = firstBattleSkillId(battleSkills);
+        const affordable = affordableBattleSkills(battleSkills, participant);
+        if (affordable.length === 0) {
+          next[participant.character_id] = {
+            ...draft,
+            kind: defaultCharKind(participant.faction),
+            skill_node_id: null,
+          };
+          changed = true;
+          continue;
+        }
+        const selectedExists = affordable.some((skill) => skill.id === draft.skill_node_id);
+        const defaultSkillId = firstBattleSkillId(affordable);
         if (!selectedExists && draft.skill_node_id !== defaultSkillId) {
           next[participant.character_id] = { ...draft, skill_node_id: defaultSkillId };
           changed = true;
@@ -399,7 +417,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       const battleSkills = skillsByCharacter[p.character_id] ?? [];
       next[p.character_id] = {
         kind: defaultCharKind(p.faction),
-        skill_node_id: firstBattleSkillId(battleSkills),
+        skill_node_id: firstBattleSkillId(affordableBattleSkills(battleSkills, p)),
         target_enemy_id: data.enemies.find((enemy) => isEnemyTargetable(enemy, data.round))?.enemy_id ?? null,
         target_character_id: p.character_id,
         protect_target_character_id: p.character_id,
@@ -469,11 +487,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
         const p = participantsById.get(numericCharacterId);
         const battleSkills = skillsByCharacter[numericCharacterId] ?? [];
         if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) return [characterId, draft];
+        const affordableSkills = affordableBattleSkills(battleSkills, p);
+        if (bulkActionKind === "skill" && affordableSkills.length === 0) return [characterId, draft];
         if (bulkActionKind === "item") characterIds.push(numericCharacterId);
         return [characterId, {
           ...draft,
           kind: bulkActionKind,
-          skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(battleSkills) : draft.skill_node_id,
+          skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(affordableSkills) : draft.skill_node_id,
           target_character_id: bulkActionKind === "skill" ? numericCharacterId : draft.target_character_id,
           protect_target_character_id: bulkActionKind === "defend" ? numericCharacterId : draft.protect_target_character_id,
           item_id: bulkActionKind === "item" ? draft.item_id : null,
@@ -953,24 +973,25 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
           const draft = charDrafts[p.character_id];
           const active = isActive(p);
           const battleSkills = skillsByCharacter[p.character_id] ?? [];
+          const affordableSkills = affordableBattleSkills(battleSkills, p);
           const items = itemsByCharacter[p.character_id] ?? [];
           const showActionUi = canAct && phase === "ally" && active && draft;
           const kindOptions = allowedKinds(p, hasDowned, battleSkills.length > 0);
           const selectedSkill = draft?.skill_node_id != null
-            ? battleSkills.find((skill) => skill.id === draft.skill_node_id) ?? battleSkills[0] ?? null
-            : battleSkills[0] ?? null;
+            ? affordableSkills.find((skill) => skill.id === draft.skill_node_id) ?? affordableSkills[0] ?? null
+            : affordableSkills[0] ?? null;
           const selectedSkillTargetMode = draft?.kind === "skill" && selectedSkill
             ? getBattleSkillTargetMode(selectedSkill)
             : null;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
-          if (draft?.kind === "skill" && battleSkills.length > 0) {
+          if (draft?.kind === "skill" && affordableSkills.length > 0) {
             extraControls.push({
               key: "skill",
               icon: Sparkles,
               control: (
                 <Select
-                  value={draft.skill_node_id != null ? String(draft.skill_node_id) : String(battleSkills[0].id)}
+                  value={draft.skill_node_id != null ? String(draft.skill_node_id) : String(affordableSkills[0].id)}
                   onValueChange={(value) => patchChar(p.character_id, {
                     skill_node_id: Number(value),
                     target_character_id: p.character_id,
@@ -981,7 +1002,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {battleSkills.map((skill) => (
+                      {affordableSkills.map((skill) => (
                         <SelectItem key={skill.id} value={String(skill.id)}>{skill.display_name}</SelectItem>
                       ))}
                     </SelectGroup>
@@ -1178,7 +1199,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                       protect_target_character_id: kind === "defend" ? p.character_id : draft?.protect_target_character_id ?? p.character_id,
                     };
                     if (kind === "skill") {
-                      nextPatch.skill_node_id = firstBattleSkillId(battleSkills);
+                      nextPatch.skill_node_id = firstBattleSkillId(affordableSkills);
                       nextPatch.target_character_id = p.character_id;
                     }
                     patchChar(p.character_id, nextPatch);
@@ -1190,9 +1211,14 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      {kindOptions.map((kind) => (
-                        <SelectItem key={kind} value={kind}>{CHAR_ACTION_LABEL[kind]}</SelectItem>
-                      ))}
+                      {kindOptions.map((kind) => {
+                        const skillUnavailable = kind === "skill" && affordableSkills.length === 0;
+                        return (
+                          <SelectItem key={kind} value={kind} disabled={skillUnavailable}>
+                            {skillUnavailable ? "기술(마나 부족)" : CHAR_ACTION_LABEL[kind]}
+                          </SelectItem>
+                        );
+                      })}
                     </SelectGroup>
                   </SelectContent>
                 </Select>

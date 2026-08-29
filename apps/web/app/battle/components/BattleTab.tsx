@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { Ambulance, CalendarClock, Flag, Heart, History, Image as ImageIcon, PlayCircle, Shield, Swords, Trash2 } from "lucide-react";
+import { Ambulance, CalendarClock, Eye, Flag, Heart, History, Image as ImageIcon, ListOrdered, PlayCircle, Shield, Sparkles, Swords, Trash2, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,34 +29,54 @@ import BattleRewardCard from "./BattleRewardCard";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
-const BATTLE_FORMULAS: { label: string; icon: React.ElementType; accent: string; formula: string }[] = [
+const BATTLE_DESCRIPTIONS: { label: string; icon: React.ElementType; accent: string; formula: string }[] = [
   {
-    label: "공격 / 기술 사용",
+    label: "공격값",
     icon: Swords,
     accent: "text-red-500",
-    formula:
-      "에너미에게 주는 피해 = (공격력 × (1 + 공격력 증폭) + 기술 효율(고정)) × (1 + 피해 증폭) × (1 + 기술 등급 × 기술 효율(비례)). 두 행동의 피해 계산은 동일하며, 마나는 '기술 사용'일 때만 소모됨",
+    formula: "공격력 × (1 + 공격력 증폭률) × (1 + 피해량 증폭률)",
   },
   {
-    label: "방어",
+    label: "수비값(=받는 피해량)",
     icon: Shield,
     accent: "text-gold",
-    formula:
-      "받는 피해 = max(0, 에너미 피해 × (1 − 피해 감소) − 방어력 × (1 + 방어력 증폭) × 방어 효율) × (1 − 피해 감소율(수비 포지션 0.5, 그 외 0.3)), 남은 피해는 보호막(보호막 + 시작 보호막)이 먼저 흡수. 수비 포지션은 본인 대신 다른 캐릭터가 맞도록 지정할 수 있음(기본값 본인)",
+    formula: "에너미가 주는 피해 × (1 − 피해 감소율) − (방어력 × (1 + 방어력 증폭) × (1 + 방어 효율))",
   },
   {
-    label: "치유",
+    label: "치유값",
     icon: Heart,
     accent: "text-emerald-500",
-    formula:
-      "치유 포지션만 사용 가능. 치유량 = 0.25 × 대상 최대 체력 × (1 + 치유 효율), 자신 또는 다른 캐릭터 한 명에게만 적용(오버힐 대상은 최대 체력 초과 회복)",
+    formula: "대상자의 최대 체력 × 0.25 × (1 + 시전자의 치유 효율)",
   },
   {
     label: "구조",
     icon: Ambulance,
     accent: "text-fuchsia-500",
-    formula:
-      "기절한 아군이 1명 이상일 때만 사용 가능. 지정한 기절 캐릭터를 (최대 체력 × 0.1)로 부활시킴(포지션 제한 없음)",
+    formula: "기절 상태의 캐릭터에게 사용할 수 있다. 구조된 캐릭터는 최대 체력의 10%를 회복하고 기절 상태에서 벗어난다.",
+  },
+  {
+    label: "마나",
+    icon: Zap,
+    accent: "text-sky-500",
+    formula: "기술을 사용할 때 소모된다. 기술마다 비용이 다르며, 부족할 경우 기술을 사용하지 못한다.",
+  },
+  {
+    label: "주목도",
+    icon: Eye,
+    accent: "text-amber-500",
+    formula: "개전 시 0으로 시작. 행동에 따라 주목도가 쌓이며, 라운드마다 누적된다.",
+  },
+  {
+    label: "존재감",
+    icon: Sparkles,
+    accent: "text-violet-400",
+    formula: "행동할 때 주목도 계산에 사용되는 지표.",
+  },
+  {
+    label: "발동 순서",
+    icon: ListOrdered,
+    accent: "text-slate-400",
+    formula: "아군의 행동 턴에서 발동 순서에 따라 행동이 개시된다. 숫자가 낮을수록 빠르다. 퇴각·구조·아이템 사용(-1) → 방어(3) → 치유(5) → 공격(8) → 무반응(9)",
   },
 ];
 
@@ -296,9 +316,10 @@ export default function BattleTab() {
       )}
 
       <div className="space-y-2 border-b border-line pb-5">
-        <h2 className="text-sm font-bold uppercase tracking-wide text-muted">전투 계산식</h2>
+        <h2 className="text-sm font-bold uppercase tracking-wide text-muted">전투 설명</h2>
+        <p className="text-xs text-muted">※ 증폭률/효율은 모두 0으로 시작하고 시전자의 것을 기준으로 한다는 전제.</p>
         <div className="space-y-1.5">
-          {BATTLE_FORMULAS.map(({ label, icon: Icon, accent, formula }) => (
+          {BATTLE_DESCRIPTIONS.map(({ label, icon: Icon, accent, formula }) => (
             <div key={label} className="flex flex-wrap items-baseline gap-2 text-sm">
               <span className="flex shrink-0 items-center gap-1 font-semibold text-ivory">
                 <Icon size={13} className={accent} />
@@ -308,12 +329,6 @@ export default function BattleTab() {
             </div>
           ))}
         </div>
-        <p className="text-xs text-muted">
-          마나는 &ldquo;기술 사용&rdquo;일 때만 소모됩니다(그 외 행동은 마나를 쓰지 않음). 마나가 기술 비용 이상이면 그만큼 소모하고, 부족하면 소모하지 않습니다(위력에는 영향 없음). 매 라운드 시작 시
-          체력 재생력(고정) + 최대 체력 × 체력 재생력(비례)만큼 회복하고 마나 재생력만큼 마나가 회복됩니다. 소환수가
-          있으면 캐릭터의 공격은 소환수부터 소모하며, 초과 피해는 에너미에게 넘어가지 않습니다. 난입한 캐릭터는 난입한
-          라운드에는 공격/치유 대상이 되지 않습니다.
-        </p>
       </div>
 
       {resumable.length > 0 && (

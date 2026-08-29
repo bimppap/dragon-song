@@ -413,6 +413,7 @@ def create_character_for_member(
 
     stats = calculate_stat_grade_totals(
         data.stat_courage, data.stat_endurance, data.stat_charity, data.stat_wisdom,
+        faction=data.faction,
     )
     character = Character(
         name=data.name.strip(),
@@ -2416,6 +2417,17 @@ SKILL_LEVEL_SUFFIX_VAR_NAMES = {
 SUPPORTED_BATTLE_SKILL_VAR_NAMES = set(SKILL_LEVEL_SUFFIX_VAR_NAMES)
 SKILL_BOOK_ORDER = ("용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서")
 
+# 아군 턴 발동 순서: 숫자가 낮을수록 먼저 개시된다. 기술은 기술마다 activation_order 값을 따로 갖는다.
+BATTLE_ACTION_KIND_PRIORITY: dict[str, int] = {
+    "retreat": -1,
+    "rescue": -1,
+    "item": -1,
+    "defend": 3,
+    "heal": 5,
+    "attack": 8,
+    "none": 9,
+}
+
 
 @lru_cache(maxsize=None)
 def _skill_spec_map(book: str) -> dict[tuple[int | None, int | None, int], dict]:
@@ -2611,16 +2623,11 @@ def _floor_amount(value: float) -> int:
 
 
 def _eff_def(p: dict) -> int:
-    return _floor_amount(p["def"] * (1 + p["def_p"]) * p["def_eff"])
+    return _floor_amount(p["def"] * (1 + p["def_p"]) * (1 + p["def_eff"]))
 
 
 def _skill_coef(p: dict) -> float:
     return 1 + p["skill_lv"] * p["skill_eff_fixed"]
-
-
-def _defend_reduction_rate(p: dict) -> float:
-    # 방어 시 피해 감소율: 수비 포지션은 50%, 그 외 포지션은 30%.
-    return 0.5 if p["faction"] == "수비" else 0.3
 
 
 def _ensure_status_effects(target: dict) -> list[dict]:
@@ -3425,11 +3432,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         p["defending"] = True
         p["protect_target"] = protect_target_id
         p["attn"] += round((p["lv"] * 20) * (1 + p["presence"]))
-        rate_pct = int(_defend_reduction_rate(p) * 100)
         if protect_target_id == p["character_id"]:
-            events.append(f"🛡️ {p['name']} 방어 태세 (피해 {rate_pct}% 감소)")
+            events.append(f"🛡️ {p['name']} 방어 태세")
         else:
-            events.append(f"🛡️ {p['name']} 방어 태세 → {by_char_id[protect_target_id]['name']} 보호 (피해 {rate_pct}% 감소)")
+            events.append(f"🛡️ {p['name']} 방어 태세 → {by_char_id[protect_target_id]['name']} 보호")
 
     def _ordered_targetable_enemies(preferred_enemy_id: int | None) -> list[dict]:
         ordered = [enemy for enemy in enemies if _enemy_targetable(enemy, round_no)]
@@ -3510,13 +3516,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         if action is None or action.kind == "none":
             continue
         selected_skill = _selected_skill(p, action) if action.kind == "skill" else None
-        supported_skill = (
-            selected_skill is not None
-            and selected_skill.get("var_name") in SUPPORTED_BATTLE_SKILL_VAR_NAMES
-        )
-        priority = 200 if action.kind == "heal" else 100
-        if supported_skill:
-            priority = int(selected_skill.get("activation_order") or 100)
+        if action.kind == "skill" and selected_skill is not None and selected_skill.get("activation_order") is not None:
+            priority = int(selected_skill["activation_order"])
+        else:
+            priority = BATTLE_ACTION_KIND_PRIORITY.get(action.kind, BATTLE_ACTION_KIND_PRIORITY["attack"])
         queued_actions.append((priority, order_index, p, action, selected_skill))
     queued_actions.sort(key=lambda entry: (entry[0], entry[1]))
 
@@ -3530,7 +3533,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         else {}
     )
 
-    # 2) 지원 기술은 activation_order대로 먼저 처리하고, 나머지는 기존 규칙대로 이어서 처리한다.
+    # 2) 위에서 매긴 발동 순서(priority)대로 행동을 처리한다.
     for _priority, _order_index, p, action, selected_skill in queued_actions:
         if p["retreated"]:
             continue
@@ -3542,6 +3545,12 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         )
         if action.kind == "heal" and all(enemy["hp"] <= 0 for enemy in enemies):
             continue
+
+        if action.kind == "skill" and selected_skill is not None:
+            skill_cost = _battle_skill_cost(p, selected_skill)
+            if p["mp"] < skill_cost:
+                events.append(f"⚠️ {p['name']}의 {selected_skill['display_name']} 사용 실패 (마나 부족)")
+                continue
 
         if supported_skill:
             skill_name = str(selected_skill["display_name"])
@@ -4001,7 +4010,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         total_reduction = min(0.95, max(0.0, recipient["dmg_r"] + extra_reduction))
         dmg = _floor_amount(base * (1 - total_reduction))
         if recipient["defending"]:
-            dmg = _floor_amount(max(0, dmg - _eff_def(recipient)) * (1 - _defend_reduction_rate(recipient)))
+            dmg = max(0, dmg - _eff_def(recipient))
         dmg, absorbed = _apply_hit(recipient, dmg)
         counter_results: list[dict] = []
         for effect in counter_effects:

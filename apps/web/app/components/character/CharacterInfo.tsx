@@ -114,7 +114,7 @@ function getRankGrade(rank: number) {
 const DETAIL_STATS: {
   key: keyof Pick<
     CharacterDetail,
-    "atk" | "atk_p" | "def" | "def_p" | "def_eff" | "attn" | "presence" | "hp_max" |
+    "atk" | "atk_p" | "def" | "def_p" | "def_eff" | "presence" | "hp_max" |
     "hp_max_p" | "hp_regen_true" | "hp_regen_fixed" | "heal_eff" |
     "mp_max" | "mp_regen" | "sh" | "dmg_p" | "dmg_r" | "skill_eff_true" |
     "skill_eff_fixed"
@@ -122,26 +122,27 @@ const DETAIL_STATS: {
   label: string;
   description: string;
   isFloat?: boolean;
+  /** true면 값 자체를 ×100%로 표시(예: 0.3 → 30%). 기본은 (1+값)×100%(예: 0 → 100%, 증폭류 스탯). */
+  rawPercent?: boolean;
 }[] = [
   { key: "atk", label: "공격력", description: "공격 행동 시 에너미에게 주는 기본 피해량입니다." },
-  { key: "atk_p", label: "공격력 증폭(%)", isFloat: true, description: "공격력에 곱해지는 증폭 배율입니다. 높을수록 공격 피해가 커집니다." },
+  { key: "atk_p", label: "공격력 증폭(%)", isFloat: true, rawPercent: true, description: "공격력에 곱해지는 증폭 배율입니다. 높을수록 공격 피해가 커집니다." },
   { key: "def", label: "방어력", description: "수비할 때 받는 피해를 고정으로 줄여 주는 값입니다." },
-  { key: "def_p", label: "방어력 증폭(%)", isFloat: true, description: "방어력에 곱해지는 증폭 배율입니다." },
-  { key: "def_eff", label: "방어 효율", isFloat: true, description: "방어력이 실제 피해 경감에 적용되는 효율 배율입니다." },
-  { key: "attn", label: "주목도(기준값)", description: "전투 시작 시 참고용으로 저장해 두는 값일 뿐, 실제 전투 중 주목도는 매 전투 0에서 시작해 행동에 따라 쌓입니다. 전투 화면(관리자 전용)에서 실제 값을 확인할 수 있습니다." },
-  { key: "presence", label: "존재감", isFloat: true, description: "주목도와 함께 에너미의 대상 선정에 반영되는 보조 지표입니다." },
+  { key: "def_p", label: "방어력 증폭(%)", isFloat: true, rawPercent: true, description: "방어력에 곱해지는 증폭 배율입니다." },
+  { key: "def_eff", label: "방어 효율(%)", isFloat: true, rawPercent: true, description: "방어력이 실제 피해 경감에 적용되는 효율 배율입니다." },
+  { key: "presence", label: "존재감(%)", isFloat: true, rawPercent: true, description: "주목도와 함께 에너미의 대상 선정에 반영되는 보조 지표입니다." },
   { key: "hp_max", label: "최대 체력", description: "체력의 최대치 기준값입니다." },
-  { key: "hp_max_p", label: "체력 증폭(%)", isFloat: true, description: "최대 체력에 곱해지는 증폭 배율입니다." },
+  { key: "hp_max_p", label: "체력 증폭(%)", isFloat: true, rawPercent: true, description: "최대 체력에 곱해지는 증폭 배율입니다." },
   { key: "hp_regen_true", label: "체력 재생력(고정)", description: "매 라운드 시작 시 고정으로 회복하는 체력입니다." },
-  { key: "hp_regen_fixed", label: "체력 재생력(비례)", isFloat: true, description: "매 라운드 최대 체력에 비례해 회복하는 체력 배율입니다." },
-  { key: "heal_eff", label: "치유 효율", isFloat: true, description: "치유 행동 시 회복량의 기준값입니다." },
+  { key: "hp_regen_fixed", label: "체력 재생력(비례)", isFloat: true, rawPercent: true, description: "매 라운드 최대 체력에 비례해 회복하는 체력 배율입니다." },
+  { key: "heal_eff", label: "치유 효율(%)", isFloat: true, rawPercent: true, description: "치유 행동 시 회복량의 기준값입니다." },
   { key: "mp_max", label: "마나 최대치", description: "마나의 최대치입니다." },
   { key: "mp_regen", label: "마나 재생력", description: "매 라운드 회복하는 마나입니다." },
   { key: "sh", label: "보호막", description: "체력보다 먼저 피해를 흡수하는 보호막입니다." },
-  { key: "dmg_p", label: "피해 증폭", isFloat: true, description: "가하는 피해 전체에 적용되는 증폭 배율입니다." },
-  { key: "dmg_r", label: "피해 감소", isFloat: true, description: "받는 피해를 비율로 줄여 주는 감소율입니다." },
+  { key: "dmg_p", label: "피해 증폭", isFloat: true, rawPercent: true, description: "가하는 피해 전체에 적용되는 증폭 배율입니다." },
+  { key: "dmg_r", label: "피해 감소(%)", isFloat: true, rawPercent: true, description: "받는 피해를 비율로 줄여 주는 감소율입니다." },
   { key: "skill_eff_true", label: "기술 효율(고정)", description: "기술 피해·치유에 더해지는 고정값입니다." },
-  { key: "skill_eff_fixed", label: "기술 효율(비례)", isFloat: true, description: "기술 등급과 곱해져 위력을 높이는 비례 계수입니다." },
+  { key: "skill_eff_fixed", label: "기술 효율(비례)", isFloat: true, rawPercent: true, description: "기술 등급과 곱해져 위력을 높이는 비례 계수입니다." },
 ];
 
 type AdminOnlyStatType = "int" | "percent" | "boolean";
@@ -887,13 +888,13 @@ export default function CharacterInfo({
                   {showDetails && (
                     <div className="mt-4 flex flex-col gap-4">
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
-                        {DETAIL_STATS.map(({ key, label, isFloat, description }) => (
+                        {DETAIL_STATS.map(({ key, label, isFloat, rawPercent, description }) => (
                           <InfoTooltip key={key} side="top" content={description}>
                             <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
                               <span className="shrink-0 whitespace-nowrap text-muted">{label}</span>
                               <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-ivory">
                                 {isFloat
-                                  ? `${percentageFormatter.format((1 + Number(selectedDetail[key])) * 100)}%`
+                                  ? `${percentageFormatter.format((rawPercent ? Number(selectedDetail[key]) : 1 + Number(selectedDetail[key])) * 100)}%`
                                   : numberFormatter.format(selectedDetail[key])}
                               </span>
                             </div>
