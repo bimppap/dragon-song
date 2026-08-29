@@ -55,6 +55,11 @@ interface Props {
   sessionId: number;
   readOnly?: boolean;
   onExit: () => void;
+  /**
+   * 부모가 이미 최신 세션 데이터를 갖고 폴링하는 경우(예: 러너 관전 화면의 `/battles/live` 폴링) 전달한다.
+   * 주어지면 BattleArena는 자체 초기 조회/폴링을 하지 않고 이 값을 그대로 반영만 한다(중복 폴링 방지).
+   */
+  externalSession?: BattleSession;
 }
 
 interface CharDraft {
@@ -271,11 +276,13 @@ function describePendingAction(
   return `예고: ${skill.name} → ${targetLabel} (예상 피해 ${fmt(base)})`;
 }
 
-export default function BattleArena({ sessionId, readOnly = false, onExit }: Props) {
+export default function BattleArena({ sessionId, readOnly = false, onExit, externalSession }: Props) {
   const { confirm } = useDialog();
   const { toast } = useToast();
-  const [session, setSession] = useState<BattleSession | null>(null);
-  const [loading, setLoading] = useState(true);
+  const controlled = externalSession !== undefined;
+  const [internalSession, setSession] = useState<BattleSession | null>(null);
+  const session = externalSession !== undefined ? externalSession : internalSession;
+  const [loading, setLoading] = useState(!controlled);
   const [submitting, setSubmitting] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [terminating, setTerminating] = useState(false);
@@ -300,6 +307,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
   });
 
   useEffect(() => {
+    if (controlled) return; // 부모가 세션을 직접 공급하는 모드에서는 자체 조회를 하지 않는다.
     let cancelled = false;
 
     async function load() {
@@ -318,11 +326,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
 
     load();
     return () => { cancelled = true; };
-  }, [sessionId, toast]);
+  }, [sessionId, toast, controlled]);
 
   // 관전(readOnly) 화면은 아무도 행동을 제출하지 않으므로, 라운드 진행 상황을 놓치지 않도록 주기적으로 다시 불러온다.
+  // (부모가 세션을 공급하는 controlled 모드에서는 부모가 이미 폴링하므로 중복 폴링을 하지 않는다.)
   useEffect(() => {
-    if (!readOnly) return;
+    if (!readOnly || controlled) return;
     let cancelled = false;
     const interval = setInterval(async () => {
       try {
@@ -333,7 +342,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit }: Pro
       }
     }, 6000);
     return () => { cancelled = true; clearInterval(interval); };
-  }, [readOnly, sessionId]);
+  }, [readOnly, sessionId, controlled]);
 
   useEffect(() => {
     if (readOnly || !session || session.status !== "in_progress") return;

@@ -6,7 +6,7 @@ import { CalendarClock, Image as ImageIcon } from "lucide-react";
 import EmptyState from "@/components/common/EmptyState";
 import { useToast } from "@/components/common/ToastProvider";
 import { Badge } from "@/components/ui/badge";
-import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type Chapter, type Enemy } from "@/lib/api";
+import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type BattleSession, type Chapter, type Enemy } from "@/lib/api";
 import BattleArena from "./BattleArena";
 
 // 웹소켓 없이 폴링으로 진행 상황을 갱신한다. 너무 잦으면 서버 부담, 너무 길면 갱신이 굼떠 보이므로 절충한다.
@@ -17,7 +17,7 @@ export default function RunnerBattleOverview() {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [loading, setLoading] = useState(true);
-  const [liveSessionId, setLiveSessionId] = useState<number | null>(null);
+  const [liveSession, setLiveSession] = useState<BattleSession | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -50,9 +50,9 @@ export default function RunnerBattleOverview() {
     async function poll() {
       try {
         const live = await fetchLiveBattle();
-        if (!cancelled) setLiveSessionId(live?.id ?? null);
+        if (!cancelled) setLiveSession(live);
       } catch {
-        if (!cancelled) setLiveSessionId(null);
+        if (!cancelled) setLiveSession(null);
       }
     }
 
@@ -61,12 +61,13 @@ export default function RunnerBattleOverview() {
     return () => { cancelled = true; clearInterval(interval); };
   }, []);
 
-  if (liveSessionId != null) {
+  if (liveSession != null) {
     return (
       <BattleArena
-        sessionId={liveSessionId}
+        sessionId={liveSession.id}
+        externalSession={liveSession}
         readOnly
-        onExit={() => setLiveSessionId(null)}
+        onExit={() => setLiveSession(null)}
       />
     );
   }
