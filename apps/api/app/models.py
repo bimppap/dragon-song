@@ -366,7 +366,6 @@ class Mission(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     chapter: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    mission_type: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "일일" | "중요"
     name: Mapped[str] = mapped_column(String, nullable=False)
     description: Mapped[str] = mapped_column(String, nullable=False)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -576,7 +576,6 @@ class ChallengeProgressRead(BaseModel):
 
 class MissionCreate(BaseModel):
     chapter: str
-    mission_type: str  # "일일" | "중요"
     name: str
     description: str
     reward: str
@@ -598,7 +597,6 @@ class MissionCreate(BaseModel):
 class MissionRead(BaseModel):
     id: int
     chapter: str
-    mission_type: str
     name: str
     description: str
     image_url: str | None = None

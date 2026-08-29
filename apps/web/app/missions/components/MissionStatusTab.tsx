@@ -43,13 +43,6 @@ import RewardSummary from "@/components/common/RewardSummary";
 import { useToast } from "@/components/common/ToastProvider";
 import { useEditableProgressList } from "@/lib/useEditableProgressList";
 
-type MissionType = "일일" | "중요";
-
-const MISSION_TYPE_VARIANT: Record<MissionType, "default" | "warning"> = {
-  일일: "default",
-  중요: "warning",
-};
-
 function statusCardNameFontSize(name: string): number {
   return Math.min(14, 132 / Math.max(1, Array.from(name).length));
 }
@@ -247,9 +240,6 @@ export default function MissionStatusTab() {
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type as MissionType] ?? "secondary"}>
-                          {mission.mission_type}
-                        </Badge>
                         <Badge variant={mission.is_public ? "outline" : "secondary"}>
                           {mission.is_public ? "공개" : "비공개"}
                         </Badge>

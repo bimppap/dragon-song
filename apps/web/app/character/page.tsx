@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { List, User, UserPlus } from "lucide-react";
 import { useRequireMember } from "@/lib/auth";
 import CharacterList from "../components/character/CharacterList";
+import CharacterCardGrid from "../components/character/CharacterCardGrid";
 import CharacterInfo from "../components/character/CharacterInfo";
 import CharacterCreate from "../components/character/CharacterCreate";
 import { fetchCharacters, fetchMyCharacter, type Character, type CharacterDetail } from "@/lib/api";
@@ -135,7 +136,7 @@ function MyCharacterConsole() {
         </button>
         <p className="text-sm text-muted">캐릭터를 클릭하면 정보를 볼 수 있습니다.</p>
       </div>
-      <CharacterList
+      <CharacterCardGrid
         characters={others}
         loading={othersLoading}
         onSelectCharacter={(selected) => setView({ mode: "other", character: selected })}

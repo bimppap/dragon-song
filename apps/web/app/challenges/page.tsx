@@ -41,6 +41,7 @@ import {
   fetchChapters,
   fetchChallenges,
   fetchItems,
+  fetchMyCharacter,
   payChallengeRewards,
   saveChallengeProgress,
   updateChallenge,
@@ -74,22 +75,33 @@ function statusCardNameFontSize(name: string): number {
 }
 
 function RunnerChallengeList() {
+  const member = useRequireMember();
   const { toast } = useToast();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [achievedChallengeIds, setAchievedChallengeIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchChallenges(), fetchItems()])
-      .then(([list, itemList]) => { if (!cancelled) { setChallenges(list); setItems(itemList); } })
+    Promise.all([
+      fetchChallenges(),
+      fetchItems(),
+      member?.character_id != null ? fetchMyCharacter() : Promise.resolve(null),
+    ])
+      .then(([list, itemList, myCharacter]) => {
+        if (cancelled) return;
+        setChallenges(list);
+        setItems(itemList);
+        setAchievedChallengeIds(new Set(myCharacter?.achieved_challenges.map((c) => c.challenge_id) ?? []));
+      })
       .catch((error) => {
         if (cancelled) return;
         toast(error instanceof Error ? error.message : "도전과제 조회 실패", "error");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, member?.character_id]);
 
   const chapters = [...new Set(challenges.map((c) => c.chapter))];
 
@@ -119,8 +131,8 @@ function RunnerChallengeList() {
               {challenges
                 .filter((c) => c.chapter === chapter)
                 .map((challenge) => (
-                  <div key={challenge.id} className="rounded-2xl border border-line px-4 py-4">
-                    <div className="flex min-w-0 items-start gap-3">
+                  <div key={challenge.id} className="relative rounded-2xl border border-line px-4 py-4">
+                    <div className="flex min-w-0 items-start gap-3 pr-36">
                       <div
                         className={cn(
                           "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
@@ -141,6 +153,15 @@ function RunnerChallengeList() {
                     <div className="mt-3">
                       <RewardSummary entries={challenge.reward_items} items={items} />
                     </div>
+                    {achievedChallengeIds.has(challenge.id) && (
+                      <Image
+                        src="/mission/mission_complete.png"
+                        alt="달성 완료"
+                        width={128}
+                        height={128}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 [image-rendering:pixelated]"
+                      />
+                    )}
                   </div>
                 ))}
             </CardContent>

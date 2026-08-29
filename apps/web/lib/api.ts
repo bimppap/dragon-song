@@ -940,7 +940,6 @@ export type MissionRewardItemGrant = RewardGrant;
 export interface Mission {
   id: number;
   chapter: string;
-  mission_type: string;
   name: string;
   description: string;
   image_url: string | null;
@@ -958,7 +957,6 @@ export interface Mission {
 
 export interface MissionCreate {
   chapter: string;
-  mission_type: string;
   name: string;
   description: string;
   reward: string;

@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { ClipboardList, Image as ImageIcon, PlusSquare, ScrollText } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRequireMember } from "@/lib/auth";
-import { fetchItems, fetchMissions } from "@/lib/api";
+import { fetchItems, fetchMissions, fetchMyCharacter } from "@/lib/api";
 import type { Item, Mission } from "@/lib/api";
 import MissionManageTab from "./components/MissionManageTab";
 import MissionStatusTab from "./components/MissionStatusTab";
@@ -24,28 +23,34 @@ const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "manage", label: "임무 관리", icon: PlusSquare },
 ];
 
-const MISSION_TYPE_VARIANT: Record<string, "default" | "warning"> = {
-  일일: "default",
-  중요: "warning",
-};
-
 function RunnerMissionList() {
+  const member = useRequireMember();
   const { toast } = useToast();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [achievedMissionIds, setAchievedMissionIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([fetchMissions(), fetchItems()])
-      .then(([list, itemList]) => { if (!cancelled) { setMissions(list); setItems(itemList); } })
+    Promise.all([
+      fetchMissions(),
+      fetchItems(),
+      member?.character_id != null ? fetchMyCharacter() : Promise.resolve(null),
+    ])
+      .then(([list, itemList, myCharacter]) => {
+        if (cancelled) return;
+        setMissions(list);
+        setItems(itemList);
+        setAchievedMissionIds(new Set(myCharacter?.achieved_missions.map((m) => m.mission_id) ?? []));
+      })
       .catch((error) => {
         if (cancelled) return;
         toast(error instanceof Error ? error.message : "임무 조회 실패", "error");
       })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, member?.character_id]);
 
   const chapters = [...new Set(missions.map((m) => m.chapter))];
 
@@ -77,33 +82,37 @@ function RunnerMissionList() {
               {missions
                 .filter((m) => m.chapter === chapter)
                 .map((mission) => (
-                  <div key={mission.id} className="rounded-2xl border border-line px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="flex min-w-0 items-start gap-3">
-                        <div
-                          className={cn(
-                            "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
-                            !mission.image_url && "border border-line bg-inset",
-                          )}
-                        >
-                          {mission.image_url ? (
-                            <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
-                          ) : (
-                            <ImageIcon size={16} className="text-muted" />
-                          )}
-                        </div>
-                        <div className="flex min-w-0 flex-col gap-1">
-                          <p className="font-semibold text-ivory">{mission.name}</p>
-                          <p className="text-sm text-muted">{mission.description}</p>
-                        </div>
+                  <div key={mission.id} className="relative rounded-2xl border border-line px-4 py-4">
+                    <div className="flex min-w-0 items-start gap-3 pr-36">
+                      <div
+                        className={cn(
+                          "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                          !mission.image_url && "border border-line bg-inset",
+                        )}
+                      >
+                        {mission.image_url ? (
+                          <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
+                        ) : (
+                          <ImageIcon size={16} className="text-muted" />
+                        )}
                       </div>
-                      <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type] ?? "default"}>
-                        {mission.mission_type}
-                      </Badge>
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <p className="font-semibold text-ivory">{mission.name}</p>
+                        <p className="text-sm text-muted">{mission.description}</p>
+                      </div>
                     </div>
                     <div className="mt-3">
                       <RewardSummary entries={mission.reward_items} items={items} />
                     </div>
+                    {achievedMissionIds.has(mission.id) && (
+                      <Image
+                        src="/mission/mission_complete.png"
+                        alt="달성 완료"
+                        width={128}
+                        height={128}
+                        className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 [image-rendering:pixelated]"
+                      />
+                    )}
                   </div>
                 ))}
             </CardContent>

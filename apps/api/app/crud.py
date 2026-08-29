@@ -1975,7 +1975,6 @@ def _create_mission_progress_rows(
 def create_mission(db: Session, data: MissionCreate) -> Mission:
     mission = Mission(
         chapter=data.chapter.strip(),
-        mission_type=data.mission_type,
         name=data.name.strip(),
         description=data.description.strip(),
         reward=data.reward.strip(),
@@ -2005,7 +2004,6 @@ def update_mission(db: Session, mission_id: int, data: MissionUpdate) -> Mission
         raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
 
     mission.chapter = data.chapter.strip()
-    mission.mission_type = data.mission_type
     mission.name = data.name.strip()
     mission.description = data.description.strip()
     mission.reward = data.reward.strip()

@@ -35,11 +35,9 @@ import { useToast } from "@/components/common/ToastProvider";
 const ALL_CHAPTERS = "__all__";
 
 type MissionVisibility = "공개" | "비공개";
-type MissionType = "일일" | "중요";
 
 type MissionFormState = {
   chapter: string;
-  mission_type: MissionType;
   name: string;
   description: string;
   reward_entries: RewardFormEntry[];
@@ -48,16 +46,10 @@ type MissionFormState = {
 
 const DEFAULT_FORM: MissionFormState = {
   chapter: "",
-  mission_type: "일일",
   name: "",
   description: "",
   reward_entries: [],
   visibility: "공개",
-};
-
-const MISSION_TYPE_VARIANT: Record<MissionType, "default" | "warning"> = {
-  일일: "default",
-  중요: "warning",
 };
 
 function toPayload(form: MissionFormState): MissionCreate {
@@ -71,7 +63,6 @@ function toPayload(form: MissionFormState): MissionCreate {
   });
   return {
     chapter: form.chapter.trim(),
-    mission_type: form.mission_type,
     name: form.name.trim(),
     description: form.description.trim(),
     reward: "",
@@ -98,7 +89,6 @@ function toRewardEntries(rewardItems: Mission["reward_items"]): RewardFormEntry[
 function toFormState(mission: Mission): MissionFormState {
   return {
     chapter: mission.chapter,
-    mission_type: mission.mission_type as MissionType,
     name: mission.name,
     description: mission.description,
     reward_entries: toRewardEntries(mission.reward_items),
@@ -175,7 +165,7 @@ export default function MissionManageTab() {
           ? prev.map((m) => (m.id === saved.id ? saved : m))
           : [...prev, saved]
       ));
-      setForm({ ...DEFAULT_FORM, chapter: payload.chapter, mission_type: form.mission_type });
+      setForm({ ...DEFAULT_FORM, chapter: payload.chapter });
       setModalOpen(false);
     } catch (e) {
       toast(e instanceof Error ? e.message : "임무 저장에 실패했습니다.", "error");
@@ -277,7 +267,7 @@ export default function MissionManageTab() {
                 <thead className="bg-inset text-muted">
                   <tr>
                     <th className="px-4 py-3 text-left font-semibold" />
-                    <th className="px-4 py-3 text-left font-semibold">유형 / 상태</th>
+                    <th className="px-4 py-3 text-left font-semibold">상태</th>
                     <th className="px-4 py-3 text-left font-semibold">이름</th>
                     <th className="px-4 py-3 text-left font-semibold">내용</th>
                     <th className="px-4 py-3 text-left font-semibold">보상 구성</th>
@@ -302,14 +292,9 @@ export default function MissionManageTab() {
                         </div>
                       </td>
                       <td className="px-4 py-4">
-                        <div className="flex items-center gap-1.5">
-                          <Badge variant={MISSION_TYPE_VARIANT[mission.mission_type as MissionType] ?? "secondary"}>
-                            {mission.mission_type}
-                          </Badge>
-                          <Badge variant={mission.is_public ? "success" : "secondary"}>
-                            {mission.is_public ? "공개" : "비공개"}
-                          </Badge>
-                        </div>
+                        <Badge variant={mission.is_public ? "success" : "secondary"}>
+                          {mission.is_public ? "공개" : "비공개"}
+                        </Badge>
                       </td>
                       <td className="px-4 py-4 text-ivory">{mission.name}</td>
                       <td className="px-4 py-4 text-muted">{mission.description}</td>
@@ -350,21 +335,6 @@ export default function MissionManageTab() {
                     {chapterList.map((c) => (
                       <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                     ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <label className="text-sm font-semibold text-ivory">유형</label>
-              <Select value={form.mission_type} onValueChange={(v: MissionType) => set("mission_type", v)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="유형 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    <SelectItem value="일일">일일</SelectItem>
-                    <SelectItem value="중요">중요</SelectItem>
                   </SelectGroup>
                 </SelectContent>
               </Select>

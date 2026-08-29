@@ -156,6 +156,8 @@ def ensure_schema(engine: Engine) -> None:
         mission_columns = {col["name"] for col in inspector.get_columns("missions")}
         if "image_url" not in mission_columns:
             statements.append("ALTER TABLE missions ADD COLUMN image_url VARCHAR")
+        if "mission_type" in mission_columns:
+            statements.append("ALTER TABLE missions DROP COLUMN mission_type")
 
     if "skill_nodes" in table_names:
         skill_node_columns = {col["name"] for col in inspector.get_columns("skill_nodes")}
