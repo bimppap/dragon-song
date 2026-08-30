@@ -3536,18 +3536,28 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         action = actions_by_char.get(p["character_id"])
         if not (action and action.kind == "defend"):
             continue
-        protect_target_id = action.protect_target_character_id or p["character_id"]
-        protect_target = by_char_id.get(protect_target_id)
-        can_redirect = p["faction"] == "수비" and protect_target is not None and _combatant_targetable(protect_target, round_no)
-        if not can_redirect:
-            protect_target_id = p["character_id"]
+        requested_target_id = action.protect_target_character_id or p["character_id"]
+        protect_target = by_char_id.get(requested_target_id)
+        wants_redirect = requested_target_id != p["character_id"]
+        can_redirect = (
+            wants_redirect
+            and p["faction"] == "수비"
+            and protect_target is not None
+            and _combatant_targetable(protect_target, round_no)
+            and p["mp"] >= 1
+        )
+        protect_target_id = requested_target_id if can_redirect else p["character_id"]
         p["defending"] = True
         p["protect_target"] = protect_target_id
         p["attn"] += round((p["lv"] * 20) * (1 + p["presence"]))
-        if protect_target_id == p["character_id"]:
+        if protect_target_id != p["character_id"]:
+            p["mp"] -= 1
+            events.append(f"🛡️ {p['name']} 방어 태세 → {by_char_id[protect_target_id]['name']} 보호 (마나 -1)")
+        elif wants_redirect and p["faction"] == "수비" and p["mp"] < 1:
+            events.append(f"⚠️ {p['name']} 마나 부족으로 보호 대상을 지정하지 못해 본인만 방어합니다.")
             events.append(f"🛡️ {p['name']} 방어 태세")
         else:
-            events.append(f"🛡️ {p['name']} 방어 태세 → {by_char_id[protect_target_id]['name']} 보호")
+            events.append(f"🛡️ {p['name']} 방어 태세")
 
     def _ordered_targetable_enemies(preferred_enemy_id: int | None) -> list[dict]:
         ordered = [enemy for enemy in enemies if _enemy_targetable(enemy, round_no)]
@@ -4123,10 +4133,14 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if p["faction"] != "치유":
                 events.append(f"⚠️ {p['name']}: 치유 포지션만 치유를 사용할 수 있습니다.")
                 continue
+            if p["mp"] < 1:
+                events.append(f"⚠️ {p['name']} 치유 실패 (마나 부족)")
+                continue
 
             chosen = by_char_id.get(action.target_character_id) if action.target_character_id else None
             target = chosen if chosen and _healable(chosen, round_no) else p
             heal = max(0, _floor_amount(0.25 * target["max_hp"] * (1 + p["heal_eff"])))
+            p["mp"] -= 1
 
             before = target["hp"]
             next_hp = target["hp"] + heal
@@ -4139,7 +4153,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if revived:
                 target["downed"] = False
             events.append(
-                f"💚 {p['name']} → {target['name']} {healed} 치유{' (부활)' if revived else ''} · "
+                f"💚 {p['name']} → {target['name']} {healed} 치유{' (부활)' if revived else ''} (마나 -1) · "
                 f"{target['name']} [{before}→{target['hp']}/{target['max_hp']}]"
             )
 

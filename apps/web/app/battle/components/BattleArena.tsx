@@ -77,9 +77,9 @@ interface TelegraphDraft {
   target_character_ids: number[];
 }
 
-function defaultCharKind(faction: string | null): CharacterActionKind {
+function defaultCharKind(faction: string | null, mp: number): CharacterActionKind {
   if (faction === "수비") return "defend";
-  if (faction === "치유") return "heal";
+  if (faction === "치유") return mp >= 1 ? "heal" : "none";
   return "attack";
 }
 
@@ -475,12 +475,22 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         if (battleSkills == null) continue;
         const hasBattleSkills = battleSkills.length > 0;
         const kinds = allowedKinds(participant, hasDowned, hasBattleSkills);
-        if (!kinds.includes(draft.kind)) {
+        if (!kinds.includes(draft.kind) || (draft.kind === "heal" && participant.mp < 1)) {
           next[participant.character_id] = {
             ...draft,
-            kind: defaultCharKind(participant.faction),
+            kind: defaultCharKind(participant.faction, participant.mp),
             skill_node_id: firstBattleSkillId(affordableBattleSkills(battleSkills, participant)),
           };
+          changed = true;
+          continue;
+        }
+        if (
+          draft.kind === "defend"
+          && draft.protect_target_character_id != null
+          && draft.protect_target_character_id !== participant.character_id
+          && participant.mp < 1
+        ) {
+          next[participant.character_id] = { ...draft, protect_target_character_id: participant.character_id };
           changed = true;
           continue;
         }
@@ -489,7 +499,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         if (affordable.length === 0) {
           next[participant.character_id] = {
             ...draft,
-            kind: defaultCharKind(participant.faction),
+            kind: defaultCharKind(participant.faction, participant.mp),
             skill_node_id: null,
           };
           changed = true;
@@ -514,7 +524,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       if (!isTargetable(p, data.round)) continue;
       const battleSkills = skillsByCharacter[p.character_id] ?? [];
       next[p.character_id] = {
-        kind: defaultCharKind(p.faction),
+        kind: defaultCharKind(p.faction, p.mp),
         skill_node_id: firstBattleSkillId(affordableBattleSkills(battleSkills, p)),
         target_enemy_id: data.enemies.find((enemy) => isEnemyTargetable(enemy, data.round))?.enemy_id ?? null,
         target_character_id: p.character_id,
@@ -1249,23 +1259,21 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               key: "protect-target",
               icon: Shield,
               control: (
-                <Select
+                <TargetPickerButton
+                  title="보호 대상 선택"
+                  placeholder="보호 대상"
                   value={draft.protect_target_character_id != null ? String(draft.protect_target_character_id) : String(p.character_id)}
-                  onValueChange={(value) => patchChar(p.character_id, { protect_target_character_id: Number(value) })}
-                >
-                  <SelectTrigger className="h-8 w-full text-[11px]">
-                    <SelectValue placeholder="보호 대상" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {targetableParticipants.map((target) => (
-                        <SelectItem key={target.character_id} value={String(target.character_id)}>
-                          {target.character_id === p.character_id ? `${target.name} (본인)` : target.name}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                  onChange={(value) => patchChar(p.character_id, { protect_target_character_id: Number(value) })}
+                  options={targetableParticipants.map((target) => {
+                    const isSelf = target.character_id === p.character_id;
+                    const disabled = !isSelf && p.mp < 1;
+                    return {
+                      key: String(target.character_id),
+                      label: isSelf ? `${target.name} (본인)` : disabled ? `${target.name} (마나 부족)` : target.name,
+                      disabled,
+                    };
+                  })}
+                />
               ),
             });
           }
@@ -1298,9 +1306,15 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     <SelectGroup>
                       {kindOptions.map((kind) => {
                         const skillUnavailable = kind === "skill" && affordableSkills.length === 0;
+                        const healUnavailable = kind === "heal" && p.mp < 1;
+                        const unavailable = skillUnavailable || healUnavailable;
                         return (
-                          <SelectItem key={kind} value={kind} disabled={skillUnavailable}>
-                            {skillUnavailable ? "기술(마나 부족)" : CHAR_ACTION_LABEL[kind]}
+                          <SelectItem key={kind} value={kind} disabled={unavailable}>
+                            {skillUnavailable
+                              ? "기술(마나 부족)"
+                              : healUnavailable
+                                ? "치유(마나 부족)"
+                                : CHAR_ACTION_LABEL[kind]}
                           </SelectItem>
                         );
                       })}
