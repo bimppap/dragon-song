@@ -47,6 +47,7 @@ const baseColDefs: ColDef<Character>[] = [
   },
   {
     headerName: "HP",
+    field: "hp",
     flex: 1.4,
     minWidth: 116,
     type: "numericColumn",

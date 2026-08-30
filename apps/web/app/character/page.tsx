@@ -78,9 +78,12 @@ type RunnerView =
   | { mode: "list" }
   | { mode: "other"; character: Character };
 
+type RunnerListLayout = "card" | "table";
+
 function MyCharacterConsole() {
   const { toast } = useToast();
   const [view, setView] = useState<RunnerView>({ mode: "mine" });
+  const [listLayout, setListLayout] = useState<RunnerListLayout>("card");
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
   const [others, setOthers] = useState<Character[]>([]);
@@ -126,7 +129,7 @@ function MyCharacterConsole() {
     </>}
 
     {view.mode === "list" && <>
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <button
           type="button"
           onClick={() => setView({ mode: "mine" })}
@@ -134,13 +137,39 @@ function MyCharacterConsole() {
         >
           &lt;&lt; 내 캐릭터로 돌아가기
         </button>
-        <p className="text-sm text-muted">캐릭터를 클릭하면 정보를 볼 수 있습니다.</p>
+        <div className="flex flex-col gap-3 md:flex-row md:items-center">
+          {listLayout === "table" ? (
+            <button
+              type="button"
+              onClick={() => setListLayout("card")}
+              className="text-sm font-semibold text-muted transition-colors hover:text-gold"
+            >
+              카드로 확인하기
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setListLayout("table")}
+              className="text-sm font-semibold text-muted transition-colors hover:text-gold"
+            >
+              표로 확인하기
+            </button>
+          )}
+        </div>
       </div>
-      <CharacterCardGrid
-        characters={others}
-        loading={othersLoading}
-        onSelectCharacter={(selected) => setView({ mode: "other", character: selected })}
-      />
+      {listLayout === "table" ? (
+        <CharacterList
+          characters={others}
+          loading={othersLoading}
+          onSelectCharacter={(selected) => setView({ mode: "other", character: selected })}
+        />
+      ) : (
+        <CharacterCardGrid
+          characters={others}
+          loading={othersLoading}
+          onSelectCharacter={(selected) => setView({ mode: "other", character: selected })}
+        />
+      )}
     </>}
 
     {view.mode === "other" && <>

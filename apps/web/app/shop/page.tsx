@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, type ReactNode } from "react";
-import { Lock, Settings, Unlock } from "lucide-react";
+import { Lock, Settings, ShoppingBag, Unlock } from "lucide-react";
 import ShopGrid from "./components/ShopGrid";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
@@ -20,6 +20,7 @@ import {
 import type { Character, Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/common/PageContainer";
+import TabBar from "@/components/common/TabBar";
 import { useRequireMember } from "@/lib/auth";
 import { useDialog } from "@/components/common/DialogProvider";
 
@@ -143,7 +144,15 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
   return { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase };
 }
 
-function RunnerShop({ characterId, shopOpen }: { characterId: number; shopOpen: boolean }) {
+function RunnerShop({
+  characterId,
+  shopOpen,
+  headerTabs,
+}: {
+  characterId: number;
+  shopOpen: boolean;
+  headerTabs?: ReactNode;
+}) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [balance, setBalance] = useState<{ gold: number; cp: number } | null>(null);
   const { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
@@ -168,6 +177,8 @@ function RunnerShop({ characterId, shopOpen }: { characterId: number; shopOpen: 
         <h1 className="text-2xl font-bold tracking-tight text-ivory">상점</h1>
         <p className="text-sm text-muted">보유 골드로 아이템을 구매할 수 있습니다.</p>
       </div>
+
+      {headerTabs}
 
       <ShopContentFrame closed={!shopOpen}>
         <div className="flex flex-col items-start gap-6 lg:flex-row">
@@ -199,7 +210,15 @@ function RunnerShop({ characterId, shopOpen }: { characterId: number; shopOpen: 
   );
 }
 
-function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOpenChange: (isOpen: boolean) => void }) {
+function AdminShop({
+  shopOpen,
+  onShopOpenChange,
+  headerTabs,
+}: {
+  shopOpen: boolean;
+  onShopOpenChange: (isOpen: boolean) => void;
+  headerTabs?: ReactNode;
+}) {
   const { confirm, alert } = useDialog();
   const [managing, setManaging] = useState(false);
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -309,6 +328,8 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
         </div>
       </div>
 
+      {headerTabs}
+
       {managing ? (
         <ShopAdminPanel />
       ) : (
@@ -345,10 +366,18 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
   );
 }
 
+type StaffTab = "use" | "manage";
+
+const STAFF_TABS: { id: StaffTab; label: string; icon: React.ElementType }[] = [
+  { id: "use", label: "이용", icon: ShoppingBag },
+  { id: "manage", label: "관리", icon: Settings },
+];
+
 export default function ShopPage() {
   const member = useRequireMember();
   const memberId = member?.id ?? null;
   const [shopOpen, setShopOpen] = useState(true);
+  const [staffTab, setStaffTab] = useState<StaffTab>("use");
 
   useEffect(() => {
     if (memberId == null) return;
@@ -363,9 +392,25 @@ export default function ShopPage() {
 
   if (!member) return null;
 
-  return member.role === "ADMIN" ? (
-    <AdminShop shopOpen={shopOpen} onShopOpenChange={setShopOpen} />
-  ) : (
-    <RunnerShop characterId={member.character_id!} shopOpen={shopOpen} />
-  );
+  if (member.role === "ADMIN") {
+    return <AdminShop shopOpen={shopOpen} onShopOpenChange={setShopOpen} />;
+  }
+
+  if (member.role === "STAFF") {
+    return staffTab === "manage" ? (
+      <AdminShop
+        shopOpen={shopOpen}
+        onShopOpenChange={setShopOpen}
+        headerTabs={<TabBar tabs={STAFF_TABS} active={staffTab} onChange={setStaffTab} />}
+      />
+    ) : (
+      <RunnerShop
+        characterId={member.character_id!}
+        shopOpen={shopOpen}
+        headerTabs={<TabBar tabs={STAFF_TABS} active={staffTab} onChange={setStaffTab} />}
+      />
+    );
+  }
+
+  return <RunnerShop characterId={member.character_id!} shopOpen={shopOpen} />;
 }
