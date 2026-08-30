@@ -479,9 +479,25 @@ export default function BattleTab() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>캐릭터 선택</CardTitle>
-              <CardDescription>전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between gap-3">
+              <div>
+                <CardTitle>캐릭터 선택</CardTitle>
+                <CardDescription>전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</CardDescription>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                disabled={characters.length === 0}
+                onClick={() => setSelectedCharacterIds(
+                  selectedCharacterIds.size === characters.length
+                    ? new Set()
+                    : new Set(characters.map((c) => c.id)),
+                )}
+              >
+                {selectedCharacterIds.size === characters.length ? "전체 해제" : "전원 선택"}
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="grid max-w-3xl grid-cols-6 gap-3">
