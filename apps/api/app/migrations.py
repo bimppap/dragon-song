@@ -271,6 +271,15 @@ def ensure_schema(engine: Engine) -> None:
     if "attendance_missions" in table_names:
         statements.append("DROP TABLE attendance_missions")
 
+    if "settlement_requests" in table_names:
+        settlement_columns = {col["name"] for col in inspector.get_columns("settlement_requests")}
+        if "target_character_ids" not in settlement_columns:
+            statements.append(
+                "ALTER TABLE settlement_requests ADD COLUMN target_character_ids JSON NOT NULL DEFAULT '[]'"
+            )
+        if "chapter" not in settlement_columns:
+            statements.append("ALTER TABLE settlement_requests ADD COLUMN chapter VARCHAR")
+
     if not statements:
         return
 

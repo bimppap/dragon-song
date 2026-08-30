@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { CheckCircle2, Coins, Link2, MessageSquareText, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
@@ -14,9 +15,9 @@ import { fetchSettlements, paySettlement } from "@/lib/api";
 import type { Settlement } from "@/lib/api";
 import { parsePositiveInt } from "@/lib/utils";
 
-const TYPE_LABELS = { board: "게시글 & 댓글", log: "로그잇기" } as const;
+const TYPE_LABELS = { board: "게시글 & 댓글", log: "교류 로그" } as const;
 
-function SettlementMeta({ settlement }: { settlement: Settlement }) {
+function SettlementMeta({ settlement, trailing }: { settlement: Settlement; trailing?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <CharacterAvatar
@@ -30,10 +31,20 @@ function SettlementMeta({ settlement }: { settlement: Settlement }) {
         {settlement.type === "board" ? <MessageSquareText size={11} /> : <Link2 size={11} />}
         {TYPE_LABELS[settlement.type]}
       </Badge>
+      {trailing}
       <span className="ml-auto text-xs text-muted">
         {new Date(settlement.created_at).toLocaleString("ko-KR")}
       </span>
     </div>
+  );
+}
+
+function PaidAmount({ settlement }: { settlement: Settlement }) {
+  return (
+    <span className="text-sm text-muted">
+      <span className="font-num font-semibold text-yellow-400">{settlement.paid_gold ?? 0}G</span> +{" "}
+      <span className="font-num font-semibold text-cyan-400">{settlement.paid_cp ?? 0}CP</span>
+    </span>
   );
 }
 
@@ -114,7 +125,15 @@ function PendingSettlementCard({
               </label>
             </div>
           ))}
-          <p className="text-xs text-muted">기본: 링크 1개당 1CP ({settlement.links.length}CP) + 링크별 캐릭터 출현 보상</p>
+          <p className="text-xs text-muted">
+            기본: 링크 1개당 1CP ({settlement.links.length}CP) + 챕터 내 최초 교류 대상 1명당 1CP + 링크별 캐릭터
+            출현 보상
+          </p>
+          {settlement.targets.length > 0 && (
+            <p className="text-xs text-muted">
+              교류 대상: {settlement.targets.map((t) => t.name).join(", ")}
+            </p>
+          )}
         </div>
       )}
 
@@ -181,8 +200,24 @@ export default function AdminSettlement() {
     return () => { cancelled = true; };
   }, [toast]);
 
+  const [paidCharacterFilter, setPaidCharacterFilter] = useState("all");
+
   const pending = settlements.filter((s) => s.status === "pending");
   const paid = settlements.filter((s) => s.status === "paid");
+
+  const paidCharacters = useMemo(() => {
+    const byId = new Map<number, { id: number; name: string; image_url: string | null }>();
+    for (const s of paid) {
+      if (!byId.has(s.character_id)) {
+        byId.set(s.character_id, { id: s.character_id, name: s.character_name, image_url: s.character_image_url });
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [paid]);
+
+  const filteredPaid = paidCharacterFilter === "all"
+    ? paid
+    : paid.filter((s) => String(s.character_id) === paidCharacterFilter);
 
   function handlePaid(updated: Settlement) {
     setSettlements((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
@@ -220,20 +255,38 @@ export default function AdminSettlement() {
       </Card>
 
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between gap-3">
           <CardTitle>지급 완료된 정산</CardTitle>
+          {paidCharacters.length > 0 && (
+            <Select value={paidCharacterFilter} onValueChange={setPaidCharacterFilter}>
+              <SelectTrigger className="w-40 shrink-0">
+                <SelectValue placeholder="캐릭터 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">전체 캐릭터</SelectItem>
+                {paidCharacters.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>
+                    {c.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
           {paid.length === 0 ? (
             <EmptyState>지급 완료된 정산이 없습니다.</EmptyState>
+          ) : filteredPaid.length === 0 ? (
+            <EmptyState>선택한 캐릭터의 지급 완료된 정산이 없습니다.</EmptyState>
           ) : (
-            paid.map((settlement) => (
+            filteredPaid.map((settlement) => (
               <div key={settlement.id} className="flex flex-col gap-2 rounded-2xl border border-line px-4 py-4">
-                <SettlementMeta settlement={settlement} />
-                <p className="text-sm text-muted">
-                  지급: <span className="font-num font-semibold text-yellow-400">{settlement.paid_gold ?? 0}G</span> +{" "}
-                  <span className="font-num font-semibold text-cyan-400">{settlement.paid_cp ?? 0}CP</span>
-                </p>
+                <SettlementMeta settlement={settlement} trailing={<PaidAmount settlement={settlement} />} />
+                {settlement.targets.length > 0 && (
+                  <p className="text-xs text-muted">
+                    교류 대상: {settlement.targets.map((t) => t.name).join(", ")}
+                  </p>
+                )}
               </div>
             ))
           )}

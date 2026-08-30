@@ -849,6 +849,8 @@ class SettlementCreate(BaseModel):
     total_posts: int | None = Field(default=None, ge=0)
     total_comments: int | None = Field(default=None, ge=0)
     links: list[str] = Field(default_factory=list)
+    # type="log"일 때 이 로그에서 교류한 상대 캐릭터 id 목록
+    target_character_ids: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_by_type(self):
@@ -856,13 +858,21 @@ class SettlementCreate(BaseModel):
             if self.total_posts is None or self.total_comments is None:
                 raise ValueError("총 게시물 갯수와 총 댓글 갯수를 모두 입력해 주세요.")
             self.links = []
+            self.target_character_ids = []
         else:
             self.links = [link.strip() for link in self.links if link.strip()]
             if not self.links:
                 raise ValueError("게시물 링크를 1개 이상 입력해 주세요.")
             self.total_posts = None
             self.total_comments = None
+            self.target_character_ids = sorted(set(self.target_character_ids))
         return self
+
+
+class SettlementTargetRead(BaseModel):
+    id: int
+    name: str
+    image_url: str | None = None
 
 
 class SettlementRead(BaseModel):
@@ -874,8 +884,10 @@ class SettlementRead(BaseModel):
     total_posts: int | None
     total_comments: int | None
     links: list[str]
+    targets: list[SettlementTargetRead] = Field(default_factory=list)
     status: str  # "pending" | "paid"
-    # 규칙(게시글 1개=1G, 댓글 50개=1CP, 링크 1개=1CP)과 직전 지급 이력으로 계산한 제안값
+    # 규칙(게시글 1개=1G, 댓글 50개=1CP, 링크 1개=1CP, 챕터 내 최초 교류 대상 1명=1CP)과
+    # 직전 지급 이력으로 계산한 제안값
     suggested_gold: int
     suggested_cp: int
     paid_gold: int | None

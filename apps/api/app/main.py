@@ -649,9 +649,16 @@ def pay_mission_rewards(mission_id: int, member: Member = Depends(require_admin)
 
 
 @app.get("/settlements", response_model=list[SettlementRead])
-def list_settlements(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
-    """어드민은 전체, 러너는 본인 캐릭터의 정산 요청만 조회한다."""
-    if is_admin_role(member.role):
+def list_settlements(
+    mine: bool = False,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """어드민은 전체, 러너는 본인 캐릭터의 정산 요청만 조회한다.
+
+    mine=True면 어드민(스텝 포함)이어도 본인 캐릭터의 요청만 조회한다.
+    """
+    if is_admin_role(member.role) and not mine:
         return crud.get_settlement_requests(db)
     character_id = crud.get_member_character_id(db, member.id)
     if character_id is None:
@@ -666,6 +673,27 @@ def create_settlement(
     db: Session = Depends(get_db),
 ):
     return crud.create_settlement_request(db, member, data)
+
+
+@app.delete("/settlements/{settlement_id}", response_model=list[SettlementRead])
+def cancel_settlement(
+    settlement_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    return crud.cancel_settlement_request(db, member, settlement_id)
+
+
+@app.get("/settlements/target-candidates", response_model=list[CharacterRead])
+def list_settlement_target_candidates(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """교류 로그 정산의 '교류 대상'으로 고를 수 있는 러너 캐릭터 목록(본인 캐릭터 제외)."""
+    return crud.get_settlement_target_candidates(db, member)
+
+
+@app.get("/settlements/appeared-target-ids", response_model=list[int])
+def list_settlement_appeared_target_ids(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """현재 진행 중인 챕터에서 이미 교류 로그에 기입되어 챕터 내 최초 기입 보너스를 받은 캐릭터 id 목록."""
+    return crud.get_appeared_target_character_ids(db)
 
 
 @app.post("/settlements/{settlement_id}/pay", response_model=SettlementRead)

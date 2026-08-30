@@ -447,7 +447,7 @@ class SettlementRequest(Base):
     """러너가 어드민에게 보내는 정산 요청.
 
     type="board": 게시글&댓글 정산 (누적 총 게시물/댓글 수 기입)
-    type="log":   로그잇기 정산 (게시물 링크 목록 기입)
+    type="log":   교류 로그 정산 (게시물 링크 목록 + 교류 대상 캐릭터 기입)
     """
 
     __tablename__ = "settlement_requests"
@@ -458,6 +458,10 @@ class SettlementRequest(Base):
     total_posts: Mapped[int | None] = mapped_column(Integer, nullable=True)
     total_comments: Mapped[int | None] = mapped_column(Integer, nullable=True)
     links: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # type="log"일 때 이 로그에서 교류한 상대 캐릭터 id 목록. 같은 챕터에서 처음 기입되는 캐릭터마다 1CP가 추가된다.
+    target_character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # 요청 생성 시점의 진행 중 챕터 이름(target_character_ids의 "챕터 내 최초 기입" 판정 기준). 진행 중 챕터가 없으면 None.
+    chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(
         String, nullable=False, default="pending", server_default=text("'pending'"), index=True
     )  # "pending" | "paid"

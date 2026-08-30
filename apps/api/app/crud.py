@@ -70,6 +70,7 @@ from app.schemas import (
     SettlementCreate,
     SettlementPayRequest,
     SettlementRead,
+    SettlementTargetRead,
     SignupRequest,
     SkillNodeRead,
     SkillNodeUpdate,
@@ -1691,6 +1692,73 @@ def perform_noncombat_heal(
 SETTLEMENT_GOLD_PER_POST = 1        # 게시글 1개당 1골드
 SETTLEMENT_COMMENTS_PER_CP = 50     # 댓글 50개당 1CP
 SETTLEMENT_CP_PER_LINK = 1          # 로그 링크 1개당 1CP
+SETTLEMENT_CP_PER_NEW_TARGET = 1    # 같은 챕터에서 처음 기입되는 교류 대상 캐릭터 1명당 1CP
+
+
+def _log_settlement_target_bonus(db: Session, req: SettlementRequest) -> int:
+    """같은 챕터의 더 이른 교류 로그에 등장한 적 없는 교류 대상 캐릭터 수 × 1CP."""
+    if not req.chapter or not req.target_character_ids:
+        return 0
+    earlier_requests = (
+        db.query(SettlementRequest)
+        .filter(SettlementRequest.type == "log")
+        .filter(SettlementRequest.chapter == req.chapter)
+        .filter(SettlementRequest.id < req.id)
+        .all()
+    )
+    already_appeared: set[int] = set()
+    for r in earlier_requests:
+        already_appeared.update(r.target_character_ids or [])
+    new_targets = [cid for cid in req.target_character_ids if cid not in already_appeared]
+    return len(new_targets) * SETTLEMENT_CP_PER_NEW_TARGET
+
+
+def get_appeared_target_character_ids(db: Session) -> list[int]:
+    """현재 진행 중인 챕터에서 이미 교류 로그에 기입되어(챕터 내 최초 기입 보너스를 이미 받아) 더 이상
+    추가 CP를 받지 못하는 캐릭터 id 목록."""
+    chapter = _get_active_chapter_model(db)
+    if not chapter:
+        return []
+    requests = (
+        db.query(SettlementRequest)
+        .filter(SettlementRequest.type == "log")
+        .filter(SettlementRequest.chapter == chapter.name)
+        .all()
+    )
+    seen: set[int] = set()
+    for r in requests:
+        seen.update(r.target_character_ids or [])
+    return sorted(seen)
+
+
+def get_settlement_target_candidates(db: Session, member: Member) -> list[CharacterRead]:
+    """정산 요청의 '교류 대상'으로 고를 수 있는 러너 캐릭터 목록(본인 캐릭터 제외)."""
+    own_character_id = get_member_character_id(db, member.id)
+    rows = (
+        db.query(Character)
+        .join(Member, Character.member_id == Member.id)
+        .filter(Member.role == "RUNNER")
+        .order_by(Character.name.asc())
+        .all()
+    )
+    return [_to_character_read(c) for c in rows if c.id != own_character_id]
+
+
+def _validate_settlement_targets(db: Session, own_character_id: int, target_ids: list[int]) -> list[int]:
+    unique_ids = sorted({cid for cid in target_ids if cid != own_character_id})
+    if not unique_ids:
+        return []
+    valid_ids = {
+        row[0]
+        for row in (
+            db.query(Character.id)
+            .join(Member, Character.member_id == Member.id)
+            .filter(Member.role == "RUNNER")
+            .filter(Character.id.in_(unique_ids))
+            .all()
+        )
+    }
+    return [cid for cid in unique_ids if cid in valid_ids]
 
 
 def _latest_paid_board_settlement(
@@ -1710,7 +1778,8 @@ def _latest_paid_board_settlement(
 def _settlement_suggestion(db: Session, req: SettlementRequest) -> tuple[int, int]:
     """규칙과 직전 지급 이력으로 지급 제안값(골드, CP)을 계산한다."""
     if req.type == "log":
-        return 0, len(req.links or []) * SETTLEMENT_CP_PER_LINK
+        cp = len(req.links or []) * SETTLEMENT_CP_PER_LINK + _log_settlement_target_bonus(db, req)
+        return 0, cp
 
     prev = _latest_paid_board_settlement(db, req.character_id, before_id=req.id)
     return _settlement_suggestion_from_previous(req, prev)
@@ -1732,8 +1801,19 @@ def _to_settlement_read(
     req: SettlementRequest,
     character: Character | None,
     suggestion: tuple[int, int] | None = None,
+    target_characters: dict[int, Character] | None = None,
 ) -> SettlementRead:
     suggested_gold, suggested_cp = suggestion if suggestion is not None else _settlement_suggestion(db, req)
+    target_ids = req.target_character_ids or []
+    if target_characters is None and target_ids:
+        target_characters = {
+            c.id: c for c in db.query(Character).filter(Character.id.in_(target_ids)).all()
+        }
+    targets = [
+        SettlementTargetRead(id=cid, name=c.name, image_url=c.image_url)
+        for cid in target_ids
+        if (c := (target_characters or {}).get(cid)) is not None
+    ]
     return SettlementRead(
         id=req.id,
         character_id=req.character_id,
@@ -1743,6 +1823,7 @@ def _to_settlement_read(
         total_posts=req.total_posts,
         total_comments=req.total_comments,
         links=req.links or [],
+        targets=targets,
         status=req.status,
         suggested_gold=suggested_gold,
         suggested_cp=suggested_cp,
@@ -1763,9 +1844,11 @@ def get_settlement_requests(
     requests = query.order_by(SettlementRequest.id.desc()).all()
 
     character_ids = {r.character_id for r in requests}
+    target_ids = {cid for r in requests for cid in (r.target_character_ids or [])}
+    all_character_ids = character_ids | target_ids
     characters = {
-        c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
-    } if character_ids else {}
+        c.id: c for c in db.query(Character).filter(Character.id.in_(all_character_ids)).all()
+    } if all_character_ids else {}
 
     paid_board_requests_by_character: dict[int, list[SettlementRequest]] = {}
     if character_ids:
@@ -1782,7 +1865,8 @@ def get_settlement_requests(
 
     def suggestion_for(req: SettlementRequest) -> tuple[int, int]:
         if req.type == "log":
-            return 0, len(req.links or []) * SETTLEMENT_CP_PER_LINK
+            cp = len(req.links or []) * SETTLEMENT_CP_PER_LINK + _log_settlement_target_bonus(db, req)
+            return 0, cp
         prev = next(
             (
                 paid
@@ -1794,7 +1878,7 @@ def get_settlement_requests(
         return _settlement_suggestion_from_previous(req, prev)
 
     return [
-        _to_settlement_read(db, r, characters.get(r.character_id), suggestion_for(r))
+        _to_settlement_read(db, r, characters.get(r.character_id), suggestion_for(r), characters)
         for r in requests
     ]
 
@@ -1804,13 +1888,38 @@ def create_settlement_request(db: Session, member: Member, data: SettlementCreat
     if character_id is None:
         raise HTTPException(status_code=400, detail="정산을 요청하려면 먼저 캐릭터를 생성해야 합니다.")
 
+    target_character_ids: list[int] = []
+    chapter_name: str | None = None
+    if data.type == "log":
+        active_chapter = _get_active_chapter_model(db)
+        chapter_name = active_chapter.name if active_chapter else None
+        target_character_ids = _validate_settlement_targets(db, character_id, data.target_character_ids)
+
     db.add(SettlementRequest(
         character_id=character_id,
         type=data.type,
         total_posts=data.total_posts,
         total_comments=data.total_comments,
         links=data.links,
+        target_character_ids=target_character_ids,
+        chapter=chapter_name,
     ))
+    db.commit()
+    return get_settlement_requests(db, character_id)
+
+
+def cancel_settlement_request(db: Session, member: Member, settlement_id: int) -> list[SettlementRead]:
+    """지급 완료되지 않은(pending) 본인의 정산 요청을 취소(삭제)한다."""
+    req = db.get(SettlementRequest, settlement_id)
+    if not req:
+        raise HTTPException(status_code=404, detail="정산 요청을 찾을 수 없습니다.")
+    character_id = get_member_character_id(db, member.id)
+    if character_id is None or req.character_id != character_id:
+        raise HTTPException(status_code=403, detail="본인의 정산 요청만 취소할 수 있습니다.")
+    if req.status != "pending":
+        raise HTTPException(status_code=400, detail="지급 완료된 정산 요청은 취소할 수 없습니다.")
+
+    db.delete(req)
     db.commit()
     return get_settlement_requests(db, character_id)
 

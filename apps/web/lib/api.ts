@@ -883,6 +883,12 @@ export async function bulkPurchase(
 
 export type SettlementType = "board" | "log";
 
+export interface SettlementTarget {
+  id: number;
+  name: string;
+  image_url: string | null;
+}
+
 export interface Settlement {
   id: number;
   character_id: number;
@@ -892,6 +898,7 @@ export interface Settlement {
   total_posts: number | null;
   total_comments: number | null;
   links: string[];
+  targets: SettlementTarget[];
   status: "pending" | "paid";
   suggested_gold: number;
   suggested_cp: number;
@@ -906,10 +913,12 @@ export interface SettlementCreate {
   total_posts?: number | null;
   total_comments?: number | null;
   links?: string[];
+  target_character_ids?: number[];
 }
 
-export async function fetchSettlements(): Promise<Settlement[]> {
-  return request<Settlement[]>("/settlements", undefined, "정산 요청 조회 실패");
+export async function fetchSettlements(mine = false): Promise<Settlement[]> {
+  const params = mine ? "?mine=true" : "";
+  return request<Settlement[]>(`/settlements${params}`, undefined, "정산 요청 조회 실패");
 }
 
 export async function createSettlement(data: SettlementCreate): Promise<Settlement[]> {
@@ -919,6 +928,22 @@ export async function createSettlement(data: SettlementCreate): Promise<Settleme
   }, "정산 요청 실패");
   invalidateApiCache("settlements:");
   return settlements;
+}
+
+export async function cancelSettlement(settlementId: number): Promise<Settlement[]> {
+  const settlements = await request<Settlement[]>(`/settlements/${settlementId}`, {
+    method: "DELETE",
+  }, "정산 요청 취소 실패");
+  invalidateApiCache("settlements:");
+  return settlements;
+}
+
+export async function fetchSettlementTargetCandidates(): Promise<Character[]> {
+  return request<Character[]>("/settlements/target-candidates", undefined, "교류 대상 목록 조회 실패");
+}
+
+export async function fetchAppearedSettlementTargetIds(): Promise<number[]> {
+  return request<number[]>("/settlements/appeared-target-ids", undefined, "교류 대상 조회 실패");
 }
 
 export async function paySettlement(settlementId: number, gold: number, cp: number): Promise<Settlement> {
