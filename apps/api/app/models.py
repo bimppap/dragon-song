@@ -288,6 +288,11 @@ class Purchase(Base):
     item_id: Mapped[int] = mapped_column(Integer, ForeignKey("items.id"), nullable=False, index=True)
     # 기존 DB에 컬럼이 없다면: ALTER TABLE purchases ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1;
     quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    # "shop": 상점에서 골드/CP로 직접 구매. "reward": 관리자 선물·도전과제·임무 등 보상으로 지급.
+    # 소유 수량 계산(_sum_quantity)·구매 제한 체크는 origin과 무관하게 전부 합산하지만,
+    # "구매 이력" 표시(get_item_history, get_purchases)는 실제 구매(shop)만 보여준다 —
+    # 보상으로 받은 아이템은 이미 보상 이력에 별도로 남기 때문에 구매 이력에 또 뜨면 안 된다.
+    source: Mapped[str] = mapped_column(String, nullable=False, default="shop", server_default=text("'shop'"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

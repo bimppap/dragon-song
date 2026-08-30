@@ -230,7 +230,7 @@ def _apply_item_grants(
         item_id = grant.get("item_id")
         quantity = grant.get("quantity", 1)
         if item_id and item_id in items_map:
-            db.add(Purchase(character_id=character_id, item_id=item_id, quantity=quantity))
+            db.add(Purchase(character_id=character_id, item_id=item_id, quantity=quantity, source="reward"))
             reward_items.append({"type": "item", "item_id": item_id, "quantity": quantity})
 
 
@@ -1317,6 +1317,7 @@ def get_purchases(db: Session, character_id: int | None, item_id: int | None) ->
         )
         .join(Character, Purchase.character_id == Character.id)
         .join(Item, Purchase.item_id == Item.id)
+        .filter(Purchase.source == "shop")
     )
     if character_id is not None:
         query = query.filter(Purchase.character_id == character_id)
@@ -1345,6 +1346,7 @@ def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
         db.query(Purchase, Item.name.label("item_name"), Item.image_url.label("item_image_url"))
         .join(Item, Purchase.item_id == Item.id)
         .filter(Purchase.character_id == character_id)
+        .filter(Purchase.source == "shop")
         .all()
     )
     usage_rows = (
@@ -2040,6 +2042,7 @@ def revoke_reward(db: Session, reward_id: int) -> RewardWithCharacterRead:
                 character_id=character.id,
                 item_id=entry.get("item_id"),
                 quantity=-quantity,
+                source="reward",
             ))
             negated.append({"type": "item", "item_id": entry.get("item_id"), "quantity": -quantity})
             continue
