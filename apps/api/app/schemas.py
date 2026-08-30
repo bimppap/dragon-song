@@ -849,7 +849,7 @@ class SettlementCreate(BaseModel):
     total_posts: int | None = Field(default=None, ge=0)
     total_comments: int | None = Field(default=None, ge=0)
     links: list[str] = Field(default_factory=list)
-    # type="log"일 때 이 로그에서 교류한 상대 캐릭터 id 목록
+    # type="log"일 때 로그에서 교류한 상대 캐릭터 id 목록
     target_character_ids: list[int] = Field(default_factory=list)
 
     @model_validator(mode="after")

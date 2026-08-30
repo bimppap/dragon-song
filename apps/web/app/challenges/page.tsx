@@ -261,7 +261,7 @@ export function ChallengeAdmin() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
-  const [showAchievedOnly, setShowAchievedOnly] = useState(false);
+  const [showUnachievedOnly, setShowUnachievedOnly] = useState(false);
   const [loadingChallenges, setLoadingChallenges] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [submittingChallenge, setSubmittingChallenge] = useState(false);
@@ -289,8 +289,8 @@ export function ChallengeAdmin() {
     toast,
   });
   const activeProgress = progress.entries;
-  const visibleProgress = showAchievedOnly
-    ? activeProgress.filter((entry) => entry.achieved)
+  const visibleProgress = showUnachievedOnly
+    ? activeProgress.filter((entry) => !entry.achieved)
     : activeProgress;
   const achievedCount = activeProgress.filter((entry) => entry.achieved).length;
 
@@ -501,12 +501,12 @@ export function ChallengeAdmin() {
     const nextChallenge = challenges.find((challenge) => challenge.chapter === value);
     setSelectedChapter(value);
     setSelectedChallengeId(nextChallenge?.id ?? null);
-    setShowAchievedOnly(false);
+    setShowUnachievedOnly(false);
   }
 
   function handleSelectChallenge(challengeId: number) {
     setSelectedChallengeId(challengeId);
-    setShowAchievedOnly(false);
+    setShowUnachievedOnly(false);
   }
 
   return (
@@ -857,12 +857,12 @@ export function ChallengeAdmin() {
                   <div className="flex flex-wrap items-center gap-2">
                     <label className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-2 text-sm text-ivory/85">
                       <Checkbox
-                        checked={showAchievedOnly}
+                        checked={showUnachievedOnly}
                         onCheckedChange={(checked) =>
-                          setShowAchievedOnly(checked === true)
+                          setShowUnachievedOnly(checked === true)
                         }
                       />
-                      달성 캐릭터만 보기
+                      미달성 캐릭터만 보기
                     </label>
                     {progress.isEditing ? (
                       <>

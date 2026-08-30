@@ -53,7 +53,7 @@ export default function MissionStatusTab() {
   const [items, setItems] = useState<Item[]>([]);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedMissionId, setSelectedMissionId] = useState<number | null>(null);
-  const [showAchievedOnly, setShowAchievedOnly] = useState(false);
+  const [showUnachievedOnly, setShowUnachievedOnly] = useState(false);
   const [loadingMissions, setLoadingMissions] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
   const [payingReward, setPayingReward] = useState(false);
@@ -73,8 +73,8 @@ export default function MissionStatusTab() {
     toast,
   });
   const activeProgress = progress.entries;
-  const visibleProgress = showAchievedOnly
-    ? activeProgress.filter((e) => e.achieved)
+  const visibleProgress = showUnachievedOnly
+    ? activeProgress.filter((e) => !e.achieved)
     : activeProgress;
   const achievedCount = activeProgress.filter((e) => e.achieved).length;
 
@@ -132,12 +132,12 @@ export default function MissionStatusTab() {
     const next = missions.find((m) => m.chapter === value);
     setSelectedChapter(value);
     setSelectedMissionId(next?.id ?? null);
-    setShowAchievedOnly(false);
+    setShowUnachievedOnly(false);
   }
 
   function handleSelectMission(id: number) {
     setSelectedMissionId(id);
-    setShowAchievedOnly(false);
+    setShowUnachievedOnly(false);
   }
 
   async function handlePayReward() {
@@ -281,10 +281,10 @@ export default function MissionStatusTab() {
                 <div className="flex flex-wrap items-center gap-2">
                   <label className="flex items-center gap-2 rounded-full border border-line bg-surface px-3 py-2 text-sm text-ivory/85">
                     <Checkbox
-                      checked={showAchievedOnly}
-                      onCheckedChange={(checked) => setShowAchievedOnly(checked === true)}
+                      checked={showUnachievedOnly}
+                      onCheckedChange={(checked) => setShowUnachievedOnly(checked === true)}
                     />
-                    달성 캐릭터만 보기
+                    미달성 캐릭터만 보기
                   </label>
                   {progress.isEditing ? (
                     <>
