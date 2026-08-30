@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
+import { useDialog } from "@/components/common/DialogProvider";
 import EmptyState from "@/components/common/EmptyState";
 import { useToast } from "@/components/common/ToastProvider";
 import {
@@ -19,6 +20,11 @@ import { cn } from "@/lib/utils";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
+
+/** 치유값 = 대상 최대 체력의 25%. 오버힐은 없으므로 남은 체력만큼으로 캡한다. */
+function healValueFor(target: Character): number {
+  return Math.max(0, Math.min(Math.floor(target.hp_max * 0.25), target.hp_max - target.hp));
+}
 
 function HpBar({ hp, max }: { hp: number; max: number }) {
   const pct = max > 0 ? Math.min(100, Math.max(0, (hp / max) * 100)) : 0;
@@ -36,11 +42,11 @@ function HpBar({ hp, max }: { hp: number; max: number }) {
 
 export default function HealTab() {
   const { toast } = useToast();
+  const { confirm } = useDialog();
   const [healers, setHealers] = useState<HealerCandidate[]>([]);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeHealer, setActiveHealer] = useState<HealerCandidate | null>(null);
-  const [targetId, setTargetId] = useState<number | null>(null);
   const [healing, setHealing] = useState(false);
 
   useEffect(() => {
@@ -70,20 +76,23 @@ export default function HealTab() {
   function openHealer(healer: HealerCandidate) {
     if (!healer.heal_available) return;
     setActiveHealer(healer);
-    setTargetId(null);
   }
 
   function closeModal() {
     setActiveHealer(null);
-    setTargetId(null);
   }
 
-  const target = characters.find((c) => c.id === targetId) ?? null;
-  const previewHeal = target ? Math.max(0, Math.floor(target.hp_max * 0.25)) : 0;
-  const alreadyFull = target != null && target.hp >= target.hp_max;
+  const healableCharacters = characters.filter((c) => c.hp < c.hp_max);
 
-  async function handleHeal() {
-    if (!activeHealer || !target) return;
+  async function handleSelectTarget(target: Character) {
+    if (!activeHealer || healing) return;
+    const healAmount = healValueFor(target);
+    const ok = await confirm({
+      title: "비전투 치유",
+      description: `${target.name}을(를) 치유하시겠습니까? (+${healAmount})\n${activeHealer.name}의 오늘 비전투 치유가 소모됩니다.`,
+      confirmText: "치유",
+    });
+    if (!ok) return;
     try {
       setHealing(true);
       const result = await performNoncombatHeal(activeHealer.id, target.id);
@@ -161,41 +170,30 @@ export default function HealTab() {
             </div>
 
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-              {characters.map((c) => {
-                const selected = c.id === targetId;
-                return (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => setTargetId(c.id)}
-                    className={cn(
-                      "flex items-center gap-3 rounded-xl border p-2.5 text-left transition-colors",
-                      selected ? "border-gold bg-gold/10" : "border-line hover:border-gold/45",
-                    )}
-                  >
-                    <CharacterAvatar src={c.image_url} alt={c.name} className="size-10 shrink-0 rounded-lg" iconSize={16} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-semibold text-ivory">{c.name}</p>
-                      <HpBar hp={c.hp} max={c.hp_max} />
-                    </div>
-                  </button>
-                );
-              })}
+              {healableCharacters.length === 0 ? (
+                <p className="col-span-full py-3 text-center text-sm text-muted">
+                  체력이 가득 차지 않은 캐릭터가 없습니다.
+                </p>
+              ) : healableCharacters.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  disabled={healing}
+                  onClick={() => handleSelectTarget(c)}
+                  className="flex items-center gap-3 rounded-xl border border-line p-2.5 text-left transition-colors hover:border-gold/45 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <CharacterAvatar src={c.image_url} alt={c.name} className="size-10 shrink-0 rounded-lg" iconSize={16} />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-semibold text-ivory">{c.name}</p>
+                    <HpBar hp={c.hp} max={c.hp_max} />
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1 text-sm font-semibold text-emerald-300">
+                    <Heart size={13} className="text-emerald-400" />
+                    +{fmt(healValueFor(c))}
+                  </div>
+                </button>
+              ))}
             </div>
-
-            {target && (
-              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3">
-                <div className="flex items-center gap-2 text-sm text-ivory">
-                  <Heart size={15} className="text-emerald-400" />
-                  {alreadyFull
-                    ? `${target.name}은(는) 이미 체력이 가득 찼습니다.`
-                    : <>{target.name} 치유값: <span className="font-num font-semibold text-emerald-300">+{fmt(previewHeal)}</span></>}
-                </div>
-                <Button size="sm" onClick={handleHeal} disabled={healing || alreadyFull}>
-                  {healing ? "치유 중..." : "치유"}
-                </Button>
-              </div>
-            )}
 
             <div className="mt-3 flex justify-end">
               <Button variant="ghost" size="sm" onClick={closeModal}>닫기</Button>

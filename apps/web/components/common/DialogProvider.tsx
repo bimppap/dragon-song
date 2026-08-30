@@ -95,7 +95,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
       {children}
       {dialog && (
         <div
-          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
+          className="fixed inset-0 z-200 flex items-center justify-center bg-black/50 p-4"
           onClick={() => close(false)}
         >
           <div
