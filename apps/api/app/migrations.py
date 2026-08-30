@@ -84,8 +84,9 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN over_heal BOOLEAN NOT NULL DEFAULT false")
     if "image_url" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN image_url VARCHAR")
-    if "last_noncombat_heal_at" not in character_columns:
-        statements.append("ALTER TABLE characters ADD COLUMN last_noncombat_heal_at DATE")
+    # 비전투 치유 하루 1회 제한은 이제 보상 이력(Reward)으로 판단하므로 더 이상 쓰지 않는다.
+    if "last_noncombat_heal_at" in character_columns:
+        statements.append("ALTER TABLE characters DROP COLUMN last_noncombat_heal_at")
 
     # 관리자 전용 관리 플래그
     if "caution" not in character_columns:

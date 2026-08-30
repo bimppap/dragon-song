@@ -228,6 +228,7 @@ class HealerCandidateRead(BaseModel):
 
 class NoncombatHealRequest(BaseModel):
     target_character_id: int
+    heal_date: date | None = None  # 지정하지 않으면 오늘(KST)로 기록된다. 미래 날짜는 허용하지 않는다.
 
 
 class NoncombatHealResult(BaseModel):

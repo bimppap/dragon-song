@@ -242,10 +242,11 @@ export async function fetchHealerCandidates(): Promise<HealerCandidate[]> {
 export async function performNoncombatHeal(
   healerId: number,
   targetCharacterId: number,
+  healDate?: string,
 ): Promise<NoncombatHealResult> {
   return request<NoncombatHealResult>(`/admin/heal/${healerId}`, {
     method: "POST",
-    body: JSON.stringify({ target_character_id: targetCharacterId }),
+    body: JSON.stringify({ target_character_id: targetCharacterId, heal_date: healDate ?? null }),
   }, "치유 실패");
 }
 

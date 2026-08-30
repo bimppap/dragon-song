@@ -152,9 +152,6 @@ class Character(Base):
 
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL
 
-    # 치유 포지션의 비전투 치유는 하루 한 번만 가능하고 자정(KST)에 충전된다.
-    last_noncombat_heal_at: Mapped[date | None] = mapped_column(Date, nullable=True)
-
 
 class Item(Base):
     __tablename__ = "items"

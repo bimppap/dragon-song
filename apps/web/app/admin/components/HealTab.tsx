@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Heart, HeartPulse } from "lucide-react";
+import { CalendarDays, Heart, HeartPulse } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import EmptyState from "@/components/common/EmptyState";
@@ -16,7 +17,7 @@ import {
   type Character,
   type HealerCandidate,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { todayDateValue } from "@/lib/utils";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
@@ -47,6 +48,7 @@ export default function HealTab() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeHealer, setActiveHealer] = useState<HealerCandidate | null>(null);
+  const [healDate, setHealDate] = useState(todayDateValue());
   const [healing, setHealing] = useState(false);
 
   useEffect(() => {
@@ -74,7 +76,6 @@ export default function HealTab() {
   }, [toast]);
 
   function openHealer(healer: HealerCandidate) {
-    if (!healer.heal_available) return;
     setActiveHealer(healer);
   }
 
@@ -87,15 +88,18 @@ export default function HealTab() {
   async function handleSelectTarget(target: Character) {
     if (!activeHealer || healing) return;
     const healAmount = healValueFor(target);
+    const isToday = healDate === todayDateValue();
     const ok = await confirm({
       title: "비전투 치유",
-      description: `${target.name}을(를) 치유하시겠습니까? (+${healAmount})\n${activeHealer.name}의 오늘 비전투 치유가 소모됩니다.`,
+      description: isToday
+        ? `${target.name}을(를) 치유하시겠습니까? (+${healAmount})\n${activeHealer.name}의 오늘 비전투 치유가 소모됩니다.`
+        : `${target.name}을(를) ${healDate}로 치유하시겠습니까? (+${healAmount})\n${activeHealer.name}의 ${healDate} 비전투 치유가 소모됩니다.`,
       confirmText: "치유",
     });
     if (!ok) return;
     try {
       setHealing(true);
-      const result = await performNoncombatHeal(activeHealer.id, target.id);
+      const result = await performNoncombatHeal(activeHealer.id, target.id, healDate);
       setHealers((prev) => prev.map((h) => (h.id === result.healer.id ? result.healer : h)));
       setCharacters((prev) => prev.map((c) => (
         c.id === result.target_character_id ? { ...c, hp: result.target_hp } : c
@@ -111,15 +115,33 @@ export default function HealTab() {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <HeartPulse size={16} className="text-emerald-400" />
-          치유
-        </CardTitle>
-        <CardDescription>
-          치유 포지션 캐릭터의 비전투 치유 사용 여부를 확인하고, 대상을 지정해 치유할 수 있습니다.
-          비전투 치유는 캐릭터당 하루 한 번, 자정(KST)에 다시 충전됩니다.
-        </CardDescription>
+      <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-3">
+        <div>
+          <CardTitle className="flex items-center gap-2">
+            <HeartPulse size={16} className="text-emerald-400" />
+            치유
+          </CardTitle>
+          <CardDescription>
+            치유 포지션 캐릭터의 비전투 치유 사용 여부를 확인하고, 대상을 지정해 치유할 수 있습니다.
+            비전투 치유는 캐릭터당 하루 한 번, 자정(KST)에 다시 충전됩니다.
+          </CardDescription>
+        </div>
+        <label className="shrink-0 space-y-1">
+          <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-muted">
+            <CalendarDays size={12} />
+            치유 날짜
+          </span>
+          <Input
+            type="date"
+            value={healDate}
+            max={todayDateValue()}
+            onChange={(event) => {
+              if (!event.target.value) return;
+              setHealDate(event.target.value);
+            }}
+            className="h-8 w-36 text-xs"
+          />
+        </label>
       </CardHeader>
       <CardContent>
         {loading ? (
@@ -133,13 +155,7 @@ export default function HealTab() {
                 key={healer.id}
                 type="button"
                 onClick={() => openHealer(healer)}
-                disabled={!healer.heal_available}
-                className={cn(
-                  "flex flex-col items-center gap-2 overflow-hidden rounded-2xl border bg-surface p-3 text-center transition-colors",
-                  healer.heal_available
-                    ? "cursor-pointer border-line hover:border-gold/45"
-                    : "cursor-not-allowed border-line/50 opacity-60",
-                )}
+                className="flex cursor-pointer flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface p-3 text-center transition-colors hover:border-gold/45"
               >
                 <CharacterAvatar src={healer.image_url} alt={healer.name} className="size-16 rounded-xl" iconSize={22} />
                 <span className="font-semibold text-ivory">{healer.name}</span>
@@ -165,7 +181,9 @@ export default function HealTab() {
               <CharacterAvatar src={activeHealer.image_url} alt={activeHealer.name} className="size-10 rounded-lg" iconSize={16} />
               <div>
                 <p className="font-semibold text-ivory">{activeHealer.name}의 치유</p>
-                <p className="text-xs text-muted">치유 대상을 선택하세요.</p>
+                <p className="text-xs text-muted">
+                  {healDate === todayDateValue() ? "치유 대상을 선택하세요." : `${healDate}로 치유 대상을 선택하세요.`}
+                </p>
               </div>
             </div>
 

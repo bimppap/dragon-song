@@ -153,7 +153,7 @@ def perform_noncombat_heal(
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    return crud.perform_noncombat_heal(db, healer_id, data.target_character_id)
+    return crud.perform_noncombat_heal(db, healer_id, data.target_character_id, data.heal_date)
 
 
 @app.post("/members/me/character", response_model=CharacterRead)

@@ -1601,22 +1601,30 @@ def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]
     return [_to_reward_read(r, item_names) for r in rewards]
 
 
-def _to_healer_candidate_read(character: Character, today: date) -> HealerCandidateRead:
+def _has_noncombat_heal_on(db: Session, healer_id: int, on_date: date) -> bool:
+    """이 치유 캐릭터가 해당 날짜에 이미 비전투 치유를 사용했는지, 보상 이력으로 판단한다.
+    (날짜별로 독립적으로 판단하므로 지난 날짜로 소급 기록해도 오늘 사용 가능 여부에 영향을 주지 않는다.)
+    """
+    return db.query(Reward).filter(
+        Reward.type == "heal",
+        Reward.source_id == healer_id,
+        Reward.rewarded_at == on_date,
+    ).first() is not None
+
+
+def _to_healer_candidate_read(db: Session, character: Character, today: date) -> HealerCandidateRead:
     return HealerCandidateRead(
         id=character.id,
         name=character.name,
         image_url=character.image_url,
         hp=character.hp,
         hp_max=character.hp_max,
-        heal_available=(
-            character.last_noncombat_heal_at is None
-            or character.last_noncombat_heal_at < today
-        ),
+        heal_available=not _has_noncombat_heal_on(db, character.id, today),
     )
 
 
 def list_healer_candidates(db: Session) -> list[HealerCandidateRead]:
-    """관리 페이지 치유 탭: 치유 포지션 캐릭터와 비전투 치유 사용 가능 여부(자정 KST 기준 하루 1회)."""
+    """관리 페이지 치유 탭: 치유 포지션 캐릭터와 오늘 비전투 치유 사용 가능 여부(자정 KST 기준 하루 1회)."""
     today = _today_kst()
     characters = (
         db.query(Character)
@@ -1624,11 +1632,18 @@ def list_healer_candidates(db: Session) -> list[HealerCandidateRead]:
         .order_by(Character.name.asc())
         .all()
     )
-    return [_to_healer_candidate_read(c, today) for c in characters]
+    return [_to_healer_candidate_read(db, c, today) for c in characters]
 
 
-def perform_noncombat_heal(db: Session, healer_id: int, target_character_id: int) -> NoncombatHealResult:
-    """치유 포지션 캐릭터의 비전투 치유. 하루 한 번만 가능하고, 대상 최대 체력의 25%를 회복시킨다."""
+def perform_noncombat_heal(
+    db: Session,
+    healer_id: int,
+    target_character_id: int,
+    heal_date: date | None = None,
+) -> NoncombatHealResult:
+    """치유 포지션 캐릭터의 비전투 치유. 날짜당 한 번만 가능하고(지난 날짜로도 기록 가능),
+    대상 최대 체력의 25%를 회복시킨다.
+    """
     healer = db.get(Character, healer_id)
     if healer is None:
         raise HTTPException(status_code=404, detail="치유 캐릭터를 찾을 수 없습니다.")
@@ -1636,8 +1651,11 @@ def perform_noncombat_heal(db: Session, healer_id: int, target_character_id: int
         raise HTTPException(status_code=400, detail="치유 포지션 캐릭터만 비전투 치유를 사용할 수 있습니다.")
 
     today = _today_kst()
-    if healer.last_noncombat_heal_at is not None and healer.last_noncombat_heal_at >= today:
-        raise HTTPException(status_code=400, detail="오늘은 이미 비전투 치유를 사용했습니다.")
+    target_date = heal_date or today
+    if target_date > today:
+        raise HTTPException(status_code=400, detail="미래 날짜에는 치유를 기록할 수 없습니다.")
+    if _has_noncombat_heal_on(db, healer.id, target_date):
+        raise HTTPException(status_code=400, detail="해당 날짜에는 이미 비전투 치유를 사용했습니다.")
 
     target = db.get(Character, target_character_id)
     if target is None:
@@ -1648,21 +1666,19 @@ def perform_noncombat_heal(db: Session, healer_id: int, target_character_id: int
     target.hp = min(target.hp_max, target.hp + heal_amount)
     healed = target.hp - before
 
-    healer.last_noncombat_heal_at = today
     db.add(Reward(
         type="heal",
         character_id=target.id,
         source_id=healer.id,
         label=f"{healer.name}의 치료",
         reward_items=[{"type": "stat_hp", "amount": healed}],
-        rewarded_at=today,
+        rewarded_at=target_date,
     ))
     db.commit()
-    db.refresh(healer)
     db.refresh(target)
 
     return NoncombatHealResult(
-        healer=_to_healer_candidate_read(healer, today),
+        healer=_to_healer_candidate_read(db, healer, today),
         target_character_id=target.id,
         target_hp=target.hp,
         target_hp_max=target.hp_max,
