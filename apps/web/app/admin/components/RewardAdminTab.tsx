@@ -19,7 +19,7 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { fetchAllRewards, fetchCharacters, revokeReward } from "@/lib/api";
 import type { Character, RewardWithCharacter } from "@/lib/api";
-import { formatRewardItems, rewardLabel } from "@/lib/rewards";
+import { formatRewardItems, rewardLabel, rewardVisual } from "@/lib/rewards";
 
 const ALL_CHARACTERS = "__all__";
 
@@ -126,12 +126,16 @@ export default function RewardAdminTab() {
             <div className="flex flex-col gap-3">
               {rewards.map((reward) => {
                 const isRevoke = reward.type === "revoke";
+                const { icon: RewardIcon, iconClassName } = rewardVisual(reward);
                 return (
                   <div
                     key={reward.id}
                     className="flex items-center justify-between gap-3 rounded-2xl border border-line px-4 py-4"
                   >
                     <div className="flex min-w-0 items-center gap-3">
+                      <span className={`flex size-10 shrink-0 items-center justify-center rounded-full ${iconClassName}`}>
+                        <RewardIcon size={18} />
+                      </span>
                       <CharacterAvatar
                         src={reward.character_image_url}
                         alt={reward.character_name}

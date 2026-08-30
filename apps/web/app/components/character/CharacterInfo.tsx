@@ -11,7 +11,6 @@ import {
   Flame,
   Gauge,
   Gem,
-  Gift,
   Heart,
   HeartHandshake,
   Image as ImageIcon,
@@ -31,7 +30,7 @@ import RewardSummary from "@/components/common/RewardSummary";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 
-import { formatRewardItems, rewardLabel } from "@/lib/rewards";
+import { formatRewardItems, rewardLabel, rewardVisual } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -460,11 +459,12 @@ const HISTORY_PREVIEW_COUNT = 6;
 const HISTORY_PAGE_SIZE = 20;
 
 function RewardHistoryRow({ reward }: { reward: Reward }) {
+  const { icon: RewardIcon, iconClassName } = rewardVisual(reward);
   return (
     <div className="flex items-center justify-between rounded-2xl border border-line px-4 py-4">
       <div className="flex items-center gap-3">
-        <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-600">
-          <Gift size={18} />
+        <span className={`flex size-10 shrink-0 items-center justify-center rounded-full ${iconClassName}`}>
+          <RewardIcon size={18} />
         </span>
         <div className="flex flex-col gap-1">
           <p className="font-semibold text-ivory">
