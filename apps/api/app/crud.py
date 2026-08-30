@@ -667,7 +667,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         .join(ChallengeProgress, Challenge.id == ChallengeProgress.challenge_id)
         .filter(ChallengeProgress.character_id == character.id)
         .filter(ChallengeProgress.achieved.is_(True))
-        .order_by(Challenge.chapter.asc(), Challenge.id.asc())
+        .order_by(ChallengeProgress.updated_at.desc())
         .all()
     )
 
@@ -684,7 +684,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         .join(MissionProgress, Mission.id == MissionProgress.mission_id)
         .filter(MissionProgress.character_id == character.id)
         .filter(MissionProgress.achieved.is_(True))
-        .order_by(Mission.chapter.asc(), Mission.id.asc())
+        .order_by(MissionProgress.updated_at.desc())
         .all()
     )
 

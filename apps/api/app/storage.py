@@ -201,7 +201,7 @@ def public_url_to_path(url: str | None) -> str | None:
     idx = url.find(marker)
     if idx == -1:
         return None
-    return url[idx + len(marker):]
+    return url[idx + len(marker):].split("?", 1)[0]
 
 
 async def delete_from_bucket(paths: str | list[str]) -> None:

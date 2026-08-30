@@ -1,3 +1,4 @@
+import time
 from datetime import date
 
 from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
@@ -255,7 +256,7 @@ async def upload_character_image(
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    character.image_url = result["public_url"]
+    character.image_url = f"{result['public_url']}?v={int(time.time())}"
     db.commit()
 
     detail = crud.get_character_detail(db, character_id)
