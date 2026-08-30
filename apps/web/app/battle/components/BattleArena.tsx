@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
-import { ArrowLeft, Ban, Eye, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
+import { ArrowLeft, Ban, Check, Eye, Files, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -274,6 +274,91 @@ function describePendingAction(
         .join(", ") || "대상 없음";
   const base = Math.floor((enemy.attack * skill.damage_percent) / 100);
   return `예고: ${skill.name} → ${targetLabel} (예상 피해 ${fmt(base)})`;
+}
+
+interface TargetOption {
+  key: string;
+  label: ReactNode;
+  icon?: ReactNode;
+  disabled?: boolean;
+}
+
+/** 대상 지정 UI. 드롭다운 대신 중앙 팝업으로 대상 목록을 보여준다. */
+function TargetPickerButton({
+  value,
+  options,
+  onChange,
+  placeholder,
+  title,
+}: {
+  value: string | null;
+  options: TargetOption[];
+  onChange: (key: string) => void;
+  placeholder: string;
+  title: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((option) => option.key === value) ?? null;
+  const sortedOptions = [...options].sort((a, b) => (
+    typeof a.label === "string" && typeof b.label === "string"
+      ? a.label.localeCompare(b.label, "ko")
+      : 0
+  ));
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[11px] text-ivory transition focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+      >
+        <span className={cn("flex min-w-0 items-center gap-1.5 truncate", !selected && "text-muted")}>
+          {selected?.icon}
+          <span className="truncate">{selected ? selected.label : placeholder}</span>
+        </span>
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-110 flex items-center justify-center bg-black/50 p-4"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-xl border border-line bg-surface p-3 shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wide text-muted">{title}</p>
+            {options.length === 0 ? (
+              <p className="px-2 py-3 text-center text-sm text-muted">대상이 없습니다.</p>
+            ) : (
+              <div className="grid grid-cols-5 gap-1.5">
+                {sortedOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    disabled={option.disabled}
+                    onClick={() => {
+                      onChange(option.key);
+                      setOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
+                      option.key === value ? "bg-gold/15 text-gold" : "text-ivory hover:bg-inset",
+                      option.disabled && "pointer-events-none opacity-40",
+                    )}
+                  >
+                    {option.icon}
+                    <span className="min-w-0 flex-1 wrap-break-word">{option.label}</span>
+                    {option.key === value && <Check size={14} className="shrink-0 text-gold" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function BattleArena({ sessionId, readOnly = false, onExit, externalSession }: Props) {
@@ -1044,21 +1129,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                 key: "enemy-target",
                 icon: Skull,
                 control: (
-                  <Select
-                    value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
-                    onValueChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
-                  >
-                    <SelectTrigger className="h-8 w-full text-[11px]">
-                      <SelectValue placeholder="대상 선택" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {targetableEnemies.map((enemy) => (
-                          <SelectItem key={enemy.enemy_id} value={String(enemy.enemy_id)}>{enemy.name}</SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
+                  <TargetPickerButton
+                    title="공격 대상 선택"
+                    placeholder="대상 선택"
+                    value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : null}
+                    onChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
+                    options={targetableEnemies.map((enemy) => ({ key: String(enemy.enemy_id), label: enemy.name }))}
+                  />
                 ),
               });
             } else if (selectedSkillTargetMode === "ally-single") {
@@ -1070,23 +1147,16 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   key: "ally-target",
                   icon: HeartPulse,
                   control: (
-                    <Select
-                      value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
-                      onValueChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
-                    >
-                      <SelectTrigger className="h-8 w-full text-[11px]">
-                        <SelectValue placeholder="대상 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          {targetCandidates.map((target) => (
-                            <SelectItem key={target.character_id} value={String(target.character_id)}>
-                              {target.name}{target.downed ? " (기절)" : target.character_id === p.character_id ? " (본인)" : ""}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
+                    <TargetPickerButton
+                      title="기술 대상 선택"
+                      placeholder="대상 선택"
+                      value={draft.target_character_id != null ? String(draft.target_character_id) : null}
+                      onChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
+                      options={targetCandidates.map((target) => ({
+                        key: String(target.character_id),
+                        label: `${target.name}${target.downed ? " (기절)" : target.character_id === p.character_id ? " (본인)" : ""}`,
+                      }))}
+                    />
                   ),
                 });
               }
@@ -1096,21 +1166,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               key: "enemy-target",
               icon: Skull,
               control: (
-                <Select
-                  value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : ""}
-                  onValueChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
-                >
-                  <SelectTrigger className="h-8 w-full text-[11px]">
-                    <SelectValue placeholder="대상 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {targetableEnemies.map((enemy) => (
-                        <SelectItem key={enemy.enemy_id} value={String(enemy.enemy_id)}>{enemy.name}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <TargetPickerButton
+                  title="공격 대상 선택"
+                  placeholder="대상 선택"
+                  value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : null}
+                  onChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
+                  options={targetableEnemies.map((enemy) => ({ key: String(enemy.enemy_id), label: enemy.name }))}
+                />
               ),
             });
           } else if (draft?.kind === "heal") {
@@ -1118,23 +1180,16 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               key: "heal-target",
               icon: HeartPulse,
               control: (
-                <Select
-                  value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
-                  onValueChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
-                >
-                  <SelectTrigger className="h-8 w-full text-[11px]">
-                    <SelectValue placeholder="치유 대상 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {healableParticipants.map((target) => (
-                        <SelectItem key={target.character_id} value={String(target.character_id)}>
-                          {target.name}{target.downed ? " (기절)" : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <TargetPickerButton
+                  title="치유 대상 선택"
+                  placeholder="치유 대상 선택"
+                  value={draft.target_character_id != null ? String(draft.target_character_id) : null}
+                  onChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
+                  options={healableParticipants.map((target) => ({
+                    key: String(target.character_id),
+                    label: `${target.name}${target.downed ? " (기절)" : ""}`,
+                  }))}
+                />
               ),
             });
           } else if (draft?.kind === "rescue") {
@@ -1142,21 +1197,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               key: "rescue-target",
               icon: UserPlus,
               control: (
-                <Select
-                  value={draft.target_character_id != null ? String(draft.target_character_id) : ""}
-                  onValueChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
-                >
-                  <SelectTrigger className="h-8 w-full text-[11px]">
-                    <SelectValue placeholder="구조 대상 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {downedParticipants.map((target) => (
-                        <SelectItem key={target.character_id} value={String(target.character_id)}>{target.name}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
+                <TargetPickerButton
+                  title="구조 대상 선택"
+                  placeholder="구조 대상 선택"
+                  value={draft.target_character_id != null ? String(draft.target_character_id) : null}
+                  onChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
+                  options={downedParticipants.map((target) => ({ key: String(target.character_id), label: target.name }))}
+                />
               ),
             });
           } else if (draft?.kind === "item") {
