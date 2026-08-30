@@ -84,6 +84,8 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN over_heal BOOLEAN NOT NULL DEFAULT false")
     if "image_url" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN image_url VARCHAR")
+    if "last_noncombat_heal_at" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN last_noncombat_heal_at DATE")
 
     # 관리자 전용 관리 플래그
     if "caution" not in character_columns:
@@ -259,6 +261,11 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN pending_enemy_actions JSON NOT NULL DEFAULT '[]'")
         if "rollback_state" not in battle_columns:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN rollback_state JSON NOT NULL DEFAULT '{}'")
+
+    if "rewards" in table_names:
+        reward_columns = {col["name"] for col in inspector.get_columns("rewards")}
+        if "label" not in reward_columns:
+            statements.append("ALTER TABLE rewards ADD COLUMN label VARCHAR")
 
     if "attendance_missions" in table_names:
         statements.append("DROP TABLE attendance_missions")

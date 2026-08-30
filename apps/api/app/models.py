@@ -32,6 +32,8 @@ class Reward(Base):
     type: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "attendance" | "challenge"
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
     source_id: Mapped[int | None] = mapped_column(Integer, nullable=True)  # attendance_record.id or challenge.id
+    # 보상 이력에 표시할 커스텀 라벨(예: "OO의 치료"). 없으면 REWARD_TYPE_LABELS[type]을 사용한다.
+    label: Mapped[str | None] = mapped_column(String, nullable=True)
     reward_items: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     rewarded_at: Mapped[date] = mapped_column(Date, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -149,6 +151,9 @@ class Character(Base):
     over_heal: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
 
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)  # Supabase Storage 공개 URL
+
+    # 치유 포지션의 비전투 치유는 하루 한 번만 가능하고 자정(KST)에 충전된다.
+    last_noncombat_heal_at: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class Item(Base):

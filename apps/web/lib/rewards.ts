@@ -10,7 +10,13 @@ export const REWARD_TYPE_LABELS: Record<string, string> = {
   settlement: "로그 정산",
   revoke: "보상 회수",
   growth: "성장",
+  heal: "치료",
 };
+
+/** 보상 이력에 표시할 라벨. 커스텀 label(예: "OO의 치료")이 있으면 그걸 우선한다. */
+export function rewardLabel(reward: Reward): string {
+  return reward.label ?? REWARD_TYPE_LABELS[reward.type] ?? reward.type;
+}
 
 function signed(amount: number): string {
   return `${amount >= 0 ? "+" : ""}${amount.toLocaleString()}`;

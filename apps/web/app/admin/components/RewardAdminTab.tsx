@@ -19,7 +19,7 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { fetchAllRewards, fetchCharacters, revokeReward } from "@/lib/api";
 import type { Character, RewardWithCharacter } from "@/lib/api";
-import { formatRewardItems, REWARD_TYPE_LABELS } from "@/lib/rewards";
+import { formatRewardItems, rewardLabel } from "@/lib/rewards";
 
 const ALL_CHARACTERS = "__all__";
 
@@ -146,7 +146,7 @@ export default function RewardAdminTab() {
                         <p className="flex flex-wrap items-center gap-2 text-sm text-muted">
                           {reward.rewarded_at}
                           <Badge variant={isRevoke ? "destructive" : "secondary"} className="text-xs">
-                            {REWARD_TYPE_LABELS[reward.type] ?? reward.type}
+                            {rewardLabel(reward)}
                           </Badge>
                           {reward.revoked && <Badge variant="outline" className="text-xs">회수됨</Badge>}
                         </p>

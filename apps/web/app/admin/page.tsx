@@ -4,6 +4,7 @@ import { useState } from "react";
 import {
   BookMarked,
   Gift,
+  HeartPulse,
   ScrollText,
   Settings,
   Skull,
@@ -15,6 +16,7 @@ import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { useRequireAdmin } from "@/lib/auth";
 import ChapterTab from "./components/ChapterTab";
+import HealTab from "./components/HealTab";
 import PermissionTab from "./components/PermissionTab";
 import RewardAdminTab from "./components/RewardAdminTab";
 import EnemyTab from "@/app/battle/components/EnemyTab";
@@ -22,12 +24,13 @@ import AdminSkillEditor from "@/app/battle/components/AdminSkillEditor";
 import { ChallengeAdmin } from "@/app/challenges/page";
 import { MissionAdmin } from "@/app/missions/page";
 
-type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "skill" | "permission";
+type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "heal" | "skill" | "permission";
 
 const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "mission", label: "임무", icon: ScrollText },
   { id: "challenge", label: "도전과제", icon: Trophy },
   { id: "enemy", label: "에너미", icon: Skull },
+  { id: "heal", label: "치유", icon: HeartPulse },
   { id: "reward", label: "보상", icon: Gift },
   { id: "skill", label: "기술트리", icon: Sparkles },
   { id: "chapter", label: "챕터", icon: BookMarked },
@@ -68,6 +71,7 @@ export default function AdminPage() {
         {tab === "challenge" && <ChallengeAdmin />}
         {tab === "mission" && <MissionAdmin />}
         {tab === "enemy" && <EnemyTab />}
+        {tab === "heal" && <HealTab />}
         {tab === "skill" && <AdminSkillEditor />}
         {tab === "permission" && member.role === "ADMIN" && <PermissionTab />}
       </div>

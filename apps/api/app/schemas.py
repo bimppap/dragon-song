@@ -202,6 +202,7 @@ class RewardRead(BaseModel):
     type: str
     character_id: int
     source_id: int | None
+    label: str | None = None
     reward_items: list[RewardItemEntry]
     rewarded_at: date
     created_at: datetime
@@ -212,6 +213,29 @@ class RewardRead(BaseModel):
 class RewardPayResult(BaseModel):
     paid_count: int
     rewards: list[RewardRead]
+
+
+class HealerCandidateRead(BaseModel):
+    """관리 페이지 치유 탭에서 보여줄 치유 포지션 캐릭터 목록 항목."""
+
+    id: int
+    name: str
+    image_url: str | None
+    hp: int
+    hp_max: int
+    heal_available: bool
+
+
+class NoncombatHealRequest(BaseModel):
+    target_character_id: int
+
+
+class NoncombatHealResult(BaseModel):
+    healer: HealerCandidateRead
+    target_character_id: int
+    target_hp: int
+    target_hp_max: int
+    heal_amount: int
 
 
 class CharacterCreate(BaseModel):

@@ -40,6 +40,7 @@ from app.schemas import (
     ChallengeProgressRead,
     ChallengeRead,
     ChallengeUpdate,
+    HealerCandidateRead,
     ItemCreate,
     ItemRead,
     ItemWithStock,
@@ -51,6 +52,8 @@ from app.schemas import (
     MissionProgressRead,
     MissionRead,
     MissionUpdate,
+    NoncombatHealRequest,
+    NoncombatHealResult,
     PurchaseRead,
     RefreshTokenRequest,
     RewardPayResult,
@@ -136,6 +139,21 @@ def update_staff_role(
     db: Session = Depends(get_db),
 ):
     return crud.set_member_staff_role(db, member_id, data.role)
+
+
+@app.get("/admin/heal/healers", response_model=list[HealerCandidateRead])
+def list_healer_candidates(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.list_healer_candidates(db)
+
+
+@app.post("/admin/heal/{healer_id}", response_model=NoncombatHealResult)
+def perform_noncombat_heal(
+    healer_id: int,
+    data: NoncombatHealRequest,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.perform_noncombat_heal(db, healer_id, data.target_character_id)
 
 
 @app.post("/members/me/character", response_model=CharacterRead)

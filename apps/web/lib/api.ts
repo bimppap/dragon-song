@@ -235,6 +235,20 @@ export async function updateStaffRole(memberId: number, role: "RUNNER" | "STAFF"
   }, "스텝 권한 변경 실패");
 }
 
+export async function fetchHealerCandidates(): Promise<HealerCandidate[]> {
+  return request<HealerCandidate[]>("/admin/heal/healers", {}, "치유 캐릭터 조회 실패");
+}
+
+export async function performNoncombatHeal(
+  healerId: number,
+  targetCharacterId: number,
+): Promise<NoncombatHealResult> {
+  return request<NoncombatHealResult>(`/admin/heal/${healerId}`, {
+    method: "POST",
+    body: JSON.stringify({ target_character_id: targetCharacterId }),
+  }, "치유 실패");
+}
+
 export async function logoutRequest(refreshToken: string): Promise<void> {
   await request("/auth/logout", {
     method: "POST",
@@ -570,6 +584,7 @@ export interface Reward {
   type: string;
   character_id: number;
   source_id: number | null;
+  label: string | null;
   reward_items: RewardItemEntry[];
   rewarded_at: string;
   created_at: string;
@@ -578,6 +593,23 @@ export interface Reward {
 export interface RewardPayResult {
   paid_count: number;
   rewards: Reward[];
+}
+
+export interface HealerCandidate {
+  id: number;
+  name: string;
+  image_url: string | null;
+  hp: number;
+  hp_max: number;
+  heal_available: boolean;
+}
+
+export interface NoncombatHealResult {
+  healer: HealerCandidate;
+  target_character_id: number;
+  target_hp: number;
+  target_hp_max: number;
+  heal_amount: number;
 }
 
 export interface ChallengeProgress {

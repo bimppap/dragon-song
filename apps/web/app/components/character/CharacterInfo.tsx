@@ -31,7 +31,7 @@ import RewardSummary from "@/components/common/RewardSummary";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 
-import { formatRewardItems, REWARD_TYPE_LABELS } from "@/lib/rewards";
+import { formatRewardItems, rewardLabel } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -473,7 +473,7 @@ function RewardHistoryRow({ reward }: { reward: Reward }) {
           <p className="text-sm text-muted">
             {reward.rewarded_at} ·{" "}
             <Badge variant="secondary" className="text-xs">
-              {REWARD_TYPE_LABELS[reward.type] ?? reward.type}
+              {rewardLabel(reward)}
             </Badge>
           </p>
         </div>
