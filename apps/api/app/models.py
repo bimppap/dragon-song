@@ -52,7 +52,7 @@ class Member(Base):
         nullable=False,
         default="RUNNER",
         server_default=text("'RUNNER'"),
-    )  # "RUNNER" | "ADMIN"
+    )  # "RUNNER" | "ADMIN" | "STAFF" (러너 중 권한 탭 접근을 제외한 관리 권한을 부여받은 스텝)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

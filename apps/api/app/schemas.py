@@ -6,7 +6,7 @@ EnemySkillType = Literal["지정 공격A", "지정 공격B", "광역 공격A", "
 Faction = Literal["공격", "수비", "치유"]
 # 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다.
 SkillBook = Literal["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"]
-MemberRole = Literal["RUNNER", "ADMIN"]
+MemberRole = Literal["RUNNER", "ADMIN", "STAFF"]
 
 # 아이템 효과가 적용될 수 있는 캐릭터 능력치와 값의 정수/실수 여부.
 # "def"는 Character 모델의 예약어 회피용 컬럼명(def_)에 대응한다.
@@ -102,6 +102,19 @@ class MemberRead(BaseModel):
     character_id: int | None
 
     model_config = {"from_attributes": True}
+
+
+class StaffCandidateRead(BaseModel):
+    """권한 탭에서 스텝 임명/해제 대상으로 보여줄 러너 정보(캐릭터 이름 기준)."""
+
+    member_id: int
+    character_id: int
+    character_name: str
+    role: MemberRole
+
+
+class StaffRoleUpdate(BaseModel):
+    role: Literal["RUNNER", "STAFF"]
 
 
 class TokenResponse(BaseModel):

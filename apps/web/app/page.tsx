@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CalendarCheck, CalendarDays, Coins, Settings, ShoppingBag, Swords, Users } from "lucide-react";
 import { fetchChapters, type Chapter } from "@/lib/api";
-import { useRequireMember } from "@/lib/auth";
+import { isAdminRole, useRequireMember } from "@/lib/auth";
 import HomeFlamefall from "@/components/common/HomeFlamefall";
 import HomeChapterCalendar from "@/components/common/HomeChapterCalendar";
 
@@ -29,7 +29,7 @@ export default function HomePage() {
   if (!member) return null;
 
   const activeChapter = chapters.find((chapter) => chapter.is_active);
-  const quickLinks = member.role === "ADMIN"
+  const quickLinks = isAdminRole(member.role)
     ? [...SHORTCUTS, { href: "/admin", label: "관리", icon: Settings }]
     : SHORTCUTS;
   const calendarMonth = activeChapter ? new Date(`${activeChapter.start_date}T00:00:00`) : new Date();

@@ -9,18 +9,20 @@ import {
   Skull,
   Sparkles,
   Trophy,
+  UserStar,
 } from "lucide-react";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { useRequireAdmin } from "@/lib/auth";
 import ChapterTab from "./components/ChapterTab";
+import PermissionTab from "./components/PermissionTab";
 import RewardAdminTab from "./components/RewardAdminTab";
 import EnemyTab from "@/app/battle/components/EnemyTab";
 import AdminSkillEditor from "@/app/battle/components/AdminSkillEditor";
 import { ChallengeAdmin } from "@/app/challenges/page";
 import { MissionAdmin } from "@/app/missions/page";
 
-type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "skill";
+type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "skill" | "permission";
 
 const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "mission", label: "임무", icon: ScrollText },
@@ -29,6 +31,7 @@ const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "reward", label: "보상", icon: Gift },
   { id: "skill", label: "기술트리", icon: Sparkles },
   { id: "chapter", label: "챕터", icon: BookMarked },
+  { id: "permission", label: "권한", icon: UserStar },
 ];
 
 export default function AdminPage() {
@@ -36,6 +39,9 @@ export default function AdminPage() {
   const [tab, setTab] = useState<PageTab>("mission");
 
   if (!member) return null;
+
+  // 권한 탭은 최고 관리자(ADMIN)만 접근할 수 있다. 스텝(STAFF)에게는 노출하지 않는다.
+  const visibleTabs = member.role === "ADMIN" ? PAGE_TABS : PAGE_TABS.filter((t) => t.id !== "permission");
 
   return (
     <PageContainer className="flex flex-col gap-8">
@@ -54,7 +60,7 @@ export default function AdminPage() {
         </div>
       </section>
 
-      <TabBar tabs={PAGE_TABS} active={tab} onChange={setTab} />
+      <TabBar tabs={visibleTabs} active={tab} onChange={setTab} />
 
       <div>
         {tab === "chapter" && <ChapterTab />}
@@ -63,6 +69,7 @@ export default function AdminPage() {
         {tab === "mission" && <MissionAdmin />}
         {tab === "enemy" && <EnemyTab />}
         {tab === "skill" && <AdminSkillEditor />}
+        {tab === "permission" && member.role === "ADMIN" && <PermissionTab />}
       </div>
     </PageContainer>
   );

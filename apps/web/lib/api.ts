@@ -159,7 +159,7 @@ async function uploadFile<T>(path: string, file: File, fieldName = "file", error
   return res.json();
 }
 
-export type MemberRole = "RUNNER" | "ADMIN";
+export type MemberRole = "RUNNER" | "ADMIN" | "STAFF";
 export type Faction = "공격" | "수비" | "치유";
 
 export interface Member {
@@ -167,6 +167,13 @@ export interface Member {
   login_id: string;
   role: MemberRole;
   character_id: number | null;
+}
+
+export interface StaffCandidate {
+  member_id: number;
+  character_id: number;
+  character_name: string;
+  role: MemberRole;
 }
 
 export interface SignupRequest {
@@ -215,6 +222,17 @@ export async function login(data: LoginRequest): Promise<TokenResponse> {
 
 export async function fetchMe(): Promise<Member> {
   return cachedRequest<Member>("auth:me", "/auth/me", AUTH_CACHE_TTL_MS, "내 정보 조회 실패");
+}
+
+export async function fetchStaffCandidates(): Promise<StaffCandidate[]> {
+  return request<StaffCandidate[]>("/admin/staff", {}, "스텝 후보 조회 실패");
+}
+
+export async function updateStaffRole(memberId: number, role: "RUNNER" | "STAFF"): Promise<StaffCandidate> {
+  return request<StaffCandidate>(`/admin/staff/${memberId}/role`, {
+    method: "PUT",
+    body: JSON.stringify({ role }),
+  }, "스텝 권한 변경 실패");
 }
 
 export async function logoutRequest(refreshToken: string): Promise<void> {

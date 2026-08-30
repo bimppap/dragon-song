@@ -2,7 +2,7 @@
 
 import { Swords } from "lucide-react";
 import PageContainer from "@/components/common/PageContainer";
-import { useRequireMember } from "@/lib/auth";
+import { isAdminRole, useRequireMember } from "@/lib/auth";
 import BattleTab from "./components/BattleTab";
 import RunnerBattleOverview from "./components/RunnerBattleOverview";
 
@@ -23,14 +23,14 @@ export default function BattlePage() {
             전투
           </h1>
           <p className="text-sm text-muted">
-            {member.role === "ADMIN"
+            {isAdminRole(member.role)
               ? "실전 전투를 준비하거나 진행 중인 전투를 이어갈 수 있습니다."
               : "현재 챕터의 전투 일정과 출현 에너미를 확인할 수 있습니다."}
           </p>
         </div>
       </section>
 
-      {member.role === "ADMIN" ? <BattleTab /> : <RunnerBattleOverview />}
+      {isAdminRole(member.role) ? <BattleTab /> : <RunnerBattleOverview />}
     </PageContainer>
   );
 }

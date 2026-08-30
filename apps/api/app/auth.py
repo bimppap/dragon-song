@@ -55,7 +55,22 @@ def get_current_member(
     return member
 
 
+# STAFF는 권한 탭(스텝 임명/해제) 접근을 제외하면 ADMIN과 동일한 관리 작업을 수행할 수 있다.
+ADMIN_ROLES = {"ADMIN", "STAFF"}
+
+
+def is_admin_role(role: str) -> bool:
+    return role in ADMIN_ROLES
+
+
 def require_admin(member: Member = Depends(get_current_member)) -> Member:
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
+    return member
+
+
+def require_owner_admin(member: Member = Depends(get_current_member)) -> Member:
+    """스텝 임명/해제 등 최고 관리자(ADMIN)만 할 수 있는 작업에 사용한다."""
+    if member.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="최고 관리자 권한이 필요합니다.")
     return member

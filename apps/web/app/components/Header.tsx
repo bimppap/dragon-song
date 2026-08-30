@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { CalendarCheck, Coins, House, LogIn, LogOut, Settings, Sparkles, Store, Swords, Trophy, Users, Wrench } from "lucide-react";
+import { CalendarCheck, Coins, House, LogIn, LogOut, Settings, Sparkles, Store, Swords, Trophy, Users, UserStar, Wrench } from "lucide-react";
 import { useEffect, useState } from "react";
 import { fetchMyCharacter, type MemberRole } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -11,15 +11,15 @@ import CharacterAvatar from "@/components/common/CharacterAvatar";
 import ChapterMusicBar from "@/components/common/ChapterMusicBar";
 
 const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: MemberRole[] }[] = [
-  { href: "/", label: "홈", icon: House, roles: ["RUNNER", "ADMIN"] },
-  { href: "/character", label: "캐릭터", icon: Users, roles: ["RUNNER", "ADMIN"] },
-  { href: "/shop", label: "상점", icon: Store, roles: ["RUNNER", "ADMIN"] },
-  { href: "/challenges", label: "도전", icon: Trophy, roles: ["RUNNER"] },
-  { href: "/missions", label: "임무", icon: Sparkles, roles: ["RUNNER"] },
-  { href: "/battle", label: "전투", icon: Swords, roles: ["RUNNER", "ADMIN"] },
-  { href: "/attendance", label: "출석", icon: CalendarCheck, roles: ["RUNNER"] },
-  { href: "/settlement", label: "정산", icon: Coins, roles: ["RUNNER", "ADMIN"] },
-  { href: "/admin", label: "관리", icon: Settings, roles: ["ADMIN"] },
+  { href: "/", label: "홈", icon: House, roles: ["RUNNER", "ADMIN", "STAFF"] },
+  { href: "/character", label: "캐릭터", icon: Users, roles: ["RUNNER", "ADMIN", "STAFF"] },
+  { href: "/shop", label: "상점", icon: Store, roles: ["RUNNER", "ADMIN", "STAFF"] },
+  { href: "/challenges", label: "도전", icon: Trophy, roles: ["RUNNER", "STAFF"] },
+  { href: "/missions", label: "임무", icon: Sparkles, roles: ["RUNNER", "STAFF"] },
+  { href: "/battle", label: "전투", icon: Swords, roles: ["RUNNER", "ADMIN", "STAFF"] },
+  { href: "/attendance", label: "출석", icon: CalendarCheck, roles: ["RUNNER", "STAFF"] },
+  { href: "/settlement", label: "정산", icon: Coins, roles: ["RUNNER", "ADMIN", "STAFF"] },
+  { href: "/admin", label: "관리", icon: Settings, roles: ["ADMIN", "STAFF"] },
 ];
 
 export default function Header() {
@@ -30,7 +30,8 @@ export default function Header() {
   const [character, setCharacter] = useState<{ name: string; image_url: string | null } | null>(null);
 
   const isAdmin = member?.role === "ADMIN";
-  const characterId = member?.role === "RUNNER" ? member.character_id : null;
+  const isStaff = member?.role === "STAFF";
+  const characterId = member?.role === "RUNNER" || member?.role === "STAFF" ? member.character_id : null;
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +74,12 @@ export default function Header() {
 
     <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
       {member ? <div className="relative flex items-center gap-2">
+        {isStaff && (
+          <span className="flex items-center gap-1 rounded-full border border-gold/50 bg-gold/10 px-2 py-1.5 text-xs font-semibold text-gold">
+            <UserStar size={13} />
+            스텝
+          </span>
+        )}
         <span className="rounded-full border border-line bg-surface/95 px-3 py-1.5 text-xs font-semibold text-ivory">{displayName}</span>
         <button
           type="button"

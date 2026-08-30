@@ -3,7 +3,7 @@
 import { CalendarCheck, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/common/PageContainer";
-import { useRequireMember } from "@/lib/auth";
+import { isAdminRole, useRequireMember } from "@/lib/auth";
 import { useRouter } from "next/navigation";
 import AttendanceView from "./components/AttendanceView";
 
@@ -25,7 +25,7 @@ export default function AttendancePage() {
             날짜를 선택해 그날 출석한 캐릭터를 확인할 수 있습니다.
           </p>
         </div>
-        {member.role === "ADMIN" && (
+        {isAdminRole(member.role) && (
           <Button onClick={() => router.push("/attendance/register")} className="gap-2">
             <UserPlus size={15} />
             출석 등록

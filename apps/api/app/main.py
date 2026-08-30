@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app import storage
-from app.auth import create_access_token, get_current_member, require_admin
+from app.auth import create_access_token, get_current_member, is_admin_role, require_admin, require_owner_admin
 from app.db import engine, get_db
 from app.migrations import ensure_schema
 from app.models import Chapter, Challenge, Character, Enemy, Item, Member, Mission, SkillNode
@@ -65,6 +65,8 @@ from app.schemas import (
     SkillNodeUpdate,
     SkillVisibilityUpdate,
     ShopStatusRead,
+    StaffCandidateRead,
+    StaffRoleUpdate,
     ShopStatusUpdate,
     CharacterSkillTreeRead,
     TokenResponse,
@@ -121,6 +123,21 @@ def get_me(member: Member = Depends(get_current_member), db: Session = Depends(g
     return crud.to_member_read(db, member)
 
 
+@app.get("/admin/staff", response_model=list[StaffCandidateRead])
+def list_staff_candidates(member: Member = Depends(require_owner_admin), db: Session = Depends(get_db)):
+    return crud.list_staff_candidates(db)
+
+
+@app.put("/admin/staff/{member_id}/role", response_model=StaffCandidateRead)
+def update_staff_role(
+    member_id: int,
+    data: StaffRoleUpdate,
+    member: Member = Depends(require_owner_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.set_member_staff_role(db, member_id, data.role)
+
+
 @app.post("/members/me/character", response_model=CharacterRead)
 def create_my_character(
     data: CharacterOnboardingCreate,
@@ -128,7 +145,7 @@ def create_my_character(
     db: Session = Depends(get_db),
 ):
     created = crud.create_character_for_member(db, member, data)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         created = crud.scrub_admin_only_stats(created)
     return created
 
@@ -139,7 +156,7 @@ def get_my_character(member: Member = Depends(get_current_member), db: Session =
     if character_id is None:
         raise HTTPException(status_code=404, detail="생성된 캐릭터가 없습니다.")
     detail = crud.get_character_detail(db, character_id)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
 
@@ -163,7 +180,7 @@ def update_character(
 @app.get("/characters", response_model=list[CharacterRead])
 def list_characters(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     characters = crud.get_characters(db)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         # 관리자가 만든 캐릭터(러너 계정에 연결되지 않음)는 러너 목록에 노출하지 않는다.
         # 단, 전투에 참여하면 전투 세션 스냅샷을 통해 전투 화면에서는 그대로 보인다.
         characters = [c for c in characters if c.member_id is not None]
@@ -178,7 +195,7 @@ def get_character(
     db: Session = Depends(get_db),
 ):
     detail = crud.get_character_detail(db, character_id)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
         # 다른 캐릭터를 조회할 때는 보상·구매 이력을 숨긴다.
         if crud.get_member_character_id(db, member.id) != character_id:
@@ -224,7 +241,7 @@ async def upload_character_image(
     db.commit()
 
     detail = crud.get_character_detail(db, character_id)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
 
@@ -357,7 +374,7 @@ def list_challenges(
     db: Session = Depends(get_db),
 ):
     challenges = crud.get_challenges(db, chapter)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         challenges = [c for c in challenges if c.is_public]
     return challenges
 
@@ -433,7 +450,7 @@ def list_items(
     db: Session = Depends(get_db),
 ):
     items = crud.get_items_with_stock(db, character_id)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         items = [
             item.model_copy(
                 update={
@@ -450,7 +467,7 @@ def list_items(
 
 @app.post("/purchases/bulk", response_model=list[PurchaseRead])
 def bulk_purchase(data: BulkPurchaseRequest, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
-    is_admin = member.role == "ADMIN"
+    is_admin = is_admin_role(member.role)
     if not is_admin and crud.get_member_character_id(db, member.id) != data.character_id:
         raise HTTPException(status_code=403, detail="본인 캐릭터로만 구매할 수 있습니다.")
     purchases = crud.bulk_purchase(db, data, is_admin=is_admin)
@@ -475,7 +492,7 @@ def bulk_purchase(data: BulkPurchaseRequest, member: Member = Depends(get_curren
 
 
 def _require_own_character_or_admin(db: Session, member: Member, character_id: int) -> None:
-    if member.role != "ADMIN" and crud.get_member_character_id(db, member.id) != character_id:
+    if not is_admin_role(member.role) and crud.get_member_character_id(db, member.id) != character_id:
         raise HTTPException(status_code=403, detail="본인 캐릭터에만 사용할 수 있습니다.")
 
 
@@ -489,7 +506,7 @@ def use_item(
 ):
     _require_own_character_or_admin(db, member, character_id)
     detail = crud.use_item(db, character_id, item_id, data.chosen_stats if data else None)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
 
@@ -503,7 +520,7 @@ def equip_item(
 ):
     _require_own_character_or_admin(db, member, character_id)
     detail = crud.equip_item(db, character_id, item_id)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
 
@@ -517,7 +534,7 @@ def unequip_item(
 ):
     _require_own_character_or_admin(db, member, character_id)
     detail = crud.unequip_item(db, character_id, item_id)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
 
@@ -539,7 +556,7 @@ def list_missions(
     db: Session = Depends(get_db),
 ):
     missions = crud.get_missions(db, chapter)
-    if member.role != "ADMIN":
+    if not is_admin_role(member.role):
         missions = [m for m in missions if m.is_public]
     return missions
 
@@ -616,7 +633,7 @@ def pay_mission_rewards(mission_id: int, member: Member = Depends(require_admin)
 @app.get("/settlements", response_model=list[SettlementRead])
 def list_settlements(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     """어드민은 전체, 러너는 본인 캐릭터의 정산 요청만 조회한다."""
-    if member.role == "ADMIN":
+    if is_admin_role(member.role):
         return crud.get_settlement_requests(db)
     character_id = crud.get_member_character_id(db, member.id)
     if character_id is None:

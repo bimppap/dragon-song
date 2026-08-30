@@ -6,7 +6,7 @@ from functools import lru_cache
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, verify_password
+from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, is_admin_role, verify_password
 from app.game_data import build_skill_node_specs, calculate_stat_grade_totals, get_level_grade_stats
 from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
@@ -72,6 +72,7 @@ from app.schemas import (
     SkillNodeRead,
     SkillNodeUpdate,
     SkillVisibilityUpdate,
+    StaffCandidateRead,
 )
 
 
@@ -337,6 +338,46 @@ def to_member_read(db: Session, member: Member) -> MemberRead:
         login_id=member.login_id,
         role=member.role,
         character_id=get_member_character_id(db, member.id),
+    )
+
+
+def list_staff_candidates(db: Session) -> list[StaffCandidateRead]:
+    """권한 탭에서 스텝 임명/해제 대상으로 보여줄 목록. 캐릭터를 가진 RUNNER/STAFF만 대상이다."""
+    rows = (
+        db.query(Member, Character)
+        .join(Character, Character.member_id == Member.id)
+        .filter(Member.role.in_(["RUNNER", "STAFF"]))
+        .order_by(Character.name.asc())
+        .all()
+    )
+    return [
+        StaffCandidateRead(
+            member_id=member.id,
+            character_id=character.id,
+            character_name=character.name,
+            role=member.role,
+        )
+        for member, character in rows
+    ]
+
+
+def set_member_staff_role(db: Session, member_id: int, role: str) -> StaffCandidateRead:
+    member = db.get(Member, member_id)
+    if member is None:
+        raise HTTPException(status_code=404, detail="회원을 찾을 수 없습니다.")
+    if member.role not in ("RUNNER", "STAFF"):
+        raise HTTPException(status_code=400, detail="러너에게만 스텝 권한을 부여/해제할 수 있습니다.")
+    character = db.query(Character).filter(Character.member_id == member.id).first()
+    if character is None:
+        raise HTTPException(status_code=400, detail="캐릭터가 없는 회원에게는 스텝 권한을 부여할 수 없습니다.")
+    member.role = role
+    db.commit()
+    db.refresh(member)
+    return StaffCandidateRead(
+        member_id=member.id,
+        character_id=character.id,
+        character_name=character.name,
+        role=member.role,
     )
 
 
@@ -2290,7 +2331,7 @@ def get_enemies(db: Session, chapter: str | None = None) -> list[EnemyRead]:
 
 
 def get_enemies_for_member(db: Session, member: Member, chapter: str | None = None) -> list[EnemyRead]:
-    if member.role == "ADMIN":
+    if is_admin_role(member.role):
         return get_enemies(db, chapter)
 
     today = _today()
@@ -3147,7 +3188,7 @@ def get_battle_session(db: Session, session_id: int, member: Member) -> BattleSe
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     # 러너는 실전(real) 전투만 관전할 수 있다. 연습 전투는 관리자 전용이다.
-    if member.role != "ADMIN" and session.mode != "real":
+    if not is_admin_role(member.role) and session.mode != "real":
         raise HTTPException(status_code=403, detail="열람 권한이 없습니다.")
     return _to_battle_session_read(session)
 

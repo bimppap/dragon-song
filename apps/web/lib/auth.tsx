@@ -10,6 +10,7 @@ import {
   SESSION_EXPIRED_EVENT,
   type LoginRequest,
   type Member,
+  type MemberRole,
   type SignupRequest,
 } from "./api";
 import { clearToken, getRefreshToken, getToken, setRefreshToken, setToken } from "./token";
@@ -130,7 +131,12 @@ export function useRequireMember(): Member | null | undefined {
   return member;
 }
 
-/** ADMIN 권한을 가진 회원만 통과시킨다. */
+/** STAFF는 권한 탭 접근을 제외하면 ADMIN과 동일한 관리 작업을 할 수 있다. */
+export function isAdminRole(role: MemberRole): boolean {
+  return role === "ADMIN" || role === "STAFF";
+}
+
+/** ADMIN 또는 STAFF 권한을 가진 회원만 통과시킨다(관리 페이지 접근). */
 export function useRequireAdmin(): Member | null | undefined {
   const { member } = useAuth();
   const router = useRouter();
@@ -141,12 +147,12 @@ export function useRequireAdmin(): Member | null | undefined {
       router.replace("/login");
       return;
     }
-    if (member.role !== "ADMIN") {
+    if (!isAdminRole(member.role)) {
       router.replace("/");
     }
   }, [member, router]);
 
   if (member === undefined) return undefined;
-  if (member !== null && member.role === "ADMIN") return member;
+  if (member !== null && isAdminRole(member.role)) return member;
   return null;
 }
