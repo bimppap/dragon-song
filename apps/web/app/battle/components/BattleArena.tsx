@@ -706,6 +706,16 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     }
   }
 
+  async function handleCopyTurnLog(round: number, entry: BattleSession["log"][number]) {
+    const label = entry.phase ? PHASE_LABEL[entry.phase] : `라운드 ${round}`;
+    try {
+      await navigator.clipboard.writeText(entry.events.join("\n"));
+      toast(`${label} 로그를 복사했습니다.`, "success");
+    } catch {
+      toast("로그 복사에 실패했습니다.", "error");
+    }
+  }
+
   async function openJoin() {
     setJoinOpen(true);
     if (joinCandidates.length === 0) {
@@ -1499,9 +1509,20 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               <div className="text-xs font-bold text-ivory/85">라운드 {group.round}</div>
               {[...group.entries].reverse().map((entry, entryIndex) => (
                 <div key={entryIndex} className="space-y-1 pl-2">
-                  {entry.phase && (
-                    <div className="text-[11px] font-semibold text-gold/90">{PHASE_LABEL[entry.phase]}</div>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {entry.phase && (
+                      <span className="text-[11px] font-semibold text-gold/90">{PHASE_LABEL[entry.phase]}</span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => handleCopyTurnLog(group.round, entry)}
+                      className="text-muted transition-colors hover:text-gold"
+                      title="이 턴 로그 복사"
+                      aria-label="이 턴 로그 복사"
+                    >
+                      <Files size={12} />
+                    </button>
+                  </div>
                   {entry.events.map((e, i) => (
                     <div key={i} className="text-sm text-ivory/85">{e}</div>
                   ))}
