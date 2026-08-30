@@ -7,17 +7,18 @@ load_dotenv()
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Supabase 무료 플랜은 최대 직접 연결(direct connection) 수를 60개로 제한한다
-# (풀러(Supavisor)의 클라이언트 한도는 이보다 훨씬 큰 200개). 이 60개 상한은
-# 배포된 서버·로컬 개발 서버 등 이 프로젝트에 붙는 모든 클라이언트가 공유한다.
-# API 서버는 워커 프로세스 1개로만 운영되므로(워커마다 풀이 따로 생김에 주의),
-# pool_size + max_overflow 합이 이 60개 한도 안에서 여유를 두는 값이어야 한다.
-# 초과 요청은 즉시 실패시키지 않고 잠시 대기했다가 반납된 커넥션을 재사용한다.
-# 워커를 여러 개로 늘리거나 로컬 개발을 이 DB에 동시에 붙일 계획이면 그만큼
-# 여유분을 남기고 값을 낮춰야 한다(DB_POOL_SIZE/DB_MAX_OVERFLOW로 조절).
+# DATABASE_URL은 Supavisor 풀러의 "트랜잭션 모드"(포트 6543)를 사용한다.
+# "세션 모드"(포트 5432)는 클라이언트 커넥션 하나가 Postgres 백엔드 커넥션 하나를
+# 그대로 물고 있는 방식이라 풀러 자체 상한(무료 플랜 15개)에 쉽게 걸리지만,
+# 트랜잭션 모드는 트랜잭션이 끝나는 즉시 백엔드 커넥션을 반납해 여러 클라이언트가
+# 훨씬 적은 백엔드 커넥션을 돌려쓸 수 있다. 이 프로젝트는 요청마다 세션을 열고
+# 닫는 짧은 트랜잭션만 쓰고(LISTEN/NOTIFY, advisory lock, 세션 단위 SET, 이름 있는
+# prepared statement 등 세션 상태에 의존하는 기능 없음) 트랜잭션 모드와 호환된다.
+# Postgres 직접 연결 한도(60)와도 별개이므로, 워커·로컬 개발 서버가 여럿 붙어도
+# pool_size + max_overflow를 넉넉하게 낮게 유지해 두 한도 모두에 여유를 둔다.
 engine = create_engine(
     DATABASE_URL,
-    pool_size=int(os.getenv("DB_POOL_SIZE", "25")),
+    pool_size=int(os.getenv("DB_POOL_SIZE", "40")),
     max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "10")),
     pool_timeout=30,
     pool_pre_ping=True,
