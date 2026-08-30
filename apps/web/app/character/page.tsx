@@ -7,7 +7,7 @@ import CharacterList from "../components/character/CharacterList";
 import CharacterCardGrid from "../components/character/CharacterCardGrid";
 import CharacterInfo from "../components/character/CharacterInfo";
 import CharacterCreate from "../components/character/CharacterCreate";
-import { fetchCharacters, fetchMyCharacter, type Character, type CharacterDetail } from "@/lib/api";
+import { fetchCharacters, fetchMyCharacter, type Character, type CharacterDetail, type MemberRole } from "@/lib/api";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { useToast } from "@/components/common/ToastProvider";
@@ -42,7 +42,18 @@ function AdminCharacterConsole() {
 
   return <PageContainer max="4xl" className="space-y-8">
     <TabBar tabs={TABS} active={tab} onChange={setTab} />
-    {tab === "list" && <CharacterList characters={characters} loading={loadingCharacters} showAdminFlags onSelectCharacter={(character) => { setFocusCharacterId(character.id); setTab("info"); }} />}
+    {tab === "list" && (
+      <CharacterList
+        characters={characters}
+        loading={loadingCharacters}
+        showAdminFlags
+        editableAdminFlags
+        onSelectCharacter={(character) => {
+          setFocusCharacterId(character.id);
+          setTab("info");
+        }}
+      />
+    )}
     {tab === "info" && (
       <CharacterInfo
         key={focusCharacterId ?? "info"}
@@ -80,7 +91,7 @@ type RunnerView =
 
 type RunnerListLayout = "card" | "table";
 
-function MyCharacterConsole() {
+function MyCharacterConsole({ role }: { role: MemberRole }) {
   const { toast } = useToast();
   const [view, setView] = useState<RunnerView>({ mode: "mine" });
   const [listLayout, setListLayout] = useState<RunnerListLayout>("card");
@@ -113,6 +124,8 @@ function MyCharacterConsole() {
       setOthersLoading(false);
     }
   }
+
+  const isStaff = role === "STAFF";
 
   return <PageContainer max="4xl" className="space-y-8">
     {view.mode === "mine" && <>
@@ -161,6 +174,8 @@ function MyCharacterConsole() {
         <CharacterList
           characters={others}
           loading={othersLoading}
+          showId={isStaff}
+          showAdminFlags={isStaff}
           onSelectCharacter={(selected) => setView({ mode: "other", character: selected })}
         />
       ) : (
@@ -197,5 +212,5 @@ function MyCharacterConsole() {
 export default function CharacterPage() {
   const member = useRequireMember();
   if (!member) return null;
-  return member.role === "ADMIN" ? <AdminCharacterConsole /> : <MyCharacterConsole />;
+  return member.role === "ADMIN" ? <AdminCharacterConsole /> : <MyCharacterConsole role={member.role} />;
 }

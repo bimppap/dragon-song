@@ -14,8 +14,11 @@ interface Props {
   characters: Character[];
   loading: boolean;
   onSelectCharacter?: (character: Character) => void;
-  /** admin 전용: 주의/경고 편집 컬럼을 노출한다. */
+  showId?: boolean;
+  /** 주의/경고 컬럼을 노출한다. */
   showAdminFlags?: boolean;
+  /** 주의/경고 컬럼 편집을 허용한다. */
+  editableAdminFlags?: boolean;
 }
 
 const defaultColDef: ColDef<Character> = {
@@ -24,17 +27,24 @@ const defaultColDef: ColDef<Character> = {
   cellClass: "whitespace-nowrap",
 };
 
+const idColDef: ColDef<Character> = {
+  headerName: "ID",
+  field: "id",
+  flex: 0.6,
+  minWidth: 52,
+  cellRenderer: (p: ICellRendererParams<Character>) => (
+    <span className="font-num text-xs text-muted">{p.value}</span>
+  ),
+};
+
 const baseColDefs: ColDef<Character>[] = [
   {
-    headerName: "ID",
-    field: "id",
-    flex: 0.6,
-    minWidth: 52,
-    cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className="font-num text-xs text-muted">{p.value}</span>
-    ),
+    headerName: "이름",
+    field: "name",
+    flex: 1.8,
+    minWidth: 96,
+    filter: true,
   },
-  { headerName: "이름", field: "name", flex: 1.8, minWidth: 96, filter: true },
   {
     headerName: "Lv",
     field: "lv",
@@ -121,34 +131,57 @@ const baseColDefs: ColDef<Character>[] = [
 
 const ADMIN_FLAG_FIELDS = new Set(["caution", "warning_count"]);
 
-const adminFlagColDefs: ColDef<Character>[] = [
-  {
-    headerName: "주의",
-    field: "caution",
-    flex: 0.7,
-    minWidth: 60,
-    editable: true,
-    cellRenderer: "agCheckboxCellRenderer",
-    cellEditor: "agCheckboxCellEditor",
-  },
-  {
-    headerName: "경고",
-    field: "warning_count",
-    flex: 0.7,
-    minWidth: 62,
-    type: "numericColumn",
-    editable: true,
-    cellEditor: "agNumberCellEditor",
-    cellEditorParams: { min: 0, precision: 0 },
-    cellRenderer: (p: ICellRendererParams<Character>) => (
-      <span className={`font-num font-semibold ${Number(p.value) > 0 ? "text-red-400" : "text-muted"}`}>
-        {Number(p.value ?? 0).toLocaleString()}
-      </span>
-    ),
-  },
-];
+function adminFlagColDefs(editable: boolean): ColDef<Character>[] {
+  return [
+    {
+      headerName: "주의",
+      field: "caution",
+      flex: 0.7,
+      minWidth: 60,
+      editable,
+      ...(editable
+        ? {
+            cellRenderer: "agCheckboxCellRenderer",
+            cellEditor: "agCheckboxCellEditor",
+          }
+        : {
+            cellRenderer: (p: ICellRendererParams<Character>) => (
+              <span className={`text-xs font-semibold ${p.value ? "text-amber-300" : "text-muted"}`}>
+                {p.value ? "주의" : "-"}
+              </span>
+            ),
+          }),
+    },
+    {
+      headerName: "경고",
+      field: "warning_count",
+      flex: 0.7,
+      minWidth: 62,
+      type: "numericColumn",
+      editable,
+      ...(editable
+        ? {
+            cellEditor: "agNumberCellEditor",
+            cellEditorParams: { min: 0, precision: 0 },
+          }
+        : {}),
+      cellRenderer: (p: ICellRendererParams<Character>) => (
+        <span className={`font-num font-semibold ${Number(p.value) > 0 ? "text-red-400" : "text-muted"}`}>
+          {Number(p.value ?? 0).toLocaleString()}
+        </span>
+      ),
+    },
+  ];
+}
 
-export default function CharacterList({ characters, loading, onSelectCharacter, showAdminFlags = false }: Props) {
+export default function CharacterList({
+  characters,
+  loading,
+  onSelectCharacter,
+  showId = true,
+  showAdminFlags = false,
+  editableAdminFlags = false,
+}: Props) {
   const { toast } = useToast();
 
   if (loading) {
@@ -171,16 +204,20 @@ export default function CharacterList({ characters, loading, onSelectCharacter, 
     );
   }
 
-  const colDefs = showAdminFlags ? [...baseColDefs, ...adminFlagColDefs] : baseColDefs;
+  const colDefs = [
+    ...(showId ? [idColDef] : []),
+    ...baseColDefs,
+    ...(showAdminFlags ? adminFlagColDefs(editableAdminFlags) : []),
+  ];
 
   function handleCellClicked(event: CellClickedEvent<Character>) {
-    // 관리 플래그 컬럼 클릭은 편집이므로 상세 이동을 막는다.
-    if (ADMIN_FLAG_FIELDS.has(event.column.getColId())) return;
+    // 편집 가능한 관리 플래그 컬럼 클릭은 상세 이동을 막는다.
+    if (editableAdminFlags && ADMIN_FLAG_FIELDS.has(event.column.getColId())) return;
     if (event.data) onSelectCharacter?.(event.data);
   }
 
   async function handleCellValueChanged(event: CellValueChangedEvent<Character>) {
-    if (!ADMIN_FLAG_FIELDS.has(event.column.getColId()) || !event.data) return;
+    if (!editableAdminFlags || !ADMIN_FLAG_FIELDS.has(event.column.getColId()) || !event.data) return;
     const row = event.data;
     try {
       const updated = await updateCharacterFlags(row.id, {
@@ -202,7 +239,7 @@ export default function CharacterList({ characters, loading, onSelectCharacter, 
           columnDefs={colDefs}
           defaultColDef={defaultColDef}
           rowHeight={44}
-          singleClickEdit
+          singleClickEdit={editableAdminFlags}
           onCellClicked={handleCellClicked}
           onCellValueChanged={handleCellValueChanged}
           rowStyle={{ cursor: onSelectCharacter ? "pointer" : "default" }}
