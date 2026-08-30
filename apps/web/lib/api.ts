@@ -960,6 +960,7 @@ export interface AdminGiftRequest {
   character_ids: number[];
   gold: number;
   cp: number;
+  experience: number;
   items: CartItem[];
 }
 

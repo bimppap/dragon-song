@@ -442,17 +442,18 @@ class CharacterFlagsUpdate(BaseModel):
 
 
 class AdminGiftRequest(BaseModel):
-    """관리자가 하나 이상의 캐릭터에게 보내는 선물 (골드·CP·아이템). 각 캐릭터에게 동일한 내용이 각각 지급된다."""
+    """관리자가 하나 이상의 캐릭터에게 보내는 선물 (골드·CP·경험치·아이템). 각 캐릭터에게 동일한 내용이 각각 지급된다."""
 
     character_ids: list[int] = Field(min_length=1)
     gold: int = Field(default=0, ge=0)
     cp: int = Field(default=0, ge=0)
+    experience: int = Field(default=0, ge=0)
     items: list[CartItem] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def check_has_content(self):
-        if self.gold <= 0 and self.cp <= 0 and not self.items:
-            raise ValueError("보낼 골드, CP 또는 아이템을 입력해 주세요.")
+        if self.gold <= 0 and self.cp <= 0 and self.experience <= 0 and not self.items:
+            raise ValueError("보낼 골드, CP, 경험치 또는 아이템을 입력해 주세요.")
         if any(item.quantity < 1 for item in self.items):
             raise ValueError("아이템 수량은 1 이상이어야 합니다.")
         return self

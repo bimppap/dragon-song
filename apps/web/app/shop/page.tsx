@@ -208,6 +208,7 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
   const { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove } = useCartEntries();
   const [gold, setGold] = useState(0);
   const [cp, setCp] = useState(0);
+  const [experience, setExperience] = useState(0);
   const [sending, setSending] = useState(false);
   const [shopStatusSaving, setShopStatusSaving] = useState(false);
 
@@ -246,6 +247,7 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
     const contents = [
       gold > 0 ? `골드 ${gold.toLocaleString()}G` : null,
       cp > 0 ? `CP ${cp.toLocaleString()}` : null,
+      experience > 0 ? `경험치 ${experience.toLocaleString()}` : null,
       ...cart.map((e) => `${e.item.name} ×${e.qty}`),
     ].filter(Boolean).join(", ");
 
@@ -262,12 +264,14 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
         character_ids: selectedCharacterIds,
         gold,
         cp,
+        experience,
         items: cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })),
       });
       await alert(`${characterNames}에게 선물을 보냈습니다. 보상 이력에 '관리자의 선물'로 기록됩니다.`);
       setCart([]);
       setGold(0);
       setCp(0);
+      setExperience(0);
       setSelectedCharacterIds([]);
       setRefreshKey((k) => k + 1);
     } catch (e) {
@@ -285,7 +289,7 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
           <p className="text-sm text-muted">
             {managing
               ? "아이템을 관리하고 구매 내역을 확인할 수 있습니다."
-              : "캐릭터를 선택해 골드·CP·아이템을 선물로 보낼 수 있습니다."}
+              : "캐릭터를 선택해 골드·CP·경험치·아이템을 선물로 보낼 수 있습니다."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -325,9 +329,11 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
               entries={cart}
               gold={gold}
               cp={cp}
+              experience={experience}
               loading={sending}
               onGoldChange={setGold}
               onCpChange={setCp}
+              onExperienceChange={setExperience}
               onUpdateQty={handleUpdateQty}
               onRemove={handleRemove}
               onSend={handleSend}
@@ -341,10 +347,11 @@ function AdminShop({ shopOpen, onShopOpenChange }: { shopOpen: boolean; onShopOp
 
 export default function ShopPage() {
   const member = useRequireMember();
+  const memberId = member?.id ?? null;
   const [shopOpen, setShopOpen] = useState(true);
 
   useEffect(() => {
-    if (!member) return;
+    if (memberId == null) return;
     let cancelled = false;
     fetchShopStatus()
       .then((status) => {
@@ -352,7 +359,7 @@ export default function ShopPage() {
       })
       .catch(console.error);
     return () => { cancelled = true; };
-  }, [member?.id]);
+  }, [memberId]);
 
   if (!member) return null;
 

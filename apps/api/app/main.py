@@ -698,7 +698,7 @@ def revoke_reward(reward_id: int, member: Member = Depends(require_admin), db: S
 
 @app.post("/rewards/admin-gift", response_model=list[RewardRead])
 def send_admin_gift(data: AdminGiftRequest, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    """관리자가 캐릭터에게 골드·CP·아이템을 선물한다. 보상 이력에 '관리자의 선물'로 남는다."""
+    """관리자가 캐릭터에게 골드·CP·경험치·아이템을 선물한다. 보상 이력에 '관리자의 선물'로 남는다."""
     return crud.send_admin_gift(db, data)
 
 

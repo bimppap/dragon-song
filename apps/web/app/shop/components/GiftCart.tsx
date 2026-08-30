@@ -1,6 +1,6 @@
 "use client";
 
-import { Coins, Gift, Minus, Plus, Sparkles, Trash2, UserPlus, X } from "lucide-react";
+import { Coins, Gift, Minus, Plus, Sparkles, Star, Trash2, UserPlus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -18,9 +18,11 @@ interface Props {
   entries: CartEntry[];
   gold: number;
   cp: number;
+  experience: number;
   loading: boolean;
   onGoldChange: (value: number) => void;
   onCpChange: (value: number) => void;
+  onExperienceChange: (value: number) => void;
   onUpdateQty: (itemId: number, qty: number) => void;
   onRemove: (itemId: number) => void;
   onSend: () => void;
@@ -35,15 +37,17 @@ export default function GiftCart({
   entries,
   gold,
   cp,
+  experience,
   loading,
   onGoldChange,
   onCpChange,
+  onExperienceChange,
   onUpdateQty,
   onRemove,
   onSend,
 }: Props) {
   const totalQty = entries.reduce((sum, e) => sum + e.qty, 0);
-  const hasContent = gold > 0 || cp > 0 || entries.length > 0;
+  const hasContent = gold > 0 || cp > 0 || experience > 0 || entries.length > 0;
   const charactersById = new Map(characters.map((c) => [c.id, c]));
   const characterOptions = characters
     .filter((c) => !selectedCharacterIds.includes(c.id))
@@ -102,30 +106,44 @@ export default function GiftCart({
         )}
       </div>
 
-      {/* 골드 / CP */}
-      <div className="grid grid-cols-2 gap-3 border-b border-line px-4 py-3">
+      {/* 골드 / CP / 경험치 */}
+      <div className="space-y-3 border-b border-line px-4 py-3">
+        <div className="grid grid-cols-2 gap-3">
+          <label className="space-y-1">
+            <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted">
+              <Coins size={11} className="text-gold" />골드
+            </span>
+            <Input
+              type="number"
+              min={0}
+              value={gold === 0 ? "" : gold}
+              placeholder="0"
+              onChange={(event) => onGoldChange(parsePositiveInt(event.target.value))}
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted">
+              <Sparkles size={11} className="text-gold" />CP
+            </span>
+            <Input
+              type="number"
+              min={0}
+              value={cp === 0 ? "" : cp}
+              placeholder="0"
+              onChange={(event) => onCpChange(parsePositiveInt(event.target.value))}
+            />
+          </label>
+        </div>
         <label className="space-y-1">
           <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted">
-            <Coins size={11} className="text-gold" />골드
+            <Star size={11} className="text-gold" />경험치
           </span>
           <Input
             type="number"
             min={0}
-            value={gold === 0 ? "" : gold}
+            value={experience === 0 ? "" : experience}
             placeholder="0"
-            onChange={(event) => onGoldChange(parsePositiveInt(event.target.value))}
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="flex items-center gap-1 text-xs font-semibold uppercase tracking-wide text-muted">
-            <Sparkles size={11} className="text-gold" />CP
-          </span>
-          <Input
-            type="number"
-            min={0}
-            value={cp === 0 ? "" : cp}
-            placeholder="0"
-            onChange={(event) => onCpChange(parsePositiveInt(event.target.value))}
+            onChange={(event) => onExperienceChange(parsePositiveInt(event.target.value))}
           />
         </label>
       </div>

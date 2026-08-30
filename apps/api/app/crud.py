@@ -1941,7 +1941,7 @@ def revoke_reward(db: Session, reward_id: int) -> RewardWithCharacterRead:
 
 
 def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
-    """관리자가 하나 이상의 캐릭터에게 골드·CP·아이템을 지급하고, 캐릭터별로 '관리자의 선물' 보상 이력을 남긴다."""
+    """관리자가 하나 이상의 캐릭터에게 골드·CP·경험치·아이템을 지급하고, 캐릭터별로 '관리자의 선물' 보상 이력을 남긴다."""
     requested_character_ids = list(dict.fromkeys(data.character_ids))
     characters = db.query(Character).filter(Character.id.in_(requested_character_ids)).all()
     characters_by_id = {character.id: character for character in characters}
@@ -1973,6 +1973,9 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
         if data.cp > 0:
             character.cp += data.cp
             reward_items.append({"type": "stat", "stat": "cp", "amount": data.cp})
+        if data.experience > 0:
+            character.exp += data.experience
+            reward_items.append({"type": "experience", "amount": data.experience})
 
         if data.items:
             item_grants = [
@@ -1990,6 +1993,7 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
         )
         db.add(reward)
         rewards.append(reward)
+        _apply_growth_from_exp(db, character)
 
     db.flush()
     item_names = {item.id: item.name for item in items_map.values()}
