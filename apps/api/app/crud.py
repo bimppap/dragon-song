@@ -3384,6 +3384,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
 
     events.append("📣 적의 행동 암시!")
     pending_actions: list[dict] = []
+    next_summon_id = max([s["id"] for s in summons], default=0)
     for action in data.enemy_actions:
         enemy = enemies_by_id.get(action.enemy_id)
         if not enemy or not _enemy_targetable(enemy, round_no):
@@ -3420,10 +3421,31 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 "skill_index": action.skill_index, "target_character_ids": target_ids,
             })
         elif action.kind == "summon" and skill and skill["skill_type"] == "소환":
+            count = skill.get("summon_count") or 1
             summon_name = skill.get("summon_name") or f"{enemy['name']}의 소환수"
-            events.append(
-                f"🔮 {enemy['name']} - {skill['name']} (소환 예정: {summon_name} x{skill.get('summon_count') or 1})"
+            same_name_summons = [s for s in summons if s["name"] == summon_name]
+            if same_name_summons and any(not isinstance(s.get("log_number"), int) for s in same_name_summons):
+                for number, existing_summon in enumerate(
+                    sorted(same_name_summons, key=lambda value: value["id"]),
+                    start=1,
+                ):
+                    existing_summon["log_number"] = number
+            next_log_number = max(
+                (s.get("log_number", 0) for s in same_name_summons),
+                default=0,
             )
+            for _ in range(count):
+                next_summon_id += 1
+                next_log_number += 1
+                summons.append({
+                    "id": next_summon_id,
+                    "name": summon_name,
+                    "hp": skill.get("summon_hp") or 1,
+                    "max_hp": skill.get("summon_hp") or 1,
+                    "attack": skill.get("summon_attack") or 0,
+                    "log_number": next_log_number if same_name_summons or count > 1 else None,
+                })
+            events.append(f"👹 {enemy['name']} - {skill['name']} → {summon_name} x{count} 소환!")
             pending_actions.append({
                 "enemy_id": enemy["enemy_id"], "kind": "summon",
                 "skill_index": action.skill_index, "target_character_ids": [],
@@ -3438,6 +3460,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     session.pending_enemy_actions = pending_actions
     session.phase = "ally"
     session.participants = participants
+    session.summons = summons
     session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
 
     db.commit()
@@ -4213,9 +4236,8 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             })
         return recipient, dmg, absorbed, redirected, counter_results
 
-    # 라운드 시작부터 살아 있던 소환수만 이번 라운드에 공격한다.
+    # 소환수는 행동 암시 턴에 이미 소환되므로, 이번 라운드에 소환된 소환수도 곧바로 공격한다.
     attacking_summons = [s for s in summons if s["hp"] > 0]
-    next_summon_id = max([s["id"] for s in summons], default=0)
 
     for enemy_action in session.pending_enemy_actions:
         enemy = enemies_by_id.get(enemy_action.get("enemy_id"))
@@ -4270,32 +4292,8 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 events.append(f"💫 {', '.join(sorted(newly_downed_names))} 기절")
             if all(value["hp"] <= 0 for value in enemies):
                 break
-        elif enemy_action.get("kind") == "summon" and skill and skill["skill_type"] == "소환":
-            count = skill.get("summon_count") or 1
-            summon_name = skill.get("summon_name") or f"{enemy['name']}의 소환수"
-            same_name_summons = [s for s in summons if s["name"] == summon_name]
-            if same_name_summons and any(not isinstance(s.get("log_number"), int) for s in same_name_summons):
-                for number, existing_summon in enumerate(
-                    sorted(same_name_summons, key=lambda value: value["id"]),
-                    start=1,
-                ):
-                    existing_summon["log_number"] = number
-            next_log_number = max(
-                (s.get("log_number", 0) for s in same_name_summons),
-                default=0,
-            )
-            for _ in range(count):
-                next_summon_id += 1
-                next_log_number += 1
-                summons.append({
-                    "id": next_summon_id,
-                    "name": summon_name,
-                    "hp": skill.get("summon_hp") or 1,
-                    "max_hp": skill.get("summon_hp") or 1,
-                    "attack": skill.get("summon_attack") or 0,
-                    "log_number": next_log_number if same_name_summons or count > 1 else None,
-                })
-            events.append(f"👹 {enemy['name']} 소환: {skill.get('summon_name')} x{count}")
+        elif enemy_action.get("kind") == "summon":
+            pass  # 소환수는 행동 암시 턴에 이미 소환되었고, 이번 라운드 공격은 아래 소환수 행동에서 처리된다.
         else:
             events.append(f"💤 {enemy['name']} 무반응")
 
