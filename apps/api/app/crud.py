@@ -983,6 +983,42 @@ def _apply_grade_choice(character: Character, chosen_stats: list[str], required_
             character.mp = max(0, min(character.mp + delta, character.mp_max))
 
 
+def upgrade_character_stat_with_ap(db: Session, character_id: int, stat: str, amount: int) -> CharacterDetailRead:
+    """AP를 소모해 능력치(용기/인내/자애/지혜) 등급을 amount만큼 올리고, 파생 스탯 증가분을 반영한다."""
+    if stat not in GRADE_STAT_FIELDS:
+        raise HTTPException(status_code=400, detail="용기/인내/자애/지혜 중에서만 선택할 수 있습니다.")
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="1 이상 입력해야 합니다.")
+
+    character = _get_character_or_404(db, character_id)
+    if character.ap < amount:
+        raise HTTPException(status_code=400, detail=f"AP가 부족합니다. (필요: {amount})")
+
+    before = calculate_stat_grade_totals(
+        character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
+    )
+    setattr(character, stat, getattr(character, stat) + amount)
+    character.ap -= amount
+    after = calculate_stat_grade_totals(
+        character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
+    )
+    for key, attr in _GRADE_TOTAL_TO_ATTR.items():
+        delta = after[key] - before[key]
+        if not delta:
+            continue
+        setattr(character, attr, getattr(character, attr) + delta)
+        # 최대 체력/마나가 바뀌면 현재 체력/마나도 같은 만큼 함께 움직인다.
+        if attr == "hp_max":
+            character.hp = max(0, character.hp + delta)
+            if not character.over_heal:
+                character.hp = min(character.hp, character.hp_max)
+        elif attr == "mp_max":
+            character.mp = max(0, min(character.mp + delta, character.mp_max))
+
+    db.commit()
+    return get_character_detail(db, character_id)
+
+
 def _get_or_create_item_state(db: Session, character_id: int, item_id: int) -> CharacterItemState:
     state = (
         db.query(CharacterItemState)

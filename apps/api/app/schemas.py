@@ -451,6 +451,12 @@ class UseItemRequest(BaseModel):
     chosen_stats: list[str] = Field(default_factory=list)
 
 
+class CharacterStatUpgradeRequest(BaseModel):
+    """AP를 소모해 능력치(용기/인내/자애/지혜) 등급을 올린다."""
+    stat: Literal["stat_courage", "stat_endurance", "stat_charity", "stat_wisdom"]
+    amount: int = Field(default=1, ge=1)
+
+
 class CharacterFlagsUpdate(BaseModel):
     """관리자 전용 관리 플래그 (주의·경고) 수정."""
 

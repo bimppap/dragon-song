@@ -13,6 +13,8 @@ interface DialogOptions {
   confirmText?: string;
   cancelText?: string;
   tone?: "default" | "danger";
+  /** 팝업 최대 너비 (Tailwind max-w-* 클래스). 기본은 max-w-sm. */
+  maxWidthClassName?: string;
 }
 
 type DialogInput = string | DialogOptions;
@@ -101,7 +103,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
           <div
             role="dialog"
             aria-modal="true"
-            className="pixel-frame w-full max-w-sm bg-surface p-6"
+            className={cn("pixel-frame w-full bg-surface p-6", dialog.maxWidthClassName ?? "max-w-sm")}
             onClick={(e) => e.stopPropagation()}
           >
             {dialog.title && <h2 className="text-base font-bold text-ivory">{dialog.title}</h2>}

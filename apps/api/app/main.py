@@ -76,6 +76,7 @@ from app.schemas import (
     CharacterSkillTreeRead,
     TokenResponse,
     UseItemRequest,
+    CharacterStatUpgradeRequest,
 )
 from app import crud
 
@@ -564,6 +565,20 @@ def unequip_item(
 ):
     _require_own_character_or_admin(db, member, character_id)
     detail = crud.unequip_item(db, character_id, item_id)
+    if not is_admin_role(member.role):
+        detail = crud.scrub_admin_only_stats(detail)
+    return detail
+
+
+@app.post("/characters/{character_id}/stats/upgrade", response_model=CharacterDetailRead)
+def upgrade_character_stat(
+    character_id: int,
+    data: CharacterStatUpgradeRequest,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    _require_own_character_or_admin(db, member, character_id)
+    detail = crud.upgrade_character_stat_with_ap(db, character_id, data.stat, data.amount)
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail

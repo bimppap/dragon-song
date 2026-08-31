@@ -815,8 +815,10 @@ export async function updateShopStatus(isOpen: boolean): Promise<ShopStatus> {
   return status;
 }
 
+export type GradeStat = "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom";
+
 /** 가능성/잠재성의 메달 사용 시 선택 가능한 능력치. */
-export const GRADE_CHOICE_STAT_OPTIONS: { value: "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom"; label: string }[] = [
+export const GRADE_CHOICE_STAT_OPTIONS: { value: GradeStat; label: string }[] = [
   { value: "stat_courage", label: "용기" },
   { value: "stat_endurance", label: "인내" },
   { value: "stat_charity", label: "자애" },
@@ -845,6 +847,15 @@ export async function unequipItem(characterId: number, itemId: number): Promise<
   const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/unequip`, {
     method: "POST",
   }, "아이템 장착 해제 실패");
+  invalidateApiCache("characters:");
+  return detail;
+}
+
+export async function upgradeCharacterStat(characterId: number, stat: GradeStat, amount: number): Promise<CharacterDetail> {
+  const detail = await request<CharacterDetail>(`/characters/${characterId}/stats/upgrade`, {
+    method: "POST",
+    body: JSON.stringify({ stat, amount }),
+  }, "능력치 강화 실패");
   invalidateApiCache("characters:");
   return detail;
 }

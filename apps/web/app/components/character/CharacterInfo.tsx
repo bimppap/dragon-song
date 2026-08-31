@@ -6,6 +6,7 @@ import {
   Backpack,
   BookOpen,
   ChevronDown,
+  ChevronsUp,
   ChevronUp,
   Coins,
   Flame,
@@ -34,6 +35,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { formatRewardItems, rewardLabel, rewardVisual } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -49,8 +51,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem, Faction, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
+import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, GRADE_CHOICE_STAT_OPTIONS, unequipItem, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
 
 const FACTION_POSITION_IMAGE: Record<Faction, string> = {
   공격: "/position/position_1.png",
@@ -227,11 +229,17 @@ function CoreStatLine({
   icon: Icon,
   value,
   accent,
+  canUpgrade,
+  upgrading,
+  onUpgrade,
 }: {
   label: string;
   icon: React.ElementType;
   value: number;
   accent: string;
+  canUpgrade: boolean;
+  upgrading: boolean;
+  onUpgrade: () => void;
 }) {
   return (
     <div className="flex items-center justify-between border-b border-line py-2 last:border-b-0">
@@ -239,8 +247,21 @@ function CoreStatLine({
         <Icon size={15} className={accent} />
         {label}
       </span>
-      <span className="font-num text-base font-semibold text-ivory">
-        {numberFormatter.format(value)}
+      <span className="flex items-center gap-1.5">
+        <span className="font-num text-base font-semibold text-ivory">
+          {numberFormatter.format(value)}
+        </span>
+        {canUpgrade && (
+          <button
+            type="button"
+            onClick={onUpgrade}
+            disabled={upgrading}
+            aria-label={`${label} 강화`}
+            className="text-gold disabled:opacity-50"
+          >
+            <ChevronsUp size={16} className="animate-pulse" />
+          </button>
+        )}
       </span>
     </div>
   );
@@ -252,23 +273,67 @@ const GROWTH_EXP_PER_LEVEL = 20;
 function ExperienceBar({
   value,
   max,
+  cumulativeValue,
+  cumulativeMax,
 }: {
   value: number;
   max: number;
+  cumulativeValue: number;
+  cumulativeMax: number;
 }) {
-  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+  const [cumulative, setCumulative] = useState(false);
+  const displayValue = cumulative ? cumulativeValue : value;
+  const displayMax = cumulative ? cumulativeMax : max;
+  const pct = displayMax > 0 ? Math.min(100, Math.max(0, (displayValue / displayMax) * 100)) : 0;
 
   return (
-    <InfoTooltip content={`경험치 ${numberFormatter.format(value)} / ${numberFormatter.format(max)}`}>
-      <span className="inline-flex w-40 items-center">
-        <span className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
-          <span
-            className="block h-full rounded-full bg-gold/100 transition-all"
-            style={{ width: `${pct}%` }}
-          />
-        </span>
+    <button
+      type="button"
+      onClick={() => setCumulative((prev) => !prev)}
+      className="inline-flex items-center gap-1.5 text-sm font-semibold text-ivory/85"
+    >
+      <span className="shrink-0">EXP</span>
+      <span className="h-2.5 w-28 overflow-hidden rounded-full bg-white/10">
+        <span
+          className="block h-full rounded-full bg-gold transition-all"
+          style={{ width: `${pct}%` }}
+        />
       </span>
-    </InfoTooltip>
+      <span className="font-num shrink-0 text-ivory">
+        {numberFormatter.format(displayValue)} / {numberFormatter.format(displayMax)}
+      </span>
+    </button>
+  );
+}
+
+function StatUpgradeAmountInput({
+  ap,
+  onChange,
+}: {
+  ap: number;
+  onChange: (value: number) => void;
+}) {
+  const [value, setValue] = useState(() => Math.min(1, ap));
+
+  function handleChange(raw: string) {
+    const parsed = Math.floor(Number(raw));
+    const clamped = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), ap) : 1;
+    setValue(clamped);
+    onChange(clamped);
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-1">
+      <Input
+        type="number"
+        min={1}
+        max={ap}
+        value={value}
+        onChange={(e) => handleChange(e.target.value)}
+        autoFocus
+      />
+      <p className="text-xs text-muted">보유 AP {numberFormatter.format(ap)}</p>
+    </div>
   );
 }
 
@@ -575,6 +640,7 @@ export default function CharacterInfo({
   const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [statUpgradeLoading, setStatUpgradeLoading] = useState<GradeStat | null>(null);
   const [showDetails, setShowDetails] = useState(false);
   const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
@@ -647,6 +713,28 @@ export default function CharacterInfo({
       toast(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.", "error");
     } finally {
       setItemActionLoadingId(null);
+    }
+  }
+
+  async function handleStatUpgrade(stat: GradeStat, label: string) {
+    if (selectedDetail == null || selectedDetail.ap < 1) return;
+    const ap = selectedDetail.ap;
+    const amountRef: { current: number } = { current: Math.min(1, ap) };
+    const accepted = await confirm({
+      description: `${label}을(를) 얼마나 올리시겠습니까?`,
+      content: <StatUpgradeAmountInput ap={ap} onChange={(value) => { amountRef.current = value; }} />,
+      maxWidthClassName: "max-w-xs",
+    });
+    if (!accepted) return;
+    const amount = amountRef.current;
+    setStatUpgradeLoading(stat);
+    try {
+      const next = await upgradeCharacterStat(selectedDetail.id, stat, amount);
+      setDetail(next);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "능력치 강화에 실패했습니다.", "error");
+    } finally {
+      setStatUpgradeLoading(null);
     }
   }
 
@@ -824,6 +912,12 @@ export default function CharacterInfo({
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
+                    {selectedDetail.attendance_streak > 0 && (
+                      <Badge className="gap-1 border border-orange-300 bg-orange-500/20 font-num text-orange-300">
+                        <Flame size={12} />
+                        연속 {selectedDetail.attendance_streak}일 출석!
+                      </Badge>
+                    )}
                     {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
                   </div>
                 </div>
@@ -832,18 +926,18 @@ export default function CharacterInfo({
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="gap-1 font-num">
                     <Trophy size={12} />
-                    성장 등급 Lv.{selectedDetail.lv}
+                    Lv.{selectedDetail.lv}
                   </Badge>
                   <ExperienceBar
                     value={selectedDetail.exp}
                     max={GROWTH_EXP_PER_LEVEL}
+                    cumulativeValue={(selectedDetail.lv - 1) * GROWTH_EXP_PER_LEVEL + selectedDetail.exp}
+                    cumulativeMax={selectedDetail.lv * GROWTH_EXP_PER_LEVEL}
                   />
-                  {selectedDetail.attendance_streak > 0 && (
-                    <Badge className="gap-1 border border-orange-300 bg-orange-500/20 font-num text-orange-300">
-                      <Flame size={12} />
-                      연속 {selectedDetail.attendance_streak}일 출석!
-                    </Badge>
-                  )}
+                  <Badge variant="outline" className="gap-1 font-num">
+                    <Gauge size={12} className="text-gold" />
+                    AP {numberFormatter.format(selectedDetail.ap)}
+                  </Badge>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
@@ -874,6 +968,9 @@ export default function CharacterInfo({
                       icon={Icon}
                       value={selectedDetail[key]}
                       accent={accent}
+                      canUpgrade={selectedDetail.ap >= 1}
+                      upgrading={statUpgradeLoading === key}
+                      onUpgrade={() => handleStatUpgrade(key, label)}
                     />
                   ))}
                 </div>
@@ -950,8 +1047,8 @@ export default function CharacterInfo({
                   {numberFormatter.format(selectedDetail.cp)} CP
                 </Badge>
                 <Badge variant="outline" className="gap-1 font-num">
-                  <Gauge size={12} className="text-gold" />
-                  AP {numberFormatter.format(selectedDetail.ap)}
+                  <Zap size={12} className="text-violet-500" />
+                  SP {numberFormatter.format(selectedDetail.sp)}
                 </Badge>
               </div>
             </CardHeader>
