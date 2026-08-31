@@ -17,7 +17,7 @@ class SkillProgressionTest(unittest.TestCase):
         engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(engine)
         with Session(engine) as db:
-            character = Character(name="test", ap=10000)
+            character = Character(name="test", sp=10000)
             db.add(character)
             db.commit()
             for book in BOOKS:
@@ -31,13 +31,13 @@ class SkillProgressionTest(unittest.TestCase):
                 return unlock_character_skill_node(db, character.id, skill.id)
 
             def reject(skill, message):
-                before = character.ap
+                before = character.sp
                 count = db.query(CharacterSkillUnlock).count()
                 with self.assertRaises(HTTPException) as caught:
                     unlock(skill)
                 self.assertEqual(caught.exception.status_code, 400)
                 self.assertIn(message, caught.exception.detail)
-                self.assertEqual(character.ap, before)
+                self.assertEqual(character.sp, before)
                 self.assertEqual(db.query(CharacterSkillUnlock).count(), count)
 
             book = BOOKS[0]
@@ -54,7 +54,7 @@ class SkillProgressionTest(unittest.TestCase):
                 self.assertEqual(max(n.tier for n in tree.nodes if n.unlocked), tier)
             _reset_character_skills(db, character)
             db.commit()
-            self.assertEqual(character.ap, 10000)
+            self.assertEqual(character.sp, 10000)
             unlock(node(BOOKS[1], 1, 2))
         engine.dispose()
 

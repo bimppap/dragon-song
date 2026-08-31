@@ -284,7 +284,7 @@ export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
 };
 
 export type ItemEffectStat =
-  | "lv" | "rank" | "exp" | "gold" | "cp" | "ap"
+  | "lv" | "rank" | "exp" | "gold" | "cp" | "ap" | "sp"
   | "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom"
   | "hp" | "hp_max" | "hp_max_p" | "hp_heal_p" | "hp_regen_true" | "hp_regen_fixed"
   | "mp" | "mp_max" | "mp_regen"
@@ -303,6 +303,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "gold", label: "골드" },
   { value: "cp", label: "CP" },
   { value: "ap", label: "AP" },
+  { value: "sp", label: "SP" },
   { value: "stat_courage", label: "용기" },
   { value: "stat_endurance", label: "인내" },
   { value: "stat_charity", label: "자애" },
@@ -448,6 +449,7 @@ export interface Character {
   gold: number;
   cp: number;
   ap: number;
+  sp: number;
 
   // 성장 등급 배지
   lv: number;
@@ -1629,8 +1631,8 @@ export interface CharacterSkillNode extends SkillNode {
 
 export interface CharacterSkillTree {
   book: SkillBook;
-  character_ap: number;
-  ap_cost_to_unlock: number;
+  character_sp: number;
+  sp_cost_to_unlock: number;
   latest_unlocked_node_id: number | null;
   nodes: CharacterSkillNode[];
 }

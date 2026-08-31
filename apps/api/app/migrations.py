@@ -226,6 +226,66 @@ def ensure_schema(engine: Engine) -> None:
         if "custom_image_url" not in unlock_columns:
             statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN custom_image_url VARCHAR")
 
+    # AP/SP 분리: 원래 AP 하나가 (1) 레벨업 성장 지급 (2) "기술 서적" 아이템 사용, 두 출처를
+    # 구분 없이 기술트리 강화에도 함께 쓰이고 있었다. 이제 AP는 능력치(용기/인내/자애/지혜) 전용,
+    # SP는 기술트리 전용으로 나눈다. 기존에 AP로 습득한 기술과 서적 사용 이력은 전부 되돌려
+    # 러너가 다시 선택하게 하고, 소모한 SP(구 ap_spent)와 서적으로 받았던 AP는 정확히 환급/회수한다.
+    # (최초 1회)
+    if "sp" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN sp INTEGER NOT NULL DEFAULT 0")
+
+        if "character_skill_unlocks" in table_names:
+            unlock_columns = {col["name"] for col in inspector.get_columns("character_skill_unlocks")}
+            if "ap_spent" in unlock_columns and "sp_spent" not in unlock_columns:
+                statements.append("ALTER TABLE character_skill_unlocks RENAME COLUMN ap_spent TO sp_spent")
+            elif "ap_spent" in unlock_columns:
+                statements.append("ALTER TABLE character_skill_unlocks DROP COLUMN ap_spent")
+            # 강화에 소모한 SP(구 AP)를 전부 환급한다.
+            statements.append(
+                "UPDATE characters SET ap = ap + COALESCE(("
+                "SELECT SUM(csu.sp_spent) FROM character_skill_unlocks csu "
+                "JOIN skill_nodes sn ON sn.id = csu.node_id "
+                "WHERE csu.character_id = characters.id AND sn.tier <> 0"
+                "), 0)"
+            )
+            statements.append("DELETE FROM character_skill_unlocks")
+
+        if "items" in table_names and "item_usages" in table_names:
+            # "ap" 효과를 가진 아이템(기술 서적)의 사용 이력을 되돌린다: 지급됐던 AP를 회수한다.
+            statements.append(
+                "UPDATE characters c SET ap = ap - COALESCE(("
+                "SELECT SUM(iu.quantity * COALESCE(("
+                "SELECT SUM((e->>'delta')::numeric) FROM json_array_elements(i.effects) e "
+                "WHERE e->>'stat' = 'ap'"
+                "), 0)) "
+                "FROM item_usages iu JOIN items i ON i.id = iu.item_id "
+                "WHERE iu.character_id = c.id "
+                "AND EXISTS (SELECT 1 FROM json_array_elements(i.effects) e2 WHERE e2->>'stat' = 'ap')"
+                "), 0)::int"
+            )
+            if "character_item_states" in table_names:
+                # 사용 처리를 취소해 인벤토리에 미사용 상태로 되돌린다.
+                statements.append(
+                    "UPDATE character_item_states cis SET used_quantity = GREATEST(0, used_quantity - COALESCE(("
+                    "SELECT SUM(iu.quantity) FROM item_usages iu "
+                    "WHERE iu.character_id = cis.character_id AND iu.item_id = cis.item_id"
+                    "), 0)) "
+                    "WHERE cis.item_id IN (SELECT id FROM items i WHERE EXISTS ("
+                    "SELECT 1 FROM json_array_elements(i.effects) e WHERE e->>'stat' = 'ap'))"
+                )
+            statements.append(
+                "DELETE FROM item_usages WHERE item_id IN (SELECT id FROM items i WHERE EXISTS ("
+                "SELECT 1 FROM json_array_elements(i.effects) e WHERE e->>'stat' = 'ap'))"
+            )
+            # 이 아이템들은 앞으로 AP 대신 SP를 지급하도록 효과를 옮긴다.
+            statements.append(
+                "UPDATE items SET effects = ("
+                "SELECT json_agg(CASE WHEN e->>'stat' = 'ap' "
+                "THEN json_build_object('stat', 'sp', 'delta', e->'delta') ELSE e END) "
+                "FROM json_array_elements(effects) e) "
+                "WHERE EXISTS (SELECT 1 FROM json_array_elements(effects) e WHERE e->>'stat' = 'ap')"
+            )
+
     # heal_eff_p(치유 효율 증폭) 제거: 컬럼을 삭제하고, 효과 JSON에 남은 항목도 걷어낸다. (최초 1회)
     if "heal_eff_p" in character_columns:
         statements.append("ALTER TABLE characters DROP COLUMN heal_eff_p")

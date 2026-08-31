@@ -63,13 +63,13 @@ export default function MySkillTree({ characterId }: Props) {
     return () => { cancelled = true; };
   }, [characterId, toast]);
 
-  /** AP는 캐릭터 전역 값이라, 한 서에서 소모해도 나머지 서의 캐시된 표시 AP를 함께 갱신해야 어긋나지 않는다. */
+  /** SP는 캐릭터 전역 값이라, 한 서에서 소모해도 나머지 서의 캐시된 표시 SP를 함께 갱신해야 어긋나지 않는다. */
   function applyTreeUpdate(book: SkillBook, updated: CharacterSkillTree) {
     setTreesByBook((prev) => {
       if (!prev) return prev;
       const next = { ...prev, [book]: updated };
       for (const b of BOOKS) {
-        if (b !== book) next[b] = { ...next[b], character_ap: updated.character_ap };
+        if (b !== book) next[b] = { ...next[b], character_sp: updated.character_sp };
       }
       return next;
     });
@@ -128,7 +128,7 @@ export default function MySkillTree({ characterId }: Props) {
   function canUnlock(tree: CharacterSkillTree, node: CharacterSkillNode): boolean {
     if (selectedBook && selectedBook !== node.book) return false;
     if (isExcludedSkillPath(tree.nodes, node)) return false;
-    if (!node.is_public || node.unlocked || node.tier === 0 || tree.character_ap < tree.ap_cost_to_unlock) return false;
+    if (!node.is_public || node.unlocked || node.tier === 0 || tree.character_sp < tree.sp_cost_to_unlock) return false;
     if (node.tier === 1) {
       return !tree.nodes.some((candidate) => candidate.unlocked && candidate.tier === 1 && candidate.branch !== node.branch);
     }
@@ -180,8 +180,8 @@ export default function MySkillTree({ characterId }: Props) {
         </div>
         {anyTree && (
           <div className="flex items-center gap-2">
-            <Badge variant="outline" className="font-num">보유 AP {numberFormatter.format(anyTree.character_ap)}</Badge>
-            <Badge variant="secondary" className="font-num">강화 비용 {numberFormatter.format(anyTree.ap_cost_to_unlock)} AP</Badge>
+            <Badge variant="outline" className="font-num">보유 SP {numberFormatter.format(anyTree.character_sp)}</Badge>
+            <Badge variant="secondary" className="font-num">강화 비용 {numberFormatter.format(anyTree.sp_cost_to_unlock)} SP</Badge>
           </div>
         )}
       </div>

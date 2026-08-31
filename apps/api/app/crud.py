@@ -394,6 +394,7 @@ def _character_read_kwargs(character: Character) -> dict:
         gold=character.gold,
         cp=character.cp,
         ap=character.ap,
+        sp=character.sp,
         lv=character.lv,
         rank=character.rank,
         exp=character.exp,
@@ -504,6 +505,7 @@ def _assign_character_stats(character: Character, data: CharacterCreate) -> None
     character.gold = data.gold
     character.cp = data.cp
     character.ap = data.ap
+    character.sp = data.sp
     character.lv = data.lv
     character.rank = data.rank
     character.exp = data.exp
@@ -542,7 +544,7 @@ def _assign_character_stats(character: Character, data: CharacterCreate) -> None
 
 
 def _replace_character_skills_unrestricted(db: Session, character: Character, skill_node_ids: list[int]) -> None:
-    """선행 기술/계열/AP 제한 없이 기술 목록을 통째로 교체한다(관리자가 만든 캐릭터 전용)."""
+    """선행 기술/계열/SP 제한 없이 기술 목록을 통째로 교체한다(관리자가 만든 캐릭터 전용)."""
     db.query(CharacterSkillUnlock).filter(CharacterSkillUnlock.character_id == character.id).delete()
     if not skill_node_ids:
         return
@@ -556,7 +558,7 @@ def _replace_character_skills_unrestricted(db: Session, character: Character, sk
         db.add(CharacterSkillUnlock(
             character_id=character.id,
             node_id=node.id,
-            ap_spent=0,
+            sp_spent=0,
             applied_effects=applied_effects,
         ))
 
@@ -1016,7 +1018,7 @@ def use_item(
 
     _apply_item_effects(character, item.effects or [], sign=1)
     special_stats = {effect.get("stat") for effect in (item.effects or [])}
-    # 특수 효과: AP 초기화(기술 리셋). 능력치 효과와 별개로 처리한다.
+    # 특수 효과: 기술 리셋(소모한 SP 환급). 능력치 효과와 별개로 처리한다.
     if "ap_reset" in special_stats:
         _reset_character_skills(db, character)
     # 특수 효과: 능력치 등급 선택 강화 (가능성의 메달=1개, 잠재성의 메달=2개).
@@ -5054,8 +5056,8 @@ def get_character_skill_tree(db: Session, character_id: int, book: str) -> Chara
 
     return CharacterSkillTreeRead(
         book=book,
-        character_ap=character.ap,
-        ap_cost_to_unlock=get_level_grade_stats(character.lv)["ap_cost"],
+        character_sp=character.sp,
+        sp_cost_to_unlock=get_level_grade_stats(character.lv)["sp_cost"],
         latest_unlocked_node_id=latest_unlock.node_id if latest_unlock else None,
         nodes=node_reads,
     )
@@ -5073,7 +5075,7 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
 
     _seed_skill_tree_if_empty(db, node.book)
 
-    # 같은 캐릭터의 동시 습득 요청도 서/분기 선택과 AP 차감을 순서대로 검사한다.
+    # 같은 캐릭터의 동시 습득 요청도 서/분기 선택과 SP 차감을 순서대로 검사한다.
     character = (
         db.query(Character)
         .filter(Character.id == character_id)
@@ -5144,17 +5146,17 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
         if other_column_chosen:
             raise HTTPException(status_code=400, detail="이미 다른 세부 경로를 선택했습니다.")
 
-    cost = get_level_grade_stats(character.lv)["ap_cost"]
-    if character.ap < cost:
-        raise HTTPException(status_code=400, detail=f"AP가 부족합니다. (필요: {cost})")
+    cost = get_level_grade_stats(character.lv)["sp_cost"]
+    if character.sp < cost:
+        raise HTTPException(status_code=400, detail=f"SP가 부족합니다. (필요: {cost})")
 
     applied_effects = [dict(effect) for effect in (node.effects or [])]
-    character.ap -= cost
+    character.sp -= cost
     _apply_item_effects(character, applied_effects, sign=1)
     db.add(CharacterSkillUnlock(
         character_id=character.id,
         node_id=node.id,
-        ap_spent=cost,
+        sp_spent=cost,
         applied_effects=applied_effects,
     ))
     db.commit()
@@ -5163,7 +5165,7 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
 
 
 def _reset_character_skills(db: Session, character: Character) -> None:
-    """기술을 기본(tier 0)으로 되돌리고, 강화 효과를 되돌리며, 소모한 AP를 전부 환급한다.
+    """기술을 기본(tier 0)으로 되돌리고, 강화 효과를 되돌리며, 소모한 SP를 전부 환급한다.
 
     효과는 해금 당시 스냅샷(applied_effects)으로 되돌려, 이후 관리자가 노드 효과를
     바꾸더라도 정확히 원복한다. db.commit()은 호출자가 담당한다.
@@ -5179,7 +5181,7 @@ def _reset_character_skills(db: Session, character: Character) -> None:
     )
     for unlock in unlocks:
         _apply_item_effects(character, unlock.applied_effects or [], sign=-1)
-        character.ap += unlock.ap_spent
+        character.sp += unlock.sp_spent
         db.delete(unlock)
 
 

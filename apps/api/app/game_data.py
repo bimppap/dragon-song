@@ -1,13 +1,13 @@
 """정적 게임 밸런스 참고 데이터 (성장 등급표, 기술트리 기본 구성)."""
 
-# 성장 등급(lv)에 따른 기본 능력치와, 해당 등급에서 기술을 강화할 때 필요한 AP.
+# 성장 등급(lv)에 따른 기본 능력치와, 해당 등급에서 기술을 강화할 때 필요한 SP.
 LEVEL_GRADE_STATS = [
-    {"grade": 0, "ap_cost": 0, "atk": 1, "def": 0, "hp": 20},
-    {"grade": 1, "ap_cost": 1, "atk": 3, "def": 2, "hp": 25},
-    {"grade": 2, "ap_cost": 1, "atk": 5, "def": 4, "hp": 30},
-    {"grade": 3, "ap_cost": 1, "atk": 7, "def": 6, "hp": 35},
-    {"grade": 4, "ap_cost": 1, "atk": 9, "def": 8, "hp": 40},
-    {"grade": 5, "ap_cost": 1, "atk": 11, "def": 10, "hp": 45},
+    {"grade": 0, "sp_cost": 0, "atk": 1, "def": 0, "hp": 20},
+    {"grade": 1, "sp_cost": 1, "atk": 3, "def": 2, "hp": 25},
+    {"grade": 2, "sp_cost": 1, "atk": 5, "def": 4, "hp": 30},
+    {"grade": 3, "sp_cost": 1, "atk": 7, "def": 6, "hp": 35},
+    {"grade": 4, "sp_cost": 1, "atk": 9, "def": 8, "hp": 40},
+    {"grade": 5, "sp_cost": 1, "atk": 11, "def": 10, "hp": 45},
 ]
 
 

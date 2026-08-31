@@ -49,6 +49,7 @@ type CharacterCreateForm = {
   gold: string;
   cp: string;
   ap: string;
+  sp: string;
   lv: string;
   rank: string;
   exp: string;
@@ -93,6 +94,7 @@ const EMPTY_FORM: CharacterCreateForm = {
   gold: "0",
   cp: "0",
   ap: "0",
+  sp: "0",
   lv: "1",
   rank: "1",
   exp: "0",
@@ -138,6 +140,7 @@ function toFormFromCharacter(character: Character): CharacterCreateForm {
     gold: String(character.gold),
     cp: String(character.cp),
     ap: String(character.ap),
+    sp: String(character.sp),
     lv: String(character.lv),
     rank: String(character.rank),
     exp: String(character.exp),
@@ -152,6 +155,7 @@ const STAT_CONFIG = [
   { name: "gold",    label: "골드",     icon: Coins,    color: "text-yellow-500" },
   { name: "cp",      label: "CP",       icon: Gem,      color: "text-cyan-500" },
   { name: "ap",      label: "AP",       icon: Flame,    color: "text-gold" },
+  { name: "sp",      label: "SP",       icon: Sparkles, color: "text-violet-500" },
   { name: "lv",      label: "성장 등급", icon: Trophy,   color: "text-emerald-500" },
   { name: "rank",    label: "모험가 등급", icon: Trophy, color: "text-gold" },
   { name: "exp",     label: "경험치",   icon: Sparkles, color: "text-gold" },
@@ -292,6 +296,7 @@ export default function CharacterCreate({ onCreated, character, onSaved, onCance
         gold: Number(form.gold),
         cp: Number(form.cp),
         ap: Number(form.ap),
+        sp: Number(form.sp),
         lv: Number(form.lv),
         rank: Number(form.rank),
         exp: Number(form.exp),
