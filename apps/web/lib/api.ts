@@ -307,7 +307,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "hp_max_p", label: "체력 증폭(%)" },
   { value: "hp_heal_p", label: "체력 회복(%)" },
   { value: "hp_regen_true", label: "체력 재생력(고정)" },
-  { value: "hp_regen_fixed", label: "체력 재생력(비례)" },
+  { value: "hp_regen_fixed", label: "체력 재생력(비례, %)" },
   { value: "mp", label: "마나" },
   { value: "mp_max", label: "마나 최대치" },
   { value: "mp_regen", label: "마나 재생력" },
@@ -315,16 +315,16 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "atk_p", label: "공격력 증폭(%)" },
   { value: "def", label: "방어력" },
   { value: "def_p", label: "방어력 증폭(%)" },
-  { value: "def_eff", label: "방어 효율" },
+  { value: "def_eff", label: "방어 효율(%)" },
   { value: "attn", label: "주목도" },
-  { value: "presence", label: "존재감" },
-  { value: "heal_eff", label: "치유 효율" },
+  { value: "presence", label: "존재감(%)" },
+  { value: "heal_eff", label: "치유 효율(%)" },
   { value: "sh", label: "보호막" },
-  { value: "dmg_p", label: "피해 증폭" },
-  { value: "dmg_r", label: "피해 감소" },
+  { value: "dmg_p", label: "피해 증폭(%)" },
+  { value: "dmg_r", label: "피해 감소(%)" },
   { value: "skill_lv", label: "기술 등급" },
   { value: "skill_eff_true", label: "기술 효율(고정)" },
-  { value: "skill_eff_fixed", label: "기술 효율(비례)" },
+  { value: "skill_eff_fixed", label: "기술 효율(비례, %)" },
   { value: "skill_cost", label: "기술 비용" },
   { value: "skill_target", label: "기술 대상" },
   { value: "start_sh", label: "시작 보호막" },
@@ -341,11 +341,22 @@ export const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
   ITEM_EFFECT_STAT_OPTIONS.map((option) => [option.value, option.label]),
 );
 
+/** 값 자체가 비율(예: 0.1 = 10%)로 다뤄지는 효과 스탯. */
+export const PERCENT_EFFECT_STATS = new Set<ItemEffectStat>([
+  "hp_max_p", "hp_heal_p", "hp_regen_fixed",
+  "atk_p", "def_p", "def_eff", "presence", "heal_eff",
+  "dmg_p", "dmg_r", "skill_eff_fixed",
+]);
+
 /** 효과 하나를 "라벨 +N" 형태의 문자열로 표현한다. */
 export function formatEffect(effect: ItemEffect): string {
   const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
   if (effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2" || effect.stat === "cleanse_debuffs") return label;
   const sign = effect.delta >= 0 ? "+" : "";
+  if (PERCENT_EFFECT_STATS.has(effect.stat)) {
+    const percentValue = Math.round(effect.delta * 1000) / 10;
+    return `${label} ${sign}${percentValue}%`;
+  }
   return `${label} ${sign}${effect.delta}`;
 }
 

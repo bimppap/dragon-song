@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { EFFECT_STAT_LABELS, type Item, type RewardGrant } from "@/lib/api";
+import { EFFECT_STAT_LABELS, PERCENT_EFFECT_STATS, type Item, type RewardGrant } from "@/lib/api";
 
 interface Props {
   entries: RewardGrant[];
@@ -14,6 +14,10 @@ function formatGrant(grant: RewardGrant, items: Item[]): string {
   }
   const label = EFFECT_STAT_LABELS[grant.stat] ?? grant.stat;
   const sign = grant.amount >= 0 ? "+" : "";
+  if (PERCENT_EFFECT_STATS.has(grant.stat)) {
+    const percentValue = Math.round(grant.amount * 1000) / 10;
+    return `${label} ${sign}${percentValue}%`;
+  }
   return `${label} ${sign}${grant.amount}`;
 }
 
