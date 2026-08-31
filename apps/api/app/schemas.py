@@ -11,7 +11,7 @@ MemberRole = Literal["RUNNER", "ADMIN", "STAFF"]
 # 아이템 효과가 적용될 수 있는 캐릭터 능력치와 값의 정수/실수 여부.
 # "def"는 Character 모델의 예약어 회피용 컬럼명(def_)에 대응한다.
 ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
-    "lv": int, "rank": int, "exp": int, "gold": int, "cp": int, "ap": int,
+    "lv": int, "rank": int, "exp": int, "gold": int, "cp": int, "ap": int, "sp": int,
     "stat_courage": int, "stat_endurance": int, "stat_charity": int, "stat_wisdom": int,
     "hp": int, "hp_max": int, "hp_max_p": float, "hp_heal_p": float, "hp_regen_true": int, "hp_regen_fixed": float,
     "mp": int, "mp_max": int, "mp_regen": int,
@@ -26,7 +26,7 @@ ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
 GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wisdom")
 
 # 특수 효과: 캐릭터 능력치가 아니라 별도 동작을 트리거한다(값 무시).
-# "ap_reset": 소모 시 기술을 전부 기본으로 되돌리고 소모한 AP를 환급한다.
+# "ap_reset": 소모 시 기술을 전부 기본으로 되돌리고 소모한 SP를 환급한다.
 # "hp_heal_p": 최대 체력 대비 퍼센트만큼 현재 체력을 회복한다(_apply_item_effects에서 특수 처리).
 # "grade_choice_1"/"grade_choice_2": 사용 시 용기/인내/자애/지혜 중 1개/2개(중복 불가)를 선택해 각각 1등급 올린다
 #   (가능성의 메달 / 잠재성의 메달). 선택값은 사용 요청의 chosen_stats로 받는다.
@@ -34,7 +34,7 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 #   챕터 환경 스택(env_stacks)을 전부 제거한다. 전투 밖에서 사용하면 지울 대상이 없어 아무 효과가 없다.
 ITEM_EFFECT_SPECIAL_STATS = {"ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs"}
 ItemEffectStat = Literal[
-    "lv", "rank", "exp", "gold", "cp", "ap",
+    "lv", "rank", "exp", "gold", "cp", "ap", "sp",
     "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
     "hp", "hp_max", "hp_max_p", "hp_heal_p", "hp_regen_true", "hp_regen_fixed",
     "mp", "mp_max", "mp_regen",
@@ -248,6 +248,7 @@ class CharacterCreate(BaseModel):
     gold: int = Field(default=0, ge=0)
     cp: int = Field(default=0, ge=0)
     ap: int = Field(default=0, ge=0)
+    sp: int = Field(default=0, ge=0)
 
     # 성장 등급 배지
     lv: int = Field(default=1, ge=0)
@@ -305,6 +306,7 @@ class CharacterRead(BaseModel):
     gold: int
     cp: int
     ap: int
+    sp: int
 
     lv: int
     rank: int
@@ -1001,8 +1003,8 @@ class CharacterSkillNodeRead(SkillNodeRead):
 
 class CharacterSkillTreeRead(BaseModel):
     book: SkillBook
-    character_ap: int
-    ap_cost_to_unlock: int
+    character_sp: int
+    sp_cost_to_unlock: int
     latest_unlocked_node_id: int | None = None
     nodes: list[CharacterSkillNodeRead]
 
