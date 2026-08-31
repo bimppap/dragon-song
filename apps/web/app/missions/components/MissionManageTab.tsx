@@ -27,7 +27,7 @@ import { createMission, deleteMission, fetchChapters, fetchItems, fetchMissions,
 import type { Chapter, Item, Mission, MissionCreate, RewardGrant } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import EmptyState from "@/components/common/EmptyState";
-import RewardComposer, { type RewardFormEntry } from "@/components/common/RewardComposer";
+import RewardComposer, { rewardAmountToDisplay, rewardAmountToStored, type RewardFormEntry } from "@/components/common/RewardComposer";
 import RewardSummary from "@/components/common/RewardSummary";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
@@ -59,7 +59,7 @@ function toPayload(form: MissionFormState): MissionCreate {
       return itemId > 0 ? [{ type: "item" as const, item_id: itemId, quantity: Math.max(1, parseInt(entry.quantity, 10) || 1) }] : [];
     }
     const amount = Number(entry.amount);
-    return amount > 0 ? [{ type: "stat" as const, stat: entry.stat, amount }] : [];
+    return amount > 0 ? [{ type: "stat" as const, stat: entry.stat, amount: rewardAmountToStored(entry.stat, amount) }] : [];
   });
   return {
     chapter: form.chapter.trim(),
@@ -82,7 +82,7 @@ function toRewardEntries(rewardItems: Mission["reward_items"]): RewardFormEntry[
     const id = `edit-${index}-${Math.random().toString(36).slice(2)}`;
     return grant.type === "item"
       ? { id, type: "item", item_id: String(grant.item_id), quantity: String(grant.quantity) }
-      : { id, type: "stat", stat: grant.stat, amount: String(grant.amount) };
+      : { id, type: "stat", stat: grant.stat, amount: rewardAmountToDisplay(grant.stat, grant.amount) };
   });
 }
 

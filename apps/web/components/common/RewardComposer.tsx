@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ITEM_EFFECT_STAT_OPTIONS, type ItemEffectStat } from "@/lib/api";
+import { ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS, type ItemEffectStat } from "@/lib/api";
 
 type RewardableStat = Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2">;
 
@@ -30,6 +30,15 @@ const STAT_OPTIONS = ITEM_EFFECT_STAT_OPTIONS.filter((option) => !EXCLUDED_STATS
   value: RewardableStat;
   label: string;
 }[];
+
+/** 퍼센트형 능력치는 DB에 비율(0.02)로 저장되지만, 입력/표시는 사람이 읽는 퍼센트 값(2)으로 다룬다. */
+export function rewardAmountToDisplay(stat: RewardableStat, storedAmount: number): string {
+  return String(PERCENT_EFFECT_STATS.has(stat) ? storedAmount * 100 : storedAmount);
+}
+
+export function rewardAmountToStored(stat: RewardableStat, displayAmount: number): number {
+  return PERCENT_EFFECT_STATS.has(stat) ? displayAmount / 100 : displayAmount;
+}
 
 function createEntry(type: RewardFormEntry["type"]): RewardFormEntry {
   const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -115,7 +124,7 @@ export default function RewardComposer({ entries, items, onChange }: Props) {
                 onChange={(event) => entry.type === "item"
                   ? replace(index, { ...entry, quantity: event.target.value })
                   : replace(index, { ...entry, amount: event.target.value })}
-                placeholder={entry.type === "item" ? "수량" : "수치"}
+                placeholder={entry.type === "item" ? "수량" : PERCENT_EFFECT_STATS.has(entry.stat) ? "수치(%)" : "수치"}
               />
 
               <Button
