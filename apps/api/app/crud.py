@@ -4953,7 +4953,7 @@ def _find_parent_node(db: Session, node: SkillNode) -> SkillNode | None:
         .filter(
             SkillNode.book == node.book,
             SkillNode.branch == node.branch,
-            SkillNode.col == node.col,
+            SkillNode.col == (None if node.tier == 2 else node.col),
             SkillNode.tier == node.tier - 1,
         )
         .first()
@@ -5043,6 +5043,15 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
 
     _seed_skill_tree_if_empty(db, node.book)
 
+    # 같은 캐릭터의 동시 습득 요청도 서/분기 선택과 AP 차감을 순서대로 검사한다.
+    character = (
+        db.query(Character)
+        .filter(Character.id == character_id)
+        .populate_existing()
+        .with_for_update()
+        .one()
+    )
+
     already = (
         db.query(CharacterSkillUnlock)
         .filter(CharacterSkillUnlock.character_id == character.id, CharacterSkillUnlock.node_id == node.id)
@@ -5050,6 +5059,19 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
     )
     if already:
         raise HTTPException(status_code=400, detail="이미 습득한 기술입니다.")
+
+    other_book_chosen = (
+        db.query(CharacterSkillUnlock)
+        .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
+        .filter(
+            CharacterSkillUnlock.character_id == character.id,
+            SkillNode.tier > 0,
+            SkillNode.book != node.book,
+        )
+        .first()
+    )
+    if other_book_chosen:
+        raise HTTPException(status_code=400, detail="이미 다른 서의 기술을 습득했습니다. 하나의 서만 선택할 수 있습니다.")
 
     parent = _find_parent_node(db, node)
     if parent and parent.tier > 0:
@@ -5061,14 +5083,14 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
         if not parent_unlocked:
             raise HTTPException(status_code=400, detail="이전 단계를 먼저 습득해야 합니다.")
 
-    if node.tier == 1:
+    if node.tier >= 1:
         other_branch_chosen = (
             db.query(CharacterSkillUnlock)
             .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
             .filter(
                 CharacterSkillUnlock.character_id == character.id,
                 SkillNode.book == node.book,
-                SkillNode.tier == 1,
+                SkillNode.tier > 0,
                 SkillNode.branch != node.branch,
             )
             .first()

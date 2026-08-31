@@ -193,7 +193,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
           <button
               key={node.id}
               type="button"
-              aria-label={locked ? "비공개 기술" : undefined}
+              aria-label={locked ? "비공개 기술" : getLabel(node)}
               aria-disabled={!clickable}
               onClick={clickable ? () => onNodeClick?.(node) : undefined}
               style={{

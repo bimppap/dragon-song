@@ -220,7 +220,7 @@ class CharacterItemState(Base):
 
 class SkillNode(Base):
     """기술트리 노드. `book`(용맹의 서/불굴의 서/헌신의 서/탐구의 서)은 캐릭터의 역할(Character.faction)과
-    무관한 별개의 축이다 — 어떤 역할의 캐릭터든 4개 서 전부에서 자유롭게 기술을 배울 수 있다."""
+    무관한 별개의 축이다 — 어떤 역할의 캐릭터든 4개 서 중 하나를 선택해 기술을 배울 수 있다."""
 
     __tablename__ = "skill_nodes"
     __table_args__ = (

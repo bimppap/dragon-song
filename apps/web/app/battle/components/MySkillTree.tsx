@@ -22,6 +22,8 @@ import {
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 
+import { deepestLearnedSkill, isExcludedSkillPath } from "@/lib/skillProgression";
+
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
@@ -124,6 +126,8 @@ export default function MySkillTree({ characterId }: Props) {
   }
 
   function canUnlock(tree: CharacterSkillTree, node: CharacterSkillNode): boolean {
+    if (selectedBook && selectedBook !== node.book) return false;
+    if (isExcludedSkillPath(tree.nodes, node)) return false;
     if (!node.is_public || node.unlocked || node.tier === 0 || tree.character_ap < tree.ap_cost_to_unlock) return false;
     if (node.tier === 1) {
       return !tree.nodes.some((candidate) => candidate.unlocked && candidate.tier === 1 && candidate.branch !== node.branch);
@@ -147,15 +151,19 @@ export default function MySkillTree({ characterId }: Props) {
       openCustomize(book, node);
       return;
     }
-    if (!canUnlock(tree, node)) return;
+    if (busyNodeId !== null || !canUnlock(tree, node)) return;
     const effectDescription = node.effects.length > 0 ? node.effects.map(formatEffect).join(", ") : "효과 없음";
     const accepted = await confirm({
       title: "기술 선택",
-      description: `정말 '${node.display_name}'을 선택하시겠습니까?\n${effectDescription}`,
+      description: `정말 '${node.display_name}'을 선택하시겠습니까?\n${effectDescription}${node.tier === 1 ? '\n선택하면 다른 서와 다른 계열의 기술은 습득할 수 없습니다.' : node.tier === 2 ? '\n선택하면 다른 세부 경로의 기술은 습득할 수 없습니다.' : ''}`,
     });
     if (accepted) await handleUnlock(book, node);
   }
 
+  const selectedBook = treesByBook
+    ? deepestLearnedSkill(BOOKS.flatMap((book) => treesByBook[book].nodes))?.book ?? null
+    : null;
+  const visibleBooks = selectedBook ? [selectedBook] : BOOKS;
   const anyTree = treesByBook ? treesByBook[BOOKS[0]] : null;
 
   return (
@@ -164,8 +172,9 @@ export default function MySkillTree({ characterId }: Props) {
         <div className="space-y-1">
           <h2 className="text-lg font-bold text-ivory">기술트리</h2>
           <p className="text-sm text-muted">
-            용맹·불굴·헌신·탐구 4개 서 전부에서 캐릭터의 역할과 무관하게 자유롭게 기술을 강화할 수 있습니다. 각 서의 1단계
-            계열과 2단계부터의 세부 경로는 각각 하나만 선택할 수 있습니다. 습득한 기술을 누르면 이름과 이미지를 바꿀 수
+            캐릭터의 역할과 무관하게 용맹·불굴·헌신·탐구 중 하나의 서를 선택할 수 있습니다.
+            첫 기술을 습득하면 해당 서만 표시됩니다. 1단계의 세 계열과 2단계의 두 세부 경로에서 각각 하나를 선택하며,
+            선택하지 않은 경로는 설명만 확인할 수 있습니다. 습득한 기술을 누르면 이름과 이미지를 바꿀 수
             있습니다(루트 노드는 제외).
           </p>
         </div>
@@ -181,7 +190,7 @@ export default function MySkillTree({ characterId }: Props) {
         <p className="text-sm text-muted">불러오는 중...</p>
       ) : (
         <div className="no-scrollbar overflow-x-auto pb-2"><div className="mx-auto flex w-max gap-6">
-          {BOOKS.map((book) => {
+          {visibleBooks.map((book) => {
             const tree = treesByBook[book];
             return (
               <div key={book} className="flex flex-col items-center gap-3">
