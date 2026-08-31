@@ -7,7 +7,12 @@ from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, is_admin_role, verify_password
-from app.game_data import build_skill_node_specs, calculate_stat_grade_totals, get_level_grade_stats
+from app.game_data import (
+    build_skill_node_specs,
+    calculate_stat_grade_totals,
+    get_level_grade_stats,
+    get_stat_upgrade_ap_cost,
+)
 from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
     GRADE_STAT_FIELDS,
@@ -991,14 +996,18 @@ def upgrade_character_stat_with_ap(db: Session, character_id: int, stat: str, am
         raise HTTPException(status_code=400, detail="1 이상 입력해야 합니다.")
 
     character = _get_character_or_404(db, character_id)
-    if character.ap < amount:
-        raise HTTPException(status_code=400, detail=f"AP가 부족합니다. (필요: {amount})")
+    try:
+        ap_cost = get_stat_upgrade_ap_cost(getattr(character, stat), amount)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if character.ap < ap_cost:
+        raise HTTPException(status_code=400, detail=f"AP가 부족합니다. (필요: {ap_cost})")
 
     before = calculate_stat_grade_totals(
         character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
     )
     setattr(character, stat, getattr(character, stat) + amount)
-    character.ap -= amount
+    character.ap -= ap_cost
     after = calculate_stat_grade_totals(
         character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
     )

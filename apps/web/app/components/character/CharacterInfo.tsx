@@ -35,7 +35,6 @@ import { useToast } from "@/components/common/ToastProvider";
 import { formatRewardItems, rewardLabel, rewardVisual } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -306,35 +305,15 @@ function ExperienceBar({
   );
 }
 
-function StatUpgradeAmountInput({
-  ap,
-  onChange,
-}: {
-  ap: number;
-  onChange: (value: number) => void;
-}) {
-  const [value, setValue] = useState(() => Math.min(1, ap));
+/** 능력치 등급별 AP 소모량. 인덱스 = 도달하려는 등급(1~6). 7등급 이상은 AP로 도달할 수 없다(장신구·특성 전용). */
+const STAT_GRADE_AP_COST = [0, 1, 1, 1, 2, 2, 2];
+const MAX_AP_STAT_GRADE = STAT_GRADE_AP_COST.length - 1;
 
-  function handleChange(raw: string) {
-    const parsed = Math.floor(Number(raw));
-    const clamped = Number.isFinite(parsed) ? Math.min(Math.max(parsed, 1), ap) : 1;
-    setValue(clamped);
-    onChange(clamped);
-  }
-
-  return (
-    <div className="mt-3 flex flex-col gap-1">
-      <Input
-        type="number"
-        min={1}
-        max={ap}
-        value={value}
-        onChange={(e) => handleChange(e.target.value)}
-        autoFocus
-      />
-      <p className="text-xs text-muted">보유 AP {numberFormatter.format(ap)}</p>
-    </div>
-  );
+/** currentGrade에서 다음 등급으로 올릴 때 필요한 AP. 다음 등급이 AP로 도달 불가능하면 null. */
+function getNextStatUpgradeCost(currentGrade: number): number | null {
+  const nextGrade = currentGrade + 1;
+  if (nextGrade > MAX_AP_STAT_GRADE) return null;
+  return STAT_GRADE_AP_COST[nextGrade];
 }
 
 function GradeChoiceSelector({
@@ -716,20 +695,21 @@ export default function CharacterInfo({
     }
   }
 
-  async function handleStatUpgrade(stat: GradeStat, label: string) {
-    if (selectedDetail == null || selectedDetail.ap < 1) return;
-    const ap = selectedDetail.ap;
-    const amountRef: { current: number } = { current: Math.min(1, ap) };
+  async function handleStatUpgrade(stat: GradeStat, label: string, cost: number) {
+    if (selectedDetail == null) return;
     const accepted = await confirm({
-      description: `${label}을(를) 얼마나 올리시겠습니까?`,
-      content: <StatUpgradeAmountInput ap={ap} onChange={(value) => { amountRef.current = value; }} />,
+      description: `${label} 등급을 올리시겠습니까?`,
+      content: (
+        <p className="text-xs text-muted">
+          소모 AP {numberFormatter.format(cost)} / 보유 AP {numberFormatter.format(selectedDetail.ap)}
+        </p>
+      ),
       maxWidthClassName: "max-w-xs",
     });
     if (!accepted) return;
-    const amount = amountRef.current;
     setStatUpgradeLoading(stat);
     try {
-      const next = await upgradeCharacterStat(selectedDetail.id, stat, amount);
+      const next = await upgradeCharacterStat(selectedDetail.id, stat, 1);
       setDetail(next);
     } catch (error) {
       toast(error instanceof Error ? error.message : "능력치 강화에 실패했습니다.", "error");
@@ -961,18 +941,22 @@ export default function CharacterInfo({
 
                 {/* 핵심 능력치 */}
                 <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
-                  {CORE_STATS.map(({ key, label, icon: Icon, accent }) => (
-                    <CoreStatLine
-                      key={key}
-                      label={label}
-                      icon={Icon}
-                      value={selectedDetail[key]}
-                      accent={accent}
-                      canUpgrade={selectedDetail.ap >= 1}
-                      upgrading={statUpgradeLoading === key}
-                      onUpgrade={() => handleStatUpgrade(key, label)}
-                    />
-                  ))}
+                  {CORE_STATS.map(({ key, label, icon: Icon, accent }) => {
+                    const cost = getNextStatUpgradeCost(selectedDetail[key]);
+                    const canUpgrade = cost != null && selectedDetail.ap >= cost;
+                    return (
+                      <CoreStatLine
+                        key={key}
+                        label={label}
+                        icon={Icon}
+                        value={selectedDetail[key]}
+                        accent={accent}
+                        canUpgrade={canUpgrade}
+                        upgrading={statUpgradeLoading === key}
+                        onUpgrade={() => cost != null && handleStatUpgrade(key, label, cost)}
+                      />
+                    );
+                  })}
                 </div>
 
                 {/* 상세정보 (테두리 없는 펼치기 버튼) */}

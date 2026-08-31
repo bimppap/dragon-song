@@ -93,6 +93,23 @@ WISDOM_GRADE_BONUS = [
 ]
 
 
+# 능력치(용기/인내/자애/지혜) 등급업에 필요한 AP. 인덱스 = 도달하려는 등급(1~6).
+# 7~9등급은 AP로 도달할 수 없다(장신구·특성 전용 잠김 구간).
+STAT_GRADE_AP_COST = [0, 1, 1, 1, 2, 2, 2]
+MAX_AP_STAT_GRADE = len(STAT_GRADE_AP_COST) - 1
+
+
+def get_stat_upgrade_ap_cost(current_grade: int, amount: int) -> int:
+    """current_grade에서 amount만큼 등급을 올리는 데 필요한 총 AP.
+
+    목표 등급이 MAX_AP_STAT_GRADE(6)를 넘으면 AP로는 올릴 수 없다.
+    """
+    target_grade = current_grade + amount
+    if target_grade > MAX_AP_STAT_GRADE:
+        raise ValueError(f"AP로는 {MAX_AP_STAT_GRADE}등급까지만 올릴 수 있습니다.")
+    return sum(STAT_GRADE_AP_COST[grade] for grade in range(current_grade + 1, target_grade + 1))
+
+
 def calculate_stat_grade_totals(
     stat_courage: int,
     stat_endurance: int,
