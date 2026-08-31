@@ -1626,16 +1626,16 @@ def _to_healer_candidate_read(db: Session, character: Character, today: date) ->
     )
 
 
-def list_healer_candidates(db: Session) -> list[HealerCandidateRead]:
-    """관리 페이지 치유 탭: 치유 포지션 캐릭터와 오늘 비전투 치유 사용 가능 여부(자정 KST 기준 하루 1회)."""
-    today = _today_kst()
+def list_healer_candidates(db: Session, on_date: date | None = None) -> list[HealerCandidateRead]:
+    """관리 페이지 치유 탭: 치유 포지션 캐릭터와 지정한 날짜(기본값 오늘)의 비전투 치유 사용 가능 여부."""
+    target_date = on_date or _today_kst()
     characters = (
         db.query(Character)
         .filter(Character.faction == "치유")
         .order_by(Character.name.asc())
         .all()
     )
-    return [_to_healer_candidate_read(db, c, today) for c in characters]
+    return [_to_healer_candidate_read(db, c, target_date) for c in characters]
 
 
 def perform_noncombat_heal(

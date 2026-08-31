@@ -235,8 +235,9 @@ export async function updateStaffRole(memberId: number, role: "RUNNER" | "STAFF"
   }, "스텝 권한 변경 실패");
 }
 
-export async function fetchHealerCandidates(): Promise<HealerCandidate[]> {
-  return request<HealerCandidate[]>("/admin/heal/healers", {}, "치유 캐릭터 조회 실패");
+export async function fetchHealerCandidates(healDate?: string): Promise<HealerCandidate[]> {
+  const query = healDate ? `?heal_date=${healDate}` : "";
+  return request<HealerCandidate[]>(`/admin/heal/healers${query}`, {}, "치유 캐릭터 조회 실패");
 }
 
 export async function performNoncombatHeal(

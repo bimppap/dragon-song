@@ -58,7 +58,7 @@ export default function HealTab() {
       try {
         setLoading(true);
         const [healerList, characterList] = await Promise.all([
-          fetchHealerCandidates(),
+          fetchHealerCandidates(healDate),
           fetchCharacters(),
         ]);
         if (cancelled) return;
@@ -73,9 +73,10 @@ export default function HealTab() {
 
     load();
     return () => { cancelled = true; };
-  }, [toast]);
+  }, [toast, healDate]);
 
   function openHealer(healer: HealerCandidate) {
+    if (!healer.heal_available) return;
     setActiveHealer(healer);
   }
 
@@ -154,13 +155,14 @@ export default function HealTab() {
               <button
                 key={healer.id}
                 type="button"
+                disabled={!healer.heal_available}
                 onClick={() => openHealer(healer)}
-                className="flex cursor-pointer flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface p-3 text-center transition-colors hover:border-gold/45"
+                className="flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface p-3 text-center transition-colors hover:border-gold/45 disabled:cursor-not-allowed disabled:opacity-60 disabled:hover:border-line"
               >
                 <CharacterAvatar src={healer.image_url} alt={healer.name} className="size-16 rounded-xl" iconSize={22} />
                 <span className="font-semibold text-ivory">{healer.name}</span>
                 <Badge variant={healer.heal_available ? "success" : "secondary"} className="text-[10px]">
-                  {healer.heal_available ? "비전투 치유 사용 가능" : "오늘 사용함"}
+                  {healer.heal_available ? "비전투 치유 사용 가능" : "사용함"}
                 </Badge>
               </button>
             ))}

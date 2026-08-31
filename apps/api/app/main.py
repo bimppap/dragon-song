@@ -143,8 +143,12 @@ def update_staff_role(
 
 
 @app.get("/admin/heal/healers", response_model=list[HealerCandidateRead])
-def list_healer_candidates(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    return crud.list_healer_candidates(db)
+def list_healer_candidates(
+    heal_date: date | None = None,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.list_healer_candidates(db, heal_date)
 
 
 @app.post("/admin/heal/{healer_id}", response_model=NoncombatHealResult)
