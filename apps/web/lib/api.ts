@@ -71,6 +71,23 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
   return res;
 }
 
+/** FastAPI 에러 응답의 `detail`을 사람이 읽을 수 있는 문자열로 변환한다.
+ *  단순 문자열(HTTPException)뿐 아니라, pydantic 검증 실패 시 FastAPI가 보내는
+ *  `[{ msg, loc, ... }, ...]` 배열 형태도 처리한다(안 하면 "[object Object]"로 표시됨). */
+function extractErrorMessage(err: unknown, fallback: string): string {
+  const detail = (err as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail) && detail.length > 0) {
+    const messages = detail
+      .map((entry) => (entry && typeof entry === "object" && "msg" in entry ? String((entry as { msg: unknown }).msg) : null))
+      .filter((msg): msg is string => !!msg)
+      // pydantic v2가 커스텀 ValueError 메시지 앞에 붙이는 "Value error, " 접두사를 걷어낸다.
+      .map((msg) => msg.replace(/^Value error,\s*/, ""));
+    if (messages.length > 0) return messages.join("\n");
+  }
+  return fallback;
+}
+
 async function request<T>(path: string, init?: RequestInit, errorMessage = "요청 처리에 실패했습니다."): Promise<T> {
   const res = await authorizedFetch(path, {
     ...init,
@@ -81,7 +98,7 @@ async function request<T>(path: string, init?: RequestInit, errorMessage = "요�
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? errorMessage);
+    throw new Error(extractErrorMessage(err, errorMessage));
   }
   return res.json();
 }
@@ -154,7 +171,7 @@ async function uploadFile<T>(path: string, file: File, fieldName = "file", error
   const res = await authorizedFetch(path, { method: "POST", body: formData });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail ?? errorMessage);
+    throw new Error(extractErrorMessage(err, errorMessage));
   }
   return res.json();
 }
