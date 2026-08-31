@@ -23,6 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import CharacterOwnedSkills from "./CharacterOwnedSkills";
+import CharacterEquipmentSlots from "./CharacterEquipmentSlots";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import Modal from "@/components/common/Modal";
@@ -796,7 +797,10 @@ export default function CharacterInfo({
                 </div>
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
                 {!readOnly && (
-                  <CharacterOwnedSkills characterId={selectedDetail.id} />
+                  <div className="flex items-start gap-2">
+                    <CharacterOwnedSkills characterId={selectedDetail.id} />
+                    <CharacterEquipmentSlots key={selectedDetail.id} character={selectedDetail} onUpdated={setDetail} />
+                  </div>
                 )}
               </div>
 

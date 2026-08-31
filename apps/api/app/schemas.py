@@ -46,7 +46,7 @@ ItemEffectStat = Literal[
     "start_sh", "revive_hp", "act_time",
     "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
 ]
-ItemType = Literal["consumable", "equipment"]
+ItemType = Literal["consumable", "equipment", "companion", "accessory"]
 
 
 class ItemEffect(BaseModel):
@@ -359,6 +359,8 @@ class ItemCreate(BaseModel):
     price_gold: int | None = Field(default=None, ge=0)
     price_cp: int | None = Field(default=None, ge=0)
     description_user: str = ""
+    special_merchant: bool = False
+    description_after_purchase: str = ""
     purchase_limit_per_character: int | None = None
     purchase_limit_global: int | None = None
     available_from_chapter: str | None = None
@@ -371,6 +373,13 @@ class ItemCreate(BaseModel):
 
     @model_validator(mode="after")
     def check_at_least_one_price(self):
+        if self.special_merchant and self.item_type not in ("companion", "accessory"):
+            raise ValueError("특수 상인 아이템은 동반자 또는 장신구여야 합니다.")
+        if self.item_type in ("companion", "accessory"):
+            if self.battle_only:
+                raise ValueError("동반자와 장신구는 전투용 소모품으로 설정할 수 없습니다.")
+            if any(e.stat in ("ap_reset", "grade_choice_1", "grade_choice_2", "hp_heal_p", "cleanse_debuffs") for e in self.effects):
+                raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
         if not self.price_gold and not self.price_cp:
             raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
         return self
@@ -382,6 +391,9 @@ class ItemRead(BaseModel):
     price_gold: int | None
     price_cp: int | None
     description_user: str
+    special_merchant: bool = False
+    description_after_purchase: str = ""
+    image_after_purchase_url: str | None = None
     purchase_limit_per_character: int | None
     purchase_limit_global: int | None
     available_from_chapter: str | None

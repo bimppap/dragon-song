@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
+import SpecialMerchantRibbon from "./SpecialMerchantRibbon";
+import { ITEM_TYPE_LABELS } from "@/lib/api";
 import { Package, ShoppingCart } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -59,7 +61,7 @@ function ItemTooltip({ item }: { item: Item }) {
       <div className="flex items-center gap-2">
         <span className="font-semibold text-ivory">{item.name}</span>
         <Badge variant={item.item_type === "equipment" ? "secondary" : "outline"} className="text-[10px]">
-          {item.item_type === "equipment" ? "장착형" : "소모형"}
+          {ITEM_TYPE_LABELS[item.item_type]}
         </Badge>
       </div>
       {item.description_user && <p className="text-xs text-muted">{item.description_user}</p>}
@@ -132,6 +134,7 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
                   url={item.image_url}
                   className={`absolute inset-0 size-full ${dimmed ? "grayscale" : ""}`}
                 />
+                {item.special_merchant && <SpecialMerchantRibbon />}
                 {item.sale_paused ? (
                   <div className="absolute inset-0 flex items-center justify-center bg-primary/40">
                     <Badge variant="destructive">비공개</Badge>

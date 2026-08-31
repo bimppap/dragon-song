@@ -162,13 +162,16 @@ class Item(Base):
     price_cp: Mapped[int | None] = mapped_column(Integer, nullable=True)
     description_user: Mapped[str] = mapped_column(String, nullable=False, default="")
     description_internal: Mapped[str] = mapped_column(String, nullable=False, default="")
+    special_merchant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    description_after_purchase: Mapped[str] = mapped_column(String, nullable=False, default="", server_default=text("''"))
+    image_after_purchase_url: Mapped[str | None] = mapped_column(String, nullable=True)
     purchase_limit_per_character: Mapped[int | None] = mapped_column(Integer, nullable=True)
     purchase_limit_global: Mapped[int | None] = mapped_column(Integer, nullable=True)
     available_from_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     available_until_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     item_type: Mapped[str] = mapped_column(
         String, nullable=False, default="consumable", server_default=text("'consumable'")
-    )  # "consumable" | "equipment"
+    )  # "consumable" | "equipment" | "companion" | "accessory"
     # 이 임무의 보상을 받은 캐릭터는 구매할 수 없다.
     restricted_mission_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("missions.id"), nullable=True

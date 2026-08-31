@@ -120,7 +120,7 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
       );
       // 구매 직후 바로 장착/사용할지 아이템별로 확인
       for (const { item } of cart) {
-        if (item.item_type === "equipment") {
+        if (item.item_type !== "consumable") {
           if (await confirm({ title: "아이템 장착", description: `'${item.name}'을(를) 지금 장착하시겠습니까?` })) {
             try { await equipItem(characterId, item.id); }
             catch (e) { await alert(e instanceof Error ? e.message : "장착 실패"); }

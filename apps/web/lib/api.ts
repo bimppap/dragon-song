@@ -277,7 +277,11 @@ export async function fetchMyCharacter(): Promise<CharacterDetail> {
   );
 }
 
-export type ItemType = "consumable" | "equipment";
+export type ItemType = "consumable" | "equipment" | "companion" | "accessory";
+
+export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
+  consumable: "소모형", equipment: "장착형", companion: "동반자", accessory: "장신구",
+};
 
 export type ItemEffectStat =
   | "lv" | "rank" | "exp" | "gold" | "cp" | "ap"
@@ -372,6 +376,8 @@ export interface Item {
   price_gold: number | null;
   price_cp: number | null;
   description_user: string;
+  special_merchant: boolean;
+  description_after_purchase: string;
   purchase_limit_per_character: number | null;
   purchase_limit_global: number | null;
   available_from_chapter: string | null;
@@ -379,6 +385,7 @@ export interface Item {
   item_type: ItemType;
   restricted_mission_id: number | null;
   image_url: string | null;
+  image_after_purchase_url: string | null;
   effects: ItemEffect[];
   sale_paused: boolean;
   battle_only: boolean;
@@ -395,6 +402,8 @@ export interface ItemCreate {
   price_gold: number | null;
   price_cp: number | null;
   description_user: string;
+  special_merchant: boolean;
+  description_after_purchase: string;
   purchase_limit_per_character: number | null;
   purchase_limit_global: number | null;
   available_from_chapter: string | null;
@@ -780,8 +789,8 @@ export async function updateItem(itemId: number, data: ItemCreate): Promise<Item
   return item;
 }
 
-export async function uploadItemImage(itemId: number, file: File): Promise<Item> {
-  const item = await uploadFile<Item>(`/items/${itemId}/image`, file, "file", "이미지 업로드 실패");
+export async function uploadItemImage(itemId: number, file: File, variant: "before" | "after" = "before"): Promise<Item> {
+  const item = await uploadFile<Item>(`/items/${itemId}/image?variant=${variant}`, file, "file", "이미지 업로드 실패");
   invalidateApiCache("items:", "characters:");
   return item;
 }

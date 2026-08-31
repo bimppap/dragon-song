@@ -1,3 +1,4 @@
+from typing import Literal
 import time
 from datetime import date
 
@@ -343,6 +344,7 @@ def update_item(
 async def upload_item_image(
     item_id: int,
     file: UploadFile = File(...),
+    variant: Literal["before", "after"] = "before",
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -354,14 +356,15 @@ async def upload_item_image(
     if not item:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
 
+    image_attr = "image_after_purchase_url" if variant == "after" else "image_url"
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("item", item.id, item.name), data)
+    result = await storage.upload_image_to_bucket(storage.make_key("item/after" if variant == "after" else "item", item.id, item.name), data)
 
-    old_path = storage.public_url_to_path(item.image_url)
+    old_path = storage.public_url_to_path(getattr(item, image_attr))
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    item.image_url = result["public_url"]
+    setattr(item, image_attr, result["public_url"])
     db.commit()
     db.refresh(item)
     return item
@@ -369,10 +372,11 @@ async def upload_item_image(
 
 @app.delete("/items/{item_id}")
 async def delete_item(item_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    image_url = crud.delete_item(db, item_id)
-    old_path = storage.public_url_to_path(image_url)
-    if old_path:
-        await storage.delete_from_bucket(old_path)
+    image_urls = crud.delete_item(db, item_id)
+    for image_url in image_urls:
+        old_path = storage.public_url_to_path(image_url)
+        if old_path:
+            await storage.delete_from_bucket(old_path)
     return {"deleted": True}
 
 
@@ -472,7 +476,10 @@ def list_items(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
-    items = crud.get_items_with_stock(db, character_id)
+    admin = is_admin_role(member.role)
+    if not admin:
+        character_id = crud.get_member_character_id(db, member.id)
+    items = crud.get_items_with_stock(db, character_id, admin=admin)
     if not is_admin_role(member.role):
         items = [
             item.model_copy(

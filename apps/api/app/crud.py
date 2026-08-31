@@ -700,8 +700,8 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             CharacterOwnedItemRead(
                 item_id=row.item_id,
                 item_name=row.item_name,
-                item_description=row.item_description,
-                item_image_url=items_by_id[row.item_id].image_url,
+                item_description=(items_by_id[row.item_id].description_after_purchase if items_by_id[row.item_id].special_merchant else row.item_description),
+                item_image_url=(items_by_id[row.item_id].image_after_purchase_url if items_by_id[row.item_id].special_merchant else items_by_id[row.item_id].image_url),
                 item_type=items_by_id[row.item_id].item_type,
                 effects=items_by_id[row.item_id].effects or [],
                 quantity=row.quantity,
@@ -848,6 +848,8 @@ def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.price_gold = data.price_gold
     item.price_cp = data.price_cp
     item.description_user = data.description_user
+    item.special_merchant = data.special_merchant
+    item.description_after_purchase = data.description_after_purchase
     item.purchase_limit_per_character = data.purchase_limit_per_character
     item.purchase_limit_global = data.purchase_limit_global
     item.available_from_chapter = data.available_from_chapter
@@ -879,24 +881,33 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
 
     _validate_item_chapter_window(db, data)
     _validate_item_restricted_mission(db, data)
+    equipped = db.query(CharacterItemState).filter(
+        CharacterItemState.item_id == item_id, CharacterItemState.equipped.is_(True)
+    ).first()
+    if equipped and (item.item_type != data.item_type or (item.effects or []) != [e.model_dump() for e in data.effects]):
+        raise HTTPException(status_code=400, detail="장착 중인 아이템의 종류나 효과는 모든 캐릭터가 해제한 후 수정할 수 있습니다.")
     _apply_item_data(item, data)
     db.commit()
     db.refresh(item)
     return item
 
 
-def delete_item(db: Session, item_id: int) -> str | None:
+def delete_item(db: Session, item_id: int) -> list[str]:
     item = db.get(Item, item_id)
     if item is None:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
 
-    image_url = item.image_url
+    image_urls = [url for url in (item.image_url, item.image_after_purchase_url) if url]
+    for state in db.query(CharacterItemState).filter_by(item_id=item_id, equipped=True).all():
+        character = db.query(Character).filter_by(id=state.character_id).with_for_update().first()
+        if character:
+            _apply_item_effects(character, item.effects or [], sign=-1)
     db.query(CharacterItemState).filter(CharacterItemState.item_id == item_id).delete()
     db.query(Purchase).filter(Purchase.item_id == item_id).delete()
     db.query(ItemUsage).filter(ItemUsage.item_id == item_id).delete()
     db.delete(item)
     db.commit()
-    return image_url
+    return image_urls
 
 
 def _apply_item_effects(character: Character, effects: list[dict], sign: int) -> None:
@@ -1020,11 +1031,13 @@ def use_item(
 
 
 def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
-    character = _get_character_or_404(db, character_id)
+    character = db.query(Character).filter(Character.id == character_id).with_for_update().populate_existing().first()
+    if character is None:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
-    if item.item_type != "equipment":
+    if item.item_type not in ("equipment", "companion", "accessory"):
         raise HTTPException(status_code=400, detail="장착형 아이템만 장착할 수 있습니다.")
 
     owned_quantity = _sum_quantity(db, item_id, character_id)
@@ -1035,6 +1048,18 @@ def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailR
     if state.equipped:
         raise HTTPException(status_code=400, detail="이미 장착 중인 아이템입니다.")
 
+    if item.item_type in ("companion", "accessory"):
+        previous = (
+            db.query(CharacterItemState, Item)
+            .join(Item, Item.id == CharacterItemState.item_id)
+            .filter(CharacterItemState.character_id == character_id,
+                    CharacterItemState.equipped.is_(True), Item.item_type == item.item_type)
+            .all()
+        )
+        for previous_state, previous_item in previous:
+            _apply_item_effects(character, previous_item.effects or [], sign=-1)
+            previous_state.equipped = False
+
     _apply_item_effects(character, item.effects or [], sign=1)
     state.equipped = True
     db.commit()
@@ -1042,7 +1067,9 @@ def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailR
 
 
 def unequip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
-    character = _get_character_or_404(db, character_id)
+    character = db.query(Character).filter(Character.id == character_id).with_for_update().populate_existing().first()
+    if character is None:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
@@ -1143,7 +1170,7 @@ def _rewarded_mission_ids(db: Session, character_id: int) -> set[int]:
     return {source_id for source_id, in rows if source_id is not None}
 
 
-def get_items_with_stock(db: Session, character_id: int | None = None) -> list[ItemWithStock]:
+def get_items_with_stock(db: Session, character_id: int | None = None, *, admin: bool = False) -> list[ItemWithStock]:
     items = db.query(Item).all()
     chapters_by_name = _chapters_by_name(db)
     active_chapter = _active_chapter(chapters_by_name)
@@ -1183,14 +1210,17 @@ def get_items_with_stock(db: Session, character_id: int | None = None) -> list[I
             name=item.name,
             price_gold=item.price_gold,
             price_cp=item.price_cp,
-            description_user=item.description_user,
+            description_user=(item.description_after_purchase if item.special_merchant and char_purchased > 0 and not admin else item.description_user),
+            special_merchant=item.special_merchant,
+            description_after_purchase=item.description_after_purchase if admin else "",
+            image_after_purchase_url=item.image_after_purchase_url if admin else None,
             purchase_limit_per_character=item.purchase_limit_per_character,
             purchase_limit_global=item.purchase_limit_global,
             available_from_chapter=item.available_from_chapter,
             available_until_chapter=item.available_until_chapter,
             item_type=item.item_type,
             restricted_mission_id=item.restricted_mission_id,
-            image_url=item.image_url,
+            image_url=(item.image_after_purchase_url if item.special_merchant and char_purchased > 0 and not admin else item.image_url),
             effects=item.effects or [],
             sale_paused=item.sale_paused,
             battle_only=item.battle_only,

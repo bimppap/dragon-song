@@ -1,5 +1,7 @@
 "use client";
 
+import { ITEM_TYPE_LABELS } from "@/lib/api";
+
 import { useEffect, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
 import type { ColDef, ICellRendererParams } from "ag-grid-community";
@@ -139,7 +141,7 @@ export default function ItemGrid({
           variant={p.data!.item_type === "equipment" ? "secondary" : "outline"}
           className="whitespace-nowrap"
         >
-          {p.data!.item_type === "equipment" ? "장착형" : "소모형"}
+          {ITEM_TYPE_LABELS[p.data!.item_type]}
         </Badge>
       ),
     },

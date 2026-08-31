@@ -26,6 +26,8 @@ const NO_MISSION_LIMIT = "__no_mission__";
 
 const ITEM_TYPE_OPTIONS: { value: ItemType; label: string; description: string }[] = [
   { value: "consumable", label: "소모형", description: "'사용'해야 능력치에 반영되고, 사용하면 소모됩니다." },
+  { value: "companion", label: "동반자", description: "캐릭터당 한 명만 동행할 수 있습니다." },
+  { value: "accessory", label: "장신구", description: "캐릭터당 하나만 장착할 수 있습니다." },
   { value: "equipment", label: "장착형", description: "'장착'해야 능력치에 반영되고, '해제'하면 무효화됩니다." },
 ];
 
@@ -35,6 +37,8 @@ function createEmptyItemForm(): ItemCreate {
     price_gold: null,
     price_cp: null,
     description_user: "",
+    special_merchant: false,
+    description_after_purchase: "",
     purchase_limit_per_character: null,
     purchase_limit_global: null,
     available_from_chapter: null,
@@ -54,6 +58,8 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     price_gold: item.price_gold,
     price_cp: item.price_cp,
     description_user: item.description_user,
+    special_merchant: item.special_merchant,
+    description_after_purchase: item.description_after_purchase,
     purchase_limit_per_character: item.purchase_limit_per_character,
     purchase_limit_global: item.purchase_limit_global,
     available_from_chapter: item.available_from_chapter,
@@ -97,7 +103,13 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
   const [deleting, setDeleting] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(item?.image_url ?? null);
-  const editingItemId = item?.id ?? null;
+  const [afterImageFile, setAfterImageFile] = useState<File | null>(null);
+  const [afterImagePreview, setAfterImagePreview] = useState<string | null>(item?.image_after_purchase_url ?? null);
+  // Release local previews when replaced or when the form closes.
+  useEffect(() => () => { if (imagePreview?.startsWith("blob:")) URL.revokeObjectURL(imagePreview); }, [imagePreview]);
+  useEffect(() => () => { if (afterImagePreview?.startsWith("blob:")) URL.revokeObjectURL(afterImagePreview); }, [afterImagePreview]);
+  const [createdItemId, setCreatedItemId] = useState<number | null>(null);
+  const editingItemId = item?.id ?? createdItemId;
 
   async function handleDelete() {
     if (editingItemId == null) return;
@@ -156,11 +168,16 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
     setLoading(true);
     try {
       const saved = editingItemId != null ? await updateItem(editingItemId, form) : await createItem(form);
+      if (editingItemId == null) setCreatedItemId(saved.id);
       if (imageFile) {
         await uploadItemImage(saved.id, imageFile);
       }
+      if (form.special_merchant && afterImageFile) await uploadItemImage(saved.id, afterImageFile, "after");
       await alert(editingItemId != null ? "아이템이 수정되었습니다." : "아이템이 생성되었습니다.");
-      if (editingItemId == null) {
+      if (item == null) {
+        setCreatedItemId(null);
+        setAfterImageFile(null);
+        setAfterImagePreview(null);
         setForm(createEmptyItemForm());
         setImageFile(null);
         setImagePreview(null);
@@ -229,7 +246,19 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
       </div>
       <p className="text-xs text-muted -mt-3">골드 또는 CP 중 하나 이상은 반드시 입력해야 합니다.</p>
 
-      <Field label="유저용 설명">
+      <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
+        <Checkbox
+          checked={form.special_merchant}
+          onCheckedChange={(checked) => setForm((prev) => ({
+            ...prev, special_merchant: checked === true,
+            item_type: checked === true && prev.item_type !== "accessory" ? "companion" : prev.item_type,
+            battle_only: checked === true ? false : prev.battle_only,
+          }))}
+        />
+        특수 상인이 파는 물건입니다.
+      </label>
+
+      <Field label={form.special_merchant ? "유저용 설명 (구매 전)" : "유저용 설명"}>
         <Textarea
           name="description_user"
           placeholder="유저에게 표시될 설명"
@@ -239,7 +268,13 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         />
       </Field>
 
-      <Field label="아이템 이미지">
+      {form.special_merchant && (
+        <Field label="유저용 설명 (구매 후)">
+          <Textarea name="description_after_purchase" placeholder="구매 후 보유 목록과 슬롯에 표시될 설명" value={form.description_after_purchase} onChange={handleChange} rows={2} />
+        </Field>
+      )}
+
+      <Field label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"}>
         <div className="flex items-center gap-4">
           <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
             {imagePreview ? (
@@ -261,9 +296,24 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         </div>
       </Field>
 
+      {form.special_merchant && (
+        <Field label="아이템 이미지 (구매 후)">
+          <div className="flex items-center gap-4">
+            <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+              {afterImagePreview ? <Image src={afterImagePreview} alt="구매 후 이미지 미리보기" fill unoptimized className="object-cover" /> : <ImageIcon size={22} className="text-muted" />}
+            </div>
+            <input type="file" accept="image/*" aria-label="구매 후 아이템 이미지" className="min-w-0 text-sm" onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              setAfterImageFile(file);
+              setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
+            }} />
+          </div>
+        </Field>
+      )}
+
       <Field label="아이템 종류" required>
         <div className="grid grid-cols-2 gap-3">
-          {ITEM_TYPE_OPTIONS.map((option) => (
+          {ITEM_TYPE_OPTIONS.filter((option) => !form.special_merchant || option.value === "companion" || option.value === "accessory").map((option) => (
             <label
               key={option.value}
               className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors ${
@@ -277,7 +327,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
                   type="radio"
                   name="item_type"
                   checked={form.item_type === option.value}
-                  onChange={() => setForm((prev) => ({ ...prev, item_type: option.value }))}
+                  onChange={() => setForm((prev) => ({ ...prev, item_type: option.value, battle_only: option.value === "consumable" ? prev.battle_only : false }))}
                 />
                 <span className="font-semibold text-ivory">{option.label}</span>
               </div>
@@ -290,7 +340,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
       <EffectListEditor
         effects={form.effects}
         onChange={(effects) => setForm((prev) => ({ ...prev, effects }))}
-        allowSpecialStats
+        allowSpecialStats={form.item_type === "consumable"}
       />
 
       <div className="grid grid-cols-2 gap-4">
@@ -408,6 +458,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
 
       <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
         <Checkbox
+          disabled={form.item_type !== "consumable"}
           checked={form.battle_only}
           onCheckedChange={(checked) => setForm((prev) => ({ ...prev, battle_only: checked === true }))}
         />

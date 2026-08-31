@@ -13,14 +13,15 @@ interface InfoTooltipProps {
   children: ReactElement;
   side?: "top" | "right" | "bottom" | "left";
   delayDuration?: number;
+  portalContainer?: HTMLElement | null;
 }
 
-export default function InfoTooltip({ content, children, side = "top", delayDuration = 0 }: InfoTooltipProps) {
+export default function InfoTooltip({ content, children, side = "top", delayDuration = 0, portalContainer }: InfoTooltipProps) {
   return (
     <TooltipProvider delayDuration={delayDuration}>
       <Tooltip>
         <TooltipTrigger asChild>{children}</TooltipTrigger>
-        <TooltipContent side={side}>{content}</TooltipContent>
+        <TooltipContent side={side} portalContainer={portalContainer}>{content}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

@@ -96,6 +96,12 @@ def ensure_schema(engine: Engine) -> None:
 
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}
+        if "special_merchant" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN special_merchant BOOLEAN NOT NULL DEFAULT false")
+        if "description_after_purchase" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN description_after_purchase VARCHAR NOT NULL DEFAULT ''")
+        if "image_after_purchase_url" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN image_after_purchase_url VARCHAR")
         if "price_gold" not in item_columns:
             if "price" in item_columns:
                 statements.append("ALTER TABLE items RENAME COLUMN price TO price_gold")
