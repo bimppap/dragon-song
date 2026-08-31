@@ -138,7 +138,7 @@ export default function ItemGrid({
       },
       cellRenderer: (p: ICellRendererParams<Item>) => (
         <Badge
-          variant={p.data!.item_type === "equipment" ? "secondary" : "outline"}
+          variant={p.data!.item_type !== "consumable" ? "secondary" : "outline"}
           className="whitespace-nowrap"
         >
           {ITEM_TYPE_LABELS[p.data!.item_type]}

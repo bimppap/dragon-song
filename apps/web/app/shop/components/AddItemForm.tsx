@@ -24,11 +24,10 @@ import {
 const NO_CHAPTER_LIMIT = "__no_limit__";
 const NO_MISSION_LIMIT = "__no_mission__";
 
-const ITEM_TYPE_OPTIONS: { value: ItemType; label: string; description: string }[] = [
-  { value: "consumable", label: "소모형", description: "'사용'해야 능력치에 반영되고, 사용하면 소모됩니다." },
+/** 특수 상인 아이템에서만 선택할 수 있다(일반 아이템은 항상 소모형). */
+const SPECIAL_MERCHANT_ITEM_TYPE_OPTIONS: { value: ItemType; label: string; description: string }[] = [
   { value: "companion", label: "동반자", description: "캐릭터당 한 명만 동행할 수 있습니다." },
   { value: "accessory", label: "장신구", description: "캐릭터당 하나만 장착할 수 있습니다." },
-  { value: "equipment", label: "장착형", description: "'장착'해야 능력치에 반영되고, '해제'하면 무효화됩니다." },
 ];
 
 function createEmptyItemForm(): ItemCreate {
@@ -251,7 +250,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
           checked={form.special_merchant}
           onCheckedChange={(checked) => setForm((prev) => ({
             ...prev, special_merchant: checked === true,
-            item_type: checked === true && prev.item_type !== "accessory" ? "companion" : prev.item_type,
+            item_type: checked === true ? (prev.item_type === "accessory" ? "accessory" : "companion") : "consumable",
             battle_only: checked === true ? false : prev.battle_only,
           }))}
         />
@@ -311,31 +310,33 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         </Field>
       )}
 
-      <Field label="아이템 종류" required>
-        <div className="grid grid-cols-2 gap-3">
-          {ITEM_TYPE_OPTIONS.filter((option) => !form.special_merchant || option.value === "companion" || option.value === "accessory").map((option) => (
-            <label
-              key={option.value}
-              className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors ${
-                form.item_type === option.value
-                  ? "border-gold bg-gold/10"
-                  : "border-line hover:border-line"
-              }`}
-            >
-              <div className="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="item_type"
-                  checked={form.item_type === option.value}
-                  onChange={() => setForm((prev) => ({ ...prev, item_type: option.value, battle_only: option.value === "consumable" ? prev.battle_only : false }))}
-                />
-                <span className="font-semibold text-ivory">{option.label}</span>
-              </div>
-              <span className="text-xs text-muted">{option.description}</span>
-            </label>
-          ))}
-        </div>
-      </Field>
+      {form.special_merchant && (
+        <Field label="아이템 종류" required>
+          <div className="grid grid-cols-2 gap-3">
+            {SPECIAL_MERCHANT_ITEM_TYPE_OPTIONS.map((option) => (
+              <label
+                key={option.value}
+                className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors ${
+                  form.item_type === option.value
+                    ? "border-gold bg-gold/10"
+                    : "border-line hover:border-line"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="item_type"
+                    checked={form.item_type === option.value}
+                    onChange={() => setForm((prev) => ({ ...prev, item_type: option.value, battle_only: false }))}
+                  />
+                  <span className="font-semibold text-ivory">{option.label}</span>
+                </div>
+                <span className="text-xs text-muted">{option.description}</span>
+              </label>
+            ))}
+          </div>
+        </Field>
+      )}
 
       <EffectListEditor
         effects={form.effects}

@@ -1039,8 +1039,8 @@ def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailR
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
-    if item.item_type not in ("equipment", "companion", "accessory"):
-        raise HTTPException(status_code=400, detail="장착형 아이템만 장착할 수 있습니다.")
+    if item.item_type not in ("companion", "accessory"):
+        raise HTTPException(status_code=400, detail="동반자 또는 장신구만 장착할 수 있습니다.")
 
     owned_quantity = _sum_quantity(db, item_id, character_id)
     if owned_quantity <= 0:

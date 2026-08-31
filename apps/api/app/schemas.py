@@ -46,7 +46,7 @@ ItemEffectStat = Literal[
     "start_sh", "revive_hp", "act_time",
     "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
 ]
-ItemType = Literal["consumable", "equipment", "companion", "accessory"]
+ItemType = Literal["consumable", "companion", "accessory"]
 
 
 class ItemEffect(BaseModel):
@@ -377,6 +377,8 @@ class ItemCreate(BaseModel):
     def check_at_least_one_price(self):
         if self.special_merchant and self.item_type not in ("companion", "accessory"):
             raise ValueError("특수 상인 아이템은 동반자 또는 장신구여야 합니다.")
+        if not self.special_merchant and self.item_type != "consumable":
+            raise ValueError("일반 아이템은 소모형이어야 합니다.")
         if self.item_type in ("companion", "accessory"):
             if self.battle_only:
                 raise ValueError("동반자와 장신구는 전투용 소모품으로 설정할 수 없습니다.")

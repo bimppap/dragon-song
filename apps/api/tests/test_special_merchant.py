@@ -81,11 +81,15 @@ class SpecialMerchantTest(unittest.TestCase):
         self.assertEqual((owned.item_description, owned.item_image_url), ("revealed", "after.webp"))
 
     def test_invalid_special_merchant_configuration(self):
-        for kind in ("equipment", "consumable"):
-            with self.assertRaises(ValidationError):
-                ItemCreate(name="invalid", price_gold=10, item_type=kind, special_merchant=True)
         with self.assertRaises(ValidationError):
-            ItemCreate(name="invalid", price_gold=10, item_type="companion", effects=[{"stat": "ap_reset", "delta": 1}])
+            ItemCreate(name="invalid", price_gold=10, item_type="consumable", special_merchant=True)
+        with self.assertRaises(ValidationError):
+            ItemCreate(name="invalid", price_gold=10, item_type="companion", special_merchant=False)
+        with self.assertRaises(ValidationError):
+            ItemCreate(
+                name="invalid", price_gold=10, item_type="companion", special_merchant=True,
+                effects=[{"stat": "ap_reset", "delta": 1}],
+            )
 
     def test_delete_restores_equipped_effects_and_returns_both_images(self):
         item = self.item()
@@ -98,7 +102,7 @@ class SpecialMerchantTest(unittest.TestCase):
         item = self.item()
         crud.equip_item(self.db, self.character.id, item.id)
         with self.assertRaises(HTTPException):
-            crud.update_item(self.db, item.id, ItemCreate(name="gift", price_gold=10, item_type="accessory"))
+            crud.update_item(self.db, item.id, ItemCreate(name="gift", price_gold=10, item_type="accessory", special_merchant=True))
         self.assertEqual(self.character.atk, 12)
 
     def test_migration_preserves_existing_items_and_is_idempotent(self):

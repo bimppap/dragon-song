@@ -179,7 +179,7 @@ class Item(Base):
     available_until_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     item_type: Mapped[str] = mapped_column(
         String, nullable=False, default="consumable", server_default=text("'consumable'")
-    )  # "consumable" | "equipment" | "companion" | "accessory"
+    )  # "consumable"(일반 아이템 전용) | "companion" | "accessory"(특수 상인 아이템 전용)
     # 이 임무의 보상을 받은 캐릭터는 구매할 수 없다.
     restricted_mission_id: Mapped[int | None] = mapped_column(
         Integer, ForeignKey("missions.id"), nullable=True

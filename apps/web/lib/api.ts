@@ -277,10 +277,10 @@ export async function fetchMyCharacter(): Promise<CharacterDetail> {
   );
 }
 
-export type ItemType = "consumable" | "equipment" | "companion" | "accessory";
+export type ItemType = "consumable" | "companion" | "accessory";
 
 export const ITEM_TYPE_LABELS: Record<ItemType, string> = {
-  consumable: "소모형", equipment: "장착형", companion: "동반자", accessory: "장신구",
+  consumable: "소모형", companion: "동반자", accessory: "장신구",
 };
 
 export type ItemEffectStat =

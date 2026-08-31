@@ -60,7 +60,7 @@ function ItemTooltip({ item }: { item: Item }) {
       <ItemImage url={item.image_url} className="h-28 w-full rounded-lg bg-inset" />
       <div className="flex items-center gap-2">
         <span className="font-semibold text-ivory">{item.name}</span>
-        <Badge variant={item.item_type === "equipment" ? "secondary" : "outline"} className="text-[10px]">
+        <Badge variant={item.item_type !== "consumable" ? "secondary" : "outline"} className="text-[10px]">
           {ITEM_TYPE_LABELS[item.item_type]}
         </Badge>
       </div>
