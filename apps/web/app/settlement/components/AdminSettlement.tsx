@@ -61,18 +61,7 @@ function PendingSettlementCard({
   const { confirm } = useDialog();
   const [gold, setGold] = useState(settlement.suggested_gold);
   const [cp, setCp] = useState(settlement.suggested_cp);
-  const [cpTouched, setCpTouched] = useState(false);
-  const [appearances, setAppearances] = useState<number[]>(() => settlement.links.map(() => 0));
   const [paying, setPaying] = useState(false);
-
-  function handleAppearanceChange(index: number, value: number) {
-    const next = appearances.map((v, i) => (i === index ? value : v));
-    setAppearances(next);
-    // 어드민이 CP를 직접 고치기 전까지는 링크 CP + 출현 보상 합계로 자동 계산한다.
-    if (!cpTouched) {
-      setCp(settlement.suggested_cp + next.reduce((sum, v) => sum + v, 0));
-    }
-  }
 
   async function handlePay() {
     const ok = await confirm({
@@ -111,23 +100,10 @@ function PendingSettlementCard({
                 <Link2 size={12} className="mr-1 inline text-muted" />
                 {link}
               </span>
-              <label className="flex shrink-0 items-center gap-1.5 text-xs text-muted">
-                <Sparkles size={11} className="text-gold" />
-                캐릭터 출현 보상(CP)
-                <Input
-                  type="number"
-                  min={0}
-                  className="h-8 w-20"
-                  value={appearances[index] === 0 ? "" : appearances[index]}
-                  placeholder="0"
-                  onChange={(event) => handleAppearanceChange(index, parsePositiveInt(event.target.value))}
-                />
-              </label>
             </div>
           ))}
           <p className="text-xs text-muted">
-            기본: 링크 1개당 1CP ({settlement.links.length}CP) + 챕터 내 최초 교류 대상 1명당 1CP + 링크별 캐릭터
-            출현 보상
+            기본: 링크 1개당 1CP ({settlement.links.length}CP) + 챕터 내 최초 교류 대상 1명당 1CP
           </p>
           {settlement.targets.length > 0 && (
             <p className="text-xs text-muted">
@@ -161,10 +137,7 @@ function PendingSettlementCard({
             className="w-28"
             value={cp === 0 ? "" : cp}
             placeholder="0"
-            onChange={(event) => {
-              setCpTouched(true);
-              setCp(parsePositiveInt(event.target.value));
-            }}
+            onChange={(event) => setCp(parsePositiveInt(event.target.value))}
           />
         </label>
         <Button className="ml-auto gap-2" onClick={handlePay} disabled={paying}>
