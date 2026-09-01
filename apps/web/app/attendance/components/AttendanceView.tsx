@@ -7,15 +7,16 @@ import { Input } from "@/components/ui/input";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useToast } from "@/components/common/ToastProvider";
-import { fetchAttendanceEntries } from "@/lib/api";
+import { fetchAttendanceEntries, fetchMyCharacter } from "@/lib/api";
 import type { AttendanceEntry } from "@/lib/api";
-import { todayDateValue } from "@/lib/utils";
+import { cn, todayDateValue } from "@/lib/utils";
 
 export default function AttendanceView() {
   const { toast } = useToast();
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
   const [selectedDate, setSelectedDate] = useState(todayDateValue);
   const [loading, setLoading] = useState(true);
+  const [myCharacterId, setMyCharacterId] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -25,8 +26,17 @@ export default function AttendanceView() {
       .catch((error) => { if (!cancelled) toast(error instanceof Error ? error.message : "출석 조회 실패", "error"); })
       .finally(() => { if (!cancelled) setLoading(false); });
 
+    fetchMyCharacter()
+      .then((detail) => { if (!cancelled) setMyCharacterId(detail.id); })
+      .catch(() => { if (!cancelled) setMyCharacterId(null); });
+
     return () => { cancelled = true; };
   }, [toast]);
+
+  const mySelectedDateEntry = useMemo(
+    () => entries.find((entry) => entry.character_id === myCharacterId && entry.attendance_date === selectedDate),
+    [entries, myCharacterId, selectedDate],
+  );
 
   const entriesForDate = useMemo(
     () => entries
@@ -37,6 +47,18 @@ export default function AttendanceView() {
 
   return (
     <div className="flex flex-col gap-6">
+      {!loading && myCharacterId != null && (
+        <p
+          className={cn(
+            "text-center text-lg font-bold",
+            mySelectedDateEntry ? (mySelectedDateEntry.reward_paid ? "text-emerald-400" : "text-gold") : "text-rose-400",
+          )}
+        >
+          {mySelectedDateEntry
+            ? (mySelectedDateEntry.reward_paid ? "출석했어요! 보상도 받았어요!" : "출석했어요! 보상은 아직?!")
+            : "출석을 하지 않았어요ㅠㅠ"}
+        </p>
+      )}
       <Card>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <CardTitle>출석 캐릭터 조회</CardTitle>

@@ -5,8 +5,16 @@ import { CalendarDays, Flame, Gift, UserPlus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
@@ -21,6 +29,10 @@ import {
 } from "@/lib/api";
 import type { AttendanceEntry, AttendanceStreakEntry, Character } from "@/lib/api";
 import { todayDateValue } from "@/lib/utils";
+
+function attendanceCardNameFontSize(name: string): number {
+  return Math.min(14, 132 / Math.max(1, Array.from(name).length));
+}
 
 function StreakRow({ entry }: { entry: AttendanceStreakEntry }) {
   return (
@@ -54,6 +66,10 @@ export default function AttendanceAdminTab() {
   const [submitting, setSubmitting] = useState(false);
   const [paying, setPaying] = useState(false);
 
+  const [dateFilter, setDateFilter] = useState("all");
+  const [characterFilter, setCharacterFilter] = useState("all");
+  const [showAbsentOnly, setShowAbsentOnly] = useState(false);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -67,6 +83,10 @@ export default function AttendanceAdminTab() {
         if (cancelled) return;
         setEntries(entriesData);
         setStreaks(streaksData);
+        const latestDate = entriesData
+          .map((entry) => entry.attendance_date)
+          .toSorted((a, b) => b.localeCompare(a))[0];
+        if (latestDate) setDateFilter(latestDate);
       } catch (error) {
         if (!cancelled) toast(error instanceof Error ? error.message : "출석 현황 조회 실패", "error");
       } finally {
@@ -99,16 +119,60 @@ export default function AttendanceAdminTab() {
     [charactersById, selectedCharacterIds],
   );
 
+  const alreadyAttendedIdsForSelectedDate = useMemo(
+    () => new Set(
+      entries
+        .filter((entry) => entry.attendance_date === selectedDate)
+        .map((entry) => entry.character_id),
+    ),
+    [entries, selectedDate],
+  );
+
   const characterOptions = useMemo(
     () => characters
-      .filter((c) => !selectedCharacterIds.includes(String(c.id)))
+      .filter((c) => !selectedCharacterIds.includes(String(c.id)) && !alreadyAttendedIdsForSelectedDate.has(c.id))
       .map((c) => ({
         value: String(c.id),
         label: c.name,
         icon: <CharacterAvatar src={c.image_url} alt={c.name} className="size-5 rounded-full" iconSize={10} />,
       })),
-    [characters, selectedCharacterIds],
+    [characters, selectedCharacterIds, alreadyAttendedIdsForSelectedDate],
   );
+
+  const attendanceDates = useMemo(
+    () => [...new Set(entries.map((entry) => entry.attendance_date))].toSorted((a, b) => b.localeCompare(a)),
+    [entries],
+  );
+
+  const attendedCharacters = useMemo(() => {
+    const byId = new Map<number, { id: number; name: string }>();
+    for (const entry of entries) {
+      if (!byId.has(entry.character_id)) {
+        byId.set(entry.character_id, { id: entry.character_id, name: entry.character_name });
+      }
+    }
+    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [entries]);
+
+  const filteredEntries = useMemo(
+    () => sortedEntries.filter((entry) => (
+      (dateFilter === "all" || entry.attendance_date === dateFilter)
+      && (characterFilter === "all" || String(entry.character_id) === characterFilter)
+    )),
+    [sortedEntries, dateFilter, characterFilter],
+  );
+
+  const absentCharacters = useMemo(() => {
+    // 날짜를 특정하지 않은 경우, 해당 날짜에 국한하지 않고 한 번도 출석하지 않은 캐릭터를 보여준다.
+    const attendedIds = new Set(
+      entries
+        .filter((entry) => dateFilter === "all" || entry.attendance_date === dateFilter)
+        .map((entry) => entry.character_id),
+    );
+    return characters
+      .filter((c) => !attendedIds.has(c.id) && (characterFilter === "all" || String(c.id) === characterFilter))
+      .toSorted((a, b) => a.name.localeCompare(b.name, "ko"));
+  }, [characters, entries, dateFilter, characterFilter]);
 
   const unpaidCount = entries.filter((entry) => !entry.reward_paid).length;
 
@@ -280,51 +344,127 @@ export default function AttendanceAdminTab() {
       </Card>
 
       <Card>
-        <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <CardTitle>출석한 캐릭터</CardTitle>
-            <CardDescription>보상 수령 여부를 확인하고, 미수령 캐릭터에게 일괄 지급할 수 있습니다.</CardDescription>
+        <CardHeader className="flex flex-col gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>출석한 캐릭터</CardTitle>
+              <CardDescription>보상 수령 여부를 확인하고, 미수령 캐릭터에게 일괄 지급할 수 있습니다.</CardDescription>
+            </div>
+            <Button
+              onClick={handlePayRewards}
+              disabled={unpaidCount === 0 || paying}
+              variant="cta"
+              className="gap-2"
+            >
+              <Gift size={15} />
+              {paying ? "전송 중..." : `출석 보상 전송${unpaidCount > 0 ? ` (${unpaidCount})` : ""}`}
+            </Button>
           </div>
-          <Button
-            onClick={handlePayRewards}
-            disabled={unpaidCount === 0 || paying}
-            variant="cta"
-            className="gap-2"
-          >
-            <Gift size={15} />
-            {paying ? "전송 중..." : `출석 보상 전송${unpaidCount > 0 ? ` (${unpaidCount})` : ""}`}
-          </Button>
+          {entries.length > 0 && (
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <div className="flex-1 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">날짜 필터</p>
+                <Select value={dateFilter} onValueChange={setDateFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 날짜</SelectItem>
+                    {attendanceDates.map((d) => (
+                      <SelectItem key={d} value={d}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex-1 space-y-1.5">
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">캐릭터 필터</p>
+                <Select value={characterFilter} onValueChange={setCharacterFilter}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">전체 캐릭터</SelectItem>
+                    {attendedCharacters.map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+          {characters.length > 0 && (
+            <label className="flex w-fit items-center gap-2 text-sm font-medium text-ivory">
+              <Checkbox checked={showAbsentOnly} onCheckedChange={(checked) => setShowAbsentOnly(checked === true)} />
+              미출석 캐릭터 보기
+            </label>
+          )}
         </CardHeader>
         <CardContent>
           {loading ? (
             <EmptyState>출석 기록을 불러오는 중입니다.</EmptyState>
-          ) : entries.length === 0 ? (
+          ) : entries.length === 0 && !showAbsentOnly ? (
             <EmptyState>출석 기록이 없습니다.</EmptyState>
-          ) : (
-            <div className="flex flex-col divide-y divide-line">
-              {sortedEntries.map((entry) => (
-                <div key={entry.id} className="flex items-center gap-3 py-2">
-                  <CharacterAvatar
-                    src={entry.character_image_url}
-                    alt={entry.character_name}
-                    className="size-8 rounded-lg"
-                    iconSize={14}
-                  />
-                  <span className="min-w-0 flex-1 truncate text-sm font-medium text-ivory">
-                    {entry.character_name}
-                  </span>
-                  <span className="text-xs text-muted">{entry.attendance_date}</span>
-                  <Badge variant={entry.reward_paid ? "success" : "outline"}>
-                    {entry.reward_paid ? "보상 수령" : "미수령"}
-                  </Badge>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleRemoveEntry(entry)}
-                    aria-label={`${entry.character_name} 출석 기록 삭제`}
+          ) : showAbsentOnly ? (
+            absentCharacters.length === 0 ? (
+              <EmptyState>조건에 맞는 미출석 캐릭터가 없습니다.</EmptyState>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {absentCharacters.map((character) => (
+                  <div
+                    key={character.id}
+                    className="flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface pb-3"
                   >
-                    <X size={15} />
-                  </Button>
+                    <CharacterAvatar
+                      src={character.image_url}
+                      alt={character.name}
+                      className="aspect-square w-full rounded-none grayscale opacity-60"
+                      iconSize={28}
+                    />
+                    <p
+                      className="flex h-5 w-full items-center justify-center whitespace-nowrap px-1 text-center font-semibold leading-none text-ivory"
+                      style={{ fontSize: `${attendanceCardNameFontSize(character.name)}px` }}
+                    >
+                      {character.name}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : filteredEntries.length === 0 ? (
+            <EmptyState>조건에 맞는 출석 기록이 없습니다.</EmptyState>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+              {filteredEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="group flex flex-col items-center gap-2 overflow-hidden rounded-2xl border border-line bg-surface pb-3"
+                >
+                  <div className="relative w-full">
+                    <CharacterAvatar
+                      src={entry.character_image_url}
+                      alt={entry.character_name}
+                      className="aspect-square w-full rounded-none"
+                      iconSize={28}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleRemoveEntry(entry)}
+                      aria-label={`${entry.character_name} 출석 기록 삭제`}
+                      className="absolute right-2 top-2 flex size-6 items-center justify-center rounded-full bg-ground/70 text-ivory/80 opacity-0 transition-opacity hover:bg-ground hover:text-ivory focus-visible:opacity-100 group-hover:opacity-100"
+                    >
+                      <X size={13} />
+                    </button>
+                    {entry.reward_paid && (
+                      <span className="absolute bottom-2 right-2 flex size-6 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-bold text-white shadow-md">
+                        완
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    className="flex h-5 w-full items-center justify-center whitespace-nowrap px-1 text-center font-semibold leading-none text-ivory"
+                    style={{ fontSize: `${attendanceCardNameFontSize(entry.character_name)}px` }}
+                  >
+                    {entry.character_name}
+                  </p>
+                  {dateFilter === "all" && (
+                    <span className="text-[11px] text-muted">{entry.attendance_date}</span>
+                  )}
                 </div>
               ))}
             </div>
