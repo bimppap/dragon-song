@@ -68,8 +68,8 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 /**
- * 기술 정보 툴팁. 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서·기술 설명은 러너에게도 보여주고,
- * 관리자에게는 그 외 관리자 전용 정보(기술 비용·위력·계산 공식)를 추가로 보여준다.
+ * 기술 정보 툴팁. 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서·기술 비용·기술 설명은 러너에게도 보여주고,
+ * 관리자에게는 그 외 관리자 전용 정보(기술 위력·계산 공식)를 추가로 보여준다.
  */
 export function SkillTooltipContent({
   node,
@@ -107,9 +107,9 @@ export function SkillTooltipContent({
         <InfoRow label="중첩 가능:" value={stackableText} />
         <InfoRow label="기술 대상:" value={node.target ?? "정보 없음"} />
         <InfoRow label="발동 순서:" value={node.activation_order != null ? String(node.activation_order) : "정보 없음"} />
+        <InfoRow label="기술 비용:" value={node.cost != null ? String(node.cost) : "정보 없음"} />
         {variant === "admin" && (
           <>
-            <InfoRow label="기술 비용:" value={node.cost != null ? String(node.cost) : "정보 없음"} />
             <InfoRow label="기술 위력:" value={node.power != null ? String(node.power) : "정보 없음"} />
             <InfoRow label="계산 공식:" value={node.formula ?? "정보 없음"} />
           </>
