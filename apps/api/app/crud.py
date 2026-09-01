@@ -2013,13 +2013,14 @@ SETTLEMENT_CP_PER_NEW_TARGET = 1    # 같은 챕터에서 처음 기입되는 �
 
 
 def _log_settlement_target_bonus(db: Session, req: SettlementRequest) -> int:
-    """같은 챕터의 더 이른 교류 로그에 등장한 적 없는 교류 대상 캐릭터 수 × 1CP."""
+    """같은 챕터에서 같은 러너(캐릭터)의 더 이른 교류 로그에 등장한 적 없는 교류 대상 캐릭터 수 × 1CP."""
     if not req.chapter or not req.target_character_ids:
         return 0
     earlier_requests = (
         db.query(SettlementRequest)
         .filter(SettlementRequest.type == "log")
         .filter(SettlementRequest.chapter == req.chapter)
+        .filter(SettlementRequest.character_id == req.character_id)
         .filter(SettlementRequest.id < req.id)
         .all()
     )
@@ -2030,16 +2031,20 @@ def _log_settlement_target_bonus(db: Session, req: SettlementRequest) -> int:
     return len(new_targets) * SETTLEMENT_CP_PER_NEW_TARGET
 
 
-def get_appeared_target_character_ids(db: Session) -> list[int]:
-    """현재 진행 중인 챕터에서 이미 교류 로그에 기입되어(챕터 내 최초 기입 보너스를 이미 받아) 더 이상
-    추가 CP를 받지 못하는 캐릭터 id 목록."""
+def get_appeared_target_character_ids(db: Session, member: Member) -> list[int]:
+    """현재 진행 중인 챕터에서 본인이 이미 교류 로그에 기입한(챕터 내 최초 기입 보너스를 이미 받은)
+    캐릭터 id 목록."""
     chapter = _get_active_chapter_model(db)
     if not chapter:
+        return []
+    own_character_id = get_member_character_id(db, member.id)
+    if own_character_id is None:
         return []
     requests = (
         db.query(SettlementRequest)
         .filter(SettlementRequest.type == "log")
         .filter(SettlementRequest.chapter == chapter.name)
+        .filter(SettlementRequest.character_id == own_character_id)
         .all()
     )
     seen: set[int] = set()

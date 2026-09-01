@@ -787,8 +787,8 @@ def list_settlement_target_candidates(member: Member = Depends(get_current_membe
 
 @app.get("/settlements/appeared-target-ids", response_model=list[int])
 def list_settlement_appeared_target_ids(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
-    """현재 진행 중인 챕터에서 이미 교류 로그에 기입되어 챕터 내 최초 기입 보너스를 받은 캐릭터 id 목록."""
-    return crud.get_appeared_target_character_ids(db)
+    """현재 진행 중인 챕터에서 본인이 이미 교류 로그에 기입해 챕터 내 최초 기입 보너스를 받은 캐릭터 id 목록."""
+    return crud.get_appeared_target_character_ids(db, member)
 
 
 @app.post("/settlements/{settlement_id}/pay", response_model=SettlementRead)
