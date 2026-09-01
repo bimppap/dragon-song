@@ -26,9 +26,11 @@ function ItemIcon({ item, type }: { item?: CharacterOwnedItem; type: SlotType })
     : <Icon size={18} />;
 }
 
-export default function CharacterEquipmentSlots({ character, onUpdated }: {
+export default function CharacterEquipmentSlots({ character, onUpdated, readOnly = false }: {
   character: CharacterDetail;
   onUpdated: (detail: CharacterDetail) => void;
+  /** 다른 러너의 캐릭터를 열람할 때: 장착된 동반자/장신구 정보만 보여주고 장착 변경은 막는다. */
+  readOnly?: boolean;
 }) {
   const titleId = useId();
   const [selectedType, setSelectedType] = useState<SlotType | null>(null);
@@ -67,9 +69,12 @@ export default function CharacterEquipmentSlots({ character, onUpdated }: {
       const items = owned.filter((item) => item.item_type === type);
       if (!items.length) return null;
       const equipped = items.find((item) => item.equipped);
+      if (readOnly && !equipped) return null;
       return <InfoTooltip key={type} content={equipped ? <ItemDetails item={equipped} /> : `${ITEM_TYPE_LABELS[type]} 선택`}>
-        <button type="button" aria-label={`${ITEM_TYPE_LABELS[type]} 선택${equipped ? `: ${equipped.item_name}` : ""}`} aria-haspopup="dialog"
-          onClick={() => { setError(null); setSelectedType(type); }} className="flex w-10 shrink-0 cursor-pointer flex-col items-center gap-1 text-center">
+        <button type="button" aria-label={readOnly ? `${ITEM_TYPE_LABELS[type]}: ${equipped?.item_name}` : `${ITEM_TYPE_LABELS[type]} 선택${equipped ? `: ${equipped.item_name}` : ""}`}
+          aria-haspopup={readOnly ? undefined : "dialog"}
+          onClick={readOnly ? undefined : () => { setError(null); setSelectedType(type); }}
+          className={cn("flex w-10 shrink-0 flex-col items-center gap-1 text-center", readOnly ? "cursor-default" : "cursor-pointer")}>
           <span className={cn("relative flex size-9 items-center justify-center border-2 bg-gold/10 text-gold", equipped ? "border-gold" : "border-line")}>
             <ItemIcon item={equipped} type={type} />
           </span>

@@ -65,8 +65,10 @@ interface Props {
   showSelector?: boolean;
   showId?: boolean;
   focusCharacterId?: number | null;
-  /** 다른 러너의 캐릭터를 열람할 때: 편집·아이템 상호작용·이력 노출을 모두 막는다. */
+  /** 다른 러너의 캐릭터를 열람할 때: 편집·아이템 상호작용을 막는다(기술/동반자/장신구는 열람만 허용). */
   readOnly?: boolean;
+  /** 보상/구매 이력 노출 여부. 미지정 시 readOnly의 반대값(자기 캐릭터는 노출, 남의 캐릭터는 비노출). 스텝이 다른 캐릭터의 이력을 볼 때 명시적으로 true로 지정한다. */
+  showHistory?: boolean;
   /** 지정하면 캐릭터 삭제 버튼을 노출한다(관리자 콘솔 전용). */
   onDeleted?: (characterId: number) => void;
   /** 지정하면, 관리자가 만든 캐릭터(러너 계정 미연결)에 한해 수정 버튼을 노출한다(관리자 콘솔 전용). */
@@ -611,9 +613,11 @@ export default function CharacterInfo({
   showId = true,
   focusCharacterId = null,
   readOnly = false,
+  showHistory,
   onDeleted,
   onEdit,
 }: Props) {
+  const canViewHistory = showHistory ?? !readOnly;
   const { toast } = useToast();
   const { confirm } = useDialog();
   const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
@@ -864,12 +868,10 @@ export default function CharacterInfo({
                   )}
                 </div>
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
-                {!readOnly && (
-                  <div className="flex items-start gap-2">
-                    <CharacterOwnedSkills characterId={selectedDetail.id} />
-                    <CharacterEquipmentSlots key={selectedDetail.id} character={selectedDetail} onUpdated={setDetail} />
-                  </div>
-                )}
+                <div className="flex items-start gap-2">
+                  <CharacterOwnedSkills characterId={selectedDetail.id} readOnly={readOnly} />
+                  <CharacterEquipmentSlots key={selectedDetail.id} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
+                </div>
               </div>
 
               {/* 명함 우측: 정보 */}
@@ -943,7 +945,7 @@ export default function CharacterInfo({
                 <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
                   {CORE_STATS.map(({ key, label, icon: Icon, accent }) => {
                     const cost = getNextStatUpgradeCost(selectedDetail[key]);
-                    const canUpgrade = cost != null && selectedDetail.ap >= cost;
+                    const canUpgrade = !readOnly && cost != null && selectedDetail.ap >= cost;
                     return (
                       <CoreStatLine
                         key={key}
@@ -1115,7 +1117,7 @@ export default function CharacterInfo({
             </Card>
           </div>
 
-          {!readOnly && <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          {canViewHistory && <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
             <Card>
               <CardHeader className="flex flex-row items-center justify-between gap-3">
                 <CardTitle>보상 이력</CardTitle>

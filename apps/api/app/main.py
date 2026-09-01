@@ -1155,7 +1155,7 @@ def get_character_skills(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
-    _require_own_character_or_admin(db, member, character_id)
+    """다른 러너의 캐릭터라도 열람은 누구나 가능하다(강화/이름/이미지 변경만 본인 캐릭터로 제한)."""
     return crud.get_character_skill_tree(db, character_id, book)
 
 

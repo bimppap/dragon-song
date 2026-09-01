@@ -8,6 +8,7 @@ import InfoTooltip from "@/components/common/InfoTooltip";
 import { SkillTooltipContent } from "@/components/skill/SkillTreeGrid";
 import { Button } from "@/components/ui/button";
 import { fetchCharacterSkillTree, type CharacterSkillNode, type SkillBook } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 import { deepestLearnedSkill } from "@/lib/skillProgression";
 
@@ -21,16 +22,19 @@ const BOOK_BORDER_CLASS: Record<SkillBook, string> = {
 
 interface Props {
   characterId: number;
+  /** 다른 러너의 캐릭터를 열람할 때: 기술트리 편집 페이지로 이동하지 않고 정보만 보여준다. */
+  readOnly?: boolean;
 }
 
 /** 서와 무관하게 가장 깊이 습득한 기술을 한 슬롯에 보여준다. */
-export default function CharacterOwnedSkills({ characterId }: Props) {
+export default function CharacterOwnedSkills({ characterId, readOnly = false }: Props) {
   const router = useRouter();
   const [skills, setSkills] = useState<CharacterSkillNode[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function goToSkillPage() {
+    if (readOnly) return;
     router.push("/skill");
   }
 
@@ -65,7 +69,7 @@ export default function CharacterOwnedSkills({ characterId }: Props) {
         <span className="text-xs text-muted">불러오는 중...</span>
       ) : (
         <div className="flex gap-1">
-          {skills.length === 0 && (
+          {skills.length === 0 && !readOnly && (
             <button
               type="button"
               onClick={goToSkillPage}
@@ -88,7 +92,7 @@ export default function CharacterOwnedSkills({ characterId }: Props) {
                   <SkillTooltipContent
                     node={skill}
                     variant="runner"
-                    footer={(
+                    footer={readOnly ? undefined : (
                       <Button
                         type="button"
                         size="sm"
@@ -108,9 +112,9 @@ export default function CharacterOwnedSkills({ characterId }: Props) {
               >
                 <button
                   type="button"
-                  aria-label={`${skill.display_name} · 기술트리 열기`}
+                  aria-label={readOnly ? skill.display_name : `${skill.display_name} · 기술트리 열기`}
                   onClick={goToSkillPage}
-                  className="flex min-w-0 cursor-pointer flex-col items-center gap-1 text-center"
+                  className={cn("flex min-w-0 flex-col items-center gap-1 text-center", readOnly ? "cursor-default" : "cursor-pointer")}
                 >
                   <span className={`relative flex size-9 items-center justify-center overflow-hidden border-2 bg-gold/10 text-gold transition-colors hover:bg-gold/15 ${BOOK_BORDER_CLASS[skill.book]}`}>
                     {skill.image_url ? (

@@ -204,6 +204,7 @@ function MyCharacterConsole({ role }: { role: MemberRole }) {
         showSelector={false}
         showId={false}
         readOnly
+        showHistory={isStaff}
       />
     </>}
   </PageContainer>;

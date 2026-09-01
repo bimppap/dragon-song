@@ -76,15 +76,18 @@ export function SkillTooltipContent({
   variant,
   footer,
 }: {
-  node: SkillNode;
+  node: SkillNode & { display_name?: string; custom_name?: string | null };
   variant: "runner" | "admin";
   footer?: ReactNode;
 }) {
+  const title = node.display_name ?? node.default_name;
+  const isCustomized = Boolean(node.custom_name) && title !== node.default_name;
+
   // 0단계(서 아이덴티티 노드)는 실제 기술이 아니라 위치 표시용이라 이름만 보여준다.
   if (node.tier === 0) {
     return (
       <div className="max-w-64 text-left">
-        <div className="font-semibold text-ivory">{node.default_name}</div>
+        <div className="font-semibold text-ivory">{title}</div>
         {footer ? <div className="mt-2">{footer}</div> : null}
       </div>
     );
@@ -94,7 +97,10 @@ export function SkillTooltipContent({
 
   return (
     <div className="max-w-64 text-left">
-      <div className="flex items-center gap-1.5 font-semibold text-emerald-400">{node.default_name}</div>
+      <div className="flex items-center gap-1.5 font-semibold text-emerald-400">{title}</div>
+      {isCustomized && (
+        <div className="mt-0.5 text-[11px] text-muted">원래 이름: {node.default_name}</div>
+      )}
       <ul className="mt-1.5 space-y-0.5 text-muted">
         <InfoRow label="발동 타입:" value={node.trigger_type ?? "정보 없음"} />
         <InfoRow label="분류:" value={node.category ?? "정보 없음"} />
