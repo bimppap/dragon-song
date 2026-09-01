@@ -539,6 +539,24 @@ class AttendanceRecord(Base):
     )
 
 
+class NaverSession(Base):
+    """자동 출석 크롤링에 쓰는 네이버 로그인 세션 쿠키. 싱글턴 행(id=1)."""
+
+    __tablename__ = "naver_session"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    nid_aut: Mapped[str | None] = mapped_column(String, nullable=True)
+    nid_ses: Mapped[str | None] = mapped_column(String, nullable=True)
+    is_valid: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    last_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
 class BattleSession(Base):
     """전투 진행 상태. 모의전/실전 모두 서버가 이 스냅샷으로 라운드를 계산한다."""
 

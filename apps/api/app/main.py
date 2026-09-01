@@ -1,14 +1,16 @@
 from typing import Literal
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta, timezone
 
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app import storage
 from app.auth import create_access_token, get_current_member, is_admin_role, require_admin, require_owner_admin
-from app.db import engine, get_db
+from app.db import SessionLocal, engine, get_db
 from app.migrations import ensure_schema
 from app.models import Chapter, Challenge, Character, Enemy, Item, Member, Mission, SkillNode
 from app.schemas import (
@@ -18,6 +20,7 @@ from app.schemas import (
     AttendanceEntryRead,
     AttendanceRewardPayResult,
     AttendanceStreakEntry,
+    AutoAttendanceResult,
     BattleAllyTurnRequest,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
@@ -54,6 +57,8 @@ from app.schemas import (
     MissionProgressRead,
     MissionRead,
     MissionUpdate,
+    NaverSessionRead,
+    NaverSessionUpdate,
     NoncombatHealRequest,
     NoncombatHealResult,
     PurchaseRead,
@@ -91,6 +96,34 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+KST = timezone(timedelta(hours=9))
+
+
+async def _run_daily_auto_attendance_job() -> None:
+    """매일 00:10(KST)에 전날 출석부를 크롤링해 미처리 캐릭터를 출석·보상 처리한다."""
+    target_date = (datetime.now(KST) - timedelta(days=1)).date()
+    db = SessionLocal()
+    try:
+        result = await crud.run_auto_attendance(db, target_date)
+        print(
+            f"[auto-attendance] {target_date} 처리 완료: "
+            f"출석 {len(result.newly_checked_in)}명, 보상 {len(result.newly_rewarded)}명"
+        )
+    except Exception as exc:  # noqa: BLE001 - 스케줄러 잡이 예외로 죽지 않도록 로그만 남긴다.
+        print(f"[auto-attendance] {target_date} 처리 실패: {exc}")
+    finally:
+        db.close()
+
+
+scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
+scheduler.add_job(_run_daily_auto_attendance_job, CronTrigger(hour=0, minute=10))
+
+
+@app.on_event("startup")
+async def start_scheduler() -> None:
+    scheduler.start()
 
 
 @app.get("/")
@@ -324,6 +357,41 @@ def get_attendance_streak_ranking(
     db: Session = Depends(get_db),
 ):
     return crud.get_attendance_streak_ranking(db)
+
+
+@app.post("/attendance/auto-run", response_model=AutoAttendanceResult)
+async def run_auto_attendance(
+    attendance_date: date,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """네이버 출석부에서 attendance_date 출석자를 가져와 미처리 캐릭터를 출석·보상 처리한다."""
+    return await crud.run_auto_attendance(db, attendance_date)
+
+
+@app.get("/admin/naver-session", response_model=NaverSessionRead)
+def get_naver_session(
+    member: Member = Depends(require_owner_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.get_naver_session_view(db)
+
+
+@app.post("/admin/naver-session", response_model=NaverSessionRead)
+def update_naver_session(
+    data: NaverSessionUpdate,
+    member: Member = Depends(require_owner_admin),
+    db: Session = Depends(get_db),
+):
+    return crud.update_naver_session(db, data.nid_aut, data.nid_ses)
+
+
+@app.post("/admin/naver-session/check", response_model=NaverSessionRead)
+async def check_naver_session(
+    member: Member = Depends(require_owner_admin),
+    db: Session = Depends(get_db),
+):
+    return await crud.check_naver_session(db)
 
 
 @app.post("/items", response_model=ItemRead)

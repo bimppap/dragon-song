@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   BookMarked,
+  Cookie,
   Gift,
   HeartPulse,
   ScrollText,
@@ -17,6 +18,7 @@ import TabBar from "@/components/common/TabBar";
 import { useRequireAdmin } from "@/lib/auth";
 import ChapterTab from "./components/ChapterTab";
 import HealTab from "./components/HealTab";
+import NaverSessionTab from "./components/NaverSessionTab";
 import PermissionTab from "./components/PermissionTab";
 import RewardAdminTab from "./components/RewardAdminTab";
 import EnemyTab from "@/app/battle/components/EnemyTab";
@@ -24,7 +26,7 @@ import AdminSkillEditor from "@/app/battle/components/AdminSkillEditor";
 import { ChallengeAdmin } from "@/app/challenges/page";
 import { MissionAdmin } from "@/app/missions/page";
 
-type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "heal" | "skill" | "permission";
+type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "heal" | "skill" | "permission" | "naver";
 
 const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "mission", label: "임무", icon: ScrollText },
@@ -35,7 +37,11 @@ const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "skill", label: "기술트리", icon: Sparkles },
   { id: "chapter", label: "챕터", icon: BookMarked },
   { id: "permission", label: "권한", icon: UserStar },
+  { id: "naver", label: "쿠키", icon: Cookie },
 ];
+
+// 권한 탭과 네이버 세션 쿠키 탭은 최고 관리자(ADMIN)만 접근할 수 있다. 스텝(STAFF)에게는 노출하지 않는다.
+const OWNER_ONLY_TABS = new Set<PageTab>(["permission", "naver"]);
 
 export default function AdminPage() {
   const member = useRequireAdmin();
@@ -43,8 +49,9 @@ export default function AdminPage() {
 
   if (!member) return null;
 
-  // 권한 탭은 최고 관리자(ADMIN)만 접근할 수 있다. 스텝(STAFF)에게는 노출하지 않는다.
-  const visibleTabs = member.role === "ADMIN" ? PAGE_TABS : PAGE_TABS.filter((t) => t.id !== "permission");
+  const visibleTabs = member.role === "ADMIN"
+    ? PAGE_TABS
+    : PAGE_TABS.filter((t) => !OWNER_ONLY_TABS.has(t.id));
 
   return (
     <PageContainer className="flex flex-col gap-8">
@@ -74,6 +81,7 @@ export default function AdminPage() {
         {tab === "heal" && <HealTab />}
         {tab === "skill" && <AdminSkillEditor />}
         {tab === "permission" && member.role === "ADMIN" && <PermissionTab />}
+        {tab === "naver" && member.role === "ADMIN" && <NaverSessionTab />}
       </div>
     </PageContainer>
   );

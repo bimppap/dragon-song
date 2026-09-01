@@ -693,6 +693,28 @@ export interface AttendanceStreakEntry {
   rank: number;
 }
 
+export interface NaverSession {
+  nid_aut_masked: string | null;
+  nid_ses_masked: string | null;
+  has_session: boolean;
+  is_valid: boolean | null;
+  last_checked_at: string | null;
+}
+
+export interface AutoAttendanceCharacterResult {
+  character_id: number;
+  character_name: string;
+}
+
+export interface AutoAttendanceResult {
+  attendance_date: string;
+  crawled_count: number;
+  matched_names: string[];
+  unmatched_names: string[];
+  newly_checked_in: AutoAttendanceCharacterResult[];
+  newly_rewarded: AutoAttendanceCharacterResult[];
+}
+
 export interface CartItem {
   item_id: number;
   quantity: number;
@@ -784,6 +806,31 @@ export async function payAttendanceRewards(): Promise<AttendanceRewardPayResult>
 
 export async function fetchAttendanceStreakRanking(): Promise<AttendanceStreakEntry[]> {
   return request<AttendanceStreakEntry[]>("/attendance/streak-ranking", undefined, "연속 출석 순위 조회 실패");
+}
+
+export async function runAutoAttendance(attendanceDate: string): Promise<AutoAttendanceResult> {
+  const result = await request<AutoAttendanceResult>(
+    `/attendance/auto-run?attendance_date=${attendanceDate}`,
+    { method: "POST" },
+    "자동 출석 처리 실패",
+  );
+  invalidateApiCache("attendance:", "characters:", "rewards:");
+  return result;
+}
+
+export async function fetchNaverSession(): Promise<NaverSession> {
+  return request<NaverSession>("/admin/naver-session", undefined, "네이버 세션 조회 실패");
+}
+
+export async function updateNaverSession(nidAut: string, nidSes: string): Promise<NaverSession> {
+  return request<NaverSession>("/admin/naver-session", {
+    method: "POST",
+    body: JSON.stringify({ nid_aut: nidAut, nid_ses: nidSes }),
+  }, "네이버 세션 저장 실패");
+}
+
+export async function checkNaverSession(): Promise<NaverSession> {
+  return request<NaverSession>("/admin/naver-session/check", { method: "POST" }, "네이버 세션 만료 검사 실패");
 }
 
 export async function fetchItems(character_id?: number): Promise<Item[]> {

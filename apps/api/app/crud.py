@@ -3,6 +3,7 @@ import re
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
+import httpx
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session, load_only
@@ -13,7 +14,7 @@ from app.game_data import (
     get_level_grade_stats,
     get_stat_upgrade_ap_cost,
 )
-from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
+from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
     GRADE_STAT_FIELDS,
     ITEM_EFFECT_SPECIAL_STATS,
@@ -24,6 +25,8 @@ from app.schemas import (
     AttendanceEntryRead,
     AttendanceRewardPayResult,
     AttendanceStreakEntry,
+    AutoAttendanceCharacterResult,
+    AutoAttendanceResult,
     BattleAllyTurnRequest,
     CharacterActionInput,
     BattleEnemyJoinRequest,
@@ -66,6 +69,7 @@ from app.schemas import (
     MissionProgressBulkUpdate,
     MissionProgressRead,
     MissionUpdate,
+    NaverSessionRead,
     NoncombatHealResult,
     PurchaseRead,
     RewardItemEntry,
@@ -1676,6 +1680,198 @@ def pay_attendance_rewards(db: Session) -> AttendanceRewardPayResult:
 
     db.commit()
     return AttendanceRewardPayResult(paid_count=paid_count, entries=get_attendance_entries(db))
+
+
+NAVER_SESSION_ID = 1
+NAVER_ATTENDANCE_CLUB_ID = "31734615"
+NAVER_ATTENDANCE_MENU_ID = "21"
+NAVER_USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+)
+
+
+def _mask_secret(value: str | None) -> str | None:
+    if not value:
+        return None
+    return value[:3] + "***"
+
+
+def get_naver_session(db: Session) -> NaverSession:
+    session = db.get(NaverSession, NAVER_SESSION_ID)
+    if session is None:
+        session = NaverSession(id=NAVER_SESSION_ID)
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+    return session
+
+
+def _to_naver_session_read(session: NaverSession) -> NaverSessionRead:
+    return NaverSessionRead(
+        nid_aut_masked=_mask_secret(session.nid_aut),
+        nid_ses_masked=_mask_secret(session.nid_ses),
+        has_session=bool(session.nid_aut and session.nid_ses),
+        is_valid=session.is_valid,
+        last_checked_at=session.last_checked_at,
+    )
+
+
+def get_naver_session_view(db: Session) -> NaverSessionRead:
+    return _to_naver_session_read(get_naver_session(db))
+
+
+def update_naver_session(db: Session, nid_aut: str, nid_ses: str) -> NaverSessionRead:
+    session = get_naver_session(db)
+    session.nid_aut = nid_aut
+    session.nid_ses = nid_ses
+    session.is_valid = None
+    session.last_checked_at = None
+    db.commit()
+    db.refresh(session)
+    return _to_naver_session_read(session)
+
+
+async def _fetch_naver_attendance_html(nid_aut: str, nid_ses: str, target_date: date) -> str:
+    """네이버 카페 출석부의 특정 날짜 페이지를 쿠키 세션으로 직접 요청한다(브라우저 없이 순수 HTTP GET).
+
+    출석부는 EUC-KR(KSC5601)로 응답하므로 그렇게 디코딩한다.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                "https://cafe.naver.com/AttendanceView.nhn",
+                params={
+                    "search.clubid": NAVER_ATTENDANCE_CLUB_ID,
+                    "search.menuid": NAVER_ATTENDANCE_MENU_ID,
+                    "search.attendyear": f"{target_date.year:04d}",
+                    "search.attendmonth": f"{target_date.month:02d}",
+                    "search.attendday": f"{target_date.day:02d}",
+                },
+                cookies={"NID_AUT": nid_aut, "NID_SES": nid_ses},
+                headers={"User-Agent": NAVER_USER_AGENT},
+            )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"네이버 카페 요청 실패: {exc}")
+    return resp.content.decode("euc-kr", errors="replace")
+
+
+def _is_logged_in_attendance_page(html: str) -> bool:
+    """출석자가 0명이어도 로그인 상태면 항상 나오는 목록 컨테이너로 로그인 여부를 판별한다.
+
+    (세션이 만료되면 출석부 대신 "멤버에게 공개된 게시판입니다" 알림 스크립트만 반환된다.)
+    """
+    return "list_attendance" in html
+
+
+def _extract_attendance_names(html: str) -> list[str]:
+    return re.findall(r'class="p-nick">.*?class="link_text"[^>]*>([^<]+)</a>', html, re.DOTALL)
+
+
+async def check_naver_session(db: Session) -> NaverSessionRead:
+    """저장된 쿠키로 실제 출석부에 접근해 로그인 세션이 살아있는지 검사한다."""
+    session = get_naver_session(db)
+    if not session.nid_aut or not session.nid_ses:
+        raise HTTPException(status_code=400, detail="등록된 네이버 세션 쿠키가 없습니다.")
+
+    html = await _fetch_naver_attendance_html(session.nid_aut, session.nid_ses, _today_kst())
+    session.is_valid = _is_logged_in_attendance_page(html)
+    session.last_checked_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(session)
+    return _to_naver_session_read(session)
+
+
+async def run_auto_attendance(db: Session, target_date: date) -> AutoAttendanceResult:
+    """네이버 출석부에서 target_date 출석자 이름을 가져와 DB 캐릭터 이름과 대조해
+    출석 미처리 캐릭터는 출석 처리하고, 보상 미지급 캐릭터는 보상을 지급한다."""
+    session = get_naver_session(db)
+    if not session.nid_aut or not session.nid_ses:
+        raise HTTPException(status_code=400, detail="등록된 네이버 세션 쿠키가 없습니다.")
+
+    html = await _fetch_naver_attendance_html(session.nid_aut, session.nid_ses, target_date)
+    session.is_valid = _is_logged_in_attendance_page(html)
+    session.last_checked_at = datetime.now(timezone.utc)
+    db.commit()
+
+    if not session.is_valid:
+        raise HTTPException(
+            status_code=502,
+            detail="네이버 세션이 만료되어 출석부를 불러올 수 없습니다. 쿠키를 다시 등록해주세요.",
+        )
+
+    crawled_names = _extract_attendance_names(html)
+
+    characters_by_name: dict[str, Character] = {}
+    for character in db.query(Character).all():
+        characters_by_name.setdefault(character.name, character)  # 동명 캐릭터는 먼저 매칭된 쪽 사용
+
+    matched_names: list[str] = []
+    unmatched_names: list[str] = []
+    matched_characters_by_id: dict[int, Character] = {}
+    seen_unmatched_names: set[str] = set()
+    for name in crawled_names:
+        character = characters_by_name.get(name)
+        if character:
+            # 같은 캐릭터가 여러 번 글을 남겨도 목록에는 한 번만 나오게 한다(중복 출석/보상 방지는
+            # 아래에서 matched_characters_by_id를 캐릭터 ID로 순회하는 것으로 이미 보장된다).
+            if character.id not in matched_characters_by_id:
+                matched_names.append(name)
+            matched_characters_by_id[character.id] = character
+        elif name not in seen_unmatched_names:
+            seen_unmatched_names.add(name)
+            unmatched_names.append(name)
+
+    existing_entries = {
+        entry.character_id: entry
+        for entry in db.query(AttendanceEntry).filter(AttendanceEntry.attendance_date == target_date).all()
+    }
+
+    newly_checked_in: list[Character] = []
+    for character in matched_characters_by_id.values():
+        if character.id not in existing_entries:
+            entry = AttendanceEntry(attendance_date=target_date, character_id=character.id)
+            db.add(entry)
+            db.flush()
+            existing_entries[character.id] = entry
+            newly_checked_in.append(character)
+
+    db.commit()
+
+    newly_rewarded: list[Character] = []
+    for character in matched_characters_by_id.values():
+        entry = existing_entries[character.id]
+        if entry.reward_paid:
+            continue
+        character.gold += ATTENDANCE_REWARD_GOLD
+        character.cp += ATTENDANCE_REWARD_CP
+        db.add(Reward(
+            type="attendance",
+            character_id=character.id,
+            source_id=entry.id,
+            reward_items=[
+                {"type": "gold", "amount": ATTENDANCE_REWARD_GOLD},
+                {"type": "stat", "stat": "cp", "amount": ATTENDANCE_REWARD_CP},
+            ],
+            rewarded_at=_today_kst(),
+        ))
+        entry.reward_paid = True
+        newly_rewarded.append(character)
+
+    db.commit()
+
+    return AutoAttendanceResult(
+        attendance_date=target_date,
+        crawled_count=len(crawled_names),
+        matched_names=matched_names,
+        unmatched_names=unmatched_names,
+        newly_checked_in=[
+            AutoAttendanceCharacterResult(character_id=c.id, character_name=c.name) for c in newly_checked_in
+        ],
+        newly_rewarded=[
+            AutoAttendanceCharacterResult(character_id=c.id, character_name=c.name) for c in newly_rewarded
+        ],
+    )
 
 
 def get_attendance_streak_ranking(db: Session) -> list[AttendanceStreakEntry]:

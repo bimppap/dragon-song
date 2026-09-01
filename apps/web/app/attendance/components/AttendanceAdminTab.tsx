@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { CalendarDays, Flame, Gift, UserPlus, X } from "lucide-react";
+import { CalendarDays, Flame, Gift, UserPlus, Wand2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -26,6 +26,7 @@ import {
   fetchAttendanceStreakRanking,
   fetchCharacters,
   payAttendanceRewards,
+  runAutoAttendance,
 } from "@/lib/api";
 import type { AttendanceEntry, AttendanceStreakEntry, Character } from "@/lib/api";
 import { todayDateValue } from "@/lib/utils";
@@ -54,7 +55,7 @@ function StreakRow({ entry }: { entry: AttendanceStreakEntry }) {
 }
 
 export default function AttendanceAdminTab() {
-  const { confirm } = useDialog();
+  const { confirm, alert } = useDialog();
   const { toast } = useToast();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [entries, setEntries] = useState<AttendanceEntry[]>([]);
@@ -65,6 +66,7 @@ export default function AttendanceAdminTab() {
   const [selectedDate, setSelectedDate] = useState(todayDateValue);
   const [submitting, setSubmitting] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [autoRunning, setAutoRunning] = useState(false);
 
   const [dateFilter, setDateFilter] = useState("all");
   const [characterFilter, setCharacterFilter] = useState("all");
@@ -214,6 +216,64 @@ export default function AttendanceAdminTab() {
     }
   }
 
+  async function handleAutoRun() {
+    try {
+      setAutoRunning(true);
+      const result = await runAutoAttendance(selectedDate);
+      const [updatedEntries] = await Promise.all([
+        fetchAttendanceEntries(),
+        fetchAttendanceStreakRanking().then(setStreaks).catch(() => {}),
+      ]);
+      setEntries(updatedEntries);
+
+      if (result.newly_checked_in.length === 0 && result.newly_rewarded.length === 0) {
+        toast(`${result.attendance_date} 출석부에서 새로 처리할 캐릭터가 없습니다.`, "success");
+        return;
+      }
+
+      await alert({
+        title: "자동 출석 처리 완료",
+        description: `${result.attendance_date} 출석부 기준으로 처리했습니다.`,
+        content: (
+          <div className="mt-3 flex flex-col gap-3">
+            {result.newly_checked_in.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  출석 처리됨 ({result.newly_checked_in.length})
+                </p>
+                <p className="mt-1 text-sm text-ivory">
+                  {result.newly_checked_in.map((c) => c.character_name).join(", ")}
+                </p>
+              </div>
+            )}
+            {result.newly_rewarded.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  보상 지급됨 ({result.newly_rewarded.length})
+                </p>
+                <p className="mt-1 text-sm text-ivory">
+                  {result.newly_rewarded.map((c) => c.character_name).join(", ")}
+                </p>
+              </div>
+            )}
+            {result.unmatched_names.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted">
+                  DB에서 매칭되지 않은 이름 ({result.unmatched_names.length})
+                </p>
+                <p className="mt-1 text-sm text-ivory/70">{result.unmatched_names.join(", ")}</p>
+              </div>
+            )}
+          </div>
+        ),
+      });
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "자동 출석 처리 실패", "error");
+    } finally {
+      setAutoRunning(false);
+    }
+  }
+
   async function handleRemoveEntry(entry: AttendanceEntry) {
     const ok = await confirm({
       title: "출석 취소",
@@ -311,6 +371,10 @@ export default function AttendanceAdminTab() {
             <Button onClick={handleCheckIn} disabled={selectedCharacterIds.length === 0 || submitting} className="gap-2">
               <UserPlus size={15} />
               {submitting ? "처리 중..." : `출석 처리${selectedCharacterIds.length > 0 ? ` (${selectedCharacterIds.length})` : ""}`}
+            </Button>
+            <Button onClick={handleAutoRun} disabled={autoRunning} variant="outline" className="gap-2">
+              <Wand2 size={15} />
+              {autoRunning ? "처리 중..." : "자동 출석 돌리기"}
             </Button>
           </div>
 

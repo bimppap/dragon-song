@@ -957,6 +957,33 @@ class AttendanceStreakEntry(BaseModel):
     rank: int  # 동률은 같은 순위를 공유한다(밀집 순위). 최대 5위까지만 반환된다.
 
 
+class NaverSessionRead(BaseModel):
+    nid_aut_masked: str | None
+    nid_ses_masked: str | None
+    has_session: bool
+    is_valid: bool | None
+    last_checked_at: datetime | None
+
+
+class NaverSessionUpdate(BaseModel):
+    nid_aut: str
+    nid_ses: str
+
+
+class AutoAttendanceCharacterResult(BaseModel):
+    character_id: int
+    character_name: str
+
+
+class AutoAttendanceResult(BaseModel):
+    attendance_date: date
+    crawled_count: int
+    matched_names: list[str]
+    unmatched_names: list[str]
+    newly_checked_in: list[AutoAttendanceCharacterResult]
+    newly_rewarded: list[AutoAttendanceCharacterResult]
+
+
 TIER_LABELS = {0: "기본", 1: "1단계", 2: "2단계", 3: "3단계", 4: "4단계", 5: "5단계", 6: "6단계"}
 
 
