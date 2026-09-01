@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import {
   Check,
@@ -67,6 +67,7 @@ import RewardSummary from "@/components/common/RewardSummary";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { useEditableProgressList } from "@/lib/useEditableProgressList";
+import { orderChapterNamesLatestFirst } from "@/lib/chapterOrder";
 
 const ALL_CHAPTERS = "__all__";
 
@@ -79,6 +80,7 @@ function RunnerChallengeList() {
   const { toast } = useToast();
   const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [achievedChallengeIds, setAchievedChallengeIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -87,12 +89,14 @@ function RunnerChallengeList() {
     Promise.all([
       fetchChallenges(),
       fetchItems(),
+      fetchChapters(),
       member?.character_id != null ? fetchMyCharacter() : Promise.resolve(null),
     ])
-      .then(([list, itemList, myCharacter]) => {
+      .then(([list, itemList, chapters, myCharacter]) => {
         if (cancelled) return;
         setChallenges(list);
         setItems(itemList);
+        setChapterList(chapters);
         setAchievedChallengeIds(new Set(myCharacter?.achieved_challenges.map((c) => c.challenge_id) ?? []));
       })
       .catch((error) => {
@@ -103,7 +107,10 @@ function RunnerChallengeList() {
     return () => { cancelled = true; };
   }, [toast, member?.character_id]);
 
-  const chapters = [...new Set(challenges.map((c) => c.chapter))];
+  const chapters = useMemo(
+    () => orderChapterNamesLatestFirst(challenges.map((challenge) => challenge.chapter), chapterList),
+    [challenges, chapterList],
+  );
 
   return (
     <PageContainer max="4xl" className="flex flex-col gap-8">

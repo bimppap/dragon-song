@@ -1,12 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { ClipboardList, Image as ImageIcon, PlusSquare, ScrollText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useRequireMember } from "@/lib/auth";
-import { fetchItems, fetchMissions, fetchMyCharacter } from "@/lib/api";
-import type { Item, Mission } from "@/lib/api";
+import { fetchChapters, fetchItems, fetchMissions, fetchMyCharacter } from "@/lib/api";
+import type { Chapter, Item, Mission } from "@/lib/api";
 import MissionManageTab from "./components/MissionManageTab";
 import MissionStatusTab from "./components/MissionStatusTab";
 import EmptyState from "@/components/common/EmptyState";
@@ -15,6 +15,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { cn } from "@/lib/utils";
+import { orderChapterNamesLatestFirst } from "@/lib/chapterOrder";
 
 type PageTab = "manage" | "status";
 
@@ -28,6 +29,7 @@ function RunnerMissionList() {
   const { toast } = useToast();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [items, setItems] = useState<Item[]>([]);
+  const [chapterList, setChapterList] = useState<Chapter[]>([]);
   const [achievedMissionIds, setAchievedMissionIds] = useState<Set<number>>(new Set());
   const [loading, setLoading] = useState(true);
 
@@ -36,12 +38,14 @@ function RunnerMissionList() {
     Promise.all([
       fetchMissions(),
       fetchItems(),
+      fetchChapters(),
       member?.character_id != null ? fetchMyCharacter() : Promise.resolve(null),
     ])
-      .then(([list, itemList, myCharacter]) => {
+      .then(([list, itemList, chapters, myCharacter]) => {
         if (cancelled) return;
         setMissions(list);
         setItems(itemList);
+        setChapterList(chapters);
         setAchievedMissionIds(new Set(myCharacter?.achieved_missions.map((m) => m.mission_id) ?? []));
       })
       .catch((error) => {
@@ -52,7 +56,10 @@ function RunnerMissionList() {
     return () => { cancelled = true; };
   }, [toast, member?.character_id]);
 
-  const chapters = [...new Set(missions.map((m) => m.chapter))];
+  const chapters = useMemo(
+    () => orderChapterNamesLatestFirst(missions.map((mission) => mission.chapter), chapterList),
+    [missions, chapterList],
+  );
 
   return (
     <PageContainer max="4xl" className="flex flex-col gap-8">

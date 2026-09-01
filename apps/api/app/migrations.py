@@ -328,11 +328,19 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN pending_enemy_actions JSON NOT NULL DEFAULT '[]'")
         if "rollback_state" not in battle_columns:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN rollback_state JSON NOT NULL DEFAULT '{}'")
+        battle_indexes = {index["name"] for index in inspector.get_indexes("battle_sessions")}
+        if "ix_battle_sessions_mode_status_id" not in battle_indexes:
+            statements.append(
+                "CREATE INDEX ix_battle_sessions_mode_status_id ON battle_sessions (mode, status, id)"
+            )
 
     if "rewards" in table_names:
         reward_columns = {col["name"] for col in inspector.get_columns("rewards")}
         if "label" not in reward_columns:
             statements.append("ALTER TABLE rewards ADD COLUMN label VARCHAR")
+        reward_indexes = {index["name"] for index in inspector.get_indexes("rewards")}
+        if "ix_rewards_type_source_id" not in reward_indexes:
+            statements.append("CREATE INDEX ix_rewards_type_source_id ON rewards (type, source_id)")
 
     if "attendance_missions" in table_names:
         statements.append("DROP TABLE attendance_missions")

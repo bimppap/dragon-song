@@ -1,5 +1,5 @@
 from datetime import date, datetime, timezone
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, text
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 
@@ -27,6 +27,7 @@ class Chapter(Base):
 
 class Reward(Base):
     __tablename__ = "rewards"
+    __table_args__ = (Index("ix_rewards_type_source_id", "type", "source_id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     type: Mapped[str] = mapped_column(String, nullable=False, index=True)  # "attendance" | "challenge"
@@ -542,6 +543,7 @@ class BattleSession(Base):
     """전투 진행 상태. 모의전/실전 모두 서버가 이 스냅샷으로 라운드를 계산한다."""
 
     __tablename__ = "battle_sessions"
+    __table_args__ = (Index("ix_battle_sessions_mode_status_id", "mode", "status", "id"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     mode: Mapped[str] = mapped_column(String, nullable=False)  # "practice" | "real"

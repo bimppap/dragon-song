@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from fastapi import HTTPException
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, is_admin_role, verify_password
 from app.game_data import (
     build_skill_node_specs,
@@ -632,11 +632,9 @@ def delete_character(db: Session, character_id: int) -> str | None:
 
 
 def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
+    """도전과제/캐릭터 생성 시 이미 진행도 행을 함께 만들어두므로(create_character_for_member,
+    create_character, create_challenge) 여기서 다시 시드할 필요가 없다."""
     character = _get_character_or_404(db, character_id)
-
-    challenge_ids = [challenge_id for challenge_id, in db.query(Challenge.id).all()]
-    _create_progress_rows(db, challenge_ids, [character.id])
-    db.flush()
 
     owned_item_rows = (
         db.query(
@@ -772,9 +770,27 @@ def _streak_ending_at(present_dates: set[date], end_date: date) -> int:
     return streak
 
 
+def _attended_dates_for_character(db: Session, character_id: int) -> set[date]:
+    """레거시 출석부 기록과 새 출석 엔트리를 합쳐 한 캐릭터의 출석 날짜 집합을 만든다.
+    캐릭터별 조회 경로(예: 캐릭터 정보 화면)에서는 전체 캐릭터를 스캔하는
+    _attended_dates_by_character 대신 이 함수를 써서 다른 캐릭터의 출석 기록까지 읽지 않는다."""
+    present_dates: set[date] = set()
+    legacy_rows = db.query(AttendanceRecord.attendance_date, AttendanceRecord.character_ids).all()
+    for attendance_date, character_ids in legacy_rows:
+        if character_id in (character_ids or []):
+            present_dates.add(attendance_date)
+    entry_rows = (
+        db.query(AttendanceEntry.attendance_date)
+        .filter(AttendanceEntry.character_id == character_id)
+        .all()
+    )
+    present_dates.update(attendance_date for attendance_date, in entry_rows)
+    return present_dates
+
+
 def _attendance_streak(db: Session, character_id: int) -> int:
     """오늘(미출석이면 어제)부터 거슬러 올라가며 연속으로 출석한 일수."""
-    present_dates = _attended_dates_by_character(db).get(character_id, set())
+    present_dates = _attended_dates_for_character(db, character_id)
     return _streak_ending_at(present_dates, _today_kst())
 
 
@@ -905,9 +921,20 @@ def delete_item(db: Session, item_id: int) -> list[str]:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
 
     image_urls = [url for url in (item.image_url, item.image_after_purchase_url) if url]
-    for state in db.query(CharacterItemState).filter_by(item_id=item_id, equipped=True).all():
-        character = db.query(Character).filter_by(id=state.character_id).with_for_update().first()
-        if character:
+    equipped_character_ids = [
+        character_id
+        for character_id, in db.query(CharacterItemState.character_id)
+        .filter_by(item_id=item_id, equipped=True)
+        .all()
+    ]
+    if equipped_character_ids:
+        equipped_characters = (
+            db.query(Character)
+            .filter(Character.id.in_(equipped_character_ids))
+            .with_for_update()
+            .all()
+        )
+        for character in equipped_characters:
             _apply_item_effects(character, item.effects or [], sign=-1)
     db.query(CharacterItemState).filter(CharacterItemState.item_id == item_id).delete()
     db.query(Purchase).filter(Purchase.item_id == item_id).delete()
@@ -1047,7 +1074,15 @@ def use_item(
     item_id: int,
     chosen_stats: list[str] | None = None,
 ) -> CharacterDetailRead:
-    character = _get_character_or_404(db, character_id)
+    character = (
+        db.query(Character)
+        .filter(Character.id == character_id)
+        .with_for_update()
+        .populate_existing()
+        .first()
+    )
+    if character is None:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
     item = db.get(Item, item_id)
     if not item:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
@@ -1378,10 +1413,14 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
         db.add(p)
         purchases.append(p)
 
+    db.flush()
+    purchase_ids = [purchase.id for purchase in purchases]
     db.commit()
-    for p in purchases:
-        db.refresh(p)
-    return purchases
+    saved_by_id = {
+        purchase.id: purchase
+        for purchase in db.query(Purchase).filter(Purchase.id.in_(purchase_ids)).all()
+    }
+    return [saved_by_id[purchase_id] for purchase_id in purchase_ids]
 
 
 def get_purchases(db: Session, character_id: int | None, item_id: int | None) -> list[PurchaseRead]:
@@ -1460,15 +1499,7 @@ def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
     return entries
 
 
-def get_challenge_progress(db: Session, challenge_id: int) -> list[ChallengeProgressRead]:
-    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
-    if not challenge:
-        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
-
-    character_ids = [character_id for character_id, in db.query(Character.id).all()]
-    _create_progress_rows(db, [challenge.id], character_ids)
-    db.commit()
-
+def _read_challenge_progress(db: Session, challenge_id: int) -> list[ChallengeProgressRead]:
     rows = (
         db.query(
             ChallengeProgress.character_id,
@@ -1499,6 +1530,17 @@ def get_challenge_progress(db: Session, challenge_id: int) -> list[ChallengeProg
         )
         for row in rows
     ]
+
+
+def get_challenge_progress(db: Session, challenge_id: int) -> list[ChallengeProgressRead]:
+    challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
+    if not challenge:
+        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
+
+    character_ids = [character_id for character_id, in db.query(Character.id).all()]
+    _create_progress_rows(db, [challenge.id], character_ids)
+    db.commit()
+    return _read_challenge_progress(db, challenge_id)
 
 
 def update_challenge_progress(
@@ -1537,7 +1579,7 @@ def update_challenge_progress(
         progress.updated_at = datetime.now(timezone.utc)
 
     db.commit()
-    return get_challenge_progress(db, challenge_id)
+    return _read_challenge_progress(db, challenge_id)
 
 
 ATTENDANCE_REWARD_GOLD = 1
@@ -2366,15 +2408,7 @@ def get_missions(db: Session, chapter: str | None = None) -> list[Mission]:
     return query.order_by(Mission.created_at.asc(), Mission.id.asc()).all()
 
 
-def get_mission_progress(db: Session, mission_id: int) -> list[MissionProgressRead]:
-    mission = db.query(Mission).filter(Mission.id == mission_id).first()
-    if not mission:
-        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
-
-    character_ids = [cid for cid, in db.query(Character.id).all()]
-    _create_mission_progress_rows(db, [mission.id], character_ids)
-    db.commit()
-
+def _read_mission_progress(db: Session, mission_id: int) -> list[MissionProgressRead]:
     rows = (
         db.query(
             MissionProgress.character_id,
@@ -2404,6 +2438,17 @@ def get_mission_progress(db: Session, mission_id: int) -> list[MissionProgressRe
         )
         for row in rows
     ]
+
+
+def get_mission_progress(db: Session, mission_id: int) -> list[MissionProgressRead]:
+    mission = db.query(Mission).filter(Mission.id == mission_id).first()
+    if not mission:
+        raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
+
+    character_ids = [cid for cid, in db.query(Character.id).all()]
+    _create_mission_progress_rows(db, [mission.id], character_ids)
+    db.commit()
+    return _read_mission_progress(db, mission_id)
 
 
 def update_mission_progress(
@@ -2442,7 +2487,7 @@ def update_mission_progress(
         progress.updated_at = datetime.now(timezone.utc)
 
     db.commit()
-    return get_mission_progress(db, mission_id)
+    return _read_mission_progress(db, mission_id)
 
 
 def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
@@ -3374,6 +3419,41 @@ def _to_battle_session_read(session: BattleSession) -> BattleSessionRead:
     )
 
 
+_BATTLE_PUBLIC_COLUMNS = (
+    BattleSession.id,
+    BattleSession.mode,
+    BattleSession.chapter,
+    BattleSession.status,
+    BattleSession.round,
+    BattleSession.phase,
+    BattleSession.pending_enemy_actions,
+    BattleSession.enemies,
+    BattleSession.summons,
+    BattleSession.participants,
+    BattleSession.log,
+    BattleSession.created_at,
+    BattleSession.updated_at,
+)
+
+
+def _get_battle_for_update(db: Session, session_id: int) -> BattleSession | None:
+    """전투 변경 요청을 직렬화해 같은 턴의 중복 실행과 JSON 상태 덮어쓰기를 막는다."""
+    return (
+        db.query(BattleSession)
+        .filter(BattleSession.id == session_id)
+        .with_for_update()
+        .first()
+    )
+
+
+def _commit_battle_session(db: Session, session: BattleSession) -> BattleSessionRead:
+    """공개 응답을 flush 직후 만들고 커밋해, 커지는 비공개 롤백 JSON의 재조회까지 피한다."""
+    db.flush()
+    result = _to_battle_session_read(session)
+    db.commit()
+    return result
+
+
 def _new_battle_rollback_state() -> dict:
     return {
         "version": 1,
@@ -3459,13 +3539,16 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
         created_by=member.id,
     )
     db.add(session)
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
 def get_battle_session(db: Session, session_id: int, member: Member) -> BattleSessionRead:
-    session = db.get(BattleSession, session_id)
+    session = (
+        db.query(BattleSession)
+        .options(load_only(*_BATTLE_PUBLIC_COLUMNS))
+        .filter(BattleSession.id == session_id)
+        .first()
+    )
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     # 러너는 실전(real) 전투만 관전할 수 있다. 연습 전투는 관리자 전용이다.
@@ -3474,15 +3557,37 @@ def get_battle_session(db: Session, session_id: int, member: Member) -> BattleSe
     return _to_battle_session_read(session)
 
 
-def get_live_real_battle(db: Session) -> BattleSessionRead | None:
+def get_live_real_battle(
+    db: Session,
+    known_session_id: int | None = None,
+    known_updated_at: datetime | None = None,
+) -> tuple[BattleSessionRead | None, bool]:
     """러너 관전용: 진행 중인 실전 전투 중 가장 최근 것을 반환한다(없으면 None)."""
-    session = (
-        db.query(BattleSession)
+    metadata = (
+        db.query(BattleSession.id, BattleSession.updated_at)
         .filter(BattleSession.mode == "real", BattleSession.status == "in_progress")
         .order_by(BattleSession.id.desc())
         .first()
     )
-    return _to_battle_session_read(session) if session else None
+    if metadata is None:
+        return None, False
+
+    if known_session_id == metadata.id and known_updated_at is not None:
+        stored_updated_at = metadata.updated_at
+        if stored_updated_at.tzinfo is None:
+            stored_updated_at = stored_updated_at.replace(tzinfo=timezone.utc)
+        if known_updated_at.tzinfo is None:
+            known_updated_at = known_updated_at.replace(tzinfo=timezone.utc)
+        if stored_updated_at.astimezone(timezone.utc) == known_updated_at.astimezone(timezone.utc):
+            return None, True
+
+    session = (
+        db.query(BattleSession)
+        .options(load_only(*_BATTLE_PUBLIC_COLUMNS))
+        .filter(BattleSession.id == metadata.id)
+        .first()
+    )
+    return (_to_battle_session_read(session) if session else None), False
 
 
 def get_battle_sessions(
@@ -3490,7 +3595,16 @@ def get_battle_sessions(
     mode: str | None = None,
     status: str | None = None,
 ) -> list[BattleSessionSummary]:
-    query = db.query(BattleSession)
+    query = db.query(
+        BattleSession.id,
+        BattleSession.mode,
+        BattleSession.chapter,
+        BattleSession.status,
+        BattleSession.round,
+        BattleSession.enemies,
+        BattleSession.created_at,
+        BattleSession.updated_at,
+    )
     if mode is not None:
         query = query.filter(BattleSession.mode == mode)
     if status is not None:
@@ -3518,7 +3632,7 @@ def get_battle_sessions(
 
 
 def delete_battle_session(db: Session, session_id: int) -> None:
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.mode == "real":
@@ -3528,7 +3642,7 @@ def delete_battle_session(db: Session, session_id: int) -> None:
 
 
 def terminate_battle(db: Session, session_id: int) -> BattleSessionRead:
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status != "in_progress":
@@ -3542,13 +3656,11 @@ def terminate_battle(db: Session, session_id: int) -> BattleSessionRead:
     if session.mode == "real":
         _finalize_real_battle(db, list(session.participants))
 
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
 def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> BattleSessionRead:
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status != "in_progress":
@@ -3569,13 +3681,11 @@ def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> Battle
         rollback_state = _get_battle_rollback_state(session)
         if rollback_state.get("version") == 1:
             session.rollback_state = _remember_battle_character_state(rollback_state, character)
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
 def join_battle_enemy(db: Session, session_id: int, data: BattleEnemyJoinRequest) -> BattleSessionRead:
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status != "in_progress":
@@ -3596,9 +3706,7 @@ def join_battle_enemy(db: Session, session_id: int, data: BattleEnemyJoinRequest
     snapshot["joined_round"] = session.round
     enemies.append(snapshot)
     session.enemies = enemies
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
 def _finalize_real_battle(db: Session, participants: list[dict]) -> None:
@@ -3617,7 +3725,7 @@ def _finalize_real_battle(db: Session, participants: list[dict]) -> None:
 
 def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraphRequest) -> BattleSessionRead:
     """1턴: 적의 행동 암시. 에너미의 공격 패턴과 (지정 공격이면) 공격 대상을 확정해 둔다."""
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status != "in_progress":
@@ -3662,9 +3770,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
         if session.mode == "real":
             _finalize_real_battle(db, participants)
-        db.commit()
-        db.refresh(session)
-        return _to_battle_session_read(session)
+        return _commit_battle_session(db, session)
 
     # 환경 효과: 챕터에 등록된 환경마다 대상 캐릭터에게 스택을 쌓고 (스택 − 1) × 스택당 피해를 입힌다.
     environments = (
@@ -3700,9 +3806,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
         if session.mode == "real":
             _finalize_real_battle(db, participants)
-        db.commit()
-        db.refresh(session)
-        return _to_battle_session_read(session)
+        return _commit_battle_session(db, session)
 
     events.append("📣 적의 행동 암시!")
     pending_actions: list[dict] = []
@@ -3785,14 +3889,12 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     session.summons = summons
     session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
 
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
 def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnRequest) -> BattleSessionRead:
     """2턴: 아군 턴. 방어/공격/기술/아이템/구조/치유/퇴각을 처리한다."""
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status != "in_progress":
@@ -3977,6 +4079,54 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         if item_action_ids
         else {}
     )
+
+    # 실전 아이템 사용은 캐릭터 단위로 잠근 뒤 보유량/사용 상태를 일괄 조회한다.
+    # 전투 밖 아이템 사용과 동시에 들어와도 초과 사용을 막고, 행동마다 2개씩 발생하던 쿼리를 고정 3개로 줄인다.
+    item_action_keys = {
+        (entry[2]["character_id"], entry[3].item_id)
+        for entry in queued_actions
+        if session.mode == "real" and entry[3].kind == "item" and entry[3].item_id
+    }
+    owned_by_character_item: dict[tuple[int, int], int] = {}
+    item_states_by_character_item: dict[tuple[int, int], CharacterItemState] = {}
+    if item_action_keys:
+        item_character_ids = sorted({character_id for character_id, _item_id in item_action_keys})
+        used_item_ids = sorted({item_id for _character_id, item_id in item_action_keys})
+        db.query(Character.id).filter(Character.id.in_(item_character_ids)).order_by(Character.id).with_for_update().all()
+        owned_by_character_item = {
+            (character_id, item_id): quantity
+            for character_id, item_id, quantity in (
+                db.query(
+                    Purchase.character_id,
+                    Purchase.item_id,
+                    func.coalesce(func.sum(Purchase.quantity), 0),
+                )
+                .filter(
+                    Purchase.character_id.in_(item_character_ids),
+                    Purchase.item_id.in_(used_item_ids),
+                )
+                .group_by(Purchase.character_id, Purchase.item_id)
+                .all()
+            )
+        }
+        existing_states = (
+            db.query(CharacterItemState)
+            .filter(
+                CharacterItemState.character_id.in_(item_character_ids),
+                CharacterItemState.item_id.in_(used_item_ids),
+            )
+            .with_for_update()
+            .all()
+        )
+        item_states_by_character_item = {
+            (state.character_id, state.item_id): state for state in existing_states
+        }
+        for character_id, item_id in item_action_keys:
+            key = (character_id, item_id)
+            if key not in item_states_by_character_item:
+                state = CharacterItemState(character_id=character_id, item_id=item_id)
+                db.add(state)
+                item_states_by_character_item[key] = state
 
     # 2) 위에서 매긴 발동 순서(priority)대로 행동을 처리한다.
     for _priority, _order_index, p, action, selected_skill in queued_actions:
@@ -4418,8 +4568,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 events.append(f"⚠️ {p['name']} 사용할 아이템이 지정되지 않았습니다.")
                 continue
             if session.mode == "real":
-                owned = _sum_quantity(db, item.id, p["character_id"])
-                state = _get_or_create_item_state(db, p["character_id"], item.id)
+                key = (p["character_id"], item.id)
+                owned = owned_by_character_item.get(key, 0)
+                state = item_states_by_character_item[key]
                 if state.used_quantity >= owned:
                     events.append(f"⚠️ {p['name']}: {item.name}을(를) 보유하고 있지 않습니다.")
                     continue
@@ -4501,14 +4652,12 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     if session.status != "in_progress" and session.mode == "real":
         _finalize_real_battle(db, participants)
 
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
 def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead:
     """3턴: 에너미 턴. 1턴에서 암시한 행동과 소환수의 자동 공격을 처리하고 라운드를 마무리한다."""
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status != "in_progress":
@@ -4682,14 +4831,12 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     if session.status != "in_progress" and session.mode == "real":
         _finalize_real_battle(db, participants)
 
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
 def undo_last_round(db: Session, session_id: int) -> BattleSessionRead:
     """직전에 진행한 라운드를 되돌린다: 그 라운드 시작 시점 상태로 복원하고, 로그를 지우고, 다시 진행할 수 있게 한다."""
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.mode != "real":
@@ -4712,14 +4859,13 @@ def undo_last_round(db: Session, session_id: int) -> BattleSessionRead:
     session.log = [entry for entry in session.log if entry["round"] < target_round]
     session.round_snapshots = [s for s in snapshots if s["round"] < target_round]
 
-    db.commit()
-    db.refresh(session)
-    return _to_battle_session_read(session)
+    return _commit_battle_session(db, session)
 
 
-def _get_battle_reward_or_404(db: Session, session_id: int) -> BattleSession:
+def _get_battle_reward_or_404(db: Session, session_id: int, *, for_update: bool = False) -> BattleSession:
     """보상 미리보기는 모의전에서도 볼 수 있다(실제 지급은 send_battle_rewards에서 실전만 허용)."""
-    session = db.get(BattleSession, session_id)
+    query = db.query(BattleSession).filter(BattleSession.id == session_id)
+    session = query.with_for_update().first() if for_update else query.first()
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.status == "in_progress":
@@ -4774,7 +4920,7 @@ def get_battle_reward_preview(db: Session, session_id: int) -> BattleRewardPrevi
 
 
 def send_battle_rewards(db: Session, session_id: int) -> BattleRewardPreview:
-    session = _get_battle_reward_or_404(db, session_id)
+    session = _get_battle_reward_or_404(db, session_id, for_update=True)
     if session.mode != "real":
         raise HTTPException(status_code=400, detail="실전 전투만 보상을 지급할 수 있습니다.")
     if db.query(Reward.id).filter(Reward.type == "battle", Reward.source_id == session_id).first() is not None:
@@ -4822,7 +4968,7 @@ def send_battle_rewards(db: Session, session_id: int) -> BattleRewardPreview:
 
 
 def rollback_battle_session(db: Session, session_id: int) -> None:
-    session = db.get(BattleSession, session_id)
+    session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.mode != "real":
@@ -4981,9 +5127,9 @@ def _seed_skill_tree_if_empty(db: Session, book: str) -> None:
 
 
 def get_skill_nodes(db: Session, book: str) -> list[SkillNodeRead]:
+    """이름 중복 정리는 쓰기 경로(_seed_skill_tree_if_empty의 최초 시딩, update_skill_node의 이름 변경)에서만
+    수행한다. 읽을 때마다 노드 전체를 다시 스캔하며 정규화를 재실행할 필요가 없다."""
     _seed_skill_tree_if_empty(db, book)
-    if _normalize_duplicate_skill_node_names(db, book=book):
-        db.commit()
     nodes = (
         db.query(SkillNode)
         .filter(SkillNode.book == book)
@@ -5038,11 +5184,11 @@ def _find_parent_node(db: Session, node: SkillNode) -> SkillNode | None:
 
 
 def get_character_skill_tree(db: Session, character_id: int, book: str) -> CharacterSkillTreeRead:
+    """이름 중복 정리는 쓰기 경로에서만 수행한다(get_skill_nodes 주석 참고). 캐릭터 정보 화면은
+    서 4개를 병렬로 조회하므로, 여기서 매번 정규화 스캔을 반복하면 그 비용이 4배로 늘어난다."""
     character = _get_character_or_404(db, character_id)
 
     _seed_skill_tree_if_empty(db, book)
-    if _normalize_duplicate_skill_node_names(db, book=book):
-        db.commit()
 
     nodes = (
         db.query(SkillNode)

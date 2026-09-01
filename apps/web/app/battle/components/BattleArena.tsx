@@ -416,18 +416,30 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   // 관전(readOnly) 화면은 아무도 행동을 제출하지 않으므로, 라운드 진행 상황을 놓치지 않도록 주기적으로 다시 불러온다.
   // (부모가 세션을 공급하는 controlled 모드에서는 부모가 이미 폴링하므로 중복 폴링을 하지 않는다.)
   useEffect(() => {
-    if (!readOnly || controlled) return;
+    if (!readOnly || controlled || session?.status !== "in_progress") return;
     let cancelled = false;
-    const interval = setInterval(async () => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    async function poll() {
+      if (cancelled) return;
+      if (document.visibilityState === "hidden") {
+        timer = setTimeout(() => void poll(), 6000 + Math.random() * 2000);
+        return;
+      }
       try {
         const data = await fetchBattle(sessionId);
         if (!cancelled) setSession(data);
       } catch {
         // 폴링 실패는 조용히 무시하고 다음 주기에 다시 시도한다.
+      } finally {
+        if (!cancelled) timer = setTimeout(() => void poll(), 6000 + Math.random() * 2000);
       }
-    }, 6000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [readOnly, sessionId, controlled]);
+    }
+    timer = setTimeout(() => void poll(), 6000 + Math.random() * 2000);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
+  }, [readOnly, sessionId, controlled, session?.status]);
 
   useEffect(() => {
     if (readOnly || !session || session.status !== "in_progress") return;
@@ -922,7 +934,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
       {readOnly && (
         <AlertBanner tone="success">
-          {inProgress ? "실전 전투가 진행 중입니다. (관전 전용)" : "완료된 실전 전투 기록입니다. (읽기 전용)"}
+          {session.mode === "practice"
+            ? inProgress
+              ? "러너에게 보이는 관전 화면을 미리 확인하고 있습니다."
+              : "완료된 모의전의 러너 관전 화면 미리보기입니다."
+            : inProgress
+              ? "실전 전투가 진행 중입니다. (관전 전용)"
+              : "완료된 실전 전투 기록입니다. (읽기 전용)"}
         </AlertBanner>
       )}
 

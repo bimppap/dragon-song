@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { CalendarClock, Image as ImageIcon } from "lucide-react";
 import EmptyState from "@/components/common/EmptyState";
@@ -10,7 +10,8 @@ import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type BattleSession, 
 import BattleArena from "./BattleArena";
 
 // 웹소켓 없이 폴링으로 진행 상황을 갱신한다. 너무 잦으면 서버 부담, 너무 길면 갱신이 굼떠 보이므로 절충한다.
-const LIVE_BATTLE_POLL_MS = 6000;
+const LIVE_BATTLE_POLL_MIN_MS = 5000;
+const LIVE_BATTLE_POLL_JITTER_MS = 2000;
 
 export default function RunnerBattleOverview() {
   const { toast } = useToast();
@@ -18,6 +19,7 @@ export default function RunnerBattleOverview() {
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [loading, setLoading] = useState(true);
   const [liveSession, setLiveSession] = useState<BattleSession | null>(null);
+  const liveVersionRef = useRef<Pick<BattleSession, "id" | "updated_at"> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -46,19 +48,51 @@ export default function RunnerBattleOverview() {
   // 관리자가 실전 전투를 시작했는지 주기적으로 확인해, 있으면 관전 화면으로 전환한다.
   useEffect(() => {
     let cancelled = false;
+    let polling = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    function scheduleNextPoll() {
+      if (cancelled) return;
+      if (timer) clearTimeout(timer);
+      const delay = LIVE_BATTLE_POLL_MIN_MS + Math.random() * LIVE_BATTLE_POLL_JITTER_MS;
+      timer = setTimeout(() => void poll(), delay);
+    }
 
     async function poll() {
+      if (cancelled || polling) return;
+      if (document.visibilityState === "hidden") {
+        scheduleNextPoll();
+        return;
+      }
+      polling = true;
       try {
-        const live = await fetchLiveBattle();
-        if (!cancelled) setLiveSession(live);
+        const live = await fetchLiveBattle(liveVersionRef.current ?? undefined);
+        if (!cancelled && live !== undefined) {
+          setLiveSession(live);
+          liveVersionRef.current = live ? { id: live.id, updated_at: live.updated_at } : null;
+        }
       } catch {
-        if (!cancelled) setLiveSession(null);
+        // 일시적인 폴링 실패에는 현재 화면을 유지하고 다음 주기에 재시도한다.
+      } finally {
+        polling = false;
+        scheduleNextPoll();
       }
     }
 
-    poll();
-    const interval = setInterval(poll, LIVE_BATTLE_POLL_MS);
-    return () => { cancelled = true; clearInterval(interval); };
+    function handleVisibilityChange() {
+      if (document.visibilityState !== "visible") return;
+      if (timer) clearTimeout(timer);
+      timer = null;
+      void poll();
+    }
+
+    void poll();
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   if (liveSession != null) {

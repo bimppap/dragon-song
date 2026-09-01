@@ -158,6 +158,8 @@ function invalidateApiCache(...prefixes: string[]) {
 const AUTH_CACHE_TTL_MS = 30_000;
 const CHARACTER_CACHE_TTL_MS = 30_000;
 const CHAPTER_CACHE_TTL_MS = 60_000;
+const MISSION_CACHE_TTL_MS = 30_000;
+const CHALLENGE_CACHE_TTL_MS = 30_000;
 const ITEM_CACHE_TTL_MS = 30_000;
 const SHOP_STATUS_CACHE_TTL_MS = 15_000;
 const ENEMY_ENVIRONMENT_CACHE_TTL_MS = 60_000;
@@ -881,29 +883,41 @@ export async function fetchChallenges(chapter?: string): Promise<Challenge[]> {
   const params = new URLSearchParams();
   if (chapter) params.set("chapter", chapter);
   const query = params.toString() ? `?${params}` : "";
-  return request<Challenge[]>(`/challenges${query}`, undefined, "도전과제 조회 실패");
+  return cachedRequest<Challenge[]>(
+    `challenges:${chapter ?? "all"}`,
+    `/challenges${query}`,
+    CHALLENGE_CACHE_TTL_MS,
+    "도전과제 조회 실패",
+  );
 }
 
 export async function createChallenge(data: ChallengeCreate): Promise<Challenge> {
-  return request<Challenge>("/challenges", {
+  const challenge = await request<Challenge>("/challenges", {
     method: "POST",
     body: JSON.stringify(data),
   }, "도전과제 생성 실패");
+  invalidateApiCache("challenges:");
+  return challenge;
 }
 
 export async function updateChallenge(challengeId: number, data: ChallengeCreate): Promise<Challenge> {
-  return request<Challenge>(`/challenges/${challengeId}`, {
+  const challenge = await request<Challenge>(`/challenges/${challengeId}`, {
     method: "PUT",
     body: JSON.stringify(data),
   }, "도전과제 수정 실패");
+  invalidateApiCache("challenges:");
+  return challenge;
 }
 
 export async function uploadChallengeImage(challengeId: number, file: File): Promise<Challenge> {
-  return uploadFile<Challenge>(`/challenges/${challengeId}/image`, file, "file", "도전과제 이미지 업로드 실패");
+  const challenge = await uploadFile<Challenge>(`/challenges/${challengeId}/image`, file, "file", "도전과제 이미지 업로드 실패");
+  invalidateApiCache("challenges:");
+  return challenge;
 }
 
 export async function deleteChallenge(challengeId: number): Promise<void> {
   await request(`/challenges/${challengeId}`, { method: "DELETE" }, "도전과제 삭제 실패");
+  invalidateApiCache("challenges:");
 }
 
 export async function fetchChallengeProgress(challengeId: number): Promise<ChallengeProgress[]> {
@@ -1117,7 +1131,12 @@ export async function fetchMissions(chapter?: string): Promise<Mission[]> {
   const params = new URLSearchParams();
   if (chapter) params.set("chapter", chapter);
   const query = params.toString() ? `?${params}` : "";
-  return request<Mission[]>(`/missions${query}`, undefined, "임무 조회 실패");
+  return cachedRequest<Mission[]>(
+    `missions:${chapter ?? "all"}`,
+    `/missions${query}`,
+    MISSION_CACHE_TTL_MS,
+    "임무 조회 실패",
+  );
 }
 
 export async function createMission(data: MissionCreate): Promise<Mission> {
@@ -1533,9 +1552,23 @@ export async function fetchBattle(sessionId: number): Promise<BattleSession> {
   return request<BattleSession>(`/battles/${sessionId}`, undefined, "전투 조회 실패");
 }
 
-/** 러너 관전용: 진행 중인 실전 전투가 있으면 반환하고, 없으면 null을 반환한다. */
-export async function fetchLiveBattle(): Promise<BattleSession | null> {
-  return request<BattleSession | null>("/battles/live", undefined, "전투 조회 실패");
+/** 러너 관전용. 마지막 버전을 전달하면 변경이 없을 때 본문 없는 304를 받아 대용량 전투 로그 전송을 피한다. */
+export async function fetchLiveBattle(
+  known?: Pick<BattleSession, "id" | "updated_at">,
+): Promise<BattleSession | null | undefined> {
+  const search = new URLSearchParams();
+  if (known) {
+    search.set("known_session_id", String(known.id));
+    search.set("known_updated_at", known.updated_at);
+  }
+  const query = search.toString() ? `?${search}` : "";
+  const res = await authorizedFetch(`/battles/live${query}`);
+  if (res.status === 304) return undefined;
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(err, "전투 조회 실패"));
+  }
+  return res.json();
 }
 
 export async function createBattle(data: BattleStartRequest): Promise<BattleSession> {

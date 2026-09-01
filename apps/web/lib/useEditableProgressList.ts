@@ -6,6 +6,7 @@ export interface ProgressEntryBase {
   character_id: number;
   achieved: boolean;
   reward_paid: boolean;
+  memo?: string;
 }
 
 interface UseEditableProgressListOptions<T extends ProgressEntryBase> {
@@ -55,7 +56,24 @@ export function useEditableProgressList<T extends ProgressEntryBase>({
   async function save() {
     try {
       setSaving(true);
-      const updated = await onSave(entries);
+      const originalByCharacter = new Map(
+        (backup ?? []).map((entry) => [entry.character_id, entry]),
+      );
+      const changedEntries = entries.filter((entry) => {
+        const original = originalByCharacter.get(entry.character_id);
+        return !original
+          || entry.achieved !== original.achieved
+          || entry.memo !== original.memo;
+      });
+
+      if (changedEntries.length === 0) {
+        setBackup(null);
+        setIsEditing(false);
+        toast(successMessage, "success");
+        return;
+      }
+
+      const updated = await onSave(changedEntries);
       setEntries(updated);
       setBackup(null);
       setIsEditing(false);

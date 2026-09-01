@@ -1,8 +1,8 @@
 from typing import Literal
 import time
-from datetime import date
+from datetime import date, datetime
 
-from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
@@ -984,9 +984,17 @@ def create_battle(data: BattleStartRequest, member: Member = Depends(require_adm
 
 
 @app.get("/battles/live", response_model=BattleSessionRead | None)
-def get_live_battle(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+def get_live_battle(
+    known_session_id: int | None = None,
+    known_updated_at: datetime | None = None,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
     """러너 관전용: 진행 중인 실전 전투가 있으면 반환하고, 없으면 null을 반환한다."""
-    return crud.get_live_real_battle(db)
+    session, unchanged = crud.get_live_real_battle(db, known_session_id, known_updated_at)
+    if unchanged:
+        return Response(status_code=304)
+    return session
 
 
 @app.get("/battles/{session_id}", response_model=BattleSessionRead)

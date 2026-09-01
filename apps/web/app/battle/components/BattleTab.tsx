@@ -82,7 +82,9 @@ const BATTLE_DESCRIPTIONS: { label: string; icon: React.ElementType; accent: str
 
 interface ActiveBattle {
   sessionId: number;
+  mode: BattleMode;
   readOnly: boolean;
+  runnerPreview: boolean;
 }
 
 interface PartyCounts {
@@ -290,7 +292,7 @@ export default function BattleTab() {
         enemy_ids: [...selectedEnemyIds],
         character_ids: [...selectedCharacterIds],
       });
-      setActive({ sessionId: session.id, readOnly: false });
+      setActive({ sessionId: session.id, mode, readOnly: false, runnerPreview: false });
     } catch (e) {
       toast(e instanceof Error ? e.message : "전투 시작 실패", "error");
     } finally {
@@ -300,16 +302,48 @@ export default function BattleTab() {
 
   if (active) {
     return (
-      <BattleArena
-        sessionId={active.sessionId}
-        readOnly={active.readOnly}
-        onExit={() => {
-          setActive(null);
-          setSelectedEnemyIds(new Set());
-          setSelectedCharacterIds(new Set());
-          setReloadKey((k) => k + 1);
-        }}
-      />
+      <div className="space-y-4">
+        {active.mode === "practice" && (
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-ivory">모의전 화면 확인</p>
+              <p className="text-xs text-muted">같은 전투를 관리자 조작 화면과 러너 관전 화면으로 전환해 확인합니다.</p>
+            </div>
+            <div className="flex rounded-lg border border-line bg-inset p-1" role="group" aria-label="모의전 화면 전환">
+              <Button
+                type="button"
+                size="sm"
+                variant={!active.runnerPreview ? "default" : "ghost"}
+                aria-pressed={!active.runnerPreview}
+                onClick={() => setActive((current) => current ? { ...current, runnerPreview: false } : current)}
+              >
+                <Swords size={14} />
+                관리자 조작
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={active.runnerPreview ? "default" : "ghost"}
+                aria-pressed={active.runnerPreview}
+                onClick={() => setActive((current) => current ? { ...current, runnerPreview: true } : current)}
+              >
+                <Eye size={14} />
+                러너 화면
+              </Button>
+            </div>
+          </div>
+        )}
+        <BattleArena
+          sessionId={active.sessionId}
+          readOnly={active.readOnly || active.runnerPreview}
+          onExit={() => {
+            setActive(null);
+            setSelectedEnemyIds(new Set());
+            setSelectedCharacterIds(new Set());
+            setReloadKey((k) => k + 1);
+          }}
+        />
+      </div>
     );
   }
 
@@ -343,7 +377,12 @@ export default function BattleTab() {
                 <Button
                   key={session.id}
                   size="sm"
-                  onClick={() => setActive({ sessionId: session.id, readOnly: false })}
+                  onClick={() => setActive({
+                    sessionId: session.id,
+                    mode: session.mode,
+                    readOnly: false,
+                    runnerPreview: false,
+                  })}
                 >
                   <PlayCircle size={14} />
                   {session.enemy_names.join(", ") || `전투 #${session.id}`} 이어하기 (라운드 {session.round})
@@ -610,7 +649,12 @@ export default function BattleTab() {
                       <button
                         type="button"
                         onClick={() =>
-                          setActive({ sessionId: session.id, readOnly: session.status !== "in_progress" })
+                          setActive({
+                            sessionId: session.id,
+                            mode: session.mode,
+                            readOnly: session.mode === "real" && session.status !== "in_progress",
+                            runnerPreview: false,
+                          })
                         }
                         className="flex min-w-0 flex-1 items-center gap-3 text-left hover:opacity-80"
                       >

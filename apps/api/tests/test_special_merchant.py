@@ -98,6 +98,22 @@ class SpecialMerchantTest(unittest.TestCase):
         self.assertEqual(self.character.atk, 10)
         self.assertEqual(self.db.query(CharacterItemState).count(), 0)
 
+    def test_delete_restores_effects_for_multiple_characters(self):
+        item = self.item(owned=False)
+        characters = [Character(name=f"holder-{index}", atk=10) for index in range(3)]
+        self.db.add_all(characters)
+        self.db.flush()
+        for character in characters:
+            self.db.add(Purchase(character_id=character.id, item_id=item.id, quantity=1))
+        self.db.commit()
+        for character in characters:
+            crud.equip_item(self.db, character.id, item.id)
+
+        crud.delete_item(self.db, item.id)
+
+        self.assertEqual([character.atk for character in characters], [10, 10, 10])
+        self.assertEqual(self.db.query(CharacterItemState).count(), 0)
+
     def test_cannot_change_equipped_category_or_effects(self):
         item = self.item()
         crud.equip_item(self.db, self.character.id, item.id)
