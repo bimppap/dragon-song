@@ -67,6 +67,31 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+const DESCRIPTION_NUMBER_PATTERN = /[+-]?(?:\d[\d,.]*|[nN]+)(?:\s*(?:명|개|회|턴|라운드|단계|등급|스택|%|배|HP|MP|SP))?/g;
+
+function HighlightedDescription({ text, className }: { text: string; className: string }) {
+  const matches = [...text.matchAll(DESCRIPTION_NUMBER_PATTERN)];
+  if (matches.length === 0) return text;
+
+  let cursor = 0;
+  return matches.map((match, index) => {
+    const start = match.index;
+    const value = match[0];
+    const end = start + value.length;
+    const result = (
+      <span key={`${start}-${value}`}>
+        {text.slice(cursor, start)}
+        <span className={cn("font-num font-bold", className)}>{value}</span>
+      </span>
+    );
+    cursor = end;
+    if (index === matches.length - 1) {
+      return <span key={`${start}-${value}`}>{result}{text.slice(end)}</span>;
+    }
+    return result;
+  });
+}
+
 /**
  * 기술 정보 툴팁. 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서·기술 비용·기술 설명은 러너에게도 보여주고,
  * 관리자에게는 그 외 관리자 전용 정보(기술 위력·계산 공식)를 추가로 보여준다.
@@ -75,10 +100,12 @@ export function SkillTooltipContent({
   node,
   variant,
   footer,
+  accent = DEFAULT_ACCENT,
 }: {
   node: SkillNode & { display_name?: string; custom_name?: string | null };
   variant: "runner" | "admin";
   footer?: ReactNode;
+  accent?: BookAccent;
 }) {
   const title = node.display_name ?? node.default_name;
   const isCustomized = Boolean(node.custom_name) && title !== node.default_name;
@@ -97,7 +124,7 @@ export function SkillTooltipContent({
 
   return (
     <div className="max-w-64 text-left">
-      <div className="flex items-center gap-1.5 font-semibold text-emerald-400">{title}</div>
+      <div className={cn("flex items-center gap-1.5 font-semibold", accent.text)}>{title}</div>
       {isCustomized && (
         <div className="mt-0.5 text-[11px] text-muted">원래 이름: {node.default_name}</div>
       )}
@@ -116,7 +143,9 @@ export function SkillTooltipContent({
         )}
       </ul>
       {node.description && (
-        <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-muted">{node.description}</p>
+        <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-muted">
+          <HighlightedDescription text={node.description} className={accent.text} />
+        </p>
       )}
       {footer ? <div className="mt-2">{footer}</div> : null}
     </div>
@@ -250,7 +279,7 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
           <InfoTooltip
             key={node.id}
             side="top"
-            content={<SkillTooltipContent node={node} variant={tooltipVariant} />}
+            content={<SkillTooltipContent node={node} variant={tooltipVariant} accent={accent} />}
           >
             {nodeButton}
           </InfoTooltip>

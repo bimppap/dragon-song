@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { SkillTooltipContent } from "@/components/skill/SkillTreeGrid";
+import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import { Button } from "@/components/ui/button";
 import { fetchCharacterSkillTree, type CharacterSkillNode, type SkillBook } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -92,6 +93,7 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false }: 
                   <SkillTooltipContent
                     node={skill}
                     variant="runner"
+                    accent={BOOK_ACCENT[skill.book]}
                     footer={readOnly ? undefined : (
                       <Button
                         type="button"
