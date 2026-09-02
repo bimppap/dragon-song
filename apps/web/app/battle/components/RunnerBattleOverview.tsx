@@ -7,11 +7,12 @@ import EmptyState from "@/components/common/EmptyState";
 import { useToast } from "@/components/common/ToastProvider";
 import { Badge } from "@/components/ui/badge";
 import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type BattleSession, type Chapter, type Enemy } from "@/lib/api";
+import { useBattleSocket, type BattleDraftPreview } from "@/lib/useBattleSocket";
 import BattleArena from "./BattleArena";
 
-// 웹소켓 없이 폴링으로 진행 상황을 갱신한다. 너무 잦으면 서버 부담, 너무 길면 갱신이 굼떠 보이므로 절충한다.
-const LIVE_BATTLE_POLL_MIN_MS = 5000;
-const LIVE_BATTLE_POLL_JITTER_MS = 2000;
+// 진행 상황 갱신은 WebSocket이 담당하고, 폴링은 연결 실패 시를 대비한 폴백으로만 남긴다.
+const LIVE_BATTLE_POLL_MIN_MS = 15000;
+const LIVE_BATTLE_POLL_JITTER_MS = 5000;
 
 export default function RunnerBattleOverview() {
   const { toast } = useToast();
@@ -19,7 +20,22 @@ export default function RunnerBattleOverview() {
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [loading, setLoading] = useState(true);
   const [liveSession, setLiveSession] = useState<BattleSession | null>(null);
+  const [draftPreview, setDraftPreview] = useState<BattleDraftPreview | null>(null);
   const liveVersionRef = useRef<Pick<BattleSession, "id" | "updated_at"> | null>(null);
+
+  useBattleSocket(liveSession?.id ?? null, (msg) => {
+    if (msg.type === "battle_update") {
+      setLiveSession(msg.session);
+      liveVersionRef.current = { id: msg.session.id, updated_at: msg.session.updated_at };
+      setDraftPreview(null); // 턴이 확정되면 이전 미리보기는 더 이상 유효하지 않다.
+    } else if (msg.type === "battle_deleted") {
+      setLiveSession(null);
+      liveVersionRef.current = null;
+      setDraftPreview(null);
+    } else if (msg.type === "draft_preview") {
+      setDraftPreview(msg.draft);
+    }
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -100,6 +116,7 @@ export default function RunnerBattleOverview() {
       <BattleArena
         sessionId={liveSession.id}
         externalSession={liveSession}
+        draftPreview={draftPreview}
         readOnly
         onExit={() => setLiveSession(null)}
       />

@@ -7,7 +7,7 @@ import jwt
 from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
-from app.db import get_db
+from app.db import SessionLocal, get_db
 from app.models import Member
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
@@ -53,6 +53,23 @@ def get_current_member(
     if not member:
         raise HTTPException(status_code=401, detail="회원을 찾을 수 없습니다.")
     return member
+
+
+def authenticate_ws_token(token: str | None) -> Member | None:
+    """WebSocket 연결용 인증. 브라우저 WebSocket은 커스텀 헤더를 못 붙이므로
+    쿼리파라미터로 받은 토큰을 get_current_member와 동일한 방식으로 검증한다."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.PyJWTError:
+        return None
+
+    db = SessionLocal()
+    try:
+        return db.query(Member).filter(Member.id == int(payload["sub"])).first()
+    finally:
+        db.close()
 
 
 # STAFF는 권한 탭(스텝 임명/해제) 접근을 제외하면 ADMIN과 동일한 관리 작업을 수행할 수 있다.

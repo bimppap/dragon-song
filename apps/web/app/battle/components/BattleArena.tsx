@@ -46,6 +46,7 @@ import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import { useBattleSocket, type BattleDraftPreview } from "@/lib/useBattleSocket";
 import BattleRewardCard from "./BattleRewardCard";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -60,6 +61,11 @@ interface Props {
    * 주어지면 BattleArena는 자체 초기 조회/폴링을 하지 않고 이 값을 그대로 반영만 한다(중복 폴링 방지).
    */
   externalSession?: BattleSession;
+  /**
+   * 부모가 이미 WebSocket으로 관리자의 확정 전 초안 미리보기를 받고 있는 경우(러너 관전 화면) 전달한다.
+   * externalSession과 함께 사용하며, 없으면 BattleArena가 직접 소켓에 연결해 받는다.
+   */
+  draftPreview?: BattleDraftPreview | null;
 }
 
 interface CharDraft {
@@ -361,12 +367,14 @@ function TargetPickerButton({
   );
 }
 
-export default function BattleArena({ sessionId, readOnly = false, onExit, externalSession }: Props) {
+export default function BattleArena({ sessionId, readOnly = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
   const { confirm } = useDialog();
   const { toast } = useToast();
   const controlled = externalSession !== undefined;
   const [internalSession, setSession] = useState<BattleSession | null>(null);
   const session = externalSession !== undefined ? externalSession : internalSession;
+  const [ownDraftPreview, setOwnDraftPreview] = useState<BattleDraftPreview | null>(null);
+  const draftPreview = controlled ? (externalDraftPreview ?? null) : ownDraftPreview;
   const [loading, setLoading] = useState(!controlled);
   const [submitting, setSubmitting] = useState(false);
   const [undoing, setUndoing] = useState(false);
@@ -386,6 +394,19 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [enemyJoinCandidates, setEnemyJoinCandidates] = useState<Enemy[]>([]);
   const [joinEnemyId, setJoinEnemyId] = useState<string | null>(null);
   const [joiningEnemy, setJoiningEnemy] = useState(false);
+
+  // controlled 모드(러너 관전 화면)에서는 부모가 이미 소켓을 갖고 있으므로 여기서는 연결하지 않는다.
+  const { send: sendBattleWs } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
+    if (msg.type === "battle_update") {
+      setSession(msg.session);
+      setOwnDraftPreview(null);
+    } else if (msg.type === "battle_deleted") {
+      onExit();
+    } else if (msg.type === "draft_preview") {
+      setOwnDraftPreview(msg.draft);
+    }
+  });
+
   const syncDraftsFromBattle = useEffectEvent((data: BattleSession) => {
     resetCharDrafts(data);
     resetTelegraphDrafts(data);
@@ -529,6 +550,28 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     }
     syncCharDraftsWithSkills();
   }, [session, skillsByCharacter]);
+
+  // 관리자가 아군 턴 행동 초안을 편집할 때마다, 확정 전 미리보기로 러너에게 실시간 중계한다.
+  useEffect(() => {
+    if (readOnly || controlled || !session || session.phase !== "ally") return;
+    const timer = setTimeout(() => {
+      const draft: BattleDraftPreview = {};
+      for (const [characterIdKey, charDraft] of Object.entries(charDrafts)) {
+        const characterId = Number(characterIdKey);
+        const skill = charDraft.kind === "skill" && charDraft.skill_node_id != null
+          ? (skillsByCharacter[characterId] ?? []).find((s) => s.id === charDraft.skill_node_id) ?? null
+          : null;
+        draft[characterId] = {
+          kind: charDraft.kind,
+          skill_node_id: charDraft.skill_node_id,
+          skill_name: skill?.default_name ?? null,
+          skill_image_url: skill?.image_url ?? null,
+        };
+      }
+      sendBattleWs({ type: "draft_update", phase: session.phase, draft });
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [charDrafts, readOnly, controlled, session, skillsByCharacter, sendBattleWs]);
 
   function resetCharDrafts(data: BattleSession) {
     const next: Record<number, CharDraft> = {};
@@ -1127,6 +1170,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const affordableSkills = affordableBattleSkills(battleSkills, p);
           const items = itemsByCharacter[p.character_id] ?? [];
           const showActionUi = canAct && phase === "ally" && active && draft;
+          const actionPreview = readOnly && phase === "ally" && active ? draftPreview?.[p.character_id] : undefined;
           const kindOptions = allowedKinds(p, hasDowned, battleSkills.length > 0);
           const selectedSkill = draft?.skill_node_id != null
             ? affordableSkills.find((skill) => skill.id === draft.skill_node_id) ?? affordableSkills[0] ?? null
@@ -1393,6 +1437,27 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         color="bg-sky-500"
                       />
                     </div>
+
+                    {actionPreview && (
+                      <div
+                        className="flex items-center gap-1.5 rounded-full border border-dashed border-line/70 bg-surface/60 px-2 py-1 text-[11px] text-muted"
+                        title="아직 확정되지 않은 행동입니다"
+                      >
+                        {actionPreview.kind === "skill" ? (
+                          <>
+                            <CharacterAvatar
+                              src={actionPreview.skill_image_url}
+                              alt={actionPreview.skill_name ?? "기술"}
+                              className="size-4 rounded-full"
+                              iconSize={10}
+                            />
+                            <span className="truncate">{actionPreview.skill_name ?? "기술 사용"}</span>
+                          </>
+                        ) : (
+                          <span>{CHAR_ACTION_LABEL[actionPreview.kind]}</span>
+                        )}
+                      </div>
+                    )}
 
                     {(p.downed || p.retreated || p.defending || (active && p.joined_round === session.round)) && (
                       <div className="flex flex-wrap gap-2">

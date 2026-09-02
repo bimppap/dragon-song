@@ -1,18 +1,31 @@
 from typing import Literal
+import asyncio
 import time
 from datetime import date, datetime, timedelta, timezone
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI, Depends, File, Form, HTTPException, Response, UploadFile
+from fastapi import (
+    FastAPI,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 
 from app import storage
-from app.auth import create_access_token, get_current_member, is_admin_role, require_admin, require_owner_admin
+from app.auth import authenticate_ws_token, create_access_token, get_current_member, is_admin_role, require_admin, require_owner_admin
 from app.db import SessionLocal, engine, get_db
 from app.migrations import ensure_schema
 from app.models import Chapter, Challenge, Character, Enemy, Item, Member, Mission, SkillNode
+from app.ws import broadcast_battle_deleted, broadcast_battle_update, handle_ws_message, manager
 from app.schemas import (
     AccessTokenResponse,
     AdminGiftRequest,
@@ -124,6 +137,7 @@ scheduler.add_job(_run_daily_auto_attendance_job, CronTrigger(hour=0, minute=10)
 @app.on_event("startup")
 async def start_scheduler() -> None:
     scheduler.start()
+    manager.set_loop(asyncio.get_running_loop())
 
 
 @app.get("/")
@@ -1070,9 +1084,37 @@ def get_battle(session_id: int, member: Member = Depends(get_current_member), db
     return crud.get_battle_session(db, session_id, member)
 
 
+@app.websocket("/ws/battles/{session_id}")
+async def battle_ws(websocket: WebSocket, session_id: int, token: str | None = Query(default=None)):
+    member = authenticate_ws_token(token)
+    if member is None:
+        await websocket.close(code=4401)
+        return
+
+    db = SessionLocal()
+    try:
+        crud.get_battle_session(db, session_id, member)
+    except HTTPException:
+        await websocket.close(code=4403)
+        return
+    finally:
+        db.close()
+
+    await manager.connect(session_id, websocket)
+    try:
+        while True:
+            raw = await websocket.receive_json()
+            await handle_ws_message(session_id, member, websocket, raw)
+    except WebSocketDisconnect:
+        pass
+    finally:
+        manager.disconnect(session_id, websocket)
+
+
 @app.delete("/battles/{session_id}")
 def delete_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     crud.delete_battle_session(db, session_id)
+    broadcast_battle_deleted(session_id)
     return {"deleted": True}
 
 
@@ -1080,13 +1122,16 @@ def delete_battle(session_id: int, member: Member = Depends(require_admin), db: 
 def rollback_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     """실전 테스트 전투를 원상복구하고 기록까지 삭제한다."""
     crud.rollback_battle_session(db, session_id)
+    broadcast_battle_deleted(session_id)
     return {"rolled_back": True}
 
 
 @app.post("/battles/{session_id}/terminate", response_model=BattleSessionRead)
 def terminate_battle(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     """관리자가 승패와 관계없이 진행 중인 전투를 조기 종료한다."""
-    return crud.terminate_battle(db, session_id)
+    updated = crud.terminate_battle(db, session_id)
+    broadcast_battle_update(session_id, updated)
+    return updated
 
 
 @app.post("/battles/{session_id}/telegraph", response_model=BattleSessionRead)
@@ -1097,7 +1142,9 @@ def submit_battle_telegraph(
     db: Session = Depends(get_db),
 ):
     """1턴: 적의 행동 암시."""
-    return crud.resolve_battle_telegraph(db, session_id, data)
+    updated = crud.resolve_battle_telegraph(db, session_id, data)
+    broadcast_battle_update(session_id, updated)
+    return updated
 
 
 @app.post("/battles/{session_id}/ally-turn", response_model=BattleSessionRead)
@@ -1108,7 +1155,9 @@ def submit_battle_ally_turn(
     db: Session = Depends(get_db),
 ):
     """2턴: 아군 턴."""
-    return crud.resolve_battle_ally_turn(db, session_id, data)
+    updated = crud.resolve_battle_ally_turn(db, session_id, data)
+    broadcast_battle_update(session_id, updated)
+    return updated
 
 
 @app.post("/battles/{session_id}/enemy-turn", response_model=BattleSessionRead)
@@ -1118,13 +1167,17 @@ def submit_battle_enemy_turn(
     db: Session = Depends(get_db),
 ):
     """3턴: 에너미 턴."""
-    return crud.resolve_battle_enemy_turn(db, session_id)
+    updated = crud.resolve_battle_enemy_turn(db, session_id)
+    broadcast_battle_update(session_id, updated)
+    return updated
 
 
 @app.post("/battles/{session_id}/undo-round", response_model=BattleSessionRead)
 def undo_battle_round(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     """직전 라운드를 되돌려 그 라운드를 다시 진행할 수 있게 한다(실전 전투만 가능)."""
-    return crud.undo_last_round(db, session_id)
+    updated = crud.undo_last_round(db, session_id)
+    broadcast_battle_update(session_id, updated)
+    return updated
 
 
 @app.get("/battles/{session_id}/rewards", response_model=BattleRewardPreview)
@@ -1147,7 +1200,9 @@ def join_battle(
     db: Session = Depends(get_db),
 ):
     """관리자가 전투 중간에 캐릭터를 난입시킨다. 난입한 캐릭터는 해당 라운드에 공격/치유 대상이 되지 않는다."""
-    return crud.join_battle(db, session_id, data)
+    updated = crud.join_battle(db, session_id, data)
+    broadcast_battle_update(session_id, updated)
+    return updated
 
 
 @app.post("/battles/{session_id}/join-enemy", response_model=BattleSessionRead)
@@ -1158,7 +1213,9 @@ def join_battle_enemy(
     db: Session = Depends(get_db),
 ):
     """관리자가 전투 중간에 에너미를 추가한다. 추가된 에너미는 다음 라운드부터 행동한다."""
-    return crud.join_battle_enemy(db, session_id, data)
+    updated = crud.join_battle_enemy(db, session_id, data)
+    broadcast_battle_update(session_id, updated)
+    return updated
 
 
 @app.post("/uploads/image")
