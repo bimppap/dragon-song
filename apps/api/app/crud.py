@@ -3362,8 +3362,11 @@ def _damage_from_skill_ratio(actor: dict, skill_ratio: float) -> tuple[int, str]
     extra_damage = _persistent_outgoing_damage_bonus(actor) + _consume_one_time_outgoing_damage_bonus(actor)
     raw = actor["atk"] * (1 + actor["atk_p"]) * skill_ratio * (1 + actor["dmg_p"] + extra_damage)
     formula = (
-        f"floor({_formula_number(actor['atk'])} × (1 + {_formula_number(actor['atk_p'])}) × "
-        f"{_formula_number(skill_ratio)} × (1 + {_formula_number(actor['dmg_p'])} + {_formula_number(extra_damage)}))"
+        f"floor(공격력 {_formula_number(actor['atk'])} × "
+        f"(1 + 공격력 증폭률 {_formula_number(actor['atk_p'])}) × "
+        f"기술 배율 {_formula_number(skill_ratio)} × "
+        f"(1 + 피해량 증폭률 {_formula_number(actor['dmg_p'])} + "
+        f"추가 피해 증폭률 {_formula_number(extra_damage)}))"
     )
     return max(0, _floor_amount(raw)), formula
 
@@ -3399,10 +3402,13 @@ def _apply_skill_heal(
 
 
 def _skill_heal_formula(target: dict, heal_ratio: float, before_hp: int, *, allow_overheal: bool = False) -> str:
-    calculated = f"floor({_formula_number(target['max_hp'])} × {_formula_number(heal_ratio)})"
+    calculated = (
+        f"floor(최대 체력 {_formula_number(target['max_hp'])} × "
+        f"최종 치유 배율 {_formula_number(heal_ratio)})"
+    )
     if allow_overheal or target.get("over_heal"):
         return calculated
-    return f"min({calculated}, {_formula_number(target['max_hp'] - before_hp)})"
+    return f"min(계산 치유량 {calculated}, 잃은 체력 {_formula_number(target['max_hp'] - before_hp)})"
 
 
 def _apply_damage_to_enemy(enemy: dict, damage: int) -> tuple[int, bool]:
@@ -4440,7 +4446,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 소환수 {summon_name} 처치")
                 else:
@@ -4450,7 +4456,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                 continue
@@ -4473,7 +4479,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             f"[{target['hp']}/{target['max_hp']}]"
                             f"{' (오버킬)' if overkill else ''}"
                         )
-                        calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
+                        calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
                             events.append(f"💀 소환수 {summon_name} 처치")
                         continue
@@ -4484,7 +4490,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                     if tier6_bonus:
@@ -4524,7 +4530,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 소환수 {summon_name} 처치")
                 else:
@@ -4534,7 +4540,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                     else:
@@ -4813,9 +4819,12 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             raw = (p["atk"] * (1 + p["atk_p"]) + p["skill_eff_true"]) * (1 + p["dmg_p"]) * _skill_coef(p)
             dmg = max(0, _floor_amount(raw))
             damage_formula = (
-                f"floor(({_formula_number(p['atk'])} × (1 + {_formula_number(p['atk_p'])}) + "
-                f"{_formula_number(p['skill_eff_true'])}) × (1 + {_formula_number(p['dmg_p'])}) × "
-                f"(1 + {_formula_number(p['skill_lv'])} × {_formula_number(p['skill_eff_fixed'])}))"
+                f"floor((공격력 {_formula_number(p['atk'])} × "
+                f"(1 + 공격력 증폭률 {_formula_number(p['atk_p'])}) + "
+                f"고정 기술 효율 {_formula_number(p['skill_eff_true'])}) × "
+                f"(1 + 피해량 증폭률 {_formula_number(p['dmg_p'])}) × "
+                f"(1 + 기술 등급 {_formula_number(p['skill_lv'])} × "
+                f"기술 효율 {_formula_number(p['skill_eff_fixed'])}))"
             )
             attn_mult = 4 if p["faction"] == "수비" else 1
             p["attn"] += round(dmg * attn_mult * (1 + p["presence"]))
@@ -4853,7 +4862,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 f"{target_enemy['name']} [{target_enemy['hp']}/{target_enemy['max_hp']}]"
                 f"{' (오버킬)' if overkill else ''}"
             )
-            calculations[events[-1]] = f"min({damage_formula}, {target_enemy['hp'] + dealt})"
+            calculations[events[-1]] = (
+                f"min(계산 피해량 {damage_formula}, 남은 체력 {target_enemy['hp'] + dealt})"
+            )
             if target_enemy["hp"] <= 0:
                 events.append(f"💀 {target_enemy['name']} 격파")
 
@@ -4931,12 +4942,12 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 f"{target['name']} [{before}→{target['hp']}/{target['max_hp']}]"
             )
             heal_formula = (
-                f"floor(0.25 × {_formula_number(target['max_hp'])} × "
-                f"(1 + {_formula_number(p['heal_eff'])}))"
+                f"floor(기본 치유 비율 0.25 × 최대 체력 {_formula_number(target['max_hp'])} × "
+                f"(1 + 치유 효율 {_formula_number(p['heal_eff'])}))"
             )
             calculations[events[-1]] = (
                 heal_formula if target["over_heal"]
-                else f"min({heal_formula}, {_formula_number(target['max_hp'] - before)})"
+                else f"min(계산 치유량 {heal_formula}, 잃은 체력 {_formula_number(target['max_hp'] - before)})"
             )
 
     victory = all(e["hp"] <= 0 for e in enemies)
@@ -5029,14 +5040,23 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         extra_reduction = sum(float(effect.get("damage_reduction", 0.0)) for effect in counter_effects)
         total_reduction = min(0.95, max(0.0, recipient["dmg_r"] + extra_reduction))
         dmg = _floor_amount(base * (1 - total_reduction))
-        damage_formula = f"floor(({base_formula}) × (1 - {_formula_number(total_reduction)}))"
+        damage_formula = (
+            f"floor((기본 피해량 {base_formula}) × "
+            f"(1 - 총 피해 감소율 {_formula_number(total_reduction)}))"
+        )
         if recipient["defending"]:
             effective_defense = _eff_def(recipient)
             dmg = max(0, dmg - effective_defense)
-            damage_formula = f"max(0, {damage_formula} - {_formula_number(effective_defense)})"
+            damage_formula = (
+                f"max(최소 피해 0, 계산 피해량 {damage_formula} - "
+                f"유효 방어력 {_formula_number(effective_defense)})"
+            )
         shield_before = recipient["shield"]
         dmg, absorbed = _apply_hit(recipient, dmg)
-        damage_formula = f"max(0, {damage_formula} - {_formula_number(shield_before)})"
+        damage_formula = (
+            f"max(최소 피해 0, 계산 피해량 {damage_formula} - "
+            f"보호막 {_formula_number(shield_before)})"
+        )
         counter_results: list[dict] = []
         for effect in counter_effects:
             if attacker["hp"] <= 0:
@@ -5060,10 +5080,11 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 "enemy_max_hp": attacker["max_hp"],
                 "overkill": overkill,
                 "formula": (
-                    f"min(floor(({_formula_number(recipient['atk'])} + {_formula_number(recipient['def'])}) × "
-                    f"(1 + {_formula_number(max(0, int(effect.get('skill_lv', 0))))}) × "
-                    f"(1 + {_formula_number(float(effect.get('skill_eff_fixed', 0.0)))})), "
-                    f"{_formula_number(attacker['hp'] + dealt)})"
+                    f"min(계산 피해량 floor((공격력 {_formula_number(recipient['atk'])} + "
+                    f"방어력 {_formula_number(recipient['def'])}) × "
+                    f"(1 + 기술 등급 {_formula_number(max(0, int(effect.get('skill_lv', 0))))}) × "
+                    f"(1 + 기술 효율 {_formula_number(float(effect.get('skill_eff_fixed', 0.0)))})), "
+                    f"남은 체력 {_formula_number(attacker['hp'] + dealt)})"
                 ),
             })
         return recipient, dmg, absorbed, redirected, counter_results, damage_formula
@@ -5101,9 +5122,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             damage_penalty = _consume_one_time_outgoing_damage_penalty(enemy)
             base = max(0, _floor_amount(enemy["attack"] * skill["damage_percent"] / 100 * (1 - damage_penalty)))
             base_formula = (
-                f"floor({_formula_number(enemy['attack'])} × "
-                f"{_formula_number(skill['damage_percent'] / 100)} × "
-                f"(1 - {_formula_number(damage_penalty)}))"
+                f"floor(공격력 {_formula_number(enemy['attack'])} × "
+                f"기술 피해율 {_formula_number(skill['damage_percent'] / 100)} × "
+                f"(1 - 공격력 감소율 {_formula_number(damage_penalty)}))"
             )
             newly_downed_names: list[str] = []
             for t in targets:

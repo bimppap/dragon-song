@@ -1510,6 +1510,8 @@ export interface BattleLogRound {
   round: number;
   phase?: BattlePhase;
   events: string[];
+  /** 이벤트 문자열을 키로 하는, 계산 당시 실제 피연산자가 대입된 결과식. */
+  calculations?: Record<string, string>;
 }
 
 export interface BattlePendingEnemyAction {

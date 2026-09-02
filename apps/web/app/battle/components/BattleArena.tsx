@@ -47,7 +47,9 @@ import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { useBattleSocket, type BattleDraftPreview } from "@/lib/useBattleSocket";
+import { isAdminRole, useAuth } from "@/lib/auth";
 import BattleRewardCard from "./BattleRewardCard";
+import BattleLogEvent from "./BattleLogEvent";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
@@ -376,6 +378,8 @@ function TargetPickerButton({
 }
 
 export default function BattleArena({ sessionId, readOnly = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
+  const { member } = useAuth();
+  const showLogFormulas = member != null && isAdminRole(member.role);
   const { confirm } = useDialog();
   const { toast } = useToast();
   const controlled = externalSession !== undefined;
@@ -1630,7 +1634,15 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     </button>
                   </div>
                   {entry.events.map((e, i) => (
-                    <div key={i} className="text-sm text-ivory/85">{e}</div>
+                    <div key={i} className="text-sm text-ivory/85">
+                      <BattleLogEvent
+                        event={e}
+                        previousEvent={entry.events[i - 1]}
+                        session={session}
+                        calculation={entry.calculations?.[e]}
+                        showFormula={showLogFormulas}
+                      />
+                    </div>
                   ))}
                 </div>
               ))}
