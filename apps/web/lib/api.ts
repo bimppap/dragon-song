@@ -1674,11 +1674,11 @@ export async function joinBattleEnemy(sessionId: number, enemyId: number): Promi
   }, "에너미 참가 실패");
 }
 
-/** 직전 라운드를 되돌려 그 라운드를 다시 진행할 수 있게 한다(실전 전투만 가능). */
-export async function undoLastBattleRound(sessionId: number): Promise<BattleSession> {
-  return request<BattleSession>(`/battles/${sessionId}/undo-round`, {
+/** 직전 턴을 되돌려 다시 진행할 수 있게 한다(실전 전투만 가능). */
+export async function undoLastBattleTurn(sessionId: number): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/undo-turn`, {
     method: "POST",
-  }, "라운드 되돌리기 실패");
+  }, "턴 되돌리기 실패");
 }
 
 export async function deleteBattle(sessionId: number): Promise<void> {

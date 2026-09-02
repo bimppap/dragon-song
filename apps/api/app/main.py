@@ -1172,10 +1172,10 @@ def submit_battle_enemy_turn(
     return updated
 
 
-@app.post("/battles/{session_id}/undo-round", response_model=BattleSessionRead)
-def undo_battle_round(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    """직전 라운드를 되돌려 그 라운드를 다시 진행할 수 있게 한다(실전 전투만 가능)."""
-    updated = crud.undo_last_round(db, session_id)
+@app.post("/battles/{session_id}/undo-turn", response_model=BattleSessionRead)
+def undo_battle_turn(session_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    """직전 턴을 되돌려 다시 진행할 수 있게 한다(실전 전투만 가능)."""
+    updated = crud.undo_last_turn(db, session_id)
     broadcast_battle_update(session_id, updated)
     return updated
 

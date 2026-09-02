@@ -27,7 +27,7 @@ import {
   submitBattleEnemyTurn,
   submitBattleTelegraph,
   terminateBattle,
-  undoLastBattleRound,
+  undoLastBattleTurn,
   type BattleCharacterActionInput,
   type BattleEnemyActionInput,
   type BattleEnemyState,
@@ -91,6 +91,14 @@ function defaultCharKind(faction: string | null, mp: number): CharacterActionKin
 
 function isActive(p: BattleParticipant): boolean {
   return !p.downed && !p.retreated;
+}
+
+/** "이전 턴 다시 진행하기"가 되돌릴 대상을 사람이 읽을 수 있는 문구로 표현한다. 되돌릴 턴이 없으면 null. */
+function describePreviousTurn(session: BattleSession): string | null {
+  if (session.phase === "ally") return `라운드 ${session.round} · 적의 행동 암시`;
+  if (session.phase === "enemy") return `라운드 ${session.round} · 아군 턴`;
+  if (session.round > 1) return `라운드 ${session.round - 1} · 에너미 턴`;
+  return null;
 }
 
 /** 이번 라운드에 난입한 캐릭터는 행동할 수 없고, 공격/치유 대상도 될 수 없다. */
@@ -728,23 +736,24 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     }
   }
 
-  async function handleUndoRound() {
-    if (!session || session.round <= 1) return;
+  async function handleUndoTurn() {
+    const previous = session ? describePreviousTurn(session) : null;
+    if (!session || !previous) return;
     const ok = await confirm({
-      title: "이전 라운드 다시 진행하기",
-      description: `라운드 ${session.round - 1}의 로그가 사라지고, 그 라운드를 다시 진행할 수 있는 상태로 되돌립니다.`,
+      title: "이전 턴 다시 진행하기",
+      description: `${previous}의 로그가 사라지고, 그 턴을 다시 진행할 수 있는 상태로 되돌립니다.`,
       confirmText: "되돌리기",
       tone: "danger",
     });
     if (!ok) return;
     try {
       setUndoing(true);
-      const updated = await undoLastBattleRound(session.id);
+      const updated = await undoLastBattleTurn(session.id);
       setSession(updated);
       resetCharDrafts(updated);
       resetTelegraphDrafts(updated);
     } catch (e) {
-      toast(e instanceof Error ? e.message : "라운드 되돌리기 실패", "error");
+      toast(e instanceof Error ? e.message : "턴 되돌리기 실패", "error");
     } finally {
       setUndoing(false);
     }
@@ -1576,14 +1585,14 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               {submitting ? "진행 중..." : `라운드 ${session.round} · 에너미의 턴 진행`}
             </Button>
           )}
-          {session.mode === "real" && phase === "telegraph" && session.round > 1 && (
+          {session.mode === "real" && describePreviousTurn(session) != null && (
             <Button
               variant="outline"
-              onClick={handleUndoRound}
+              onClick={handleUndoTurn}
               disabled={submitting || undoing || terminating}
             >
               <Undo2 size={15} />
-              {undoing ? "되돌리는 중..." : "이전 라운드 다시 진행하기"}
+              {undoing ? "되돌리는 중..." : "이전 턴 다시 진행하기"}
             </Button>
           )}
           <Button

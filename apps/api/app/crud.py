@@ -3354,10 +3354,18 @@ def _battle_skill_cost(actor: dict, skill: dict) -> int:
     return max(0, _floor_amount(float(skill.get("cost") or 0) + actor["skill_cost"]))
 
 
-def _damage_from_skill_ratio(actor: dict, skill_ratio: float) -> int:
+def _formula_number(value: int | float) -> str:
+    return f"{value:g}" if isinstance(value, float) else str(value)
+
+
+def _damage_from_skill_ratio(actor: dict, skill_ratio: float) -> tuple[int, str]:
     extra_damage = _persistent_outgoing_damage_bonus(actor) + _consume_one_time_outgoing_damage_bonus(actor)
     raw = actor["atk"] * (1 + actor["atk_p"]) * skill_ratio * (1 + actor["dmg_p"] + extra_damage)
-    return max(0, _floor_amount(raw))
+    formula = (
+        f"floor({_formula_number(actor['atk'])} × (1 + {_formula_number(actor['atk_p'])}) × "
+        f"{_formula_number(skill_ratio)} × (1 + {_formula_number(actor['dmg_p'])} + {_formula_number(extra_damage)}))"
+    )
+    return max(0, _floor_amount(raw)), formula
 
 
 def _apply_damage_attn(actor: dict, damage: int) -> None:
@@ -3388,6 +3396,13 @@ def _apply_skill_heal(
         target["downed"] = False
     _apply_heal_attn(actor, healed)
     return healed, revived
+
+
+def _skill_heal_formula(target: dict, heal_ratio: float, before_hp: int, *, allow_overheal: bool = False) -> str:
+    calculated = f"floor({_formula_number(target['max_hp'])} × {_formula_number(heal_ratio)})"
+    if allow_overheal or target.get("over_heal"):
+        return calculated
+    return f"min({calculated}, {_formula_number(target['max_hp'] - before_hp)})"
 
 
 def _apply_damage_to_enemy(enemy: dict, damage: int) -> tuple[int, bool]:
@@ -3702,6 +3717,43 @@ def _remember_reward_character_state(state: dict, character: Character) -> dict:
     return {**state, "reward_characters": reward_characters}
 
 
+def _revert_item_usages(db: Session, item_usages: list[dict]) -> None:
+    """item_usages 항목들(전투 롤백/턴 되돌리기 공용)만큼 CharacterItemState.used_quantity를 되돌리고,
+    영구 이력인 ItemUsage 행도 함께 삭제한다."""
+    usage_totals: dict[tuple[int, int], int] = {}
+    usage_row_ids: list[int] = []
+    for entry in item_usages:
+        item_usage_id = entry.get("item_usage_id")
+        character_id = entry.get("character_id")
+        item_id = entry.get("item_id")
+        quantity = int(entry.get("quantity", 0) or 0)
+        if item_usage_id is not None:
+            usage_row_ids.append(int(item_usage_id))
+        if character_id is None or item_id is None or quantity <= 0:
+            continue
+        key = (int(character_id), int(item_id))
+        usage_totals[key] = usage_totals.get(key, 0) + quantity
+
+    if usage_totals:
+        character_id_filters = sorted({character_id for character_id, _item_id in usage_totals})
+        item_id_filters = sorted({item_id for _character_id, item_id in usage_totals})
+        item_states = {
+            (state.character_id, state.item_id): state
+            for state in db.query(CharacterItemState).filter(
+                CharacterItemState.character_id.in_(character_id_filters),
+                CharacterItemState.item_id.in_(item_id_filters),
+            ).all()
+        }
+        for key, quantity in usage_totals.items():
+            item_state = item_states.get(key)
+            if item_state is None:
+                continue
+            item_state.used_quantity = max(0, item_state.used_quantity - quantity)
+
+    if usage_row_ids:
+        db.query(ItemUsage).filter(ItemUsage.id.in_(usage_row_ids)).delete(synchronize_session=False)
+
+
 def _remember_item_usage(state: dict, usage: ItemUsage) -> dict:
     item_usages = list(state.get("item_usages") or [])
     item_usages.append(
@@ -3943,13 +3995,16 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
 
-    # 실전은 "이전 라운드 다시 진행하기"를 위해 이 라운드의 행동이 반영되기 전 상태를 남겨둔다.
+    # 실전은 "이전 턴 다시 진행하기"를 위해 이 턴의 행동이 반영되기 전 상태를 남겨둔다.
     if session.mode == "real":
         session.round_snapshots = list(session.round_snapshots) + [{
             "round": round_no,
+            "phase": "telegraph",
             "participants": [dict(p) for p in participants],
             "enemies": [dict(e) for e in enemies],
             "summons": [dict(s) for s in summons],
+            "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
+            "item_usages": [],
         }]
 
     by_char_id = {p["character_id"]: p for p in participants}
@@ -4112,7 +4167,20 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         _ensure_combatant_snapshot_defaults(p)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
+
+    # 실전은 "이전 턴 다시 진행하기"를 위해 이 턴의 행동이 반영되기 전 상태를 남겨둔다.
+    # 아이템 사용 내역(turn_item_usages)은 아래 처리 중에 채워지므로, 완성된 뒤 함수 끝에서 append한다.
+    turn_snapshot = {
+        "round": round_no,
+        "phase": "ally",
+        "participants": [dict(p) for p in participants],
+        "enemies": [dict(e) for e in enemies],
+        "summons": [dict(s) for s in summons],
+        "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
+    } if session.mode == "real" else None
+    turn_item_usages: list[dict] = []
     events: list[str] = ["🗡️ 조사단의 행동!"]
+    calculations: dict[str, str] = {}
 
     by_char_id = {p["character_id"]: p for p in participants}
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
@@ -4325,7 +4393,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         for character_id, item_id in item_action_keys:
             key = (character_id, item_id)
             if key not in item_states_by_character_item:
-                state = CharacterItemState(character_id=character_id, item_id=item_id)
+                # flush 전이라 컬럼 default(0)가 아직 적용되지 않으므로 명시적으로 0을 지정해 둔다.
+                state = CharacterItemState(character_id=character_id, item_id=item_id, used_quantity=0)
                 db.add(state)
                 item_states_by_character_item[key] = state
 
@@ -4360,7 +4429,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 skill_ratio = ((1 + skill_lv) * skill_power) * (1 + skill_eff_fixed)
-                damage = _damage_from_skill_ratio(p, skill_ratio)
+                damage, damage_formula = _damage_from_skill_ratio(p, skill_ratio)
                 _apply_damage_attn(p, damage)
                 target_kind, target = targets[0]
                 if target_kind == "summon":
@@ -4371,6 +4440,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
+                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 소환수 {summon_name} 처치")
                 else:
@@ -4380,6 +4450,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
+                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                 continue
@@ -4390,7 +4461,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 skill_ratio = ((1 + skill_lv) * skill_power) * (1 + skill_eff_fixed)
-                damage = _damage_from_skill_ratio(p, skill_ratio)
+                damage, damage_formula = _damage_from_skill_ratio(p, skill_ratio)
                 total_damage_for_attn = 0
                 for target_kind, target in targets:
                     total_damage_for_attn += damage
@@ -4402,6 +4473,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             f"[{target['hp']}/{target['max_hp']}]"
                             f"{' (오버킬)' if overkill else ''}"
                         )
+                        calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
                         if target["hp"] <= 0:
                             events.append(f"💀 소환수 {summon_name} 처치")
                         continue
@@ -4412,6 +4484,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
+                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                     if tier6_bonus:
@@ -4440,7 +4513,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 skill_ratio = (skill_lv * skill_power) * (1 + skill_eff_fixed)
-                damage = _damage_from_skill_ratio(p, skill_ratio)
+                damage, damage_formula = _damage_from_skill_ratio(p, skill_ratio)
                 _apply_damage_attn(p, damage)
                 target_kind, target = targets[0]
                 if target_kind == "summon":
@@ -4451,6 +4524,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
+                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 소환수 {summon_name} 처치")
                 else:
@@ -4460,6 +4534,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
+                    calculations[events[-1]] = f"min({damage_formula}, {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                     else:
@@ -4485,6 +4560,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if var_name == "ab_anvil":
                 _spend_skill_cost(p, selected_skill)
                 heal_ratio = ((skill_lv * skill_power) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
+                before_hp = p["hp"]
                 healed, revived = _apply_skill_heal(p, p, heal_ratio)
                 p["attn"] += healed * skill_lv
                 removed, removed_names = _remove_status_effects_by_affinity(p, "debuff", skill_lv)
@@ -4495,6 +4571,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if removed > 0:
                     log += f" / 약화 {removed}개 해제 ({', '.join(removed_names)})"
                 events.append(log)
+                calculations[events[-1]] = _skill_heal_formula(p, heal_ratio, before_hp)
                 continue
 
             if var_name == "ab_counter":
@@ -4533,6 +4610,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 heal_ratio = (((skill_lv + 1) * skill_power) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
+                before_hp = target["hp"]
                 healed, revived = _apply_skill_heal(p, target, heal_ratio)
                 attn_reduction_pct = min(1.0, max(0.0, (skill_lv * 0.10) * (1 + skill_eff_fixed)))
                 reduced_attn = _floor_amount(max(0, target["attn"]) * attn_reduction_pct)
@@ -4543,6 +4621,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     f"🛡️ {p['name']}의 {skill_name} → {target['name']} {healed} 치유"
                     f"{' (부활)' if revived else ''} · 주목도 {reduced_attn} 이전 / {gained_attn} 획득"
                 )
+                calculations[events[-1]] = _skill_heal_formula(target, heal_ratio, before_hp)
                 continue
 
             if var_name == "ab_cure":
@@ -4551,6 +4630,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 heal_ratio = (((skill_lv * skill_power) + 0.15) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
+                before_hp = target["hp"]
                 healed, revived = _apply_skill_heal(p, target, heal_ratio, allow_overheal=tier6_bonus)
                 removed = 0
                 removed_names: list[str] = []
@@ -4563,6 +4643,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if removed > 0:
                     log += f" / 약화 {removed}개 해제 ({', '.join(removed_names)})"
                 events.append(log)
+                calculations[events[-1]] = _skill_heal_formula(
+                    target, heal_ratio, before_hp, allow_overheal=tier6_bonus
+                )
                 continue
 
             if var_name == "ab_aid":
@@ -4573,11 +4656,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 heal_ratio = ((skill_lv * skill_power) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
                 damage_bonus = max(0.0, skill_lv * 0.01)
                 for target in targets:
+                    before_hp = target["hp"]
                     healed, revived = _apply_skill_heal(p, target, heal_ratio)
                     events.append(
                         f"🕊️ {p['name']}의 {skill_name} → {target['name']} {healed} 치유"
                         f"{' (부활)' if revived else ''} · [{target['hp']}/{target['max_hp']}]"
                     )
+                    calculations[events[-1]] = _skill_heal_formula(target, heal_ratio, before_hp)
                     if tier6_bonus and damage_bonus > 0:
                         _add_status_effect(
                             target,
@@ -4605,6 +4690,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 heal_ratio = (((skill_lv * skill_power) + 0.1) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
+                before_hp = target["hp"]
                 healed, revived = _apply_skill_heal(p, target, heal_ratio)
                 removed, removed_names = _remove_status_effects_by_affinity(target, "debuff", skill_lv + 1)
                 if tier6_bonus and removed > 0:
@@ -4633,6 +4719,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if tier6_bonus and removed > 0:
                     log += f" / 약화 방지 {removed}스택"
                 events.append(log)
+                calculations[events[-1]] = _skill_heal_formula(target, heal_ratio, before_hp)
                 continue
 
             if var_name == "ab_encourage":
@@ -4725,6 +4812,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
             raw = (p["atk"] * (1 + p["atk_p"]) + p["skill_eff_true"]) * (1 + p["dmg_p"]) * _skill_coef(p)
             dmg = max(0, _floor_amount(raw))
+            damage_formula = (
+                f"floor(({_formula_number(p['atk'])} × (1 + {_formula_number(p['atk_p'])}) + "
+                f"{_formula_number(p['skill_eff_true'])}) × (1 + {_formula_number(p['dmg_p'])}) × "
+                f"(1 + {_formula_number(p['skill_lv'])} × {_formula_number(p['skill_eff_fixed'])}))"
+            )
             attn_mult = 4 if p["faction"] == "수비" else 1
             p["attn"] += round(dmg * attn_mult * (1 + p["presence"]))
 
@@ -4743,6 +4835,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     f"[{target_summon['hp']}/{target_summon['max_hp']}]"
                     f"{' (오버킬)' if overkill else ''}"
                 )
+                calculations[events[-1]] = damage_formula
                 if target_summon["hp"] <= 0:
                     events.append(f"💀 소환수 {target_summon_name} 처치")
                 continue
@@ -4760,6 +4853,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 f"{target_enemy['name']} [{target_enemy['hp']}/{target_enemy['max_hp']}]"
                 f"{' (오버킬)' if overkill else ''}"
             )
+            calculations[events[-1]] = f"min({damage_formula}, {target_enemy['hp'] + dealt})"
             if target_enemy["hp"] <= 0:
                 events.append(f"💀 {target_enemy['name']} 격파")
 
@@ -4781,6 +4875,12 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 db.flush()
                 if rollback_state and rollback_state.get("version") == 1:
                     rollback_state = _remember_item_usage(rollback_state, usage)
+                turn_item_usages.append({
+                    "item_usage_id": usage.id,
+                    "character_id": usage.character_id,
+                    "item_id": usage.item_id,
+                    "quantity": usage.quantity,
+                })
             cleanse_notes = _apply_item_effects_to_snapshot(db, p, item.effects or [], sign=1)
             log = f"🎒 {p['name']} {item.name} 사용"
             if cleanse_notes:
@@ -4830,6 +4930,14 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 f"💚 {p['name']} → {target['name']} {healed} 치유{' (부활)' if revived else ''} (마나 -1) · "
                 f"{target['name']} [{before}→{target['hp']}/{target['max_hp']}]"
             )
+            heal_formula = (
+                f"floor(0.25 × {_formula_number(target['max_hp'])} × "
+                f"(1 + {_formula_number(p['heal_eff'])}))"
+            )
+            calculations[events[-1]] = (
+                heal_formula if target["over_heal"]
+                else f"min({heal_formula}, {_formula_number(target['max_hp'] - before)})"
+            )
 
     victory = all(e["hp"] <= 0 for e in enemies)
     no_active_left = not any(_combatant_active(p) for p in participants)
@@ -4848,7 +4956,15 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     session.summons = summons
     if rollback_state and rollback_state.get("version") == 1:
         session.rollback_state = rollback_state
-    session.log = list(session.log) + [{"round": round_no, "phase": "ally", "events": events}]
+    session.log = list(session.log) + [{
+        "round": round_no,
+        "phase": "ally",
+        "events": events,
+        "calculations": calculations,
+    }]
+    if turn_snapshot is not None:
+        turn_snapshot["item_usages"] = turn_item_usages
+        session.round_snapshots = list(session.round_snapshots) + [turn_snapshot]
 
     if session.status != "in_progress" and session.mode == "real":
         _finalize_real_battle(db, participants)
@@ -4874,13 +4990,32 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         _ensure_combatant_snapshot_defaults(p)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
+
+    # 실전은 "이전 턴 다시 진행하기"를 위해 이 턴의 행동이 반영되기 전 상태를 남겨둔다.
+    if session.mode == "real":
+        session.round_snapshots = list(session.round_snapshots) + [{
+            "round": round_no,
+            "phase": "enemy",
+            "participants": [dict(p) for p in participants],
+            "enemies": [dict(e) for e in enemies],
+            "summons": [dict(s) for s in summons],
+            "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
+            "item_usages": [],
+        }]
+
     events: list[str] = ["👹 에너미의 행동!"]
+    calculations: dict[str, str] = {}
 
     by_char_id = {p["character_id"]: p for p in participants}
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
     protect_map = _build_protect_map(participants)
 
-    def hit(attacker: dict, target: dict, base: int) -> tuple[dict, int, int, bool, list[dict]]:
+    def hit(
+        attacker: dict,
+        target: dict,
+        base: int,
+        base_formula: str,
+    ) -> tuple[dict, int, int, bool, list[dict], str]:
         """방어 지정 대상이 있으면 방어자가 대신 맞고, 반격 버프가 있으면 즉시 처리한다."""
         protector_id = protect_map.get(target["character_id"])
         recipient = target
@@ -4894,9 +5029,14 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         extra_reduction = sum(float(effect.get("damage_reduction", 0.0)) for effect in counter_effects)
         total_reduction = min(0.95, max(0.0, recipient["dmg_r"] + extra_reduction))
         dmg = _floor_amount(base * (1 - total_reduction))
+        damage_formula = f"floor(({base_formula}) × (1 - {_formula_number(total_reduction)}))"
         if recipient["defending"]:
-            dmg = max(0, dmg - _eff_def(recipient))
+            effective_defense = _eff_def(recipient)
+            dmg = max(0, dmg - effective_defense)
+            damage_formula = f"max(0, {damage_formula} - {_formula_number(effective_defense)})"
+        shield_before = recipient["shield"]
         dmg, absorbed = _apply_hit(recipient, dmg)
+        damage_formula = f"max(0, {damage_formula} - {_formula_number(shield_before)})"
         counter_results: list[dict] = []
         for effect in counter_effects:
             if attacker["hp"] <= 0:
@@ -4919,8 +5059,14 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 "enemy_hp": attacker["hp"],
                 "enemy_max_hp": attacker["max_hp"],
                 "overkill": overkill,
+                "formula": (
+                    f"min(floor(({_formula_number(recipient['atk'])} + {_formula_number(recipient['def'])}) × "
+                    f"(1 + {_formula_number(max(0, int(effect.get('skill_lv', 0))))}) × "
+                    f"(1 + {_formula_number(float(effect.get('skill_eff_fixed', 0.0)))})), "
+                    f"{_formula_number(attacker['hp'] + dealt)})"
+                ),
             })
-        return recipient, dmg, absorbed, redirected, counter_results
+        return recipient, dmg, absorbed, redirected, counter_results, damage_formula
 
     # 소환수는 행동 암시 턴에 이미 소환되므로, 이번 라운드에 소환된 소환수도 곧바로 공격한다.
     attacking_summons = [s for s in summons if s["hp"] > 0]
@@ -4954,14 +5100,22 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     targets = living_now[: max(1, skill["target_count"])]
             damage_penalty = _consume_one_time_outgoing_damage_penalty(enemy)
             base = max(0, _floor_amount(enemy["attack"] * skill["damage_percent"] / 100 * (1 - damage_penalty)))
+            base_formula = (
+                f"floor({_formula_number(enemy['attack'])} × "
+                f"{_formula_number(skill['damage_percent'] / 100)} × "
+                f"(1 - {_formula_number(damage_penalty)}))"
+            )
             newly_downed_names: list[str] = []
             for t in targets:
-                recipient, dmg, absorbed, redirected, counter_results = hit(enemy, t, base)
+                recipient, dmg, absorbed, redirected, counter_results, damage_formula = hit(
+                    enemy, t, base, base_formula
+                )
                 redirect_note = f" (→ {recipient['name']}이(가) 대신 방어)" if redirected else ""
                 events.append(
                     f"🔥 {enemy['name']}의 {skill['name']} → {t['name']}{redirect_note} {dmg} 피해"
                     f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · {recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
                 )
+                calculations[events[-1]] = damage_formula
                 if recipient["hp"] == 0 and not recipient["downed"]:
                     recipient["downed"] = True
                     newly_downed_names.append(recipient["name"])
@@ -4971,6 +5125,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                         f"{counter['damage']} 반격 피해 · [{counter['enemy_hp']}/{counter['enemy_max_hp']}]"
                         f"{' (오버킬)' if counter['overkill'] else ''}"
                     )
+                    calculations[events[-1]] = counter["formula"]
                 if enemy["hp"] <= 0:
                     events.append(f"💀 {enemy['name']} 격파")
                     break
@@ -4992,13 +5147,16 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             )
             if not targets:
                 break
-            recipient, dmg, absorbed, redirected, counter_results = hit(summon, targets[0], summon["attack"])
+            recipient, dmg, absorbed, redirected, counter_results, damage_formula = hit(
+                summon, targets[0], summon["attack"], _formula_number(summon["attack"])
+            )
             redirect_note = f" (→ {recipient['name']}이(가) 대신 방어)" if redirected else ""
             events.append(
                 f"👹 소환수 {_summon_log_name(summon)} 공격 → {targets[0]['name']}{redirect_note} {dmg} 피해"
                 f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · "
                 f"{recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
             )
+            calculations[events[-1]] = damage_formula
             if recipient["hp"] == 0 and not recipient["downed"]:
                 recipient["downed"] = True
                 events.append(f"💫 {recipient['name']} 기절")
@@ -5007,6 +5165,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     f"↩️ {counter['recipient_name']}의 {counter['skill_name']} → 소환수 {_summon_log_name(summon)} "
                     f"{counter['damage']} 반격 피해"
                 )
+                calculations[events[-1]] = counter["formula"]
             if summon["hp"] <= 0:
                 events.append(f"💀 소환수 {_summon_log_name(summon)} 처치")
 
@@ -5027,7 +5186,12 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     session.participants = participants
     session.enemies = enemies
     session.summons = [s for s in summons if s["hp"] > 0]
-    session.log = list(session.log) + [{"round": round_no, "phase": "enemy", "events": events}]
+    session.log = list(session.log) + [{
+        "round": round_no,
+        "phase": "enemy",
+        "events": events,
+        "calculations": calculations,
+    }]
 
     if session.status != "in_progress" and session.mode == "real":
         _finalize_real_battle(db, participants)
@@ -5035,30 +5199,52 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     return _commit_battle_session(db, session)
 
 
-def undo_last_round(db: Session, session_id: int) -> BattleSessionRead:
-    """직전에 진행한 라운드를 되돌린다: 그 라운드 시작 시점 상태로 복원하고, 로그를 지우고, 다시 진행할 수 있게 한다."""
+_TURN_PHASE_ORDER = {"telegraph": 0, "ally": 1, "enemy": 2}
+
+
+def undo_last_turn(db: Session, session_id: int) -> BattleSessionRead:
+    """직전에 진행한 턴(적 행동 암시/아군 턴/에너미 턴)을 되돌린다: 그 턴 시작 시점 상태로 복원하고,
+    그 턴에 소모한 아이템 사용 횟수도 함께 복구하고, 로그를 지워 다시 진행할 수 있게 한다."""
     session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
     if session.mode != "real":
-        raise HTTPException(status_code=400, detail="실전 전투만 라운드를 되돌릴 수 있습니다.")
+        raise HTTPException(status_code=400, detail="실전 전투만 턴을 되돌릴 수 있습니다.")
     if session.status != "in_progress":
         raise HTTPException(status_code=400, detail="이미 종료된 전투는 되돌릴 수 없습니다.")
 
-    target_round = session.round - 1
     snapshots = list(session.round_snapshots)
-    snapshot = next((s for s in snapshots if s["round"] == target_round), None)
-    if snapshot is None:
-        raise HTTPException(status_code=400, detail="되돌릴 이전 라운드가 없습니다.")
+    if not snapshots:
+        raise HTTPException(status_code=400, detail="되돌릴 이전 턴이 없습니다.")
+    snapshot = snapshots[-1]
 
+    item_usages = [entry for entry in (snapshot.get("item_usages") or []) if isinstance(entry, dict)]
+    if item_usages:
+        _revert_item_usages(db, item_usages)
+        reverted_ids = {entry.get("item_usage_id") for entry in item_usages}
+        rollback_state = _get_battle_rollback_state(session)
+        if rollback_state.get("version") == 1:
+            rollback_state["item_usages"] = [
+                entry for entry in rollback_state["item_usages"]
+                if entry.get("item_usage_id") not in reverted_ids
+            ]
+            session.rollback_state = rollback_state
+
+    # 이 배포 전에 시작된 실전 전투는 스냅샷에 phase/pending_enemy_actions 키가 없을 수 있다(구버전 호환).
+    target_phase = snapshot.get("phase", "telegraph")
+    target_round = snapshot["round"]
     session.participants = snapshot["participants"]
     session.enemies = snapshot["enemies"]
     session.summons = snapshot["summons"]
+    session.pending_enemy_actions = snapshot.get("pending_enemy_actions", [])
     session.round = target_round
-    session.phase = "telegraph"
-    session.pending_enemy_actions = []
-    session.log = [entry for entry in session.log if entry["round"] < target_round]
-    session.round_snapshots = [s for s in snapshots if s["round"] < target_round]
+    session.phase = target_phase
+    cutoff = (target_round, _TURN_PHASE_ORDER[target_phase])
+    session.log = [
+        entry for entry in session.log
+        if (entry["round"], _TURN_PHASE_ORDER[entry["phase"]]) < cutoff
+    ]
+    session.round_snapshots = snapshots[:-1]
 
     return _commit_battle_session(db, session)
 
@@ -5247,38 +5433,8 @@ def rollback_battle_session(db: Session, session_id: int) -> None:
         character.hp = int(snapshot.get("hp", character.hp))
         character.mp = int(snapshot.get("mp", character.mp))
 
-    usage_totals: dict[tuple[int, int], int] = {}
-    usage_row_ids: list[int] = []
-    for entry in item_usages:
-        item_usage_id = entry.get("item_usage_id")
-        character_id = entry.get("character_id")
-        item_id = entry.get("item_id")
-        quantity = int(entry.get("quantity", 0) or 0)
-        if item_usage_id is not None:
-            usage_row_ids.append(int(item_usage_id))
-        if character_id is None or item_id is None or quantity <= 0:
-            continue
-        key = (int(character_id), int(item_id))
-        usage_totals[key] = usage_totals.get(key, 0) + quantity
+    _revert_item_usages(db, item_usages)
 
-    if usage_totals:
-        character_id_filters = sorted({character_id for character_id, _item_id in usage_totals})
-        item_id_filters = sorted({item_id for _character_id, item_id in usage_totals})
-        item_states = {
-            (state.character_id, state.item_id): state
-            for state in db.query(CharacterItemState).filter(
-                CharacterItemState.character_id.in_(character_id_filters),
-                CharacterItemState.item_id.in_(item_id_filters),
-            ).all()
-        }
-        for key, quantity in usage_totals.items():
-            item_state = item_states.get(key)
-            if item_state is None:
-                continue
-            item_state.used_quantity = max(0, item_state.used_quantity - quantity)
-
-    if usage_row_ids:
-        db.query(ItemUsage).filter(ItemUsage.id.in_(usage_row_ids)).delete(synchronize_session=False)
     if reward_row_ids:
         db.query(Reward).filter(Reward.type == "revoke", Reward.source_id.in_(reward_row_ids)).delete(synchronize_session=False)
         db.query(Reward).filter(Reward.id.in_(reward_row_ids)).delete(synchronize_session=False)
