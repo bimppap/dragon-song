@@ -23,6 +23,7 @@ interface Props {
 
 const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
   "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs", "mission_exp_recollection",
+  "delivery_date_slot", "delivery_freeform",
 ]);
 
 /** 아이템·기술 등에서 공용으로 쓰는 효과 목록 편집 UI. */

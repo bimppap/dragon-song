@@ -1,20 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Plus, Settings2 } from "lucide-react";
+import { ClipboardList, Plus, Settings2, Truck } from "lucide-react";
 import TabBar from "@/components/common/TabBar";
 import Modal from "@/components/common/Modal";
 import { Button } from "@/components/ui/button";
 import ItemGrid from "./ItemGrid";
 import PurchaseGrid from "./PurchaseGrid";
+import DeliveryGrid from "./DeliveryGrid";
 import AddItemForm from "./AddItemForm";
 import type { Item } from "@/lib/api";
 
-type Tab = "manage" | "purchases";
+type Tab = "manage" | "purchases" | "delivery";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "manage", label: "아이템 관리", icon: Settings2 },
   { id: "purchases", label: "구매 내역", icon: ClipboardList },
+  { id: "delivery", label: "배달", icon: Truck },
 ];
 
 /** 상점 페이지의 "상점 관리" 버튼으로 여는 관리자용 아이템 관리/구매내역 패널. */
@@ -55,6 +57,7 @@ export default function ShopAdminPanel() {
         />
       )}
       {tab === "purchases" && <PurchaseGrid refreshKey={refreshKey} />}
+      {tab === "delivery" && <DeliveryGrid refreshKey={refreshKey} />}
 
       <Modal
         open={modalOpen}

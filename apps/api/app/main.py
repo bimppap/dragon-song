@@ -92,6 +92,7 @@ from app.schemas import (
     StaffRoleUpdate,
     ShopStatusUpdate,
     CharacterSkillTreeRead,
+    DeliveryRequestRead,
     TokenResponse,
     UseItemRequest,
     CharacterStatUpgradeRequest,
@@ -623,10 +624,51 @@ def use_item(
     db: Session = Depends(get_db),
 ):
     _require_own_character_or_admin(db, member, character_id)
-    detail = crud.use_item(db, character_id, item_id, data.chosen_stats if data else None)
+    detail = crud.use_item(
+        db,
+        character_id,
+        item_id,
+        data.chosen_stats if data else None,
+        delivery_date=data.delivery_date if data else None,
+        delivery_note=data.delivery_note if data else None,
+        delivery_image_url=data.delivery_image_url if data else None,
+        delivery_letter=data.delivery_letter if data else None,
+    )
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
+
+
+@app.get("/items/{item_id}/delivery-dates", response_model=list[str])
+def get_item_delivery_dates(item_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """배달 요청(질문권 등)이 이미 선점한 날짜 목록. 러너가 사용 팝업에서 달력을 비활성화하는 데 쓴다."""
+    return crud.get_taken_delivery_dates(db, item_id)
+
+
+@app.get("/shop/delivery-requests", response_model=list[DeliveryRequestRead])
+def list_delivery_requests(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.get_delivery_requests(db)
+
+
+@app.post("/shop/delivery-requests/{request_id}/complete", response_model=DeliveryRequestRead)
+def complete_delivery_request(request_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.complete_delivery_request(db, request_id)
+
+
+@app.post("/characters/{character_id}/delivery-image")
+async def upload_delivery_image(
+    character_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """선물 상자 등 배달 요청에 첨부할 이미지를 업로드한다. 본인 캐릭터 또는 관리자만 가능하다."""
+    _require_own_character_or_admin(db, member, character_id)
+    data = await file.read()
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("delivery", character_id, str(int(time.time() * 1000))), data
+    )
+    return {"url": result["public_url"]}
 
 
 @app.post("/characters/{character_id}/items/{item_id}/equip", response_model=CharacterDetailRead)

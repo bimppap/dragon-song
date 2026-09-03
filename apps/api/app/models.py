@@ -337,6 +337,34 @@ class ItemUsage(Base):
     )
 
 
+class DeliveryRequest(Base):
+    """사이트 밖에서 관리자가 수동으로 처리해야 하는 소모형 아이템 사용 요청
+    (예: 질문권의 "출석부 지문", 선물 상자의 이미지/편지 배달).
+
+    payload 형태는 item.effects의 특수 stat에 따라 다르다:
+    - "delivery_date_slot": {"date": "YYYY-MM-DD", "note": "..."}
+    - "delivery_freeform": {"image_url": "...", "letter": "..."}
+    """
+    __tablename__ = "delivery_requests"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    item_id: Mapped[int] = mapped_column(Integer, ForeignKey("items.id"), nullable=False, index=True)
+    item_usage_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("item_usages.id"), nullable=False, unique=True
+    )
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="pending", server_default=text("'pending'")
+    )  # "pending" | "completed"
+    payload: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class Challenge(Base):
     __tablename__ = "challenges"
 

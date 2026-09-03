@@ -14,7 +14,7 @@ from app.game_data import (
     get_level_grade_stats,
     get_stat_upgrade_ap_cost,
 )
-from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
+from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
     GRADE_STAT_FIELDS,
     ITEM_EFFECT_SPECIAL_STATS,
@@ -54,6 +54,7 @@ from app.schemas import (
     CharacterRead,
     CharacterSkillNodeRead,
     CharacterSkillTreeRead,
+    DeliveryRequestRead,
     EnemyCreate,
     EnemyRead,
     EnvironmentCreate,
@@ -1089,11 +1090,41 @@ def _get_or_create_item_state(db: Session, character_id: int, item_id: int) -> C
     return state
 
 
+def _validate_delivery_date_slot(db: Session, item_id: int, delivery_date: date | None, delivery_note: str | None) -> dict:
+    if delivery_date is None or not (delivery_note or "").strip():
+        raise HTTPException(status_code=400, detail="날짜와 지문을 모두 입력해 주세요.")
+    if delivery_date <= _today_kst():
+        raise HTTPException(status_code=400, detail="미래 날짜만 선택할 수 있습니다.")
+    existing = db.query(DeliveryRequest).filter(DeliveryRequest.item_id == item_id).all()
+    taken = {req.payload.get("date") for req in existing if isinstance(req.payload, dict)}
+    if delivery_date.isoformat() in taken:
+        raise HTTPException(status_code=400, detail="이미 다른 요청이 선택한 날짜입니다.")
+    return {"date": delivery_date.isoformat(), "note": delivery_note.strip()}
+
+
+def _validate_delivery_freeform(delivery_image_url: str | None, delivery_letter: str | None) -> dict:
+    image_url = (delivery_image_url or "").strip() or None
+    letter = (delivery_letter or "").strip() or None
+    if image_url is None and letter is None:
+        raise HTTPException(status_code=400, detail="이미지 또는 편지 중 최소 하나는 입력해 주세요.")
+    return {"image_url": image_url, "letter": letter}
+
+
+def get_taken_delivery_dates(db: Session, item_id: int) -> list[str]:
+    """해당 아이템의 배달 요청(질문권 등)이 이미 선점한 날짜 목록. 상태와 무관하게 전부 포함한다."""
+    rows = db.query(DeliveryRequest).filter(DeliveryRequest.item_id == item_id).all()
+    return sorted({row.payload.get("date") for row in rows if isinstance(row.payload, dict) and row.payload.get("date")})
+
+
 def use_item(
     db: Session,
     character_id: int,
     item_id: int,
     chosen_stats: list[str] | None = None,
+    delivery_date: date | None = None,
+    delivery_note: str | None = None,
+    delivery_image_url: str | None = None,
+    delivery_letter: str | None = None,
 ) -> CharacterDetailRead:
     character = (
         db.query(Character)
@@ -1117,8 +1148,15 @@ def use_item(
     if state.used_quantity >= owned_quantity:
         raise HTTPException(status_code=400, detail="사용 가능한 수량이 없습니다.")
 
-    _apply_item_effects(character, item.effects or [], sign=1)
     special_stats = {effect.get("stat") for effect in (item.effects or [])}
+    # 배달형 아이템은 실제 효과 적용 전에 입력값을 검증해, 잘못된 요청이 아이템만 소모시키지 않게 한다.
+    delivery_payload: dict | None = None
+    if "delivery_date_slot" in special_stats:
+        delivery_payload = _validate_delivery_date_slot(db, item_id, delivery_date, delivery_note)
+    elif "delivery_freeform" in special_stats:
+        delivery_payload = _validate_delivery_freeform(delivery_image_url, delivery_letter)
+
+    _apply_item_effects(character, item.effects or [], sign=1)
     # 특수 효과: 기술 리셋(소모한 SP 환급). 능력치 효과와 별개로 처리한다.
     if "ap_reset" in special_stats:
         _reset_character_skills(db, character)
@@ -1128,9 +1166,66 @@ def use_item(
     elif "grade_choice_2" in special_stats:
         _apply_grade_choice(character, chosen_stats or [], 2)
     state.used_quantity += 1
-    db.add(ItemUsage(character_id=character_id, item_id=item_id, quantity=1))
+    usage = ItemUsage(character_id=character_id, item_id=item_id, quantity=1)
+    db.add(usage)
+    if delivery_payload is not None:
+        db.flush()  # DeliveryRequest.item_usage_id에 쓸 usage.id 확보
+        db.add(DeliveryRequest(
+            character_id=character_id,
+            item_id=item_id,
+            item_usage_id=usage.id,
+            payload=delivery_payload,
+        ))
     db.commit()
     return get_character_detail(db, character_id)
+
+
+def get_delivery_requests(db: Session) -> list[DeliveryRequestRead]:
+    rows = (
+        db.query(DeliveryRequest, Character.name.label("character_name"), Item.name.label("item_name"))
+        .join(Character, DeliveryRequest.character_id == Character.id)
+        .join(Item, DeliveryRequest.item_id == Item.id)
+        .order_by(DeliveryRequest.created_at.desc())
+        .all()
+    )
+    return [
+        DeliveryRequestRead(
+            id=row.DeliveryRequest.id,
+            character_id=row.DeliveryRequest.character_id,
+            character_name=row.character_name,
+            item_id=row.DeliveryRequest.item_id,
+            item_name=row.item_name,
+            status=row.DeliveryRequest.status,
+            payload=row.DeliveryRequest.payload,
+            created_at=row.DeliveryRequest.created_at,
+            completed_at=row.DeliveryRequest.completed_at,
+        )
+        for row in rows
+    ]
+
+
+def complete_delivery_request(db: Session, request_id: int) -> DeliveryRequestRead:
+    request = db.get(DeliveryRequest, request_id)
+    if request is None:
+        raise HTTPException(status_code=404, detail="배달 요청을 찾을 수 없습니다.")
+    if request.status == "completed":
+        raise HTTPException(status_code=400, detail="이미 완료된 요청입니다.")
+    request.status = "completed"
+    request.completed_at = datetime.now(timezone.utc)
+    db.commit()
+    character_name = db.query(Character.name).filter(Character.id == request.character_id).scalar()
+    item_name = db.query(Item.name).filter(Item.id == request.item_id).scalar()
+    return DeliveryRequestRead(
+        id=request.id,
+        character_id=request.character_id,
+        character_name=character_name or "",
+        item_id=request.item_id,
+        item_name=item_name or "",
+        status=request.status,
+        payload=request.payload,
+        created_at=request.created_at,
+        completed_at=request.completed_at,
+    )
 
 
 def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
@@ -1576,8 +1671,14 @@ def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
         .all()
     )
     usage_rows = (
-        db.query(ItemUsage, Item.name.label("item_name"), Item.image_url.label("item_image_url"))
+        db.query(
+            ItemUsage,
+            Item.name.label("item_name"),
+            Item.image_url.label("item_image_url"),
+            DeliveryRequest.status.label("delivery_status"),
+        )
         .join(Item, ItemUsage.item_id == Item.id)
+        .outerjoin(DeliveryRequest, DeliveryRequest.item_usage_id == ItemUsage.id)
         .filter(ItemUsage.character_id == character_id)
         .all()
     )
@@ -1605,6 +1706,7 @@ def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
             item_image_url=row.item_image_url,
             quantity=row.ItemUsage.quantity,
             created_at=row.ItemUsage.created_at,
+            delivery_status=row.delivery_status,
         )
         for row in usage_rows
     ]

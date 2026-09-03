@@ -314,7 +314,8 @@ export type ItemEffectStat =
   | "skill_cost" | "skill_target"
   | "start_sh" | "revive_hp" | "act_time"
   | "ap_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs"
-  | "mission_exp_recollection";
+  | "mission_exp_recollection"
+  | "delivery_date_slot" | "delivery_freeform";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -361,6 +362,8 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "grade_choice_2", label: "능력치 2개 선택 +1" },
   { value: "cleanse_debuffs", label: "전투 중 약화 전부 해제" },
   { value: "mission_exp_recollection", label: "이전 챕터 미완료 임무의 경험치 취득" },
+  { value: "delivery_date_slot", label: "출석부 지문 1회 작성 가능 (사이트 외 기능)" },
+  { value: "delivery_freeform", label: "이미지 또는 편지 또는 둘 다 배달 (사이트 외 기능)" },
 ];
 
 /** ItemEffectStat → 한글 라벨 조회 맵. */
@@ -379,7 +382,10 @@ export const PERCENT_EFFECT_STATS = new Set<ItemEffectStat>([
 export function formatEffect(effect: ItemEffect): string {
   const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
   if (effect.stat === "mission_exp_recollection") return effect.chapter ? `${label} (${effect.chapter})` : label;
-  if (effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2" || effect.stat === "cleanse_debuffs") return label;
+  if (
+    effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2"
+    || effect.stat === "cleanse_debuffs" || effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform"
+  ) return label;
   const sign = effect.delta >= 0 ? "+" : "";
   if (PERCENT_EFFECT_STATS.has(effect.stat)) {
     const percentValue = Math.round(effect.delta * 1000) / 10;
@@ -471,6 +477,8 @@ export interface ItemHistoryEntry {
   item_image_url: string | null;
   quantity: number;
   created_at: string;
+  /** kind="use"이고 배달형 아이템(질문권/선물 상자)일 때만 채워진다. 관리자가 완료 처리하기 전까지 "pending". */
+  delivery_status?: "pending" | "completed" | null;
 }
 
 export interface Character {
@@ -905,14 +913,68 @@ export const GRADE_CHOICE_STAT_OPTIONS: { value: GradeStat; label: string }[] = 
   { value: "stat_wisdom", label: "지혜" },
 ];
 
+/** "delivery_date_slot"(질문권)/"delivery_freeform"(선물 상자) 아이템 사용 시 함께 보내는 값. */
+export interface DeliveryPayload {
+  date?: string; // YYYY-MM-DD
+  note?: string;
+  image_url?: string | null;
+  letter?: string | null;
+}
+
 // "use"로 시작하면 React Hook으로 오인되어 rules-of-hooks 린트 오탐이 발생하므로 consumeItem으로 명명한다.
-export async function consumeItem(characterId: number, itemId: number, chosenStats?: string[]): Promise<CharacterDetail> {
+export async function consumeItem(
+  characterId: number,
+  itemId: number,
+  chosenStats?: string[],
+  delivery?: DeliveryPayload,
+): Promise<CharacterDetail> {
   const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
     method: "POST",
-    body: JSON.stringify({ chosen_stats: chosenStats ?? [] }),
+    body: JSON.stringify({
+      chosen_stats: chosenStats ?? [],
+      delivery_date: delivery?.date ?? null,
+      delivery_note: delivery?.note ?? null,
+      delivery_image_url: delivery?.image_url ?? null,
+      delivery_letter: delivery?.letter ?? null,
+    }),
   }, "아이템 사용 실패");
   invalidateApiCache("characters:", "items:", "skills:character:");
   return detail;
+}
+
+export interface DeliveryRequest {
+  id: number;
+  character_id: number;
+  character_name: string;
+  item_id: number;
+  item_name: string;
+  status: "pending" | "completed";
+  payload: { date?: string; note?: string; image_url?: string | null; letter?: string | null };
+  created_at: string;
+  completed_at: string | null;
+}
+
+/** 배달 요청(질문권 등)이 이미 선점한 날짜 목록. 사용 팝업에서 달력을 비활성화하는 데 쓴다. */
+export async function fetchTakenDeliveryDates(itemId: number): Promise<string[]> {
+  return request<string[]>(`/items/${itemId}/delivery-dates`, undefined, "예약된 날짜 조회 실패");
+}
+
+/** 선물 상자 등 배달 요청에 첨부할 이미지를 업로드하고 공개 URL을 반환한다. */
+export async function uploadDeliveryImage(characterId: number, file: File): Promise<string> {
+  const result = await uploadFile<{ url: string }>(
+    `/characters/${characterId}/delivery-image`, file, "file", "이미지 업로드 실패",
+  );
+  return result.url;
+}
+
+export async function fetchDeliveryRequests(): Promise<DeliveryRequest[]> {
+  return request<DeliveryRequest[]>("/shop/delivery-requests", undefined, "배달 요청 조회 실패");
+}
+
+export async function completeDeliveryRequest(requestId: number): Promise<DeliveryRequest> {
+  return request<DeliveryRequest>(`/shop/delivery-requests/${requestId}/complete`, {
+    method: "POST",
+  }, "완료 처리 실패");
 }
 
 export async function equipItem(characterId: number, itemId: number): Promise<CharacterDetail> {

@@ -32,9 +32,12 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 #   (가능성의 메달 / 잠재성의 메달). 선택값은 사용 요청의 chosen_stats로 받는다.
 # "cleanse_debuffs": 전투 중 사용 시 자신에게 걸린 디버프(status_effects, affinity="debuff")와
 #   챕터 환경 스택(env_stacks)을 전부 제거한다. 전투 밖에서 사용하면 지울 대상이 없어 아무 효과가 없다.
+# "delivery_date_slot"/"delivery_freeform": 사이트 밖에서 관리자가 수동 처리하는 배달 요청을 만든다
+#   (질문권=날짜 지정형, 선물 상자=자유 형식). 사용 시 DeliveryRequest 행이 생성되고, 관리자가
+#   상점 관리 "배달" 탭에서 완료 처리하기 전까지 구매/사용 이력에 "대기"로 표시된다.
 ITEM_EFFECT_SPECIAL_STATS = {
     "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
-    "mission_exp_recollection",
+    "delivery_date_slot", "delivery_freeform", "mission_exp_recollection",
 }
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap", "sp",
@@ -48,6 +51,7 @@ ItemEffectStat = Literal[
     "skill_cost", "skill_target",
     "start_sh", "revive_hp", "act_time",
     "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
+    "delivery_date_slot", "delivery_freeform",
     "mission_exp_recollection",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
@@ -473,6 +477,12 @@ class BulkPurchaseRequest(BaseModel):
 class UseItemRequest(BaseModel):
     """가능성/잠재성의 메달처럼 사용 시점에 선택이 필요한 아이템을 위한 선택값. 그 외 아이템은 무시된다."""
     chosen_stats: list[str] = Field(default_factory=list)
+    # "delivery_date_slot" 아이템(질문권) 사용 시: 요청 날짜와 지문(텍스트).
+    delivery_date: date | None = None
+    delivery_note: str | None = None
+    # "delivery_freeform" 아이템(선물 상자) 사용 시: 이미지/편지 중 최소 하나.
+    delivery_image_url: str | None = None
+    delivery_letter: str | None = None
 
 
 class CharacterStatUpgradeRequest(BaseModel):
@@ -530,8 +540,23 @@ class ItemHistoryEntry(BaseModel):
     item_image_url: str | None = None
     quantity: int
     created_at: datetime
+    # kind="use"이고 배달형 아이템(질문권/선물 상자)일 때만 채워진다. 관리자가 완료 처리하기 전까지 "pending".
+    delivery_status: Literal["pending", "completed"] | None = None
 
     model_config = {"from_attributes": True}
+
+
+class DeliveryRequestRead(BaseModel):
+    """상점 관리 "배달" 탭에서 보여줄, 배달형 소모 아이템 사용 요청."""
+    id: int
+    character_id: int
+    character_name: str
+    item_id: int
+    item_name: str
+    status: Literal["pending", "completed"]
+    payload: dict
+    created_at: datetime
+    completed_at: datetime | None = None
 
 
 class CharacterOwnedItemRead(BaseModel):

@@ -50,8 +50,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, GRADE_CHOICE_STAT_OPTIONS, unequipItem, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
+import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
+import DatePicker from "@/components/ui/date-picker";
+import { Textarea } from "@/components/ui/textarea";
 
 const FACTION_POSITION_IMAGE: Record<Faction, string> = {
   공격: "/position/position_1.png",
@@ -363,8 +365,103 @@ function GradeChoiceSelector({
   );
 }
 
+function DeliveryDateSlotForm({
+  takenDates,
+  onChange,
+}: {
+  takenDates: string[];
+  onChange: (payload: DeliveryPayload) => void;
+}) {
+  const [date, setDate] = useState<string | null>(null);
+  const [note, setNote] = useState("");
+  const tomorrow = new Date();
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">날짜 (미래 날짜만 선택 가능)</p>
+        <DatePicker
+          value={date}
+          onChange={(value) => { setDate(value); onChange({ date: value, note }); }}
+          minDate={tomorrow}
+          disabledDates={takenDates}
+        />
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">지문 입력란</p>
+        <Textarea
+          value={note}
+          onChange={(event) => { setNote(event.target.value); onChange({ date: date ?? undefined, note: event.target.value }); }}
+          rows={3}
+          placeholder="출석부에 남길 지문을 입력하세요."
+        />
+      </div>
+    </div>
+  );
+}
+
+function DeliveryFreeformForm({
+  characterId,
+  onChange,
+}: {
+  characterId: number;
+  onChange: (payload: DeliveryPayload) => void;
+}) {
+  const { toast } = useToast();
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [letter, setLetter] = useState("");
+
+  async function handleFileChange(file: File | null) {
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadDeliveryImage(characterId, file);
+      setImageUrl(url);
+      onChange({ image_url: url, letter });
+    } catch (error) {
+      toast(error instanceof Error ? error.message : "이미지 업로드 실패", "error");
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">이미지 (선택)</p>
+        {imageUrl && (
+          <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-line bg-inset">
+            <Image src={imageUrl} alt="첨부 이미지 미리보기" fill sizes="320px" className="object-contain" />
+          </div>
+        )}
+        <input
+          type="file"
+          accept="image/*"
+          disabled={uploading}
+          onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
+          className="w-full text-xs text-muted file:mr-2 file:rounded-md file:border file:border-line file:bg-surface file:px-2 file:py-1 file:text-xs file:text-ivory"
+        />
+        {uploading && <p className="text-xs text-muted">업로드 중...</p>}
+      </div>
+      <div className="space-y-1.5">
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">편지 (선택)</p>
+        <Textarea
+          value={letter}
+          onChange={(event) => { setLetter(event.target.value); onChange({ image_url: imageUrl, letter: event.target.value }); }}
+          rows={3}
+          placeholder="전달할 편지 내용을 입력하세요."
+        />
+      </div>
+    </div>
+  );
+}
+
 function OwnedItemTile({
   item,
+  characterId,
   loading,
   readOnly = false,
   onUse,
@@ -372,19 +469,24 @@ function OwnedItemTile({
   onUnequip,
 }: {
   item: CharacterOwnedItem;
+  characterId: number;
   loading: boolean;
   readOnly?: boolean;
-  onUse: (chosenStats?: string[]) => void;
+  onUse: (chosenStats?: string[], delivery?: DeliveryPayload) => void;
   onEquip: () => void;
   onUnequip: () => void;
 }) {
   const { confirm } = useDialog();
+  const { toast } = useToast();
   const isConsumable = item.item_type === "consumable";
   const remainingUses = item.quantity - item.used_quantity;
   const badgeCount = isConsumable ? remainingUses : item.quantity;
   const gradeChoiceEffect = item.effects.find(
     (effect) => effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2",
   );
+  const deliveryStat = item.effects.find(
+    (effect) => effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform",
+  )?.stat;
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -438,6 +540,47 @@ function OwnedItemTile({
                 ),
               });
               if (ok) onUse(chosenRef.current);
+              return;
+            }
+            if (deliveryStat === "delivery_date_slot") {
+              const takenDates = await fetchTakenDeliveryDates(item.item_id).catch(() => []);
+              const payloadRef: { current: DeliveryPayload } = { current: {} };
+              const ok = await confirm({
+                title: "출석부 지문",
+                confirmText: "요청하기",
+                content: (
+                  <DeliveryDateSlotForm
+                    takenDates={takenDates}
+                    onChange={(payload) => { payloadRef.current = payload; }}
+                  />
+                ),
+              });
+              if (!ok) return;
+              if (!payloadRef.current.date || !(payloadRef.current.note || "").trim()) {
+                toast("날짜와 지문을 모두 입력해 주세요.", "error");
+                return;
+              }
+              onUse(undefined, payloadRef.current);
+              return;
+            }
+            if (deliveryStat === "delivery_freeform") {
+              const payloadRef: { current: DeliveryPayload } = { current: {} };
+              const ok = await confirm({
+                title: "배달 요청",
+                confirmText: "요청하기",
+                content: (
+                  <DeliveryFreeformForm
+                    characterId={characterId}
+                    onChange={(payload) => { payloadRef.current = payload; }}
+                  />
+                ),
+              });
+              if (!ok) return;
+              if (!payloadRef.current.image_url && !(payloadRef.current.letter || "").trim()) {
+                toast("이미지 또는 편지 중 최소 하나는 입력해 주세요.", "error");
+                return;
+              }
+              onUse(undefined, payloadRef.current);
               return;
             }
             if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse();
@@ -553,9 +696,13 @@ function ItemHistoryRow({ entry }: { entry: ItemHistoryEntry }) {
           </p>
         </div>
       </div>
-      <Badge variant={isUse ? "secondary" : "outline"}>
-        {entry.quantity}개 {isUse ? "사용" : "구매"}
-      </Badge>
+      {entry.delivery_status === "pending" ? (
+        <Badge variant="warning">대기</Badge>
+      ) : (
+        <Badge variant={isUse ? "secondary" : "outline"}>
+          {entry.quantity}개 {isUse ? "사용" : "구매"}
+        </Badge>
+      )}
     </div>
   );
 }
@@ -684,13 +831,14 @@ export default function CharacterInfo({
 
   async function handleItemAction(
     itemId: number,
-    action: (characterId: number, itemId: number, chosenStats?: string[]) => Promise<CharacterDetail>,
+    action: (characterId: number, itemId: number, chosenStats?: string[], delivery?: DeliveryPayload) => Promise<CharacterDetail>,
     chosenStats?: string[],
+    delivery?: DeliveryPayload,
   ) {
     if (selectedDetail == null) return;
     setItemActionLoadingId(itemId);
     try {
-      const nextDetail = await action(selectedDetail.id, itemId, chosenStats);
+      const nextDetail = await action(selectedDetail.id, itemId, chosenStats, delivery);
       setDetail(nextDetail);
     } catch (error) {
       toast(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.", "error");
@@ -1045,9 +1193,10 @@ export default function CharacterInfo({
                     <OwnedItemTile
                       key={item.item_id}
                       item={item}
+                      characterId={selectedDetail.id}
                       readOnly={readOnly}
                       loading={itemActionLoadingId === item.item_id}
-                      onUse={(chosenStats) => handleItemAction(item.item_id, consumeItem, chosenStats)}
+                      onUse={(chosenStats, delivery) => handleItemAction(item.item_id, consumeItem, chosenStats, delivery)}
                       onEquip={() => handleItemAction(item.item_id, equipItem)}
                       onUnequip={() => handleItemAction(item.item_id, unequipItem)}
                     />
