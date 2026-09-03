@@ -80,7 +80,10 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
     """확정 전 초안(draft) 편집을 같은 세션 접속자에게 그대로 중계한다.
 
     서버에는 저장하지 않는다 - 확정된 상태는 REST 제출 시 broadcast_battle_update로
-    별도 전달되므로, 여기서는 미확정 미리보기만 admin -> 나머지 접속자로 중계한다.
+    별도 전달되므로, 여기서는 미확정 미리보기만 중계한다.
+    발신자(관리자)도 제외하지 않고 함께 받는다 - 모의전은 러너 화면이 없어 관리자가
+    "관리자 조작"/"러너 화면" 탭을 같은 커넥션으로 토글하며 미리보는데, 이때 자기 자신에게
+    온 echo가 없으면 미리보기가 절대 반영되지 않는다.
     """
     if raw.get("type") != "draft_update" or not is_admin_role(member.role):
         return
@@ -91,5 +94,4 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
             "phase": raw.get("phase"),
             "draft": raw.get("draft"),
         },
-        exclude=websocket,
     )
