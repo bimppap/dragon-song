@@ -147,7 +147,7 @@ function RunnerChallengeList() {
                         )}
                       >
                         {challenge.image_url ? (
-                          <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
+                          <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" unoptimized className="object-cover" />
                         ) : (
                           <ImageIcon size={16} className="text-muted" />
                         )}
@@ -605,7 +605,7 @@ export function ChallengeAdmin() {
                               )}
                             >
                               {challenge.image_url ? (
-                                <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
+                                <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" unoptimized className="object-cover" />
                               ) : (
                                 <ImageIcon size={16} className="text-muted" />
                               )}
@@ -822,7 +822,7 @@ export function ChallengeAdmin() {
                             )}
                           >
                             {challenge.image_url ? (
-                              <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" className="object-cover" />
+                              <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" unoptimized className="object-cover" />
                             ) : (
                               <ImageIcon size={16} className="text-muted" />
                             )}

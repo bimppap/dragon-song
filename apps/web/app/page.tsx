@@ -94,6 +94,7 @@ export default function HomePage() {
               alt={activeChapter ? `${activeChapter.name} 챕터 이미지` : "진행 중인 챕터 없음"}
               fill
               sizes="(min-width: 1024px) 30vw, 90vw"
+              unoptimized={!!activeChapter?.image_url}
               className="object-contain"
             />
           </div>

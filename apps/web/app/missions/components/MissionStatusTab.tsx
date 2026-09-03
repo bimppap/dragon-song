@@ -245,7 +245,7 @@ export default function MissionStatusTab() {
                           )}
                         >
                           {mission.image_url ? (
-                            <Image src={mission.image_url} alt={mission.name} fill sizes="40px" className="object-cover" />
+                            <Image src={mission.image_url} alt={mission.name} fill sizes="40px" unoptimized className="object-cover" />
                           ) : (
                             <ImageIcon size={16} className="text-muted" />
                           )}

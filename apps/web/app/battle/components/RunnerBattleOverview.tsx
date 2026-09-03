@@ -163,6 +163,7 @@ export default function RunnerBattleOverview() {
                     alt={`${enemy.name} 이미지`}
                     fill
                     sizes="(min-width: 640px) 45vw, 90vw"
+                    unoptimized
                     className="object-contain"
                   />
                 ) : (

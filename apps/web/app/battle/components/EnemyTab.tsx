@@ -519,7 +519,7 @@ export default function EnemyTab() {
                   <div className="flex items-center gap-3">
                     <div className="relative size-10 shrink-0 overflow-hidden rounded-lg border border-line bg-inset">
                       {enemy.image_url ? (
-                        <Image src={enemy.image_url} alt={enemy.name} fill className="object-cover object-top" />
+                        <Image src={enemy.image_url} alt={enemy.name} fill unoptimized className="object-cover object-top" />
                       ) : (
                         <div className="flex h-full w-full items-center justify-center">
                           <ImageIcon size={16} className="text-muted" />

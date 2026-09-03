@@ -641,7 +641,7 @@ function AchievedTile({
     >
       <div className="relative flex size-14 shrink-0 cursor-default items-center justify-center overflow-hidden bg-gold/10 text-gold">
         {imageUrl ? (
-          <Image src={imageUrl} alt={name} fill sizes="56px" className="object-cover" />
+          <Image src={imageUrl} alt={name} fill sizes="56px" unoptimized className="object-cover" />
         ) : (
           <Trophy size={22} />
         )}

@@ -526,13 +526,16 @@ async def upload_challenge_image(
         raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
 
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("challenge", challenge.id, challenge.name), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("challenge", challenge.id, challenge.name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(challenge.image_url)
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    challenge.image_url = result["public_url"]
+    challenge.image_url = f"{result['public_url']}?v={int(time.time())}"
     db.commit()
     db.refresh(challenge)
     return challenge
@@ -771,13 +774,16 @@ async def upload_mission_image(
         raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
 
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("mission", mission.id, mission.name), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("mission", mission.id, mission.name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(mission.image_url)
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    mission.image_url = result["public_url"]
+    mission.image_url = f"{result['public_url']}?v={int(time.time())}"
     db.commit()
     db.refresh(mission)
     return mission
@@ -938,13 +944,14 @@ async def upload_chapter_image(
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
 
     result = await storage.upload_image_to_bucket(
-        storage.make_key("chapter", chapter.id, chapter.name), await file.read()
+        storage.make_key("chapter", chapter.id, chapter.name), await file.read(),
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
     )
     old_path = storage.public_url_to_path(chapter.image_url)
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    chapter.image_url = result["public_url"]
+    chapter.image_url = f"{result['public_url']}?v={int(time.time())}"
     db.commit()
     db.refresh(chapter)
     return crud._to_chapter_read(chapter)
@@ -1026,13 +1033,16 @@ async def upload_enemy_image(
         raise HTTPException(status_code=404, detail="에너미를 찾을 수 없습니다.")
 
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("enemy", enemy.id, enemy.name), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("enemy", enemy.id, enemy.name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(enemy.image_url)
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    enemy.image_url = result["public_url"]
+    enemy.image_url = f"{result['public_url']}?v={int(time.time())}"
     db.commit()
     db.refresh(enemy)
     return enemy
@@ -1057,13 +1067,16 @@ async def upload_enemy_summon_image(
     skill = skills[skill_index]
     data = await file.read()
     key_name = f"{skill_index}_{skill.get('summon_name') or 'summon'}"
-    result = await storage.upload_image_to_bucket(storage.make_key("enemy-summon", enemy.id, key_name), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("enemy-summon", enemy.id, key_name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(skill.get("summon_image_url"))
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    skills[skill_index] = {**skill, "summon_image_url": result["public_url"]}
+    skills[skill_index] = {**skill, "summon_image_url": f"{result['public_url']}?v={int(time.time())}"}
     enemy.skills = skills
     db.commit()
     db.refresh(enemy)

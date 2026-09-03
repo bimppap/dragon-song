@@ -440,7 +440,7 @@ export default function BattleTab() {
                         <div className="flex items-start gap-4">
                           <div className="relative h-28 w-24 shrink-0 overflow-hidden rounded-xl border border-line bg-inset">
                             {enemy.image_url ? (
-                              <Image src={enemy.image_url} alt={enemy.name} fill sizes="96px" className="object-cover object-top" />
+                              <Image src={enemy.image_url} alt={enemy.name} fill sizes="96px" unoptimized className="object-cover object-top" />
                             ) : (
                               <div className="flex h-full items-center justify-center text-muted">
                                 <ImageIcon size={24} />
