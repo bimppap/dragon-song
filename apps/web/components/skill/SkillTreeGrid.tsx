@@ -255,9 +255,9 @@ export default function SkillTreeGrid<T extends SkillTreeGridNode>({
                 )}
               >
                 {locked ? (
-                  <Image src="/skill/private_skill.png" alt="비공개 기술" fill sizes="40px" className="object-cover" />
+                  <Image src="/skill/private_skill.png" alt="비공개 기술" fill sizes="40px" unoptimized className="object-cover" />
                 ) : node.image_url ? (
-                  <Image src={node.image_url} alt="" fill sizes="40px" className="object-cover" />
+                  <Image src={node.image_url} alt="" fill sizes="40px" unoptimized className="object-cover" />
                 ) : (
                   <Sparkles size={18} />
                 )}

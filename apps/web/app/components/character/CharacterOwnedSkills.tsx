@@ -120,7 +120,7 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false }: 
                 >
                   <span className={`relative flex size-9 items-center justify-center overflow-hidden border-2 bg-gold/10 text-gold transition-colors hover:bg-gold/15 ${BOOK_BORDER_CLASS[skill.book]}`}>
                     {skill.image_url ? (
-                      <Image src={skill.image_url} alt="" fill sizes="36px" className="object-cover" />
+                      <Image src={skill.image_url} alt="" fill sizes="36px" unoptimized className="object-cover" />
                     ) : (
                       <Sparkles size={17} />
                     )}

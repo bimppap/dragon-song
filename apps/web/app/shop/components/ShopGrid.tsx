@@ -42,7 +42,7 @@ function ItemImage({ url, className }: { url: string | null; className: string }
   if (url) {
     return (
       <span className={`${className} relative block overflow-hidden`}>
-        <Image src={url} alt="" fill sizes="100px" className="object-scale-down" />
+        <Image src={url} alt="" fill sizes="100px" unoptimized className="object-scale-down" />
       </span>
     );
   }

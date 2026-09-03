@@ -514,7 +514,7 @@ function OwnedItemTile({
             )}
           >
             {item.item_image_url ? (
-              <Image src={item.item_image_url} alt={item.item_name} fill sizes="56px" className="object-cover" />
+              <Image src={item.item_image_url} alt={item.item_name} fill sizes="56px" unoptimized className="object-cover" />
             ) : (
               <Package size={22} />
             )}
@@ -689,7 +689,7 @@ function ItemHistoryRow({ entry }: { entry: ItemHistoryEntry }) {
           )}
         >
           {entry.item_image_url ? (
-            <Image src={entry.item_image_url} alt={entry.item_name} fill sizes="40px" className="object-cover" />
+            <Image src={entry.item_image_url} alt={entry.item_name} fill sizes="40px" unoptimized className="object-cover" />
           ) : (
             <Backpack size={18} />
           )}

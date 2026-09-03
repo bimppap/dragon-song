@@ -22,7 +22,7 @@ function ItemDetails({ item }: { item: CharacterOwnedItem }) {
 function ItemIcon({ item, type }: { item?: CharacterOwnedItem; type: SlotType }) {
   const Icon = type === "companion" ? PawPrint : Gem;
   return item?.item_image_url
-    ? <Image src={item.item_image_url} alt="" fill sizes="64px" className="object-contain" />
+    ? <Image src={item.item_image_url} alt="" fill sizes="64px" unoptimized className="object-contain" />
     : <Icon size={18} />;
 }
 

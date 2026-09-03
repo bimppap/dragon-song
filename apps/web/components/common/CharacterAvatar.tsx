@@ -17,12 +17,15 @@ interface Props {
   sizes?: string;
 }
 
-/** 캐릭터 프로필 이미지. 이미지가 없으면 아이콘 플레이스홀더를 보여준다. */
+/** 캐릭터 프로필 이미지. 이미지가 없으면 아이콘 플레이스홀더를 보여준다.
+ *  원본이 이미 작아(≤512px) Vercel Image Optimization의 이점이 크지 않고, 캐릭터 수가
+ *  늘수록 월간 최적화 가능 이미지 수 한도에 걸려 일부 이미지가 깨져 보이는 문제가 있어
+ *  unoptimized로 렌더링한다(원본을 그대로 서빙, sizes는 참고용으로만 남겨둔다). */
 export default function CharacterAvatar({ src, alt, className, iconSize = 16, sizes = "96px" }: Props) {
   if (src) {
     return (
       <span className={cn("relative block shrink-0 overflow-hidden", className)}>
-        <Image src={src} alt={alt} fill sizes={sizes} className="object-cover" />
+        <Image src={src} alt={alt} fill sizes={sizes} unoptimized className="object-cover" />
       </span>
     );
   }
