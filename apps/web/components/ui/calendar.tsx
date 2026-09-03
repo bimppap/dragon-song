@@ -9,7 +9,7 @@ import { buttonVariants } from "@/components/ui/button";
 export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 
 /** react-day-picker v9의 표 구조에 맞춘 픽셀 월간 캘린더. */
-export function Calendar({ className, classNames, showOutsideDays = true, ...props }: CalendarProps) {
+export function Calendar({ className, classNames, formatters, showOutsideDays = true, ...props }: CalendarProps) {
   return <DayPicker
     showOutsideDays={showOutsideDays}
     className={cn("pixel-calendar w-full", className)}
@@ -39,6 +39,10 @@ export function Calendar({ className, classNames, showOutsideDays = true, ...pro
       Chevron: ({ orientation, ...iconProps }) => orientation === "left"
         ? <ChevronLeft size={16} {...iconProps} />
         : <ChevronRight size={16} {...iconProps} />,
+    }}
+    formatters={{
+      formatCaption: (month) => `${month.getFullYear()}년 ${month.getMonth() + 1}월`,
+      ...formatters,
     }}
     {...props}
   />;
