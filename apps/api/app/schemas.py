@@ -32,7 +32,10 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 #   (가능성의 메달 / 잠재성의 메달). 선택값은 사용 요청의 chosen_stats로 받는다.
 # "cleanse_debuffs": 전투 중 사용 시 자신에게 걸린 디버프(status_effects, affinity="debuff")와
 #   챕터 환경 스택(env_stacks)을 전부 제거한다. 전투 밖에서 사용하면 지울 대상이 없어 아무 효과가 없다.
-ITEM_EFFECT_SPECIAL_STATS = {"ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs"}
+ITEM_EFFECT_SPECIAL_STATS = {
+    "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
+    "mission_exp_recollection",
+}
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap", "sp",
     "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
@@ -45,6 +48,7 @@ ItemEffectStat = Literal[
     "skill_cost", "skill_target",
     "start_sh", "revive_hp", "act_time",
     "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
+    "mission_exp_recollection",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
 
@@ -52,6 +56,15 @@ ItemType = Literal["consumable", "companion", "accessory"]
 class ItemEffect(BaseModel):
     stat: ItemEffectStat
     delta: float
+    chapter: str | None = None
+
+    @model_validator(mode="after")
+    def validate_chapter(self):
+        if self.stat == "mission_exp_recollection" and not (self.chapter or "").strip():
+            raise ValueError("이전 챕터 임무 경험치 효과에는 챕터를 선택해야 합니다.")
+        if self.stat != "mission_exp_recollection":
+            self.chapter = None
+        return self
 
 
 def _validate_reward_entries(entries: list[dict]) -> list[dict]:
@@ -382,7 +395,10 @@ class ItemCreate(BaseModel):
         if self.item_type in ("companion", "accessory"):
             if self.battle_only:
                 raise ValueError("동반자와 장신구는 전투용 소모품으로 설정할 수 없습니다.")
-            if any(e.stat in ("ap_reset", "grade_choice_1", "grade_choice_2", "hp_heal_p", "cleanse_debuffs") for e in self.effects):
+            if any(e.stat in (
+                "ap_reset", "grade_choice_1", "grade_choice_2", "hp_heal_p",
+                "cleanse_debuffs", "mission_exp_recollection",
+            ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
         if not self.price_gold and not self.price_cp:
             raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
@@ -418,12 +434,19 @@ class ItemRead(BaseModel):
         return v if v is not None else []
 
 
+class RecollectionMissionRead(BaseModel):
+    id: int
+    name: str
+    reward_experience: int
+
+
 class ItemWithStock(ItemRead):
     purchased_by_character: int
     purchased_total: int
     remaining_per_character: int | None
     remaining_global: int | None
     purchasable: bool
+    eligible_missions: list[RecollectionMissionRead] = Field(default_factory=list)
 
 
 class ShopStatusRead(BaseModel):
@@ -439,6 +462,7 @@ class ShopStatusUpdate(BaseModel):
 class CartItem(BaseModel):
     item_id: int
     quantity: int
+    mission_id: int | None = None
 
 
 class BulkPurchaseRequest(BaseModel):
@@ -490,6 +514,8 @@ class PurchaseRead(BaseModel):
     item_name: str
     item_image_url: str | None = None
     quantity: int
+    selected_mission_id: int | None = None
+    granted_experience: int = 0
     created_at: datetime
 
     model_config = {"from_attributes": True}

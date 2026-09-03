@@ -11,19 +11,22 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ITEM_EFFECT_STAT_OPTIONS, type ItemEffect } from "@/lib/api";
+import { ITEM_EFFECT_STAT_OPTIONS, type Chapter, type ItemEffect } from "@/lib/api";
 
 interface Props {
   effects: ItemEffect[];
   onChange: (effects: ItemEffect[]) => void;
   /** ap_reset 등 아이템 전용 특수 효과 노출 여부. */
   allowSpecialStats?: boolean;
+  chapters?: Chapter[];
 }
 
-const SPECIAL_STATS = new Set<ItemEffect["stat"]>(["ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs"]);
+const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
+  "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs", "mission_exp_recollection",
+]);
 
 /** 아이템·기술 등에서 공용으로 쓰는 효과 목록 편집 UI. */
-export default function EffectListEditor({ effects, onChange, allowSpecialStats = false }: Props) {
+export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, chapters = [] }: Props) {
   const options = allowSpecialStats
     ? ITEM_EFFECT_STAT_OPTIONS
     : ITEM_EFFECT_STAT_OPTIONS.filter((option) => !SPECIAL_STATS.has(option.value));
@@ -54,10 +57,13 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
           {effects.map((effect, index) => {
             const isSpecial = SPECIAL_STATS.has(effect.stat);
             return (
-              <div key={index} className="flex items-center gap-2">
+              <div key={index} className="flex flex-wrap items-center gap-2">
                 <Select
                   value={effect.stat}
-                  onValueChange={(value) => handleUpdate(index, { stat: value as ItemEffect["stat"] })}
+                  onValueChange={(value) => handleUpdate(index, {
+                    stat: value as ItemEffect["stat"],
+                    chapter: value === "mission_exp_recollection" ? effect.chapter ?? null : null,
+                  })}
                 >
                   <SelectTrigger className="flex-1">
                     <SelectValue placeholder="능력치 선택" />
@@ -81,6 +87,23 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
                   className="w-32"
                   disabled={isSpecial}
                 />
+                {effect.stat === "mission_exp_recollection" && (
+                  <Select
+                    value={effect.chapter ?? undefined}
+                    onValueChange={(chapter) => handleUpdate(index, { chapter })}
+                  >
+                    <SelectTrigger className="min-w-48 flex-1">
+                      <SelectValue placeholder="대상 챕터 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {chapters.map((chapter) => (
+                          <SelectItem key={chapter.id} value={chapter.name}>{chapter.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                )}
                 <Button
                   type="button"
                   variant="ghost"

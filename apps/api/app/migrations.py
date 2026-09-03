@@ -349,6 +349,18 @@ def ensure_schema(engine: Engine) -> None:
         purchase_columns = {col["name"] for col in inspector.get_columns("purchases")}
         if "source" not in purchase_columns:
             statements.append("ALTER TABLE purchases ADD COLUMN source VARCHAR NOT NULL DEFAULT 'shop'")
+        if "selected_mission_id" not in purchase_columns:
+            statements.append("ALTER TABLE purchases ADD COLUMN selected_mission_id INTEGER")
+        if "selected_mission_name" not in purchase_columns:
+            statements.append("ALTER TABLE purchases ADD COLUMN selected_mission_name VARCHAR")
+        if "granted_experience" not in purchase_columns:
+            statements.append("ALTER TABLE purchases ADD COLUMN granted_experience INTEGER NOT NULL DEFAULT 0")
+        purchase_indexes = {index["name"] for index in inspector.get_indexes("purchases")}
+        if "uq_purchase_character_item_recollection_mission" not in purchase_indexes:
+            statements.append(
+                "CREATE UNIQUE INDEX uq_purchase_character_item_recollection_mission "
+                "ON purchases (character_id, item_id, selected_mission_id)"
+            )
 
     if "settlement_requests" in table_names:
         settlement_columns = {col["name"] for col in inspector.get_columns("settlement_requests")}

@@ -294,6 +294,12 @@ class CharacterSkillUnlock(Base):
 
 class Purchase(Base):
     __tablename__ = "purchases"
+    __table_args__ = (
+        UniqueConstraint(
+            "character_id", "item_id", "selected_mission_id",
+            name="uq_purchase_character_item_recollection_mission",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
@@ -305,6 +311,10 @@ class Purchase(Base):
     # "구매 이력" 표시(get_item_history, get_purchases)는 실제 구매(shop)만 보여준다 —
     # 보상으로 받은 아이템은 이미 보상 이력에 별도로 남기 때문에 구매 이력에 또 뜨면 안 된다.
     source: Mapped[str] = mapped_column(String, nullable=False, default="shop", server_default=text("'shop'"))
+    # 회고록 구매 시 선택한 임무와 지급 내역. 임무명은 이력 표시를 위해 구매 당시 값으로 보존한다.
+    selected_mission_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    selected_mission_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    granted_experience: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

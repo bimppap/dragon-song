@@ -870,6 +870,21 @@ def _validate_item_restricted_mission(db: Session, data: ItemCreate) -> None:
         raise HTTPException(status_code=400, detail="존재하지 않는 임무입니다.")
 
 
+def _validate_item_recollection_chapter(db: Session, data: ItemCreate) -> None:
+    recollection_effects = [effect for effect in data.effects if effect.stat == "mission_exp_recollection"]
+    if len(recollection_effects) > 1:
+        raise HTTPException(status_code=400, detail="회고록 효과는 아이템에 하나만 추가할 수 있습니다.")
+    chapters = {
+        (effect.chapter or "").strip()
+        for effect in data.effects
+        if effect.stat == "mission_exp_recollection"
+    }
+    if len(chapters) > 1:
+        raise HTTPException(status_code=400, detail="회고록 효과는 하나의 챕터만 지정할 수 있습니다.")
+    if chapters and db.query(Chapter.id).filter(Chapter.name == next(iter(chapters))).first() is None:
+        raise HTTPException(status_code=400, detail="회고록 효과에 지정된 챕터가 존재하지 않습니다.")
+
+
 def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.name = data.name
     item.price_gold = data.price_gold
@@ -891,6 +906,7 @@ def _apply_item_data(item: Item, data: ItemCreate) -> None:
 def create_item(db: Session, data: ItemCreate) -> Item:
     _validate_item_chapter_window(db, data)
     _validate_item_restricted_mission(db, data)
+    _validate_item_recollection_chapter(db, data)
     item = Item(
         name=data.name,
     )
@@ -908,6 +924,7 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
 
     _validate_item_chapter_window(db, data)
     _validate_item_restricted_mission(db, data)
+    _validate_item_recollection_chapter(db, data)
     equipped = db.query(CharacterItemState).filter(
         CharacterItemState.item_id == item_id, CharacterItemState.equipped.is_(True)
     ).first()
@@ -1256,6 +1273,40 @@ def _rewarded_mission_ids(db: Session, character_id: int) -> set[int]:
     return {source_id for source_id, in rows if source_id is not None}
 
 
+def _recollection_chapter(item: Item) -> str | None:
+    for effect in item.effects or []:
+        if effect.get("stat") == "mission_exp_recollection":
+            chapter = str(effect.get("chapter") or "").strip()
+            return chapter or None
+    return None
+
+
+def _eligible_recollection_missions(db: Session, character_id: int, item: Item) -> list[Mission]:
+    chapter = _recollection_chapter(item)
+    if chapter is None:
+        return []
+    completed_ids = _rewarded_mission_ids(db, character_id) | {
+        mission_id for mission_id, in db.query(MissionProgress.mission_id)
+        .filter(MissionProgress.character_id == character_id, MissionProgress.achieved.is_(True))
+        .all()
+    }
+    recollected_ids = {
+        mission_id for mission_id, in db.query(Purchase.selected_mission_id)
+        .filter(
+            Purchase.character_id == character_id,
+            Purchase.item_id == item.id,
+            Purchase.selected_mission_id.is_not(None),
+        )
+        .all()
+        if mission_id is not None
+    }
+    excluded_ids = completed_ids | recollected_ids
+    query = db.query(Mission).filter(Mission.chapter == chapter, Mission.is_public.is_(True))
+    if excluded_ids:
+        query = query.filter(Mission.id.notin_(excluded_ids))
+    return query.order_by(Mission.created_at.asc(), Mission.id.asc()).all()
+
+
 def get_items_with_stock(db: Session, character_id: int | None = None, *, admin: bool = False) -> list[ItemWithStock]:
     items = db.query(Item).all()
     chapters_by_name = _chapters_by_name(db)
@@ -1291,6 +1342,13 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
             item.restricted_mission_id is not None
             and item.restricted_mission_id in rewarded_mission_ids
         )
+        recollection_chapter = _recollection_chapter(item)
+        eligible_missions = (
+            _eligible_recollection_missions(db, character_id, item)
+            if recollection_chapter is not None and character_id is not None and not admin
+            else []
+        )
+        recollection_available = recollection_chapter is None or admin or bool(eligible_missions)
         result.append(ItemWithStock(
             id=item.id,
             name=item.name,
@@ -1318,7 +1376,12 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
             purchasable=(
                 _is_item_purchasable(item, chapters_by_name, active_chapter)
                 and not restricted_by_mission
+                and recollection_available
             ),
+            eligible_missions=[
+                {"id": mission.id, "name": mission.name, "reward_experience": mission.reward_experience}
+                for mission in eligible_missions
+            ],
         ))
     return result
 
@@ -1328,14 +1391,14 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
         raise HTTPException(status_code=400, detail="지금은 상점 이용이 불가능합니다.")
 
     # 1. 캐릭터 조회
-    character = db.query(Character).filter(Character.id == data.character_id).first()
+    character = db.query(Character).filter(Character.id == data.character_id).with_for_update().first()
     if not character:
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
 
     # 2. 아이템 검증 및 총 비용 계산
     total_cost_gold = 0
     total_cost_cp = 0
-    validated: list[tuple[Item, int]] = []
+    validated: list[tuple[Item, int, Mission | None]] = []
     chapters_by_name = _chapters_by_name(db)
     active_chapter = _active_chapter(chapters_by_name)
     rewarded_mission_ids = _rewarded_mission_ids(db, character.id)
@@ -1374,6 +1437,24 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
         if qty < 1:
             raise HTTPException(status_code=400, detail=f"'{item.name}' 수량은 1 이상이어야 합니다.")
 
+        selected_mission = None
+        recollection_chapter = _recollection_chapter(item)
+        if recollection_chapter is not None:
+            if qty != 1:
+                raise HTTPException(status_code=400, detail=f"'{item.name}'은(는) 한 번에 1개만 구매할 수 있습니다.")
+            if cart_item.mission_id is None:
+                raise HTTPException(status_code=400, detail=f"'{item.name}'에서 경험치를 받을 임무를 선택해 주세요.")
+            selected_mission = next(
+                (mission for mission in _eligible_recollection_missions(db, character.id, item)
+                 if mission.id == cart_item.mission_id),
+                None,
+            )
+            if selected_mission is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'{item.name}'으로 선택할 수 없는 임무입니다. 이미 완료했거나 경험치를 받은 임무인지 확인해 주세요.",
+                )
+
         total_cost_gold += (item.price_gold or 0) * qty
         total_cost_cp += (item.price_cp or 0) * qty
 
@@ -1397,7 +1478,7 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
                     detail=f"'{item.name}' 전체 구매 한도 초과 (남은 수량: {remain}개)"
                 )
 
-        validated.append((item, qty))
+        validated.append((item, qty, selected_mission))
 
     # 3. 재화 확인
     shortages = []
@@ -1412,10 +1493,30 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
     character.gold -= total_cost_gold
     character.cp -= total_cost_cp
     purchases = []
-    for item, qty in validated:
-        p = Purchase(character_id=character.id, item_id=item.id, quantity=qty)
+    for item, qty, selected_mission in validated:
+        p = Purchase(
+            character_id=character.id,
+            item_id=item.id,
+            quantity=qty,
+            selected_mission_id=selected_mission.id if selected_mission else None,
+            selected_mission_name=selected_mission.name if selected_mission else None,
+            granted_experience=selected_mission.reward_experience if selected_mission else 0,
+        )
         db.add(p)
         purchases.append(p)
+        if selected_mission is not None:
+            character.exp += selected_mission.reward_experience
+            state = db.query(CharacterItemState).filter(
+                CharacterItemState.character_id == character.id,
+                CharacterItemState.item_id == item.id,
+            ).with_for_update().first()
+            if state is None:
+                state = CharacterItemState(character_id=character.id, item_id=item.id, used_quantity=0)
+                db.add(state)
+            state.used_quantity += 1
+
+    if any(selected_mission is not None for _item, _qty, selected_mission in validated):
+        _apply_growth_from_exp(db, character)
 
     db.flush()
     purchase_ids = [purchase.id for purchase in purchases]
@@ -1451,9 +1552,14 @@ def get_purchases(db: Session, character_id: int | None, item_id: int | None) ->
             character_id=row.Purchase.character_id,
             character_name=row.character_name,
             item_id=row.Purchase.item_id,
-            item_name=row.item_name,
+            item_name=(
+                f"{row.item_name} - {row.Purchase.selected_mission_name}"
+                if row.Purchase.selected_mission_name else row.item_name
+            ),
             item_image_url=row.item_image_url,
             quantity=row.Purchase.quantity,
+            selected_mission_id=row.Purchase.selected_mission_id,
+            granted_experience=row.Purchase.granted_experience,
             created_at=row.Purchase.created_at,
         )
         for row in rows
@@ -1481,7 +1587,10 @@ def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
             id=row.Purchase.id * 2,
             kind="purchase",
             item_id=row.Purchase.item_id,
-            item_name=row.item_name,
+            item_name=(
+                f"{row.item_name} - {row.Purchase.selected_mission_name}"
+                if row.Purchase.selected_mission_name else row.item_name
+            ),
             item_image_url=row.item_image_url,
             quantity=row.Purchase.quantity,
             created_at=row.Purchase.created_at,

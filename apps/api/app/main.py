@@ -596,8 +596,13 @@ def bulk_purchase(data: BulkPurchaseRequest, member: Member = Depends(get_curren
             character_id=p.character_id,
             character_name=characters[p.character_id].name,
             item_id=p.item_id,
-            item_name=items[p.item_id].name,
+            item_name=(
+                f"{items[p.item_id].name} - {p.selected_mission_name}"
+                if p.selected_mission_name else items[p.item_id].name
+            ),
             quantity=p.quantity,
+            selected_mission_id=p.selected_mission_id,
+            granted_experience=p.granted_experience,
             created_at=p.created_at,
         )
         for p in purchases

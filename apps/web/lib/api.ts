@@ -313,7 +313,8 @@ export type ItemEffectStat =
   | "skill_lv" | "skill_eff_true" | "skill_eff_fixed"
   | "skill_cost" | "skill_target"
   | "start_sh" | "revive_hp" | "act_time"
-  | "ap_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs";
+  | "ap_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs"
+  | "mission_exp_recollection";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -359,6 +360,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "grade_choice_1", label: "능력치 1개 선택 +1" },
   { value: "grade_choice_2", label: "능력치 2개 선택 +1" },
   { value: "cleanse_debuffs", label: "전투 중 약화 전부 해제" },
+  { value: "mission_exp_recollection", label: "이전 챕터 미완료 임무의 경험치 취득" },
 ];
 
 /** ItemEffectStat → 한글 라벨 조회 맵. */
@@ -376,6 +378,7 @@ export const PERCENT_EFFECT_STATS = new Set<ItemEffectStat>([
 /** 효과 하나를 "라벨 +N" 형태의 문자열로 표현한다. */
 export function formatEffect(effect: ItemEffect): string {
   const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
+  if (effect.stat === "mission_exp_recollection") return effect.chapter ? `${label} (${effect.chapter})` : label;
   if (effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2" || effect.stat === "cleanse_debuffs") return label;
   const sign = effect.delta >= 0 ? "+" : "";
   if (PERCENT_EFFECT_STATS.has(effect.stat)) {
@@ -388,6 +391,13 @@ export function formatEffect(effect: ItemEffect): string {
 export interface ItemEffect {
   stat: ItemEffectStat;
   delta: number;
+  chapter?: string | null;
+}
+
+export interface RecollectionMission {
+  id: number;
+  name: string;
+  reward_experience: number;
 }
 
 export interface Item {
@@ -415,6 +425,7 @@ export interface Item {
   remaining_per_character: number | null;
   remaining_global: number | null;
   purchasable: boolean;
+  eligible_missions: RecollectionMission[];
 }
 
 export interface ItemCreate {
@@ -447,6 +458,8 @@ export interface Purchase {
   item_name: string;
   item_image_url: string | null;
   quantity: number;
+  selected_mission_id: number | null;
+  granted_experience: number;
   created_at: string;
 }
 
@@ -718,6 +731,7 @@ export interface AutoAttendanceResult {
 export interface CartItem {
   item_id: number;
   quantity: number;
+  mission_id?: number | null;
 }
 
 export async function fetchCharacters(): Promise<Character[]> {

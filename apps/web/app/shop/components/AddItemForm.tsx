@@ -342,6 +342,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         effects={form.effects}
         onChange={(effects) => setForm((prev) => ({ ...prev, effects }))}
         allowSpecialStats={form.item_type === "consumable"}
+        chapters={chapters}
       />
 
       <div className="grid grid-cols-2 gap-4">
