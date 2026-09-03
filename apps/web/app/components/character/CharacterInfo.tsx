@@ -411,11 +411,14 @@ function DeliveryFreeformForm({
 }) {
   const { toast } = useToast();
   const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [letter, setLetter] = useState("");
 
   async function handleFileChange(file: File | null) {
     if (!file) return;
+    // 다른 이미지 업로드 폼과 동일하게, 서버 업로드 완료를 기다리지 않고 먼저 로컬 미리보기를 보여준다.
+    setPreviewUrl(URL.createObjectURL(file));
     setUploading(true);
     try {
       const url = await uploadDeliveryImage(characterId, file);
@@ -423,6 +426,7 @@ function DeliveryFreeformForm({
       onChange({ image_url: url, letter });
     } catch (error) {
       toast(error instanceof Error ? error.message : "이미지 업로드 실패", "error");
+      setPreviewUrl(null);
     } finally {
       setUploading(false);
     }
@@ -432,9 +436,10 @@ function DeliveryFreeformForm({
     <div className="mt-3 flex flex-col gap-3">
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">이미지 (선택)</p>
-        {imageUrl && (
+        {previewUrl && (
           <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-line bg-inset">
-            <Image src={imageUrl} alt="첨부 이미지 미리보기" fill sizes="320px" className="object-contain" />
+            {/* blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다. */}
+            <Image src={imageUrl ?? previewUrl} alt="첨부 이미지 미리보기" fill unoptimized className="object-contain" />
           </div>
         )}
         <input
