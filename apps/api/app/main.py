@@ -304,7 +304,10 @@ async def upload_character_image(
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
 
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("character", character.id, character.name), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("character", character.id, character.name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(character.image_url)
     if old_path and old_path != result["path"]:
@@ -442,13 +445,18 @@ async def upload_item_image(
 
     image_attr = "image_after_purchase_url" if variant == "after" else "image_url"
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("item/after" if variant == "after" else "item", item.id, item.name), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("item/after" if variant == "after" else "item", item.id, item.name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(getattr(item, image_attr))
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    setattr(item, image_attr, result["public_url"])
+    # Storage 경로는 upsert로 덮어써져 재업로드해도 URL이 그대로라, 버전 쿼리를 붙여
+    # 브라우저/CDN이 예전 이미지를 계속 캐시해 보여주는 문제를 막는다.
+    setattr(item, image_attr, f"{result['public_url']}?v={int(time.time())}")
     db.commit()
     db.refresh(item)
     return item
@@ -1316,7 +1324,10 @@ async def upload_skill_image(
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
 
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("skill", node.id, node.default_name), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("skill", node.id, node.default_name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(node.image_url)
     if old_path and old_path != result["path"]:
@@ -1377,7 +1388,10 @@ async def upload_character_skill_image(
     old_image_url = crud.get_character_skill_unlock_image(db, character_id, node_id)
 
     data = await file.read()
-    result = await storage.upload_image_to_bucket(storage.make_key("character-skill", character_id, f"{node_id}"), data)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("character-skill", character_id, f"{node_id}"), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
 
     old_path = storage.public_url_to_path(old_image_url)
     if old_path and old_path != result["path"]:

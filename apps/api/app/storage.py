@@ -29,6 +29,11 @@ MAX_WEBP_BYTES = 5 * 1024 * 1024  # 5MB
 DEFAULT_QUALITY = 90
 MAX_AUDIO_BYTES = 25 * 1024 * 1024
 
+# 캐릭터/아이템/기술 이미지처럼 URL에 "?v={timestamp}" 캐시 버스팅을 붙여 재업로드마다
+# URL 자체가 바뀌는 경우에만 쓴다 - URL이 바뀌니 브라우저/CDN에 최대한 오래 캐시해도
+# 안전하고(immutable), 이미지가 바뀌면 새 URL이라 자동으로 새로 받아온다.
+LONG_LIVED_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
 
 def _secret_key() -> str | None:
     # 새 secret 키를 우선하고, 레거시 service_role 키도 허용한다.
@@ -80,8 +85,14 @@ async def upload_image_to_bucket(
     *,
     quality: int = DEFAULT_QUALITY,
     upsert: bool = True,
+    cache_control: str | None = None,
 ) -> dict:
     """이미지를 WebP로 변환해 Supabase Storage 버킷에 업로드한다.
+
+    cache_control: 지정하면 그 값으로 Storage 객체의 Cache-Control 헤더를 설정한다.
+    호출부가 반환된 public_url에 "?v={timestamp}" 같은 캐시 버스팅을 붙이는 경우에만
+    LONG_LIVED_CACHE_CONTROL처럼 긴 값을 넘겨야 안전하다(그렇지 않으면 재업로드해도
+    URL이 그대로라 오래된 이미지가 계속 캐시된다).
 
     반환: {"path": 버킷 내 경로, "public_url": 공개 URL}
     """
@@ -103,6 +114,8 @@ async def upload_image_to_bucket(
         "Content-Type": "image/webp",
         "x-upsert": "true" if upsert else "false",
     }
+    if cache_control:
+        headers["Cache-Control"] = cache_control
 
     try:
         async with httpx.AsyncClient(timeout=30) as client:
