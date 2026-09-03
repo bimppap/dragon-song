@@ -5087,7 +5087,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 redirected = True
         counter_effects = _counter_effects_for_target(recipient)
         extra_reduction = sum(float(effect.get("damage_reduction", 0.0)) for effect in counter_effects)
-        total_reduction = min(0.95, max(0.0, recipient["dmg_r"] + extra_reduction))
+        # 피해 감소율(dmg_r)은 방어 행동을 취했을 때만 적용된다. 반격 태세 등 별도 버프의 감소율(extra_reduction)은 무관하게 항상 적용된다.
+        base_reduction = recipient["dmg_r"] if recipient["defending"] else 0.0
+        total_reduction = min(0.95, max(0.0, base_reduction + extra_reduction))
         dmg = _floor_amount(base * (1 - total_reduction))
         damage_formula = (
             f"floor((기본 피해량 {base_formula}) × "
