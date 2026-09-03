@@ -1000,7 +1000,7 @@ export default function CharacterInfo({
                 </InfoTooltip>
                 <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-line bg-inset">
                   {selectedDetail.image_url ? (
-                    <Image src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} fill sizes="160px" className="object-cover" />
+                    <Image src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} fill sizes="160px" unoptimized className="object-cover" />
                   ) : (
                     <div className="flex size-full flex-col items-center justify-center gap-1 text-muted">
                       <ImageIcon size={30} />
