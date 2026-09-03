@@ -123,8 +123,9 @@ export default function MissionManageTab() {
         setMissions(missionList);
         setItems(itemList);
         setChapterList(chapList);
-        if (chapList.length > 0) {
-          setForm((prev) => ({ ...prev, chapter: prev.chapter || chapList[0].name }));
+        const activeChapter = chapList.find((chapter) => chapter.is_active) ?? chapList[0];
+        if (activeChapter) {
+          setForm((prev) => ({ ...prev, chapter: prev.chapter || activeChapter.name }));
         }
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "데이터를 불러오지 못했습니다.", "error");

@@ -314,12 +314,27 @@ export function ChallengeAdmin() {
         setChallenges(challengeList);
         setItems(itemList);
         setChapterList(chapList);
-        if (challengeList.length > 0) {
+        const activeChapter = chapList.find((chapter) => chapter.is_active) ?? chapList[0];
+        // 진행 중인 챕터에 등록된 도전과제가 없으면, chapList(최신순)를 따라 도전과제가 있는
+        // 가장 가까운 이전 챕터로 대신 보여준다.
+        const activeIndex = activeChapter ? chapList.findIndex((chapter) => chapter.name === activeChapter.name) : -1;
+        const chapterCandidates = activeIndex >= 0 ? chapList.slice(activeIndex) : chapList;
+        const defaultChapter = chapterCandidates.find((chapter) =>
+          challengeList.some((challenge) => challenge.chapter === chapter.name),
+        ) ?? activeChapter;
+        const defaultChallenge = defaultChapter
+          ? challengeList.find((challenge) => challenge.chapter === defaultChapter.name)
+          : challengeList[0];
+        if (defaultChapter) {
+          setSelectedChapter(defaultChapter.name);
+        } else if (challengeList.length > 0) {
           setSelectedChapter(challengeList[0].chapter);
-          setSelectedChallengeId(challengeList[0].id);
+        }
+        if (defaultChallenge) {
+          setSelectedChallengeId(defaultChallenge.id);
         }
         if (chapList.length > 0) {
-          setForm((prev) => ({ ...prev, chapter: prev.chapter || chapList[0].name }));
+          setForm((prev) => ({ ...prev, chapter: prev.chapter || (activeChapter?.name ?? chapList[0].name) }));
         }
       } catch (error) {
         if (cancelled) return;
@@ -917,6 +932,7 @@ export function ChallengeAdmin() {
                               !entry.achieved && "grayscale opacity-60",
                             )}
                             iconSize={28}
+                            sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw"
                           />
                           <div className="absolute right-2 top-2">
                             <Checkbox

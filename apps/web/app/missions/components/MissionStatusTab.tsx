@@ -29,6 +29,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  fetchChapters,
   fetchItems,
   fetchMissionProgress,
   fetchMissions,
@@ -83,13 +84,28 @@ export default function MissionStatusTab() {
     async function load() {
       try {
         setLoadingMissions(true);
-        const [list, itemList] = await Promise.all([fetchMissions(), fetchItems()]);
+        const [list, itemList, chapList] = await Promise.all([fetchMissions(), fetchItems(), fetchChapters()]);
         if (cancelled) return;
         setMissions(list);
         setItems(itemList);
-        if (list.length > 0) {
+        const activeChapter = chapList.find((chapter) => chapter.is_active) ?? chapList[0];
+        // 진행 중인 챕터에 등록된 임무가 없으면, chapList(최신순)를 따라 임무가 있는
+        // 가장 가까운 이전 챕터로 대신 보여준다.
+        const activeIndex = activeChapter ? chapList.findIndex((chapter) => chapter.name === activeChapter.name) : -1;
+        const chapterCandidates = activeIndex >= 0 ? chapList.slice(activeIndex) : chapList;
+        const defaultChapter = chapterCandidates.find((chapter) =>
+          list.some((mission) => mission.chapter === chapter.name),
+        ) ?? activeChapter;
+        const defaultMission = defaultChapter
+          ? list.find((mission) => mission.chapter === defaultChapter.name)
+          : list[0];
+        if (defaultChapter) {
+          setSelectedChapter(defaultChapter.name);
+        } else if (list.length > 0) {
           setSelectedChapter(list[0].chapter);
-          setSelectedMissionId(list[0].id);
+        }
+        if (defaultMission) {
+          setSelectedMissionId(defaultMission.id);
         }
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "임무 데이터를 불러오지 못했습니다.", "error");
@@ -329,6 +345,7 @@ export default function MissionStatusTab() {
                             !entry.achieved && "grayscale opacity-60",
                           )}
                           iconSize={28}
+                          sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw"
                         />
                         <div className="absolute right-2 top-2">
                           <Checkbox
