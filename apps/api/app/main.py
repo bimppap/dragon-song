@@ -252,11 +252,10 @@ def update_character(
 
 @app.get("/characters", response_model=list[CharacterRead])
 def list_characters(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
-    characters = crud.get_characters(db)
-    if not is_admin_role(member.role):
-        # 관리자가 만든 캐릭터(러너 계정에 연결되지 않음)는 러너 목록에 노출하지 않는다.
-        # 단, 전투에 참여하면 전투 세션 스냅샷을 통해 전투 화면에서는 그대로 보인다.
-        characters = [c for c in characters if c.member_id is not None]
+    if is_admin_role(member.role):
+        characters = crud.get_characters(db)
+    else:
+        characters = crud.get_characters_visible_to_runner(db)
         characters = [crud.scrub_admin_only_stats(c) for c in characters]
     return characters
 
@@ -337,7 +336,7 @@ def list_attendance_entries(
     db: Session = Depends(get_db),
 ):
     """러너도 조회만 가능하다(등록/수정은 관리자 전용)."""
-    return crud.get_attendance_entries(db)
+    return crud.get_attendance_entries(db, runner_visible_only=not is_admin_role(member.role))
 
 
 @app.post("/attendance/entries", response_model=list[AttendanceEntryRead])

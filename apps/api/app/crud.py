@@ -608,6 +608,18 @@ def get_characters(db: Session) -> list[CharacterRead]:
     return [_to_character_read(c) for c in characters]
 
 
+def get_characters_visible_to_runner(db: Session) -> list[CharacterRead]:
+    """러너 화면에 노출할 캐릭터 목록(러너/스텝 캐릭터만, 관리자 캐릭터·미연결 캐릭터는 제외)."""
+    characters = (
+        db.query(Character)
+        .join(Member, Character.member_id == Member.id)
+        .filter(Member.role.in_(["RUNNER", "STAFF"]))
+        .order_by(Character.name.asc(), Character.id.asc())
+        .all()
+    )
+    return [_to_character_read(c) for c in characters]
+
+
 def update_character_flags(db: Session, character_id: int, data: CharacterFlagsUpdate) -> CharacterRead:
     character = _get_character_or_404(db, character_id)
     character.caution = data.caution
@@ -1814,17 +1826,23 @@ def _to_attendance_entry_read(entry: AttendanceEntry, character: Character | Non
     )
 
 
-def get_attendance_entries(db: Session) -> list[AttendanceEntryRead]:
-    """전체 출석 기록을 최신순으로 반환한다."""
+def get_attendance_entries(db: Session, *, runner_visible_only: bool = False) -> list[AttendanceEntryRead]:
+    """전체 출석 기록을 최신순으로 반환한다. runner_visible_only=True면 관리자/미연결 캐릭터의 기록은 제외한다."""
     entries = (
         db.query(AttendanceEntry)
         .order_by(AttendanceEntry.attendance_date.desc(), AttendanceEntry.id.desc())
         .all()
     )
     character_ids = {e.character_id for e in entries}
-    characters = {
-        c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
-    } if character_ids else {}
+    character_query = db.query(Character).filter(Character.id.in_(character_ids))
+    if runner_visible_only:
+        character_query = character_query.join(Member, Character.member_id == Member.id).filter(
+            Member.role.in_(["RUNNER", "STAFF"])
+        )
+    characters = {c.id: c for c in character_query.all()} if character_ids else {}
+
+    if runner_visible_only:
+        entries = [e for e in entries if e.character_id in characters]
 
     return [_to_attendance_entry_read(entry, characters.get(entry.character_id)) for entry in entries]
 
@@ -2265,12 +2283,12 @@ def get_appeared_target_character_ids(db: Session, member: Member) -> list[int]:
 
 
 def get_settlement_target_candidates(db: Session, member: Member) -> list[CharacterRead]:
-    """정산 요청의 '교류 대상'으로 고를 수 있는 러너 캐릭터 목록(본인 캐릭터 제외)."""
+    """정산 요청의 '교류 대상'으로 고를 수 있는 캐릭터 목록(러너 캐릭터 + 스텝 캐릭터, 본인 캐릭터 제외)."""
     own_character_id = get_member_character_id(db, member.id)
     rows = (
         db.query(Character)
         .join(Member, Character.member_id == Member.id)
-        .filter(Member.role == "RUNNER")
+        .filter(Member.role.in_(["RUNNER", "STAFF"]))
         .order_by(Character.name.asc())
         .all()
     )
@@ -2286,7 +2304,7 @@ def _validate_settlement_targets(db: Session, own_character_id: int, target_ids:
         for row in (
             db.query(Character.id)
             .join(Member, Character.member_id == Member.id)
-            .filter(Member.role == "RUNNER")
+            .filter(Member.role.in_(["RUNNER", "STAFF"]))
             .filter(Character.id.in_(unique_ids))
             .all()
         )
