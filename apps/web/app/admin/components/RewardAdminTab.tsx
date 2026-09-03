@@ -5,7 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import DatePicker from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -109,11 +109,11 @@ export default function RewardAdminTab() {
             </label>
             <label className="space-y-1">
               <span className="block text-xs font-semibold uppercase tracking-wide text-muted">시작일</span>
-              <Input type="date" className="w-40" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+              <DatePicker className="w-40" value={dateFrom} onChange={setDateFrom} />
             </label>
             <label className="space-y-1">
               <span className="block text-xs font-semibold uppercase tracking-wide text-muted">종료일</span>
-              <Input type="date" className="w-40" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+              <DatePicker className="w-40" value={dateTo} onChange={setDateTo} />
             </label>
             <Badge variant="outline" className="mb-2 ml-auto">{rewards.length}건</Badge>
           </div>

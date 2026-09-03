@@ -5,6 +5,7 @@ import Image from "next/image";
 import { ImagePlus, Music, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import DatePicker from "@/components/ui/date-picker";
 import { Badge } from "@/components/ui/badge";
 import Modal from "@/components/common/Modal";
 import { createChapter, deleteChapter, fetchChapters, updateChapter, uploadChapterImage, uploadChapterMusic, type Chapter } from "@/lib/api";
@@ -197,13 +198,13 @@ export default function ChapterTab() {
         <Input placeholder="예: 1챕터 — 어둠의 시작" value={form.name} onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} aria-label="챕터명" />
         <div className="flex flex-wrap items-center gap-2">
           <span className="shrink-0 text-sm text-muted">시작</span>
-          <Input type="date" className="min-w-0 flex-1" value={form.start_date} onChange={(event) => setForm((prev) => ({ ...prev, start_date: event.target.value }))} />
+          <DatePicker className="min-w-0 flex-1" value={form.start_date} onChange={(value) => setForm((prev) => ({ ...prev, start_date: value }))} />
           <span className="shrink-0 text-sm text-muted">~ 종료</span>
-          <Input type="date" className="min-w-0 flex-1" value={form.end_date} onChange={(event) => setForm((prev) => ({ ...prev, end_date: event.target.value }))} />
+          <DatePicker className="min-w-0 flex-1" value={form.end_date} onChange={(value) => setForm((prev) => ({ ...prev, end_date: value }))} />
         </div>
         <div className="flex items-center gap-2">
           <span className="shrink-0 text-sm text-muted">전투 일정</span>
-          <Input type="date" className="min-w-0 flex-1" value={form.battle_date} onChange={(event) => setForm((prev) => ({ ...prev, battle_date: event.target.value }))} />
+          <DatePicker className="min-w-0 flex-1" value={form.battle_date} onChange={(value) => setForm((prev) => ({ ...prev, battle_date: value }))} />
         </div>
 
         <div className="flex items-center gap-4">
@@ -236,13 +237,13 @@ export default function ChapterTab() {
         <Input value={editForm.name} onChange={(event) => setEditForm((prev) => ({ ...prev, name: event.target.value }))} aria-label="챕터명" />
         <div className="flex flex-wrap items-center gap-2">
           <span className="shrink-0 text-sm text-muted">시작</span>
-          <Input type="date" className="min-w-0 flex-1" value={editForm.start_date} onChange={(event) => setEditForm((prev) => ({ ...prev, start_date: event.target.value }))} />
+          <DatePicker className="min-w-0 flex-1" value={editForm.start_date} onChange={(value) => setEditForm((prev) => ({ ...prev, start_date: value }))} />
           <span className="shrink-0 text-sm text-muted">~ 종료</span>
-          <Input type="date" className="min-w-0 flex-1" value={editForm.end_date} onChange={(event) => setEditForm((prev) => ({ ...prev, end_date: event.target.value }))} />
+          <DatePicker className="min-w-0 flex-1" value={editForm.end_date} onChange={(value) => setEditForm((prev) => ({ ...prev, end_date: value }))} />
         </div>
         <div className="flex items-center gap-2">
           <span className="shrink-0 text-sm text-muted">전투 일정</span>
-          <Input type="date" className="min-w-0 flex-1" value={editForm.battle_date} onChange={(event) => setEditForm((prev) => ({ ...prev, battle_date: event.target.value }))} />
+          <DatePicker className="min-w-0 flex-1" value={editForm.battle_date} onChange={(value) => setEditForm((prev) => ({ ...prev, battle_date: value }))} />
         </div>
 
         <div className="flex items-center gap-4">

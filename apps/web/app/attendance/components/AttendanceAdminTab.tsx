@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Combobox } from "@/components/ui/combobox";
-import { Input } from "@/components/ui/input";
+import DatePicker from "@/components/ui/date-picker";
 import {
   Select,
   SelectContent,
@@ -359,14 +359,7 @@ export default function AttendanceAdminTab() {
                 <CalendarDays size={13} />
                 출석 날짜
               </p>
-              <Input
-                type="date"
-                value={selectedDate}
-                onChange={(event) => {
-                  if (!event.target.value) return;
-                  setSelectedDate(event.target.value);
-                }}
-              />
+              <DatePicker value={selectedDate} onChange={setSelectedDate} />
             </div>
             <Button onClick={handleCheckIn} disabled={selectedCharacterIds.length === 0 || submitting} className="gap-2">
               <UserPlus size={15} />

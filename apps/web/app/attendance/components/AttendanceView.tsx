@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CalendarDays } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import DatePicker from "@/components/ui/date-picker";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useToast } from "@/components/common/ToastProvider";
@@ -67,14 +67,7 @@ export default function AttendanceView() {
               <CalendarDays size={13} />
               조회 날짜
             </p>
-            <Input
-              type="date"
-              value={selectedDate}
-              onChange={(event) => {
-                if (!event.target.value) return;
-                setSelectedDate(event.target.value);
-              }}
-            />
+            <DatePicker value={selectedDate} onChange={setSelectedDate} />
           </div>
         </CardHeader>
         <CardContent>

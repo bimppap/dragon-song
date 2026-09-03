@@ -5,7 +5,7 @@ import { CalendarDays, Heart, HeartPulse } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
+import DatePicker from "@/components/ui/date-picker";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import EmptyState from "@/components/common/EmptyState";
@@ -132,14 +132,10 @@ export default function HealTab() {
             <CalendarDays size={12} />
             치유 날짜
           </span>
-          <Input
-            type="date"
+          <DatePicker
             value={healDate}
-            max={todayDateValue()}
-            onChange={(event) => {
-              if (!event.target.value) return;
-              setHealDate(event.target.value);
-            }}
+            onChange={setHealDate}
+            maxDate={new Date()}
             className="h-8 w-36 text-xs"
           />
         </label>
