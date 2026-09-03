@@ -564,6 +564,7 @@ export default function BattleTab() {
                           alt={c.name}
                           className="aspect-square w-full rounded-none"
                           iconSize={28}
+                          sizes="128px"
                         />
                         <CharacterFactionIcon faction={c.faction} />
                         <Checkbox

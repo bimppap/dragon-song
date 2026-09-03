@@ -88,6 +88,7 @@ export default function CharacterCardGrid({ characters, loading, onSelectCharact
                 alt={character.name}
                 className="aspect-square w-full rounded-none"
                 iconSize={28}
+                sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw"
               />
               <p className="w-full truncate px-2 text-center text-sm font-semibold text-ivory">{character.name}</p>
             </button>

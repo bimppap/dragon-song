@@ -94,6 +94,7 @@ export default function AttendanceView() {
                     alt={entry.character_name}
                     className="aspect-square w-full rounded-none"
                     iconSize={28}
+                    sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw"
                   />
                   <span className="truncate px-3 text-sm font-semibold text-ivory">{entry.character_name}</span>
                 </div>

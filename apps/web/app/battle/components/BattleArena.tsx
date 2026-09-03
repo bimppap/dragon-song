@@ -1432,6 +1432,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         alt={p.name}
                         className={cn("aspect-square w-full rounded-none", !active && "grayscale")}
                         iconSize={18}
+                        sizes="64px"
                       />
                     </div>
                     {actionPreview?.kind === "skill" && (
@@ -1444,6 +1445,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                           alt={actionPreview.skill_name ?? "기술"}
                           className="aspect-square w-full rounded-none"
                           iconSize={16}
+                          sizes="64px"
                         />
                       </div>
                     )}

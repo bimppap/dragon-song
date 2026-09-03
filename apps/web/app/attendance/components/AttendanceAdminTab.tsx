@@ -479,6 +479,7 @@ export default function AttendanceAdminTab() {
                       alt={character.name}
                       className="aspect-square w-full rounded-none grayscale opacity-60"
                       iconSize={28}
+                      sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw"
                     />
                     <p
                       className="flex h-5 w-full items-center justify-center whitespace-nowrap px-1 text-center font-semibold leading-none text-ivory"
@@ -505,6 +506,7 @@ export default function AttendanceAdminTab() {
                       alt={entry.character_name}
                       className="aspect-square w-full rounded-none"
                       iconSize={28}
+                      sizes="(min-width: 1024px) 20vw, (min-width: 768px) 25vw, (min-width: 640px) 33vw, 50vw"
                     />
                     <button
                       type="button"
