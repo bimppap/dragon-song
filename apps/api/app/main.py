@@ -1322,7 +1322,9 @@ async def upload_skill_image(
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    node.image_url = result["public_url"]
+    # Storage 경로는 upsert로 덮어써져 재업로드해도 public_url이 그대로라, 버전 쿼리를 붙여
+    # 브라우저/CDN이 예전 이미지를 계속 캐시해 보여주는 문제를 막는다(캐릭터 이미지 업로드와 동일 패턴).
+    node.image_url = f"{result['public_url']}?v={int(time.time())}"
     db.commit()
     db.refresh(node)
     return crud._to_skill_node_read(node)
@@ -1381,4 +1383,5 @@ async def upload_character_skill_image(
     if old_path and old_path != result["path"]:
         await storage.delete_from_bucket(old_path)
 
-    return crud.set_character_skill_image(db, character_id, node_id, result["public_url"])
+    # 캐릭터 이미지 업로드와 동일하게 버전 쿼리를 붙여 브라우저/CDN의 오래된 캐시를 우회한다.
+    return crud.set_character_skill_image(db, character_id, node_id, f"{result['public_url']}?v={int(time.time())}")
