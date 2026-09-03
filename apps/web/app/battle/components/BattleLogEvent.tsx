@@ -7,16 +7,18 @@ import type { BattleSession } from "@/lib/api";
 
 const NUMBER_PATTERN = /[+-]?\d[\d,]*(?:\.\d+)?%?/g;
 
-type NumberKind = "damage" | "healing" | "resource" | "shield" | "stack" | "health" | "default";
+type NumberKind = "damage" | "healing" | "resource" | "shield" | "stack" | "health" | "attn" | "regen" | "default";
 
 function numberKind(event: string, start: number, end: number): NumberKind {
   const suffix = event.slice(end, Math.min(event.length, end + 8));
+  if (event.startsWith("♻️") && /^\s*(?:HP|MP)/i.test(suffix)) return "regen";
   if (/^\s*(?:피해|반격 피해)/.test(suffix)) return "damage";
   if (/^\s*(?:치유|회복)/.test(suffix)) return "healing";
   if (/^\s*(?:HP)/i.test(suffix)) return "health";
   if (/^\s*(?:MP|마나)/i.test(suffix)) return "resource";
   if (/^\s*스택/.test(suffix)) return "stack";
   if (/^\s*(?:흡수|보호막)/.test(suffix)) return "shield";
+  if (/^\s*주목도/.test(suffix)) return "attn";
 
   const insideStatus = event.lastIndexOf("[", start) > event.lastIndexOf("]", start);
   if (insideStatus) return "health";
@@ -49,7 +51,7 @@ function formulaFor(
     }
   }
 
-  if (kind === "healing" && event.includes("재생")) {
+  if (kind === "regen" && event.includes("재생")) {
     const actorName = event.match(/^♻️\s+(.+?)\s+재생/)?.[1];
     const actor = session.participants.find((candidate) => candidate.name === actorName);
     if (actor) {
@@ -85,6 +87,8 @@ function isCalculatedResultNumber(event: string, end: number, kind: NumberKind):
   const suffix = event.slice(end, Math.min(event.length, end + 10));
   if (kind === "damage") return /^\s*(?:피해|반격 피해|지속 피해)/.test(suffix);
   if (kind === "healing") return /^\s*(?:치유|회복)/.test(suffix);
+  if (kind === "attn") return /^\s*주목도/.test(suffix);
+  if (kind === "regen") return true;
   return false;
 }
 
@@ -95,6 +99,8 @@ const NUMBER_CLASS: Record<NumberKind, string> = {
   shield: "text-cyan-300",
   stack: "text-purple-300",
   health: "text-amber-200",
+  attn: "text-gold",
+  regen: "text-emerald-300",
   default: "text-gold",
 };
 
@@ -108,21 +114,25 @@ export default function BattleLogEvent({
   event: string;
   previousEvent?: string;
   session: Pick<BattleSession, "enemies" | "participants">;
-  calculation?: string;
+  calculation?: string | string[];
   showFormula: boolean;
 }) {
   const matches = [...event.matchAll(NUMBER_PATTERN)];
   if (matches.length === 0) return event;
 
+  const calculationList = calculation == null ? null : Array.isArray(calculation) ? calculation : [calculation];
+  let calculationIndex = 0;
   let cursor = 0;
   return matches.map((match, index) => {
     const start = match.index;
     const value = match[0];
     const end = start + value.length;
     const kind = numberKind(event, start, end);
-    const storedCalculation = calculation && isCalculatedResultNumber(event, end, kind)
-      ? calculation
+    const isCalcNumber = isCalculatedResultNumber(event, end, kind);
+    const storedCalculation = isCalcNumber && calculationList
+      ? calculationList[Math.min(calculationIndex, calculationList.length - 1)]
       : null;
+    if (isCalcNumber) calculationIndex += 1;
     const formula = showFormula && shouldShowFormula(event, value, kind)
       ? storedCalculation ?? formulaFor(event, kind, session, previousEvent)
       : null;

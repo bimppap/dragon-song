@@ -1511,7 +1511,8 @@ export interface BattleLogRound {
   phase?: BattlePhase;
   events: string[];
   /** 이벤트 문자열을 키로 하는, 계산 당시 실제 피연산자가 대입된 결과식. */
-  calculations?: Record<string, string>;
+  /** 값 하나에 계산 결과 숫자가 여럿(예: 재생의 HP/MP)이면 등장 순서대로 담은 배열, 하나뿐이면 문자열 그대로. */
+  calculations?: Record<string, string | string[]>;
 }
 
 export interface BattlePendingEnemyAction {

@@ -6,12 +6,14 @@ import type { BattlePhase, BattleSession, CharacterActionKind } from "@/lib/api"
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-/** 확정 전 초안 미리보기 페이로드. 실제 targeting 정보는 보내지 않고 카드 표시에 필요한 값만 담는다. */
+/** 확정 전 초안 미리보기 페이로드. 카드 표시에 필요한 값(기술 아이콘, 방어/치유 대상)만 담는다. */
 export interface BattleDraftPreviewEntry {
   kind: CharacterActionKind;
   skill_node_id: number | null;
   skill_name: string | null;
   skill_image_url: string | null;
+  target_character_id: number | null;
+  protect_target_character_id: number | null;
 }
 
 export type BattleDraftPreview = Record<number, BattleDraftPreviewEntry>;

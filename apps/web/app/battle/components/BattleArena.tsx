@@ -95,6 +95,12 @@ function isActive(p: BattleParticipant): boolean {
   return !p.downed && !p.retreated;
 }
 
+/** 주목도는 관리자/스텝 전용 정보라, 러너에게 보여줄 로그에서는 "· +20 주목도"류 구간을 잘라낸다. */
+const ATTN_LOG_SUFFIX_PATTERN = /\s*·\s*(?:\+?\d[\d,]*\s*주목도|주목도\s*\d[\d,]*\s*이전\s*\/\s*\d[\d,]*\s*획득)\s*$/;
+function stripAttnInfo(event: string): string {
+  return event.replace(ATTN_LOG_SUFFIX_PATTERN, "");
+}
+
 /** "이전 턴 다시 진행하기"가 되돌릴 대상을 사람이 읽을 수 있는 문구로 표현한다. 되돌릴 턴이 없으면 null. */
 function describePreviousTurn(session: BattleSession): string | null {
   if (session.phase === "ally") return `라운드 ${session.round} · 적의 행동 암시`;
@@ -168,7 +174,7 @@ const CHAR_ACTION_LABEL: Record<CharacterActionKind, string> = {
   defend: "방어",
   heal: "치유",
   rescue: "구조",
-  item: "아이템",
+  item: "소비",
   none: "무반응",
   retreat: "퇴각",
 };
@@ -578,6 +584,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           skill_node_id: charDraft.skill_node_id,
           skill_name: skill?.default_name ?? null,
           skill_image_url: skill?.image_url ?? null,
+          target_character_id: charDraft.target_character_id,
+          protect_target_character_id: charDraft.protect_target_character_id,
         };
       }
       sendBattleWs({ type: "draft_update", phase: session.phase, draft });
@@ -1410,18 +1418,35 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   ? "border-line bg-primary-light/10 opacity-60"
                   : showActionUi
                     ? getCharacterCardTone(draft?.kind)
-                    : "border-line bg-surface",
+                    : actionPreview
+                      ? getCharacterCardTone(actionPreview.kind)
+                      : "border-line bg-surface",
               )}
             >
               <div className="space-y-2.5">
                 <div className="flex gap-2.5">
-                  <div className="w-16 shrink-0 self-start overflow-hidden rounded-2xl border border-line bg-surface">
-                    <CharacterAvatar
-                      src={p.image_url}
-                      alt={p.name}
-                      className={cn("aspect-square w-full rounded-none", !active && "grayscale")}
-                      iconSize={18}
-                    />
+                  <div className="flex w-16 shrink-0 flex-col gap-1.5 self-start">
+                    <div className="overflow-hidden rounded-2xl border border-line bg-surface">
+                      <CharacterAvatar
+                        src={p.image_url}
+                        alt={p.name}
+                        className={cn("aspect-square w-full rounded-none", !active && "grayscale")}
+                        iconSize={18}
+                      />
+                    </div>
+                    {actionPreview?.kind === "skill" && (
+                      <div
+                        className="skill-icon-glow aspect-square w-full overflow-hidden border border-line bg-surface"
+                        title={actionPreview.skill_name ?? "기술 사용"}
+                      >
+                        <CharacterAvatar
+                          src={actionPreview.skill_image_url}
+                          alt={actionPreview.skill_name ?? "기술"}
+                          className="aspect-square w-full rounded-none"
+                          iconSize={16}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="min-w-0 flex-1 space-y-2.5">
@@ -1457,15 +1482,19 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         title="아직 확정되지 않은 행동입니다"
                       >
                         {actionPreview.kind === "skill" ? (
-                          <>
-                            <CharacterAvatar
-                              src={actionPreview.skill_image_url}
-                              alt={actionPreview.skill_name ?? "기술"}
-                              className="size-4 rounded-full"
-                              iconSize={10}
-                            />
-                            <span className="truncate">{actionPreview.skill_name ?? "기술 사용"}</span>
-                          </>
+                          <span className="truncate">{actionPreview.skill_name ?? "기술 사용"}</span>
+                        ) : actionPreview.kind === "defend"
+                          && actionPreview.protect_target_character_id != null
+                          && actionPreview.protect_target_character_id !== p.character_id ? (
+                          <span className="truncate">
+                            {CHAR_ACTION_LABEL[actionPreview.kind]} → {participantsById.get(actionPreview.protect_target_character_id)?.name ?? ""} 보호
+                          </span>
+                        ) : actionPreview.kind === "heal" && actionPreview.target_character_id != null ? (
+                          <span className="truncate">
+                            {CHAR_ACTION_LABEL[actionPreview.kind]} → {actionPreview.target_character_id === p.character_id
+                              ? "본인"
+                              : participantsById.get(actionPreview.target_character_id)?.name ?? ""}
+                          </span>
                         ) : (
                           <span>{CHAR_ACTION_LABEL[actionPreview.kind]}</span>
                         )}
@@ -1476,7 +1505,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       <div className="flex flex-wrap gap-2">
                         {p.downed && <Badge variant="destructive" className="text-[10px]">기절</Badge>}
                         {p.retreated && <Badge variant="secondary" className="text-[10px]">퇴각</Badge>}
-                        {active && p.defending && (
+                        {active && p.defending && phase === "enemy" && (
                           <Badge variant="outline" className="text-[10px]">
                             <HeartPulse size={10} className="mr-0.5" />
                             방어 중
@@ -1636,7 +1665,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   {entry.events.map((e, i) => (
                     <div key={i} className="text-sm text-ivory/85">
                       <BattleLogEvent
-                        event={e}
+                        event={showLogFormulas ? e : stripAttnInfo(e)}
                         previousEvent={entry.events[i - 1]}
                         session={session}
                         calculation={entry.calculations?.[e]}
