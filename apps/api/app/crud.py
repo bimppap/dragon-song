@@ -3422,7 +3422,7 @@ def _skill_heal_formula(target: dict, heal_ratio: float, before_hp: int, *, allo
     )
     if allow_overheal or target.get("over_heal"):
         return calculated
-    return f"min(계산 치유량 {calculated}, 잃은 체력 {_formula_number(target['max_hp'] - before_hp)})"
+    return f"min({calculated}, 잃은 체력 {_formula_number(target['max_hp'] - before_hp)})"
 
 
 def _apply_damage_to_enemy(enemy: dict, damage: int) -> tuple[int, bool]:
@@ -4041,10 +4041,31 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
 
     events: list[str] = []
+    # 값: 이벤트 문자열 하나에 계산 결과 숫자가 여럿(예: 재생의 HP/MP)이면 등장 순서대로 담은 리스트,
+    # 하나뿐이면 문자열 그대로.
+    calculations: dict[str, str | list[str]] = {}
     for enemy in enemies:
         if enemy.get("joined_round", 0) == round_no:
             particle = _korean_subject_particle(enemy["name"])
             events.append(f"{enemy['name']}{particle} 전투에 참가했습니다!")
+
+    # 0) 라운드 시작 재생 (난입 캐릭터도 생존해 있으므로 재생은 받는다)
+    for p in participants:
+        if not _combatant_active(p):
+            continue
+        hp_heal = p["hp_regen_true"] + round(p["max_hp"] * p["hp_regen_fixed"])
+        mp_heal = p["mp_regen"]
+        if hp_heal > 0:
+            p["hp"] = min(p["max_hp"], p["hp"] + hp_heal)
+        if mp_heal > 0:
+            p["mp"] = min(p["max_mp"], p["mp"] + mp_heal)
+        if hp_heal > 0 or mp_heal > 0:
+            events.append(f"♻️ {p['name']} 재생 (+{hp_heal} HP / +{mp_heal} MP)")
+            calculations[events[-1]] = [
+                f"고정 체력 재생 {_formula_number(p['hp_regen_true'])} + "
+                f"round(최대 체력 {_formula_number(p['max_hp'])} × 비율 체력 재생 {_formula_number(p['hp_regen_fixed'])})",
+                f"마나 재생량 {_formula_number(p['mp_regen'])}",
+            ]
 
     _apply_ongoing_telegraph_skill_effects(enemies, events)
     if all(enemy["hp"] <= 0 for enemy in enemies):
@@ -4053,7 +4074,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         session.participants = participants
         session.enemies = enemies
         session.summons = summons
-        session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
+        session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
         if session.mode == "real":
             _finalize_real_battle(db, participants)
         return _commit_battle_session(db, session)
@@ -4089,7 +4110,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         session.status = "defeat"
         events.append("💀 전투 패배")
         session.participants = participants
-        session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
+        session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
         if session.mode == "real":
             _finalize_real_battle(db, participants)
         return _commit_battle_session(db, session)
@@ -4173,7 +4194,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     session.phase = "ally"
     session.participants = participants
     session.summons = summons
-    session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events}]
+    session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
 
     return _commit_battle_session(db, session)
 
@@ -4225,22 +4246,6 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
     living = [p for p in participants if _combatant_active(p)]
     actable = [p for p in living if not _just_joined(p, round_no)]
-
-    # 0) 라운드 시작 재생 (난입 캐릭터도 생존해 있으므로 재생은 받는다)
-    for p in living:
-        hp_heal = p["hp_regen_true"] + round(p["max_hp"] * p["hp_regen_fixed"])
-        mp_heal = p["mp_regen"]
-        if hp_heal > 0:
-            p["hp"] = min(p["max_hp"], p["hp"] + hp_heal)
-        if mp_heal > 0:
-            p["mp"] = min(p["max_mp"], p["mp"] + mp_heal)
-        if hp_heal > 0 or mp_heal > 0:
-            events.append(f"♻️ {p['name']} 재생 (+{hp_heal} HP / +{mp_heal} MP)")
-            calculations[events[-1]] = [
-                f"고정 체력 재생 {_formula_number(p['hp_regen_true'])} + "
-                f"round(최대 체력 {_formula_number(p['max_hp'])} × 비율 체력 재생 {_formula_number(p['hp_regen_fixed'])})",
-                f"마나 재생량 {_formula_number(p['mp_regen'])}",
-            ]
 
     # 행동 보상 집계: 이번 라운드에 난입해 행동은 못 하지만 참여는 한 캐릭터, 또는 "무반응"이 아닌 행동을 한 캐릭터에게 1라운드씩 적립.
     for p in living:
@@ -4486,7 +4491,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 소환수 {summon_name} 처치")
                 else:
@@ -4496,7 +4501,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                 continue
@@ -4519,7 +4524,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             f"[{target['hp']}/{target['max_hp']}]"
                             f"{' (오버킬)' if overkill else ''}"
                         )
-                        calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                        calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
                             events.append(f"💀 소환수 {summon_name} 처치")
                         continue
@@ -4530,7 +4535,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                     if tier6_bonus:
@@ -4570,7 +4575,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 소환수 {summon_name} 처치")
                 else:
@@ -4580,7 +4585,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
-                    calculations[events[-1]] = f"min(계산 피해량 {damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                     else:
@@ -5099,13 +5104,13 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             effective_defense = _eff_def(recipient)
             dmg = max(0, dmg - effective_defense)
             damage_formula = (
-                f"max(최소 피해 0, 계산 피해량 {damage_formula} - "
+                f"max(최소 피해 0, {damage_formula} - "
                 f"유효 방어력 {_formula_number(effective_defense)})"
             )
         shield_before = recipient["shield"]
         dmg, absorbed = _apply_hit(recipient, dmg)
         damage_formula = (
-            f"max(최소 피해 0, 계산 피해량 {damage_formula} - "
+            f"max(최소 피해 0, {damage_formula} - "
             f"보호막 {_formula_number(shield_before)})"
         )
         counter_results: list[dict] = []
@@ -5131,7 +5136,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 "enemy_max_hp": attacker["max_hp"],
                 "overkill": overkill,
                 "formula": (
-                    f"min(계산 피해량 floor((공격력 {_formula_number(recipient['atk'])} + "
+                    f"min(floor((공격력 {_formula_number(recipient['atk'])} + "
                     f"방어력 {_formula_number(recipient['def'])}) × "
                     f"(1 + 기술 등급 {_formula_number(max(0, int(effect.get('skill_lv', 0))))}) × "
                     f"(1 + 기술 효율 {_formula_number(float(effect.get('skill_eff_fixed', 0.0)))})), "
