@@ -17,7 +17,7 @@ const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: 
   { href: "/challenges", label: "도전", icon: Trophy, roles: ["RUNNER", "STAFF"] },
   { href: "/missions", label: "임무", icon: Sparkles, roles: ["RUNNER", "STAFF"] },
   { href: "/battle", label: "전투", icon: Swords, roles: ["RUNNER", "ADMIN", "STAFF"] },
-  { href: "/attendance", label: "출석", icon: CalendarCheck, roles: ["RUNNER", "STAFF"] },
+  { href: "/attendance", label: "출석", icon: CalendarCheck, roles: ["RUNNER", "ADMIN", "STAFF"] },
   { href: "/settlement", label: "정산", icon: Coins, roles: ["RUNNER", "ADMIN", "STAFF"] },
   { href: "/admin", label: "관리", icon: Settings, roles: ["ADMIN", "STAFF"] },
 ];
