@@ -508,6 +508,8 @@ class Environment(Base):
     enemy_condition: Mapped[str] = mapped_column(String, nullable=False, default="always", server_default=text("'always'"))
     condition_enemy_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     stackable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
+    # 0이면 상한 없음. 1 이상이면 이 수치까지만 스택이 증가한다.
+    max_stacks: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     stacks_per_round: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     damage_per_stack: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(

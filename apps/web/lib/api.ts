@@ -1407,8 +1407,13 @@ export async function fetchActiveChapter(): Promise<Chapter | null> {
   );
 }
 
+export type EnemySkillType = "지정 공격" | "광역 공격" | "소환" | "지속 디버프" | "환경";
+
 export interface EnemySkill {
   manual_target_count?: boolean;
+  auto_target_mode?: "attention" | "random";
+  environment_id?: number | null;
+  environment_stack_count?: number;
   debuff_stat?: string;
   debuff_amount?: number;
   debuff_stackable?: boolean;
@@ -1418,7 +1423,7 @@ export interface EnemySkill {
   summon_effect_percent?: number;
   summon_buff_enemy_id?: number | null;
   summon_buff_stat?: "attack" | "damage";
-  skill_type: string;
+  skill_type: EnemySkillType;
   name: string;
   target_count: number;
   damage_percent: number;
@@ -1506,6 +1511,7 @@ export interface Environment {
   name: string;
   color: string;
   stackable: boolean;
+  max_stacks: number;
   dispellable: boolean;
   enemy_condition: "always" | "alive" | "dead";
   condition_enemy_id: number | null;
@@ -1519,6 +1525,7 @@ export interface EnvironmentCreate {
   name: string;
   color: string;
   stackable: boolean;
+  max_stacks: number;
   dispellable: boolean;
   enemy_condition: "always" | "alive" | "dead";
   condition_enemy_id: number | null;

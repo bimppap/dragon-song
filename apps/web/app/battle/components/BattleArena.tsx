@@ -21,6 +21,7 @@ import {
   fetchCharacterSkillTree,
   fetchCharacters,
   fetchEnemies,
+  fetchEnvironments,
   joinBattle,
   joinBattleEnemy,
   submitBattleAllyTurn,
@@ -41,6 +42,7 @@ import {
   type Character,
   type Enemy,
   type EnemyActionKind,
+  type Environment,
   type SkillBook,
 } from "@/lib/api";
 import InfoTooltip from "@/components/common/InfoTooltip";
@@ -292,11 +294,16 @@ function allowedKinds(p: BattleParticipant, hasDowned: boolean, hasBattleSkills:
   });
 }
 
+function isEnemySkillAoe(skill: { skill_type: string; manual_target_count?: boolean }): boolean {
+  return skill.skill_type === "광역 공격" && !skill.manual_target_count;
+}
+
 /** 에너미가 이번 라운드에 예고한 행동을 사람이 읽을 수 있는 문구로 만든다. */
 function describePendingAction(
   enemy: BattleEnemyState,
   pending: BattleSession["pending_enemy_actions"][number] | undefined,
   participantsById: Map<number, BattleParticipant>,
+  environmentsById: Map<number, Environment>,
 ): string | null {
   if (!pending) return null;
   if (pending.kind === "none" || pending.skill_index == null) return "예고: 무반응";
@@ -305,7 +312,7 @@ function describePendingAction(
   if (pending.kind === "summon") {
     return `예고: ${skill.name} (소환 · ${skill.summon_name ?? "???"} x${skill.summon_count ?? 1})`;
   }
-  const isAoe = skill.skill_type.startsWith("광역") && !skill.manual_target_count;
+  const isAoe = isEnemySkillAoe(skill);
   const targetLabel = isAoe
     ? "전원"
     : pending.target_character_ids
@@ -313,6 +320,12 @@ function describePendingAction(
         .filter((name): name is string => Boolean(name))
         .join(", ") || "대상 없음";
   if (skill.skill_type === "지속 디버프") return `예고: ${skill.name} → ${targetLabel} (지속 디버프)`;
+  if (skill.skill_type === "환경") {
+    const environmentName = skill.environment_id != null
+      ? environmentsById.get(skill.environment_id)?.name ?? `환경 #${skill.environment_id}`
+      : "환경";
+    return `예고: ${skill.name} → ${targetLabel} (${environmentName} +${skill.environment_stack_count ?? 1}스택)`;
+  }
   const base = Math.floor((enemy.attack * skill.damage_percent) / 100);
   return `예고: ${skill.name} → ${targetLabel} (예상 피해 ${fmt(base)})`;
 }
@@ -450,6 +463,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [telegraphDrafts, setTelegraphDrafts] = useState<Record<number, TelegraphDraft>>({});
   const [itemsByCharacter, setItemsByCharacter] = useState<Record<number, CharacterOwnedItem[]>>({});
   const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, CharacterSkillNode[]>>({});
+  const [chapterEnvironments, setChapterEnvironments] = useState<Environment[]>([]);
+  const [loadedEnvironmentChapter, setLoadedEnvironmentChapter] = useState<string | null>(null);
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCandidates, setJoinCandidates] = useState<Character[]>([]);
@@ -639,6 +654,23 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     }, 300);
     return () => clearTimeout(timer);
   }, [charDrafts, readOnly, controlled, session, skillsByCharacter, sendBattleWs]);
+
+  useEffect(() => {
+    if (!session?.chapter) return;
+    let cancelled = false;
+    const chapter = session.chapter;
+    fetchEnvironments(chapter)
+      .then((environments) => {
+        if (!cancelled) {
+          setChapterEnvironments(environments);
+          setLoadedEnvironmentChapter(chapter);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) toast(e instanceof Error ? e.message : "환경 정보를 불러오지 못했습니다.", "error");
+      });
+    return () => { cancelled = true; };
+  }, [session?.chapter, toast]);
 
   function resetCharDrafts(data: BattleSession) {
     const next: Record<number, CharDraft> = {};
@@ -988,6 +1020,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     () => new Map((session?.pending_enemy_actions ?? []).map((action) => [action.enemy_id, action])),
     [session?.pending_enemy_actions],
   );
+  const environmentsById = useMemo(
+    () => new Map(
+      (loadedEnvironmentChapter === session?.chapter ? chapterEnvironments : [])
+        .map((environment) => [environment.id, environment]),
+    ),
+    [chapterEnvironments, loadedEnvironmentChapter, session?.chapter],
+  );
   const enemyTitle = useMemo(
     () => (session?.enemies ?? []).map((enemy) => enemy.name).join(", "),
     [session?.enemies],
@@ -1102,10 +1141,10 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const attackSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type !== "소환");
           const summonSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type === "소환");
           const selectedSkill = draft?.skill_index != null ? enemy.skills[draft.skill_index] : null;
-          const needsManualTargets = draft?.kind === "attack" && selectedSkill && (selectedSkill.manual_target_count || !selectedSkill.skill_type.startsWith("광역"));
+          const needsManualTargets = draft?.kind === "attack" && selectedSkill && (selectedSkill.manual_target_count || !isEnemySkillAoe(selectedSkill));
           const targetCount = selectedSkill?.manual_target_count ? targetableParticipants.length : selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
           const pendingLabel = !dead && phase !== "telegraph"
-            ? describePendingAction(enemy, pendingActionsByEnemy.get(enemy.enemy_id), participantsById)
+            ? describePendingAction(enemy, pendingActionsByEnemy.get(enemy.enemy_id), participantsById, environmentsById)
             : null;
           return (
             <div
@@ -1146,7 +1185,11 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                           <SelectItem value="none">무반응</SelectItem>
                           {attackSkills.map((s) => (
                             <SelectItem key={s.index} value={`attack:${s.index}`}>
-                              {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : s.skill_type.startsWith("광역") ? "전체" : `${s.target_count}인`} / {s.damage_percent}%)
+                              {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : `${s.target_count}인 · ${s.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {s.skill_type === "지속 디버프"
+                                ? "지속 디버프"
+                                : s.skill_type === "환경"
+                                  ? `${s.environment_id != null ? environmentsById.get(s.environment_id)?.name ?? `환경 #${s.environment_id}` : "환경"} +${s.environment_stack_count ?? 1}스택`
+                                  : `${s.damage_percent}%`})
                             </SelectItem>
                           ))}
                           {summonSkills.map((s) => (
@@ -1162,7 +1205,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   {needsManualTargets && (
                     <div className="rounded-lg border border-line bg-inset/60 p-2">
                       <p className="mb-1.5 text-[11px] text-muted">
-                        {selectedSkill?.manual_target_count ? `대상 수동 지정 · ${draft.target_character_ids.length}명 선택 (매 라운드 인원 변경 가능)` : `공격 대상 선택 (${draft.target_character_ids.length}/${targetCount}명, 비워두면 자동 선정)`}
+                        {selectedSkill?.manual_target_count
+                          ? `대상 수동 지정 · ${draft.target_character_ids.length}명 선택 (매 라운드 인원 변경 가능)`
+                          : `${selectedSkill?.skill_type === "환경" ? "환경 부여" : selectedSkill?.skill_type === "지속 디버프" ? "약화" : "공격"} 대상 선택 (${draft.target_character_ids.length}/${targetCount}명, 비워두면 ${selectedSkill?.auto_target_mode === "random" ? "무작위" : "주목도 순"} 자동 선정)`}
                       </p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                         {targetableParticipants.map((p) => {

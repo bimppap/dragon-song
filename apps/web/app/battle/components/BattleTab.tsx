@@ -14,12 +14,14 @@ import {
   fetchBattles,
   fetchCharacters,
   fetchEnemies,
+  fetchEnvironments,
   rollbackBattle,
   type BattleMode,
   type BattleSessionSummary,
   type Chapter,
   type Character,
   type Enemy,
+  type Environment,
 } from "@/lib/api";
 import { useToast } from "@/components/common/ToastProvider";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
@@ -151,6 +153,7 @@ export default function BattleTab() {
   const { confirm } = useDialog();
   const { toast } = useToast();
   const [enemies, setEnemies] = useState<Enemy[]>([]);
+  const [environments, setEnvironments] = useState<Environment[]>([]);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [resumable, setResumable] = useState<BattleSessionSummary[]>([]);
@@ -173,14 +176,16 @@ export default function BattleTab() {
     async function load() {
       try {
         setLoading(true);
-        const [enemyList, activeChapterData, characterList, resumableList] = await Promise.all([
+        const [enemyList, environmentList, activeChapterData, characterList, resumableList] = await Promise.all([
           fetchEnemies(),
+          fetchEnvironments(),
           fetchActiveChapter(),
           fetchCharacters(),
           fetchBattles({ mode: "real", status: "in_progress" }),
         ]);
         if (cancelled) return;
         setEnemies(enemyList);
+        setEnvironments(environmentList);
         setActiveChapter(activeChapterData);
         setCharacters(characterList);
         setResumable(resumableList);
@@ -259,6 +264,10 @@ export default function BattleTab() {
   const currentChapterEnemies = useMemo(
     () => (activeChapter ? enemies.filter((enemy) => enemy.chapter === activeChapter.name) : []),
     [activeChapter, enemies],
+  );
+  const environmentsById = useMemo(
+    () => new Map(environments.map((environment) => [environment.id, environment])),
+    [environments],
   );
   const selectedPartyCounts = useMemo(
     () => countSelectedParty(characters, selectedCharacterIds),
@@ -502,7 +511,11 @@ export default function BattleTab() {
                                   <p className="mt-1 text-xs text-muted">
                                     {skill.skill_type === "소환"
                                       ? `${skill.summon_name ?? "하수인"} · HP ${numberFormatter.format(skill.summon_hp ?? 0)} · 공격 ${numberFormatter.format(skill.summon_attack ?? 0)} · 수량 ${numberFormatter.format(skill.summon_count ?? 1)}`
-                                      : `대상 ${numberFormatter.format(skill.target_count)}명 · 피해 ${numberFormatter.format(skill.damage_percent)}%`}
+                                      : skill.skill_type === "환경"
+                                        ? `${skill.environment_id != null ? environmentsById.get(skill.environment_id)?.name ?? `환경 #${skill.environment_id}` : "환경"} · ${numberFormatter.format(skill.environment_stack_count ?? 1)}스택 부여 · ${skill.manual_target_count ? "수동 지정" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`}`
+                                        : skill.skill_type === "지속 디버프"
+                                          ? `${skill.manual_target_count ? "수동 지정" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} · 지속 디버프`
+                                          : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"} · 피해 ${numberFormatter.format(skill.damage_percent)}%`}
                                   </p>
                                 </div>
                               ))}

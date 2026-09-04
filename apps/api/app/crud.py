@@ -95,6 +95,21 @@ from app.schemas import (
 SHOP_STATE_ID = 1
 
 
+def _enemy_skill_models(raw_skills: list[dict] | None) -> list[EnemySkill]:
+    return [EnemySkill(**skill) for skill in (raw_skills or [])]
+
+
+def _normalized_enemy_skill_payloads(raw_skills: list[dict] | None) -> list[dict]:
+    return [skill.model_dump() for skill in _enemy_skill_models(raw_skills)]
+
+
+def _normalized_battle_enemies(raw_enemies: list[dict] | None) -> list[dict]:
+    return [
+        {**dict(enemy), "skills": _normalized_enemy_skill_payloads(enemy.get("skills"))}
+        for enemy in (raw_enemies or [])
+    ]
+
+
 def _today() -> date:
     return datetime.now(timezone.utc).date()
 
@@ -3237,7 +3252,7 @@ def _to_enemy_read(enemy: Enemy) -> EnemyRead:
         hp_per_defender=enemy.hp_per_defender,
         hp_per_healer=enemy.hp_per_healer,
         attack=enemy.attack,
-        skills=[EnemySkill(**s) for s in (enemy.skills or [])],
+        skills=_enemy_skill_models(enemy.skills),
         created_at=enemy.created_at,
     )
 
@@ -3325,6 +3340,7 @@ def create_environment(db: Session, data: EnvironmentCreate) -> EnvironmentRead:
         chapter=data.chapter.strip(),
         name=data.name.strip(),
         color=data.color,
+        max_stacks=data.max_stacks,
         dispellable=data.dispellable,
         enemy_condition=data.enemy_condition,
         condition_enemy_id=data.condition_enemy_id,
@@ -3345,6 +3361,7 @@ def update_environment(db: Session, environment_id: int, data: EnvironmentCreate
     environment.chapter = data.chapter.strip()
     environment.name = data.name.strip()
     environment.color = data.color
+    environment.max_stacks = data.max_stacks
     environment.dispellable = data.dispellable
     environment.enemy_condition = data.enemy_condition
     environment.condition_enemy_id = data.condition_enemy_id
@@ -3635,6 +3652,49 @@ def _ensure_combatant_snapshot_defaults(p: dict) -> None:
     p.setdefault("action_reward_rounds", 0)
     p.setdefault("env_stacks", {})
     _ensure_status_effects(p)
+
+
+def _enemy_skill_is_aoe(skill: dict) -> bool:
+    return skill.get("skill_type") == "광역 공격" and not skill.get("manual_target_count", False)
+
+
+def _select_enemy_skill_targets(
+    participants: list[dict],
+    *,
+    round_no: int,
+    target_count: int,
+    auto_target_mode: str,
+) -> list[dict]:
+    candidates = [participant for participant in participants if _combatant_targetable(participant, round_no)]
+    count = min(max(1, target_count), len(candidates))
+    if auto_target_mode == "random":
+        return random.sample(candidates, count)
+    return sorted(candidates, key=lambda target: -(target["attn"] + target["presence"]))[:count]
+
+
+def _apply_environment_stack_delta(
+    target: dict,
+    *,
+    environment_id: int,
+    stack_delta: int,
+    stackable: bool,
+    max_stacks: int,
+) -> tuple[int, int]:
+    stacks = dict(target.get("env_stacks", {}))
+    key = str(environment_id)
+    previous_stacks = max(0, int(stacks.get(key, 0)))
+    next_stacks = previous_stacks
+    if stack_delta > 0 and (stackable or previous_stacks == 0):
+        next_stacks = previous_stacks + stack_delta
+        if max_stacks > 0:
+            next_stacks = min(next_stacks, max_stacks)
+    if next_stacks > 0:
+        stacks[key] = next_stacks
+    elif key in stacks:
+        stacks.pop(key, None)
+    if stacks != target.get("env_stacks", {}):
+        target["env_stacks"] = stacks
+    return previous_stacks, next_stacks
 
 
 def _ensure_enemy_snapshot_defaults(enemy: dict) -> None:
@@ -4036,7 +4096,7 @@ def _snapshot_enemy(enemy: Enemy, party: list[Character]) -> dict:
         "attack": enemy.attack,
         "hp": hp,
         "max_hp": hp,
-        "skills": list(enemy.skills or []),
+        "skills": _normalized_enemy_skill_payloads(enemy.skills),
         "joined_round": 0,
         "status_effects": [],
     }
@@ -4139,6 +4199,7 @@ def _get_active_battle_skills_by_character(db: Session, character_ids: list[int]
 
 def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessionRead:
     environments = {str(env.id): env for env in db.query(Environment).filter(Environment.chapter == session.chapter).all()} if session.chapter else {}
+    enemies = _normalized_battle_enemies(session.enemies)
     participants = [{**participant, "environment_stacks": [
         {"id": int(env_id), "name": environments[env_id].name if env_id in environments else "환경",
          "color": environments[env_id].color if env_id in environments else "#e879f9", "count": count}
@@ -4152,7 +4213,7 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
         round=session.round,
         phase=session.phase,
         pending_enemy_actions=session.pending_enemy_actions,
-        enemies=session.enemies,
+        enemies=enemies,
         summons=session.summons,
         participants=participants,
         log=session.log,
@@ -4514,7 +4575,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
 
     round_no = session.round
     participants = [dict(p) for p in session.participants]
-    enemies = [dict(e) for e in session.enemies]
+    enemies = _normalized_battle_enemies(session.enemies)
     summons = [dict(s) for s in session.summons]
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
@@ -4581,6 +4642,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         db.query(Environment).filter(Environment.chapter == session.chapter).order_by(Environment.id.asc()).all()
         if session.chapter else []
     )
+    environment_by_id = {env.id: env for env in environments}
     affected = [p for p in participants if _combatant_targetable(p, round_no)]
     for env in environments:
         if not affected:
@@ -4592,14 +4654,17 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         if env.enemy_condition == "dead" and condition_alive:
             continue
         stack_note = f"+{env.stacks_per_round}" if env.stackable else f"미보유 대상 +{env.stacks_per_round}"
-        events.append(f"🌫️ 환경 · {env.name} {stack_note}")
+        max_note = f" · 최대 {env.max_stacks}스택" if env.max_stacks > 0 else ""
+        events.append(f"🌫️ 환경 · {env.name} {stack_note}{max_note}")
         newly_downed_names: list[str] = []
         for p in affected:
-            previous_stacks = p["env_stacks"].get(str(env.id), 0)
-            stacks = previous_stacks + env.stacks_per_round if env.stackable or previous_stacks == 0 else previous_stacks
-            # dict(p)는 얕은 복사라 env_stacks 딕셔너리 자체는 라운드 스냅샷과 공유된다.
-            # 그 안의 값을 직접 mutate하면 undo용 스냅샷까지 오염되므로 새 딕셔너리로 교체한다.
-            p["env_stacks"] = {**p["env_stacks"], str(env.id): stacks}
+            _, stacks = _apply_environment_stack_delta(
+                p,
+                environment_id=env.id,
+                stack_delta=env.stacks_per_round,
+                stackable=env.stackable,
+                max_stacks=env.max_stacks,
+            )
             dmg = max(0, (stacks - 1) * env.damage_per_stack)
             if dmg <= 0:
                 continue
@@ -4635,7 +4700,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             skill = enemy["skills"][action.skill_index]
 
         if action.kind == "attack" and skill and skill["skill_type"] != "소환":
-            is_aoe = skill["skill_type"].startswith("광역") and not skill.get("manual_target_count", False)
+            is_aoe = _enemy_skill_is_aoe(skill)
             if is_aoe:
                 target_ids = [p["character_id"] for p in participants if _combatant_targetable(p, round_no)]
                 target_label = "전원"
@@ -4650,18 +4715,25 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 if skill.get("manual_target_count") and len(chosen) != target_count:
                     raise HTTPException(status_code=400, detail="현재 공격할 수 없는 대상이 포함되어 있습니다.")
                 if not chosen:
-                    living_now = sorted(
-                        (p for p in participants if _combatant_targetable(p, round_no)),
-                        key=lambda t: -(t["attn"] + t["presence"]),
-                    )
-                    chosen = [p["character_id"] for p in living_now[:target_count]]
+                    chosen = [p["character_id"] for p in _select_enemy_skill_targets(
+                        participants,
+                        round_no=round_no,
+                        target_count=target_count,
+                        auto_target_mode=skill.get("auto_target_mode", "attention"),
+                    )]
                 target_ids = chosen
                 target_label = ", ".join(by_char_id[cid]["name"] for cid in target_ids) if target_ids else "대상 없음"
-            base = _floor_amount(enemy["attack"] * skill["damage_percent"] / 100)
             events.append(f"🔮 {enemy['name']} - {skill['name']}")
             if skill["skill_type"] == "지속 디버프":
                 events.append(f"이번 차례 약화 대상 : {target_label}")
+            elif skill["skill_type"] == "환경":
+                environment = environment_by_id.get(int(skill.get("environment_id") or 0))
+                if environment is None:
+                    raise HTTPException(status_code=400, detail="환경 스킬에 사용할 환경을 찾을 수 없습니다.")
+                stack_delta = max(1, int(skill.get("environment_stack_count") or 1))
+                events.append(f"이번 차례 환경 대상 : {target_label} / {environment.name} +{stack_delta}")
             else:
+                base = _floor_amount(enemy["attack"] * skill["damage_percent"] / 100)
                 events.append(f"이번 차례 공격 대상 : {target_label} / 예상 피해 : {base}")
             pending_actions.append({
                 "enemy_id": enemy["enemy_id"], "kind": "attack",
@@ -5593,7 +5665,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
 
     round_no = session.round
     participants = [dict(p) for p in session.participants]
-    enemies = [dict(e) for e in session.enemies]
+    enemies = _normalized_battle_enemies(session.enemies)
     summons = [dict(s) for s in session.summons]
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
@@ -5618,6 +5690,10 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
 
     by_char_id = {p["character_id"]: p for p in participants}
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
+    environment_by_id = (
+        {env.id: env for env in db.query(Environment).filter(Environment.chapter == session.chapter).all()}
+        if session.chapter else {}
+    )
     protect_map = _build_protect_map(participants)
 
     def hit(
@@ -5704,7 +5780,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             skill = enemy["skills"][skill_index]
 
         if enemy_action.get("kind") == "attack" and skill and skill["skill_type"] != "소환":
-            is_aoe = skill["skill_type"].startswith("광역") and not skill.get("manual_target_count", False)
+            is_aoe = _enemy_skill_is_aoe(skill)
             if is_aoe:
                 targets = [p for p in participants if _combatant_targetable(p, round_no)]
             else:
@@ -5715,11 +5791,12 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 ]
                 if not targets:
                     # 암시 이후 대상이 전부 기절/퇴각했다면 지금 상태 기준으로 다시 고른다.
-                    living_now = sorted(
-                        (p for p in participants if _combatant_targetable(p, round_no)),
-                        key=lambda t: -(t["attn"] + t["presence"]),
+                    targets = _select_enemy_skill_targets(
+                        participants,
+                        round_no=round_no,
+                        target_count=len(target_ids) if skill.get("manual_target_count") else max(1, skill["target_count"]),
+                        auto_target_mode=skill.get("auto_target_mode", "attention"),
                     )
-                    targets = living_now[: len(target_ids) if skill.get("manual_target_count") else max(1, skill["target_count"])]
             if skill["skill_type"] == "지속 디버프":
                 stat = skill.get("debuff_stat", "atk")
                 amount = skill.get("debuff_amount", 0)
@@ -5728,6 +5805,30 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     applied = _add_combat_stat_stack(target, source=f"enemy:{enemy['enemy_id']}:skill:{skill_index}", name=skill["name"], stat=stat,
                         amount=amount / 100 if ratio_stat else amount, percent=False, stackable=skill.get("debuff_stackable", False))
                     events.append(f"🔻 {enemy['name']}의 {skill['name']} → {target['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} -{amount}{'%' if ratio_stat else ''}{' (이미 적용 또는 방지)' if not applied else ''}")
+                continue
+            if skill["skill_type"] == "환경":
+                environment = environment_by_id.get(int(skill.get("environment_id") or 0))
+                if environment is None:
+                    events.append(f"⚠️ {enemy['name']}의 {skill['name']} 발동 실패 · 환경 없음")
+                    continue
+                stack_delta = max(1, int(skill.get("environment_stack_count") or 1))
+                events.append(f"🌫️ {enemy['name']}의 {skill['name']} → {environment.name} +{stack_delta} 스택")
+                if not targets:
+                    events.append("　→ 대상 없음")
+                    continue
+                for target in targets:
+                    previous_stacks, stacks = _apply_environment_stack_delta(
+                        target,
+                        environment_id=environment.id,
+                        stack_delta=stack_delta,
+                        stackable=environment.stackable,
+                        max_stacks=environment.max_stacks,
+                    )
+                    gained = max(0, stacks - previous_stacks)
+                    if gained > 0:
+                        events.append(f"　→ {target['name']} · +{gained} 스택 [{environment.name} {stacks}]")
+                    else:
+                        events.append(f"　→ {target['name']} · 변화 없음 [{environment.name} {stacks}]")
                 continue
             damage_penalty = _consume_one_time_outgoing_damage_penalty(enemy)
             base = max(0, _floor_amount(enemy["attack"] * skill["damage_percent"] / 100 * (1 - damage_penalty) * (1 + enemy.get("damage_bonus", 0))))

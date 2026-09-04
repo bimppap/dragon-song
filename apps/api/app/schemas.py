@@ -2,7 +2,7 @@ from datetime import date, datetime
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-EnemySkillType = Literal["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환", "지속 디버프"]
+EnemySkillType = Literal["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"]
 Faction = Literal["공격", "수비", "치유"]
 # 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다.
 SkillBook = Literal["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"]
@@ -55,6 +55,13 @@ ItemEffectStat = Literal[
     "mission_exp_recollection", "challenge_acquisition",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
+
+LEGACY_ENEMY_SKILL_TYPE_MAP: dict[str, EnemySkillType] = {
+    "지정 공격A": "지정 공격",
+    "지정 공격B": "지정 공격",
+    "광역 공격A": "광역 공격",
+    "광역 공격B": "광역 공격",
+}
 
 
 class ItemEffect(BaseModel):
@@ -773,7 +780,10 @@ class EnemySkill(BaseModel):
     name: str
     target_count: int = 0
     damage_percent: int = 0
+    environment_id: int | None = Field(default=None, gt=0)
+    environment_stack_count: int = Field(default=1, ge=1)
     manual_target_count: bool = False
+    auto_target_mode: Literal["attention", "random"] = "attention"
     debuff_stat: str = "atk"
     debuff_amount: float = Field(default=0, ge=0)
     debuff_stackable: bool = False
@@ -784,12 +794,29 @@ class EnemySkill(BaseModel):
     summon_buff_enemy_id: int | None = None
     summon_buff_stat: Literal["attack", "damage"] = "attack"
 
+    @field_validator("skill_type", mode="before")
+    @classmethod
+    def normalize_skill_type(cls, value: object) -> object:
+        if not isinstance(value, str):
+            return value
+        stripped = value.strip()
+        return LEGACY_ENEMY_SKILL_TYPE_MAP.get(stripped, stripped)
+
     @field_validator("debuff_stat", "summon_effect_stat")
     @classmethod
     def valid_combat_stat(cls, value: str) -> str:
         if value not in {"atk", "atk_p", "def", "def_p", "def_eff", "dmg_p", "dmg_r", "heal_eff", "attn", "presence", "skill_eff_fixed", "skill_eff_true", "skill_target", "hp_regen_true", "hp_regen_fixed", "mp_regen"}:
             raise ValueError("전투에 적용할 수 없는 능력치입니다.")
         return value
+
+    @model_validator(mode="after")
+    def validate_by_type(self):
+        if self.skill_type == "환경" and self.environment_id is None:
+            raise ValueError("환경 스킬에는 적용할 환경을 선택해 주세요.")
+        if self.skill_type != "환경":
+            self.environment_id = None
+            self.environment_stack_count = max(1, int(self.environment_stack_count or 1))
+        return self
 
     summon_name: str | None = None
     summon_hp: int | None = None
@@ -835,6 +862,7 @@ class EnvironmentCreate(BaseModel):
     name: str
     color: str = Field(default="#e879f9", pattern=r"^#[0-9a-fA-F]{6}$")
     stackable: bool = True
+    max_stacks: int = Field(default=0, ge=0)
     dispellable: bool = False
     enemy_condition: Literal["always", "alive", "dead"] = "always"
     condition_enemy_id: int | None = Field(default=None, gt=0)
@@ -845,6 +873,8 @@ class EnvironmentCreate(BaseModel):
     def validate_enemy_condition(self):
         if self.enemy_condition != "always" and self.condition_enemy_id is None:
             raise ValueError("조건에 사용할 에너미를 선택해 주세요.")
+        if self.enemy_condition == "always":
+            self.condition_enemy_id = None
         return self
 
 
@@ -854,6 +884,7 @@ class EnvironmentRead(BaseModel):
     name: str
     color: str = Field(default="#e879f9", pattern=r"^#[0-9a-fA-F]{6}$")
     stackable: bool = True
+    max_stacks: int
     dispellable: bool = False
     enemy_condition: Literal["always", "alive", "dead"] = "always"
     condition_enemy_id: int | None = Field(default=None, gt=0)

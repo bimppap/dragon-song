@@ -36,7 +36,7 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import EmptyState from "@/components/common/EmptyState";
 
-const SKILL_TYPES = ["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환", "지속 디버프"] as const;
+const SKILL_TYPES = ["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"] as const;
 type SkillType = (typeof SKILL_TYPES)[number];
 
 const EFFECT_STATS = [
@@ -46,6 +46,17 @@ const EFFECT_STATS = [
   ["skill_target", "기술 대상 수"], ["hp_regen_true", "고정 체력 재생"], ["hp_regen_fixed", "체력 재생률 (%)"], ["mp_regen", "마나 재생"],
 ];
 const EMPTY_SETTING_VALUE = "__empty_setting__";
+const EMPTY_ENVIRONMENT_DRAFT = {
+  name: "",
+  color: "#e879f9",
+  stackable: true,
+  max_stacks: "0",
+  dispellable: false,
+  enemy_condition: "always" as Environment["enemy_condition"],
+  condition_enemy_id: "",
+  stacks_per_round: "1",
+  damage_per_stack: "0",
+};
 
 function SettingSelect({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) {
   return <div className="flex min-w-0 flex-col gap-1.5 text-xs text-ivory/85">
@@ -65,6 +76,9 @@ const ALL_CHAPTERS = "__all__";
 
 type SkillFormEntry = {
   manual_target_count: boolean;
+  auto_target_mode: "attention" | "random";
+  environment_id: string;
+  environment_stack_count: string;
   debuff_stat: string;
   debuff_amount: string;
   debuff_stackable: boolean;
@@ -102,10 +116,10 @@ type EnemyFormState = {
 };
 
 const EMPTY_SKILL: SkillFormEntry = {
-  manual_target_count: false, debuff_stat: "atk", debuff_amount: "0", debuff_stackable: false,
+  manual_target_count: false, auto_target_mode: "attention", environment_id: "", environment_stack_count: "1", debuff_stat: "atk", debuff_amount: "0", debuff_stackable: false,
   summon_action_type: "attack", summon_trigger_phase: "enemy", summon_effect_stat: "atk",
   summon_effect_percent: "0", summon_buff_enemy_id: "", summon_buff_stat: "attack",
-  skill_type: "지정 공격A",
+  skill_type: "지정 공격",
   name: "",
   target_count: "1",
   damage_percent: "100",
@@ -132,8 +146,12 @@ const DEFAULT_FORM: EnemyFormState = {
 function toPayload(form: EnemyFormState): EnemyCreate {
   const skills: EnemySkill[] = form.skills.map((s) => {
     const isSummon = s.skill_type === "소환";
+    const isEnvironment = s.skill_type === "환경";
     return {
       manual_target_count: s.manual_target_count,
+      auto_target_mode: s.auto_target_mode,
+      environment_id: isEnvironment && s.environment_id ? Number(s.environment_id) : null,
+      environment_stack_count: isEnvironment ? Math.max(1, parsePositiveInt(s.environment_stack_count) || 1) : 1,
       debuff_stat: s.debuff_stat, debuff_amount: Number(s.debuff_amount) || 0, debuff_stackable: s.debuff_stackable,
       summon_action_type: s.summon_action_type, summon_trigger_phase: s.summon_trigger_phase,
       summon_effect_stat: s.summon_effect_stat, summon_effect_percent: Number(s.summon_effect_percent) || 0,
@@ -141,7 +159,7 @@ function toPayload(form: EnemyFormState): EnemyCreate {
       skill_type: s.skill_type,
       name: s.name.trim(),
       target_count: isSummon ? 0 : parsePositiveInt(s.target_count),
-      damage_percent: isSummon ? 0 : parsePositiveInt(s.damage_percent),
+      damage_percent: isSummon || isEnvironment ? 0 : parsePositiveInt(s.damage_percent),
       summon_name: isSummon ? s.summon_name.trim() || null : null,
       summon_hp: isSummon ? parsePositiveInt(s.summon_hp) : null,
       summon_attack: isSummon ? parsePositiveInt(s.summon_attack) : null,
@@ -173,6 +191,9 @@ function enemyToForm(enemy: Enemy): EnemyFormState {
     skills: enemy.skills.length > 0
       ? enemy.skills.map((s) => ({
           manual_target_count: s.manual_target_count ?? false,
+          auto_target_mode: s.auto_target_mode ?? "attention",
+          environment_id: s.environment_id != null ? String(s.environment_id) : "",
+          environment_stack_count: String(s.environment_stack_count ?? 1),
           debuff_stat: s.debuff_stat ?? "atk", debuff_amount: String(s.debuff_amount ?? 0), debuff_stackable: s.debuff_stackable ?? false,
           summon_action_type: s.summon_action_type ?? "attack", summon_trigger_phase: s.summon_trigger_phase ?? "enemy",
           summon_effect_stat: s.summon_effect_stat ?? "atk", summon_effect_percent: String(s.summon_effect_percent ?? 0),
@@ -194,12 +215,11 @@ function enemyToForm(enemy: Enemy): EnemyFormState {
 }
 
 const SKILL_TYPE_COLOR: Record<SkillType, string> = {
-  "지정 공격A": "bg-blue-500/20 text-blue-300",
-  "지정 공격B": "bg-gold/15 text-gold",
-  "광역 공격A": "bg-orange-500/20 text-orange-300",
-  "광역 공격B": "bg-red-500/20 text-red-300",
+  "지정 공격": "bg-blue-500/20 text-blue-300",
+  "광역 공격": "bg-orange-500/20 text-orange-300",
   소환: "bg-gold/15 text-gold",
   "지속 디버프": "bg-purple-500/20 text-purple-300",
+  환경: "bg-emerald-500/20 text-emerald-300",
 };
 
 export default function EnemyTab() {
@@ -221,8 +241,9 @@ export default function EnemyTab() {
   const [deleting, setDeleting] = useState(false);
 
   const [environments, setEnvironments] = useState<Environment[]>([]);
+  const [environmentCatalog, setEnvironmentCatalog] = useState<Environment[]>([]);
   const [environmentsLoading, setEnvironmentsLoading] = useState(false);
-  const [environmentDraft, setEnvironmentDraft] = useState({ name: "", color: "#e879f9", stackable: true, dispellable: false, enemy_condition: "always" as Environment["enemy_condition"], condition_enemy_id: "", stacks_per_round: "1", damage_per_stack: "0" });
+  const [environmentDraft, setEnvironmentDraft] = useState({ ...EMPTY_ENVIRONMENT_DRAFT });
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<number | null>(null);
   const [environmentSaving, setEnvironmentSaving] = useState(false);
   const [deletingEnvironmentId, setDeletingEnvironmentId] = useState<number | null>(null);
@@ -281,9 +302,22 @@ export default function EnemyTab() {
   }, [chaptersLoaded, selectedChapter, toast]);
 
   useEffect(() => {
+    if (!chaptersLoaded) return;
+    let cancelled = false;
+    fetchEnvironments()
+      .then((list) => {
+        if (!cancelled) setEnvironmentCatalog(list);
+      })
+      .catch((e) => {
+        if (!cancelled) toast(e instanceof Error ? e.message : "환경 목록을 불러오지 못했습니다.", "error");
+      });
+    return () => { cancelled = true; };
+  }, [chaptersLoaded, toast]);
+
+  useEffect(() => {
     let cancelled = false;
     async function load() {
-      setEnvironmentDraft({ name: "", color: "#e879f9", stackable: true, dispellable: false, enemy_condition: "always" as Environment["enemy_condition"], condition_enemy_id: "", stacks_per_round: "1", damage_per_stack: "0" });
+      setEnvironmentDraft({ ...EMPTY_ENVIRONMENT_DRAFT });
       setEditingEnvironmentId(null);
       if (!chaptersLoaded || selectedChapter === ALL_CHAPTERS) { setEnvironments([]); return; }
       setEnvironmentsLoading(true);
@@ -306,6 +340,7 @@ export default function EnemyTab() {
       name: environment.name,
       color: environment.color,
       stackable: environment.stackable,
+      max_stacks: String(environment.max_stacks),
       dispellable: environment.dispellable,
       enemy_condition: environment.enemy_condition,
       condition_enemy_id: environment.condition_enemy_id != null ? String(environment.condition_enemy_id) : "",
@@ -316,7 +351,7 @@ export default function EnemyTab() {
 
   function resetEnvironmentDraft() {
     setEditingEnvironmentId(null);
-    setEnvironmentDraft({ name: "", color: "#e879f9", stackable: true, dispellable: false, enemy_condition: "always" as Environment["enemy_condition"], condition_enemy_id: "", stacks_per_round: "1", damage_per_stack: "0" });
+    setEnvironmentDraft({ ...EMPTY_ENVIRONMENT_DRAFT });
   }
 
   async function handleEnvironmentSubmit() {
@@ -329,6 +364,7 @@ export default function EnemyTab() {
         name: environmentDraft.name.trim(),
         color: environmentDraft.color,
         stackable: environmentDraft.stackable,
+        max_stacks: parsePositiveInt(environmentDraft.max_stacks),
         dispellable: environmentDraft.dispellable,
         enemy_condition: environmentDraft.enemy_condition,
         condition_enemy_id: environmentDraft.enemy_condition === "always" ? null : Number(environmentDraft.condition_enemy_id),
@@ -338,9 +374,11 @@ export default function EnemyTab() {
       if (editingEnvironmentId != null) {
         const updated = await updateEnvironment(editingEnvironmentId, payload);
         setEnvironments((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
+        setEnvironmentCatalog((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
       } else {
         const created = await createEnvironment(payload);
         setEnvironments((prev) => [...prev, created]);
+        setEnvironmentCatalog((prev) => [...prev, created]);
       }
       resetEnvironmentDraft();
     } catch (e) {
@@ -362,6 +400,7 @@ export default function EnemyTab() {
     try {
       await deleteEnvironment(environment.id);
       setEnvironments((prev) => prev.filter((e) => e.id !== environment.id));
+      setEnvironmentCatalog((prev) => prev.filter((e) => e.id !== environment.id));
       if (editingEnvironmentId === environment.id) resetEnvironmentDraft();
     } catch (e) {
       toast(e instanceof Error ? e.message : "환경 삭제에 실패했습니다.", "error");
@@ -483,6 +522,10 @@ export default function EnemyTab() {
     e.preventDefault();
     if (!form.name.trim()) return;
     if (form.skills.length === 0) { toast("스킬을 하나 이상 추가해주세요.", "error"); return; }
+    if (form.skills.some((skill) => skill.skill_type === "환경" && !skill.environment_id)) {
+      toast("환경 스킬에 사용할 환경을 선택해 주세요.", "error");
+      return;
+    }
     setSubmitting(true);
     try {
       let saved = editingEnemy
@@ -618,6 +661,11 @@ export default function EnemyTab() {
                 <div className="flex flex-col gap-1.5">
                   {enemy.skills.map((skill, idx) => (
                     <div key={idx} className="flex flex-wrap items-center gap-2 text-sm">
+                      {(() => {
+                        const environmentName = skill.environment_id != null
+                          ? environmentCatalog.find((environment) => environment.id === skill.environment_id)?.name ?? `환경 #${skill.environment_id}`
+                          : null;
+                        return <>
                       <span className={cn("text-xs font-semibold px-2 py-0.5 rounded-full", SKILL_TYPE_COLOR[skill.skill_type as SkillType] ?? "bg-primary-light/20 text-ivory/85")}>
                         {skill.skill_type}
                       </span>
@@ -627,11 +675,17 @@ export default function EnemyTab() {
                           {skill.summon_name} (HP {(skill.summon_hp ?? 0).toLocaleString()} / 공격 {skill.summon_attack ?? 0}) ×{skill.summon_count ?? 1}
                           {skill.summon_action_type && skill.summon_action_type !== "attack" && ` · ${{ explosion: "폭발", debuff: "약화", buff: "강화" }[skill.summon_action_type]} · ${skill.summon_trigger_phase === "telegraph" ? "다음 라운드 암시" : skill.summon_trigger_phase === "ally" ? "아군 행동" : "적 행동"}`}
                         </span>
+                      ) : skill.skill_type === "환경" ? (
+                        <span className="text-muted">
+                          {skill.manual_target_count ? "타겟 수동 지정" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {environmentName ?? "환경 미지정"} +{skill.environment_stack_count ?? 1} 스택
+                        </span>
                       ) : (
                         <span className="text-muted">
-                          {skill.manual_target_count ? "타겟 수동 지정" : `타겟 ${skill.target_count}명`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} -${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
+                          {skill.manual_target_count ? "타겟 수동 지정" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} -${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
                         </span>
                       )}
+                        </>;
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -648,7 +702,7 @@ export default function EnemyTab() {
                   환경
                 </p>
                 <p className="text-xs text-muted">
-                  매 라운드 &ldquo;적의 행동 암시&rdquo; 턴마다 캐릭터에게 스택이 쌓이고, (스택 수 − 1) × 스택당 피해를 입힙니다. 한 챕터에 여러 환경을 등록할 수 있습니다.
+                  매 라운드 &ldquo;적의 행동 암시&rdquo; 턴마다 캐릭터에게 스택이 쌓이고, (스택 수 − 1) × 스택당 피해를 입힙니다. 최대 스택은 0이면 제한이 없고, 한 챕터에 여러 환경을 등록할 수 있습니다.
                 </p>
               </div>
 
@@ -662,7 +716,7 @@ export default function EnemyTab() {
                         <span className="font-semibold text-ivory">{environment.name}</span>
                         <span className="text-xs text-muted">
                           <span className="mr-1 inline-block h-3 w-1 rotate-20 rounded-full" style={{ backgroundColor: environment.color }} aria-hidden="true" />
-                          라운드당 스택 +{environment.stacks_per_round} · 스택당 {environment.damage_per_stack} 피해 · {environment.stackable ? "중첩 허용" : "중첩 불가"} · {environment.dispellable ? "해제 가능" : "해제 불가"}
+                          라운드당 스택 +{environment.stacks_per_round} · 스택당 {environment.damage_per_stack} 피해 · {environment.max_stacks > 0 ? `최대 ${environment.max_stacks}스택` : "스택 제한 없음"} · {environment.stackable ? "중첩 허용" : "중첩 불가"} · {environment.dispellable ? "해제 가능" : "해제 불가"}
                           {environment.enemy_condition !== "always" && ` · ${enemies.find((enemy) => enemy.id === environment.condition_enemy_id)?.name ?? "지정 에너미"} ${environment.enemy_condition === "alive" ? "생존 시" : "생존하지 않을 때"}`}
                         </span>
                       </div>
@@ -699,8 +753,8 @@ export default function EnemyTab() {
                 {environmentDraft.enemy_condition !== "always" && <SettingSelect label="조건 에너미" value={environmentDraft.condition_enemy_id} options={[["", "에너미 선택"], ...enemies.filter((enemy) => enemy.chapter === selectedChapter).map((enemy) => [String(enemy.id), enemy.name])]} onChange={(value) => setEnvironmentDraft((prev) => ({ ...prev, condition_enemy_id: value }))} />}
                 <label className="flex items-center gap-2 text-xs"><Checkbox checked={environmentDraft.dispellable} onCheckedChange={(checked) => setEnvironmentDraft((prev) => ({ ...prev, dispellable: checked === true }))} />기술·정화수로 해제 가능</label>
               </div>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
-                <div className="flex flex-col gap-1.5">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-7">
+                <div className="flex flex-col gap-1.5 lg:col-span-2">
                   <label className="text-xs font-semibold text-ivory/85">스택 이름</label>
                   <Input
                     value={environmentDraft.name}
@@ -723,6 +777,15 @@ export default function EnemyTab() {
                     type="number" min={0}
                     value={environmentDraft.damage_per_stack}
                     onChange={(e) => setEnvironmentDraft((prev) => ({ ...prev, damage_per_stack: e.target.value }))}
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-semibold text-ivory/85">최대 스택</label>
+                  <Input
+                    type="number" min={0}
+                    value={environmentDraft.max_stacks}
+                    onChange={(e) => setEnvironmentDraft((prev) => ({ ...prev, max_stacks: e.target.value }))}
                     placeholder="0"
                   />
                 </div>
@@ -920,6 +983,8 @@ export default function EnemyTab() {
 
             {form.skills.map((skill, idx) => {
               const isSummon = skill.skill_type === "소환";
+              const isEnvironment = skill.skill_type === "환경";
+              const availableEnvironments = environmentCatalog.filter((environment) => environment.chapter === form.chapter);
               return (
                 <div key={idx} className="rounded-xl border border-line bg-surface px-4 py-4 flex flex-col gap-3">
                   <div className="flex items-center justify-between">
@@ -962,7 +1027,7 @@ export default function EnemyTab() {
                   </div>
 
                   {!isSummon && (
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid gap-2 sm:grid-cols-3">
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-semibold text-ivory/85">타겟 인원</label>
                         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.manual_target_count} onChange={(event) => updateSkill(idx, "manual_target_count", event.target.checked)} />수동 지정 (매 라운드 선택)</label>
@@ -974,19 +1039,35 @@ export default function EnemyTab() {
                           placeholder="0"
                         />
                       </div>
+                      <SettingSelect
+                        label="자동 대상 선정"
+                        value={skill.auto_target_mode}
+                        options={[["attention", "주목도 순"], ["random", "무작위"]]}
+                        onChange={(value) => updateSkill(idx, "auto_target_mode", value as SkillFormEntry["auto_target_mode"])}
+                      />
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-ivory/85">피해량 (%)</label>
+                        <label className="text-xs font-semibold text-ivory/85">{isEnvironment ? "부여 스택 수" : "피해량 (%)"}</label>
                         <Input
-                          type="number" min={0} className="h-8 text-xs"
+                          type="number" min={isEnvironment ? 1 : 0} className="h-8 text-xs"
                           disabled={skill.skill_type === "지속 디버프"}
-                          value={skill.damage_percent}
-                          onChange={(e) => updateSkill(idx, "damage_percent", e.target.value)}
-                          placeholder="0"
+                          value={isEnvironment ? skill.environment_stack_count : skill.damage_percent}
+                          onChange={(e) => updateSkill(idx, isEnvironment ? "environment_stack_count" : "damage_percent", e.target.value)}
+                          placeholder={isEnvironment ? "1" : "0"}
                         />
                       </div>
                     </div>
                   )}
 
+                  {isEnvironment && <div className="grid gap-2 sm:grid-cols-2">
+                    <SettingSelect label="적용할 환경" value={skill.environment_id} options={[["", "환경 선택"], ...availableEnvironments.map((environment) => [String(environment.id), environment.name])]} onChange={(value) => updateSkill(idx, "environment_id", value)} />
+                    <div className="flex items-end">
+                      <p className="text-xs text-muted">
+                        {availableEnvironments.length > 0
+                          ? "선택한 환경의 기본 중첩/최대 스택 규칙을 그대로 따릅니다."
+                          : "이 챕터에 등록된 환경이 없습니다. 먼저 환경 카드를 추가해 주세요."}
+                      </p>
+                    </div>
+                  </div>}
                   {skill.skill_type === "지속 디버프" && <div className="grid gap-2 sm:grid-cols-3">
                     <SettingSelect label="감소 능력치" value={skill.debuff_stat} options={EFFECT_STATS} onChange={(value) => updateSkill(idx, "debuff_stat", value)} />
                     <label className="text-xs">감소량 {EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1].includes("%") ? "(%)" : "(수치)"}<Input type="number" min={0} step="any" value={skill.debuff_amount} onChange={(event) => updateSkill(idx, "debuff_amount", event.target.value)} /></label>

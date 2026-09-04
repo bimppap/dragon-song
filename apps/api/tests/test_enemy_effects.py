@@ -1,5 +1,6 @@
 import copy
 import unittest
+from unittest.mock import patch
 from pydantic import ValidationError
 from sqlalchemy import create_engine, text, inspect
 from sqlalchemy.orm import Session
@@ -113,7 +114,7 @@ class EnemyEffectsTest(unittest.TestCase):
         for stat in ("attack", "damage"):
             with self.subTest(stat=stat):
                 summon = EnemySkill(skill_type="소환", name="강화", summon_action_type="buff", summon_trigger_phase="enemy", summon_buff_stat=stat, summon_buff_enemy_id=2, summon_effect_percent=100)
-                attack = EnemySkill(skill_type="광역 공격A", name="공격", damage_percent=100)
+                attack = EnemySkill(skill_type="광역 공격", name="공격", damage_percent=100)
                 battle = self.battle([summon])
                 battle.enemies = [battle.enemies[0], {**self.enemy, "enemy_id": 2, "skills": [attack.model_dump()]}]
                 self.db.commit()
@@ -156,11 +157,47 @@ class EnemyEffectsTest(unittest.TestCase):
             self.telegraph(battle, 0, [])
 
     def test_manual_aoe_uses_only_selected_targets(self):
-        skill = EnemySkill(skill_type="광역 공격A", name="수동 광역", target_count=1, manual_target_count=True, damage_percent=100)
+        skill = EnemySkill(skill_type="광역 공격", name="수동 광역", target_count=1, manual_target_count=True, damage_percent=100)
         battle = self.battle([skill])
         self.telegraph(battle, 0, [self.party[1]["character_id"]])
         self.enemy_turn(battle)
         self.assertEqual([p["hp"] for p in battle.participants], [100, 90, 100])
+
+    def test_automatic_target_mode_supports_attention_and_random(self):
+        self.party[0]["attn"] = 1
+        self.party[1]["attn"] = 10
+        self.party[2]["attn"] = 5
+        attention = EnemySkill(skill_type="지정 공격", name="주목", target_count=2, damage_percent=100)
+        battle = self.battle([attention])
+        result = self.telegraph(battle, 0)
+        self.assertEqual(
+            result.pending_enemy_actions[0]["target_character_ids"],
+            [self.party[1]["character_id"], self.party[2]["character_id"]],
+        )
+
+        random_skill = EnemySkill(skill_type="지정 공격", name="무작위", target_count=2, damage_percent=100, auto_target_mode="random")
+        battle = self.battle([random_skill])
+        with patch("app.crud.random.sample", return_value=[battle.participants[2], battle.participants[0]]) as sample:
+            result = self.telegraph(battle, 0)
+        sample.assert_called_once()
+        self.assertEqual(
+            result.pending_enemy_actions[0]["target_character_ids"],
+            [self.party[2]["character_id"], self.party[0]["character_id"]],
+        )
+
+    def test_environment_skill_adds_stacks_without_immediate_damage_and_honors_cap(self):
+        env = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="독", stacks_per_round=0, max_stacks=3, damage_per_stack=5))
+        skill = EnemySkill(skill_type="환경", name="독 분사", target_count=1, environment_id=env.id, environment_stack_count=2)
+        battle = self.battle([skill])
+        battle.participants = [{**battle.participants[0], "env_stacks": {str(env.id): 2}}, *battle.participants[1:]]
+        self.db.commit()
+
+        self.telegraph(battle, 0, [self.party[0]["character_id"]])
+        hp_after_telegraph = battle.participants[0]["hp"]
+        self.enemy_turn(battle)
+
+        self.assertEqual(battle.participants[0]["env_stacks"][str(env.id)], 3)
+        self.assertEqual([p["hp"] for p in battle.participants], [hp_after_telegraph, 100, 100])
 
     def test_snapshot_is_not_mutated_and_guard_blocks(self):
         original = copy.deepcopy(self.party[0])
@@ -171,8 +208,11 @@ class EnemyEffectsTest(unittest.TestCase):
         self.assertEqual(snapshot["atk"], 100)
 
     def test_validates_stat_and_condition(self):
+        self.assertEqual(EnemySkill(skill_type="광역 공격A", name="레거시").skill_type, "광역 공격")
         with self.assertRaises(ValidationError):
             EnemySkill(skill_type="지속 디버프", name="잘못된 능력치", debuff_stat="gold")
+        with self.assertRaises(ValidationError):
+            EnemySkill(skill_type="환경", name="환경 누락")
         with self.assertRaises(ValidationError):
             EnvironmentCreate(chapter="1장", name="조건 없음", enemy_condition="alive")
 
@@ -184,8 +224,8 @@ class EnemyEffectsTest(unittest.TestCase):
         ensure_schema(self.engine)
         ensure_schema(self.engine)
         with self.engine.connect() as connection:
-            row = connection.execute(text("SELECT stacks_per_round, damage_per_stack, stackable, dispellable, enemy_condition, condition_enemy_id FROM environments")).one()
-            self.assertEqual(tuple(row), (2, 3, 1, 0, "always", None))
+            row = connection.execute(text("SELECT stacks_per_round, damage_per_stack, stackable, max_stacks, dispellable, enemy_condition, condition_enemy_id FROM environments")).one()
+            self.assertEqual(tuple(row), (2, 3, 1, 0, 0, "always", None))
 
 
 if __name__ == "__main__":

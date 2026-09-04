@@ -369,6 +369,8 @@ def ensure_schema(engine: Engine) -> None:
                 statements.append(f"ALTER TABLE environments ADD COLUMN {name} {definition}")
         if "stackable" not in environment_columns:
             statements.append("ALTER TABLE environments ADD COLUMN stackable BOOLEAN NOT NULL DEFAULT true")
+        if "max_stacks" not in environment_columns:
+            statements.append("ALTER TABLE environments ADD COLUMN max_stacks INTEGER NOT NULL DEFAULT 0")
         if "color" not in environment_columns:
             statements.append("ALTER TABLE environments ADD COLUMN color VARCHAR NOT NULL DEFAULT '#e879f9'")
 

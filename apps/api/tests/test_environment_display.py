@@ -68,6 +68,34 @@ class EnvironmentDisplayTest(unittest.TestCase):
         self.assertTrue(updated.stackable)
         self.assertEqual(tick(), 4)
 
+    def test_max_stacks_caps_passive_environment_growth(self):
+        env = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="독", stacks_per_round=2, max_stacks=3))
+        character = Character(name="러너", hp=100, hp_max=100)
+        self.db.add(character)
+        self.db.flush()
+        battle = BattleSession(
+            mode="practice",
+            chapter="1장",
+            phase="telegraph",
+            round=1,
+            participants=[crud._snapshot_combatant(character)],
+            enemies=[{"enemy_id": 1, "name": "적", "hp": 100, "skills": []}],
+            summons=[],
+            log=[],
+        )
+        self.db.add(battle)
+        self.db.commit()
+
+        def tick():
+            battle.phase = "telegraph"
+            self.db.commit()
+            result = crud.resolve_battle_telegraph(self.db, battle.id, BattleTelegraphRequest())
+            return result.participants[0]["env_stacks"][str(env.id)]
+
+        self.assertEqual(tick(), 2)
+        self.assertEqual(tick(), 3)
+        self.assertEqual(tick(), 3)
+
     def test_color_validation_and_default(self):
         self.assertEqual(EnvironmentCreate(chapter="1장", name="독").color, "#e879f9")
         with self.assertRaises(ValidationError):
