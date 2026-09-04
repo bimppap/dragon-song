@@ -35,12 +35,36 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import EmptyState from "@/components/common/EmptyState";
 
-const SKILL_TYPES = ["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환"] as const;
+const SKILL_TYPES = ["지정 공격A", "지정 공격B", "광역 공격A", "광역 공격B", "소환", "지속 디버프"] as const;
 type SkillType = (typeof SKILL_TYPES)[number];
+
+const EFFECT_STATS = [
+  ["atk", "공격력"], ["atk_p", "공격력 증가율 (%)"], ["def", "방어력"], ["def_p", "방어력 증가율 (%)"],
+  ["def_eff", "방어 효율 (%)"], ["dmg_p", "피해 증가율 (%)"], ["dmg_r", "피해 감소율 (%)"], ["heal_eff", "치유 효율 (%)"],
+  ["attn", "주목도"], ["presence", "존재감 (%)"], ["skill_eff_fixed", "기술 효율 (%)"], ["skill_eff_true", "고정 기술 효율"],
+  ["skill_target", "기술 대상 수"], ["hp_regen_true", "고정 체력 재생"], ["hp_regen_fixed", "체력 재생률 (%)"], ["mp_regen", "마나 재생"],
+];
+function SettingSelect({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) {
+  return <label className="flex min-w-0 flex-col gap-1.5 text-xs text-ivory/85">{label}
+    <select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-lg border border-line bg-surface px-2 text-ivory">
+      {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
+    </select>
+  </label>;
+}
 
 const ALL_CHAPTERS = "__all__";
 
 type SkillFormEntry = {
+  manual_target_count: boolean;
+  debuff_stat: string;
+  debuff_amount: string;
+  debuff_stackable: boolean;
+  summon_action_type: "attack" | "explosion" | "debuff" | "buff";
+  summon_trigger_phase: "telegraph" | "ally" | "enemy";
+  summon_effect_stat: string;
+  summon_effect_percent: string;
+  summon_buff_enemy_id: string;
+  summon_buff_stat: "attack" | "damage";
   skill_type: SkillType;
   name: string;
   target_count: string;
@@ -49,9 +73,9 @@ type SkillFormEntry = {
   summon_hp: string;
   summon_attack: string;
   summon_count: string;
-  /** 이미 업로드되어 저장된 소환수 이미지 URL. */
+  /** 이미 업로드되어 저장된 하수인 이미지 URL. */
   summon_image_url: string | null;
-  /** 아직 업로드하지 않은, 선택만 해둔 소환수 이미지 파일. */
+  /** 아직 업로드하지 않은, 선택만 해둔 하수인 이미지 파일. */
   summon_image_file: File | null;
   /** 미리보기용 URL (blob 또는 기존 image_url). */
   summon_image_preview: string | null;
@@ -69,6 +93,9 @@ type EnemyFormState = {
 };
 
 const EMPTY_SKILL: SkillFormEntry = {
+  manual_target_count: false, debuff_stat: "atk", debuff_amount: "0", debuff_stackable: false,
+  summon_action_type: "attack", summon_trigger_phase: "enemy", summon_effect_stat: "atk",
+  summon_effect_percent: "0", summon_buff_enemy_id: "", summon_buff_stat: "attack",
   skill_type: "지정 공격A",
   name: "",
   target_count: "1",
@@ -97,6 +124,11 @@ function toPayload(form: EnemyFormState): EnemyCreate {
   const skills: EnemySkill[] = form.skills.map((s) => {
     const isSummon = s.skill_type === "소환";
     return {
+      manual_target_count: s.manual_target_count,
+      debuff_stat: s.debuff_stat, debuff_amount: Number(s.debuff_amount) || 0, debuff_stackable: s.debuff_stackable,
+      summon_action_type: s.summon_action_type, summon_trigger_phase: s.summon_trigger_phase,
+      summon_effect_stat: s.summon_effect_stat, summon_effect_percent: Number(s.summon_effect_percent) || 0,
+      summon_buff_enemy_id: s.summon_buff_enemy_id ? Number(s.summon_buff_enemy_id) : null, summon_buff_stat: s.summon_buff_stat,
       skill_type: s.skill_type,
       name: s.name.trim(),
       target_count: isSummon ? 0 : parsePositiveInt(s.target_count),
@@ -131,6 +163,11 @@ function enemyToForm(enemy: Enemy): EnemyFormState {
     attack: String(enemy.attack),
     skills: enemy.skills.length > 0
       ? enemy.skills.map((s) => ({
+          manual_target_count: s.manual_target_count ?? false,
+          debuff_stat: s.debuff_stat ?? "atk", debuff_amount: String(s.debuff_amount ?? 0), debuff_stackable: s.debuff_stackable ?? false,
+          summon_action_type: s.summon_action_type ?? "attack", summon_trigger_phase: s.summon_trigger_phase ?? "enemy",
+          summon_effect_stat: s.summon_effect_stat ?? "atk", summon_effect_percent: String(s.summon_effect_percent ?? 0),
+          summon_buff_enemy_id: s.summon_buff_enemy_id != null ? String(s.summon_buff_enemy_id) : "", summon_buff_stat: s.summon_buff_stat ?? "attack",
           skill_type: s.skill_type as SkillType,
           name: s.name,
           target_count: String(s.target_count),
@@ -153,6 +190,7 @@ const SKILL_TYPE_COLOR: Record<SkillType, string> = {
   "광역 공격A": "bg-orange-500/20 text-orange-300",
   "광역 공격B": "bg-red-500/20 text-red-300",
   소환: "bg-gold/15 text-gold",
+  "지속 디버프": "bg-purple-500/20 text-purple-300",
 };
 
 export default function EnemyTab() {
@@ -175,7 +213,7 @@ export default function EnemyTab() {
 
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [environmentsLoading, setEnvironmentsLoading] = useState(false);
-  const [environmentDraft, setEnvironmentDraft] = useState({ name: "", stacks_per_round: "1", damage_per_stack: "0" });
+  const [environmentDraft, setEnvironmentDraft] = useState({ name: "", color: "#e879f9", stackable: true, dispellable: false, enemy_condition: "always" as Environment["enemy_condition"], condition_enemy_id: "", stacks_per_round: "1", damage_per_stack: "0" });
   const [editingEnvironmentId, setEditingEnvironmentId] = useState<number | null>(null);
   const [environmentSaving, setEnvironmentSaving] = useState(false);
   const [deletingEnvironmentId, setDeletingEnvironmentId] = useState<number | null>(null);
@@ -236,7 +274,7 @@ export default function EnemyTab() {
   useEffect(() => {
     let cancelled = false;
     async function load() {
-      setEnvironmentDraft({ name: "", stacks_per_round: "1", damage_per_stack: "0" });
+      setEnvironmentDraft({ name: "", color: "#e879f9", stackable: true, dispellable: false, enemy_condition: "always" as Environment["enemy_condition"], condition_enemy_id: "", stacks_per_round: "1", damage_per_stack: "0" });
       setEditingEnvironmentId(null);
       if (!chaptersLoaded || selectedChapter === ALL_CHAPTERS) { setEnvironments([]); return; }
       setEnvironmentsLoading(true);
@@ -257,6 +295,11 @@ export default function EnemyTab() {
     setEditingEnvironmentId(environment.id);
     setEnvironmentDraft({
       name: environment.name,
+      color: environment.color,
+      stackable: environment.stackable,
+      dispellable: environment.dispellable,
+      enemy_condition: environment.enemy_condition,
+      condition_enemy_id: environment.condition_enemy_id != null ? String(environment.condition_enemy_id) : "",
       stacks_per_round: String(environment.stacks_per_round),
       damage_per_stack: String(environment.damage_per_stack),
     });
@@ -264,16 +307,22 @@ export default function EnemyTab() {
 
   function resetEnvironmentDraft() {
     setEditingEnvironmentId(null);
-    setEnvironmentDraft({ name: "", stacks_per_round: "1", damage_per_stack: "0" });
+    setEnvironmentDraft({ name: "", color: "#e879f9", stackable: true, dispellable: false, enemy_condition: "always" as Environment["enemy_condition"], condition_enemy_id: "", stacks_per_round: "1", damage_per_stack: "0" });
   }
 
   async function handleEnvironmentSubmit() {
     if (selectedChapter === ALL_CHAPTERS || !environmentDraft.name.trim()) return;
+    if (environmentDraft.enemy_condition !== "always" && !environmentDraft.condition_enemy_id) { toast("조건 에너미를 선택해 주세요.", "error"); return; }
     setEnvironmentSaving(true);
     try {
       const payload = {
         chapter: selectedChapter,
         name: environmentDraft.name.trim(),
+        color: environmentDraft.color,
+        stackable: environmentDraft.stackable,
+        dispellable: environmentDraft.dispellable,
+        enemy_condition: environmentDraft.enemy_condition,
+        condition_enemy_id: environmentDraft.enemy_condition === "always" ? null : Number(environmentDraft.condition_enemy_id),
         stacks_per_round: parsePositiveInt(environmentDraft.stacks_per_round),
         damage_per_stack: parsePositiveInt(environmentDraft.damage_per_stack),
       };
@@ -567,10 +616,11 @@ export default function EnemyTab() {
                       {skill.skill_type === "소환" ? (
                         <span className="text-muted">
                           {skill.summon_name} (HP {(skill.summon_hp ?? 0).toLocaleString()} / 공격 {skill.summon_attack ?? 0}) ×{skill.summon_count ?? 1}
+                          {skill.summon_action_type && skill.summon_action_type !== "attack" && ` · ${{ explosion: "폭발", debuff: "약화", buff: "강화" }[skill.summon_action_type]} · ${skill.summon_trigger_phase === "telegraph" ? "다음 라운드 암시" : skill.summon_trigger_phase === "ally" ? "아군 행동" : "적 행동"}`}
                         </span>
                       ) : (
                         <span className="text-muted">
-                          타겟 {skill.target_count}명 / 피해 {skill.damage_percent}%
+                          {skill.manual_target_count ? "타겟 수동 지정" : `타겟 ${skill.target_count}명`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} -${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
                         </span>
                       )}
                     </div>
@@ -602,7 +652,9 @@ export default function EnemyTab() {
                       <div className="flex flex-wrap items-center gap-2 text-sm">
                         <span className="font-semibold text-ivory">{environment.name}</span>
                         <span className="text-xs text-muted">
-                          라운드당 스택 +{environment.stacks_per_round} · 스택당 {environment.damage_per_stack} 피해
+                          <span className="mr-1 inline-block h-3 w-1 rotate-20 rounded-full" style={{ backgroundColor: environment.color }} aria-hidden="true" />
+                          라운드당 스택 +{environment.stacks_per_round} · 스택당 {environment.damage_per_stack} 피해 · {environment.stackable ? "중첩 허용" : "중첩 불가"} · {environment.dispellable ? "해제 가능" : "해제 불가"}
+                          {environment.enemy_condition !== "always" && ` · ${enemies.find((enemy) => enemy.id === environment.condition_enemy_id)?.name ?? "지정 에너미"} ${environment.enemy_condition === "alive" ? "생존 시" : "생존하지 않을 때"}`}
                         </span>
                       </div>
                       <div className="flex items-center gap-1">
@@ -633,7 +685,12 @@ export default function EnemyTab() {
                 </div>
               )}
 
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
+              <div className="grid gap-3 sm:grid-cols-3">
+                <SettingSelect label="환경 적용 조건" value={environmentDraft.enemy_condition} options={[["always", "항상 적용"], ["alive", "지정 에너미가 살아있을 때"], ["dead", "지정 에너미가 살아있지 않을 때"]]} onChange={(value) => setEnvironmentDraft((prev) => ({ ...prev, enemy_condition: value as Environment["enemy_condition"] }))} />
+                {environmentDraft.enemy_condition !== "always" && <SettingSelect label="조건 에너미" value={environmentDraft.condition_enemy_id} options={[["", "에너미 선택"], ...enemies.filter((enemy) => enemy.chapter === selectedChapter).map((enemy) => [String(enemy.id), enemy.name])]} onChange={(value) => setEnvironmentDraft((prev) => ({ ...prev, condition_enemy_id: value }))} />}
+                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={environmentDraft.dispellable} onChange={(event) => setEnvironmentDraft((prev) => ({ ...prev, dispellable: event.target.checked }))} />기술·정화수로 해제 가능</label>
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-semibold text-ivory/85">스택 이름</label>
                   <Input
@@ -660,7 +717,18 @@ export default function EnemyTab() {
                     placeholder="0"
                   />
                 </div>
-                <div className="flex items-end gap-2">
+                <div className="flex flex-col gap-1.5">
+                  <label htmlFor="environment-color" className="text-xs font-semibold text-ivory/85">스택 색상</label>
+                  <input id="environment-color" type="color" value={environmentDraft.color}
+                    onChange={(event) => setEnvironmentDraft((prev) => ({ ...prev, color: event.target.value }))}
+                    className="h-9 w-16 cursor-pointer rounded border border-line bg-surface p-1" />
+                </div>
+                <div className="flex flex-col justify-end gap-2">
+                  <label className="flex cursor-pointer items-center gap-2 text-xs text-ivory">
+                    <input type="checkbox" checked={environmentDraft.stackable} className="accent-gold"
+                      onChange={(event) => setEnvironmentDraft((prev) => ({ ...prev, stackable: event.target.checked }))} />
+                    중첩 허용
+                  </label>
                   <Button
                     type="button"
                     variant="secondary"
@@ -888,8 +956,10 @@ export default function EnemyTab() {
                     <div className="grid grid-cols-2 gap-2">
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-semibold text-ivory/85">타겟 인원</label>
+                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.manual_target_count} onChange={(event) => updateSkill(idx, "manual_target_count", event.target.checked)} />수동 지정 (매 라운드 선택)</label>
                         <Input
                           type="number" min={0} className="h-8 text-xs"
+                          disabled={skill.manual_target_count}
                           value={skill.target_count}
                           onChange={(e) => updateSkill(idx, "target_count", e.target.value)}
                           placeholder="0"
@@ -899,6 +969,7 @@ export default function EnemyTab() {
                         <label className="text-xs font-semibold text-ivory/85">피해량 (%)</label>
                         <Input
                           type="number" min={0} className="h-8 text-xs"
+                          disabled={skill.skill_type === "지속 디버프"}
                           value={skill.damage_percent}
                           onChange={(e) => updateSkill(idx, "damage_percent", e.target.value)}
                           placeholder="0"
@@ -907,24 +978,41 @@ export default function EnemyTab() {
                     </div>
                   )}
 
+                  {skill.skill_type === "지속 디버프" && <div className="grid gap-2 sm:grid-cols-3">
+                    <SettingSelect label="감소 능력치" value={skill.debuff_stat} options={EFFECT_STATS} onChange={(value) => updateSkill(idx, "debuff_stat", value)} />
+                    <label className="text-xs">감소량 {EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1].includes("%") ? "(%)" : "(수치)"}<Input type="number" min={0} step="any" value={skill.debuff_amount} onChange={(event) => updateSkill(idx, "debuff_amount", event.target.value)} /></label>
+                    <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.debuff_stackable} onChange={(event) => updateSkill(idx, "debuff_stackable", event.target.checked)} />중첩 허용</label>
+                  </div>}
                   {isSummon && (
                     <div className="flex flex-col gap-2">
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <SettingSelect label="하수인 공격 타입" value={skill.summon_action_type} options={[["attack", "일반 공격"], ["explosion", "폭발"], ["debuff", "약화"], ["buff", "강화"]]} onChange={(value) => updateSkill(idx, "summon_action_type", value as SkillFormEntry["summon_action_type"])} />
+                        {skill.summon_action_type !== "attack" && <SettingSelect label="발동 턴" value={skill.summon_trigger_phase} options={[["telegraph", "다음 라운드 암시"], ["ally", "이번 라운드 아군의 행동"], ["enemy", "이번 라운드 적의 행동"]]} onChange={(value) => updateSkill(idx, "summon_trigger_phase", value as SkillFormEntry["summon_trigger_phase"])} />}
+                        {skill.summon_action_type === "debuff" && <SettingSelect label="감소 능력치" value={skill.summon_effect_stat} options={EFFECT_STATS} onChange={(value) => updateSkill(idx, "summon_effect_stat", value)} />}
+                        {skill.summon_action_type === "buff" && <>
+                          <SettingSelect label="강화할 에너미" value={skill.summon_buff_enemy_id} options={[["", "소환한 에너미"], ...enemies.filter((enemy) => enemy.chapter === form.chapter).map((enemy) => [String(enemy.id), enemy.name])]} onChange={(value) => updateSkill(idx, "summon_buff_enemy_id", value)} />
+                          <SettingSelect label="증가 능력치" value={skill.summon_buff_stat} options={[["attack", "공격력"], ["damage", "피해량"]]} onChange={(value) => updateSkill(idx, "summon_buff_stat", value as SkillFormEntry["summon_buff_stat"])} />
+                        </>}
+                        {(skill.summon_action_type === "buff" || skill.summon_action_type === "debuff") && <label className="text-xs">{skill.summon_action_type === "buff" ? "증가" : "감소"}량 (%)<Input type="number" min={0} step="any" value={skill.summon_effect_percent} onChange={(event) => updateSkill(idx, "summon_effect_percent", event.target.value)} /></label>}
+                      </div>
+                      {skill.summon_action_type !== "attack" && <p className="text-xs text-muted">{skill.summon_action_type === "explosion" ? "광역 피해를 주고 소멸합니다. 공격력에 폭발 피해량을 입력하세요." : "살아 있는 동안 매 라운드 지정 턴에 반복 발동합니다."}</p>}
+
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-ivory/85">소환수 이름</label>
+                        <label className="text-xs font-semibold text-ivory/85">하수인 이름</label>
                         <Input
                           className="h-8 text-xs"
                           value={skill.summon_name}
                           onChange={(e) => updateSkill(idx, "summon_name", e.target.value)}
-                          placeholder="소환수 이름"
+                          placeholder="하수인 이름"
                         />
                       </div>
 
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-ivory/85">소환수 이미지</label>
+                        <label className="text-xs font-semibold text-ivory/85">하수인 이미지</label>
                         <div className="flex items-center gap-3">
                           <div className="relative flex size-14 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-line bg-inset">
                             {skill.summon_image_preview ? (
-                              <Image src={skill.summon_image_preview} alt="소환수 이미지 미리보기" fill unoptimized className="object-cover object-top" />
+                              <Image src={skill.summon_image_preview} alt="하수인 이미지 미리보기" fill unoptimized className="object-cover object-top" />
                             ) : (
                               <ImageIcon size={16} className="text-muted" />
                             )}
@@ -940,7 +1028,7 @@ export default function EnemyTab() {
 
                       <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-semibold text-ivory/85">소환수 체력</label>
+                          <label className="text-xs font-semibold text-ivory/85">하수인 체력</label>
                           <Input
                             type="number" min={0} className="h-8 text-xs"
                             value={skill.summon_hp}
@@ -949,7 +1037,7 @@ export default function EnemyTab() {
                           />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-semibold text-ivory/85">소환수 공격력</label>
+                          <label className="text-xs font-semibold text-ivory/85">하수인 공격력</label>
                           <Input
                             type="number" min={0} className="h-8 text-xs"
                             value={skill.summon_attack}
@@ -958,7 +1046,7 @@ export default function EnemyTab() {
                           />
                         </div>
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-xs font-semibold text-ivory/85">소환 인원수</label>
+                          <label className="text-xs font-semibold text-ivory/85">하수인 수</label>
                           <Input
                             type="number" min={1} className="h-8 text-xs"
                             value={skill.summon_count}

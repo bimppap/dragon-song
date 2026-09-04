@@ -33,6 +33,7 @@ import {
   type BattleEnemyState,
   type BattleParticipant,
   type BattleSession,
+  type BattleStatusEffect,
   type CharacterSkillNode,
   type CharacterSkillTree,
   type CharacterActionKind,
@@ -42,6 +43,7 @@ import {
   type EnemyActionKind,
   type SkillBook,
 } from "@/lib/api";
+import InfoTooltip from "@/components/common/InfoTooltip";
 import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
@@ -50,6 +52,21 @@ import { useBattleSocket, type BattleDraftPreview } from "@/lib/useBattleSocket"
 import { isAdminRole, useAuth } from "@/lib/auth";
 import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
+
+function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect[] {
+  const result: BattleStatusEffect[] = [];
+  const grouped = new Map<string, BattleStatusEffect>();
+  for (const effect of effects) {
+    const existing = effect.stack_source ? grouped.get(effect.stack_source) : undefined;
+    if (existing) existing.stacks = (existing.stacks ?? 1) + (effect.stacks ?? 1);
+    else {
+      const copy = { ...effect };
+      result.push(copy);
+      if (effect.stack_source) grouped.set(effect.stack_source, copy);
+    }
+  }
+  return result;
+}
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
@@ -73,6 +90,7 @@ interface Props {
 interface CharDraft {
   kind: CharacterActionKind;
   skill_node_id: number | null;
+  skill_target_keys?: string[];
   target_enemy_id: number | null;
   target_character_id: number | null; // 치유/구조 지정 대상
   protect_target_character_id: number | null; // 방어(수비 포지션 한정) 시 대신 맞아줄 대상
@@ -287,13 +305,14 @@ function describePendingAction(
   if (pending.kind === "summon") {
     return `예고: ${skill.name} (소환 · ${skill.summon_name ?? "???"} x${skill.summon_count ?? 1})`;
   }
-  const isAoe = skill.skill_type.startsWith("광역");
+  const isAoe = skill.skill_type.startsWith("광역") && !skill.manual_target_count;
   const targetLabel = isAoe
     ? "전원"
     : pending.target_character_ids
         .map((id) => participantsById.get(id)?.name)
         .filter((name): name is string => Boolean(name))
         .join(", ") || "대상 없음";
+  if (skill.skill_type === "지속 디버프") return `예고: ${skill.name} → ${targetLabel} (지속 디버프)`;
   const base = Math.floor((enemy.attack * skill.damage_percent) / 100);
   return `예고: ${skill.name} → ${targetLabel} (예상 피해 ${fmt(base)})`;
 }
@@ -303,6 +322,34 @@ interface TargetOption {
   label: ReactNode;
   icon?: ReactNode;
   disabled?: boolean;
+}
+
+function SkillTargetPicker({ values, options, onChange, count }: {
+  values: string[]; options: TargetOption[]; onChange: (keys: string[]) => void; count: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const [selection, setSelection] = useState<string[]>([]);
+  const required = Math.min(count, options.length);
+  return <>
+    <Button variant="outline" className="h-auto min-h-8 w-full whitespace-normal text-[11px]" onClick={() => {
+      setSelection(values.filter((key) => options.some((option) => option.key === key)).slice(0, required));
+      setOpen(true);
+    }}>{values.length ? options.filter((option) => values.includes(option.key)).map((option) => option.label).join(", ") : "기술 대상 선택"}</Button>
+    {open && <div className="fixed inset-0 z-110 flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
+      <div role="dialog" aria-modal="true" aria-label="기술 적용 대상 선택" className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-line bg-surface p-4" onClick={(event) => event.stopPropagation()}>
+        <p className="mb-3 text-sm font-semibold">기술 적용 인원: {count}명 · 선택 {selection.length}/{required}명</p>
+        {required < count && <p className="mb-3 text-xs text-muted">선택 가능한 대상 {required}명에게 적용합니다.</p>}
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">{options.map((option) => {
+          const checked = selection.includes(option.key);
+          return <button key={option.key} type="button" aria-pressed={checked} disabled={!checked && selection.length >= required}
+            className={cn("rounded-lg border border-line p-2 text-sm disabled:opacity-40", checked && "border-gold bg-gold/15 text-gold")}
+            onClick={() => setSelection((prev) => checked ? prev.filter((key) => key !== option.key) : [...prev, option.key])}>{option.label}</button>;
+        })}</div>
+        <div className="mt-4 flex justify-end gap-2"><Button variant="ghost" onClick={() => setOpen(false)}>취소</Button>
+          <Button disabled={required === 0 || selection.length !== required} onClick={() => { onChange(selection); setOpen(false); }}>선택 완료</Button></div>
+      </div>
+    </div>}
+  </>;
 }
 
 /** 대상 지정 UI. 드롭다운 대신 중앙 팝업으로 대상 목록을 보여준다. */
@@ -676,6 +723,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         return [characterId, {
           ...draft,
           kind: bulkActionKind,
+          skill_target_keys: bulkActionKind === "skill" ? [] : undefined,
           skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(affordableSkills) : draft.skill_node_id,
           target_character_id: bulkActionKind === "skill" ? numericCharacterId : draft.target_character_id,
           protect_target_character_id: bulkActionKind === "defend" ? numericCharacterId : draft.protect_target_character_id,
@@ -715,6 +763,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       character_id: Number(id),
       kind: draft.kind,
       skill_node_id: draft.kind === "skill" ? (draft.skill_node_id ?? undefined) : undefined,
+      skill_target_keys: draft.kind === "skill" ? draft.skill_target_keys : undefined,
       target_enemy_id: draft.target_enemy_id ?? undefined,
       target_character_id: draft.target_character_id ?? undefined,
       protect_target_character_id: draft.kind === "defend" ? (draft.protect_target_character_id ?? undefined) : undefined,
@@ -1053,8 +1102,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const attackSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type !== "소환");
           const summonSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type === "소환");
           const selectedSkill = draft?.skill_index != null ? enemy.skills[draft.skill_index] : null;
-          const needsManualTargets = draft?.kind === "attack" && selectedSkill && !selectedSkill.skill_type.startsWith("광역");
-          const targetCount = selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
+          const needsManualTargets = draft?.kind === "attack" && selectedSkill && (selectedSkill.manual_target_count || !selectedSkill.skill_type.startsWith("광역"));
+          const targetCount = selectedSkill?.manual_target_count ? targetableParticipants.length : selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
           const pendingLabel = !dead && phase !== "telegraph"
             ? describePendingAction(enemy, pendingActionsByEnemy.get(enemy.enemy_id), participantsById)
             : null;
@@ -1071,6 +1120,11 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                 <span className="font-num text-xs text-muted">공격력 {enemy.attack}</span>
               </div>
               <HpBar hp={enemy.hp} max={enemy.max_hp} color="bg-red-500" />
+              {(enemy.status_effects?.length ?? 0) > 0 && <div className="mt-2 flex flex-wrap gap-1">
+                {displayStatusEffects(enemy.status_effects ?? []).map((effect, index) => <Badge key={index} variant="outline" className={effect.affinity === "buff" ? "text-emerald-300" : "text-fuchsia-300"}>
+                  {effect.skill_name ?? effect.effect_type} ×{effect.stacks ?? 1}
+                </Badge>)}
+              </div>}
 
               {canAct && !dead && phase === "telegraph" && draft && (
                 <div className="mt-3 space-y-2">
@@ -1092,7 +1146,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                           <SelectItem value="none">무반응</SelectItem>
                           {attackSkills.map((s) => (
                             <SelectItem key={s.index} value={`attack:${s.index}`}>
-                              {s.skill_type} · {s.name} ({s.skill_type.startsWith("광역") ? "전체" : `${s.target_count}인`} / {s.damage_percent}%)
+                              {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : s.skill_type.startsWith("광역") ? "전체" : `${s.target_count}인`} / {s.damage_percent}%)
                             </SelectItem>
                           ))}
                           {summonSkills.map((s) => (
@@ -1108,7 +1162,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   {needsManualTargets && (
                     <div className="rounded-lg border border-line bg-inset/60 p-2">
                       <p className="mb-1.5 text-[11px] text-muted">
-                        공격 대상 선택 ({draft.target_character_ids.length}/{targetCount}명, 비워두면 자동 선정)
+                        {selectedSkill?.manual_target_count ? `대상 수동 지정 · ${draft.target_character_ids.length}명 선택 (매 라운드 인원 변경 가능)` : `공격 대상 선택 (${draft.target_character_ids.length}/${targetCount}명, 비워두면 자동 선정)`}
                       </p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                         {targetableParticipants.map((p) => {
@@ -1142,14 +1196,17 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         })}
       </div>
 
-      {/* 공용 소환수 */}
+      {/* 공용 하수인 */}
       {session.summons.length > 0 && (
         <div className="rounded-xl border border-line bg-inset p-4">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">소환수 (공격 우선 대상)</p>
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">하수인 (공격 우선 대상)</p>
           <div className="grid grid-cols-5 gap-2">
             {session.summons.map((s) => (
               <div key={s.id} className="rounded-lg border border-line bg-surface px-3 py-2">
                 <p className="mb-1 text-sm font-semibold text-ivory">{summonDisplayNames.get(s.id) ?? s.name}</p>
+                {s.action_type && s.action_type !== "attack" && <p className="mb-1 text-xs text-muted">
+                  {{ explosion: "폭발", debuff: "약화", buff: "강화" }[s.action_type]} · {s.trigger_phase === "telegraph" ? "암시 턴" : s.trigger_phase === "ally" ? "아군 턴" : "적 턴"} · {s.action_type === "explosion" ? "1회 발동 후 소멸" : "매 라운드 반복"}
+                </p>}
                 <HpBar hp={s.hp} max={s.max_hp} color="bg-orange-500" />
               </div>
             ))}
@@ -1201,69 +1258,22 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             : null;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
-          if (draft?.kind === "skill" && affordableSkills.length > 0) {
-            extraControls.push({
-              key: "skill",
-              icon: Sparkles,
-              control: (
-                <Select
-                  value={draft.skill_node_id != null ? String(draft.skill_node_id) : String(affordableSkills[0].id)}
-                  onValueChange={(value) => patchChar(p.character_id, {
-                    skill_node_id: Number(value),
-                    target_character_id: p.character_id,
-                  })}
-                >
-                  <SelectTrigger className="h-8 w-full text-[11px]">
-                    <SelectValue placeholder="기술 선택" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectGroup>
-                      {affordableSkills.map((skill) => (
-                        <SelectItem key={skill.id} value={String(skill.id)}>{skill.display_name}</SelectItem>
-                      ))}
-                    </SelectGroup>
-                  </SelectContent>
-                </Select>
-              ),
+          if (draft?.kind === "skill" && selectedSkill) {
+            const multi = selectedSkillTargetMode === "enemy-multi" || selectedSkillTargetMode === "ally-multi";
+            const count = multi ? Math.max(1, Math.floor(2 + Math.max(0, selectedSkill.tier - 1) * 0.34 + p.skill_target)) : 1;
+            const options: TargetOption[] = selectedSkillTargetMode?.startsWith("enemy")
+              ? [...session.summons.filter((summon) => summon.hp > 0).map((summon) => ({ key: `summon:${summon.id}`, label: `${summon.name} (하수인)` })),
+                 ...targetableEnemies.map((enemy) => ({ key: `enemy:${enemy.enemy_id}`, label: enemy.name }))]
+              : selectedSkillTargetMode === "self" || selectedSkillTargetMode === "none"
+                ? [{ key: `ally:${p.character_id}`, label: `${p.name} (본인)` }]
+                : (selectedSkill.category === "강화" ? targetableParticipants : healableParticipants).map((target) => ({ key: `ally:${target.character_id}`, label: `${target.name}${target.downed ? " (기절)" : ""}` }));
+            extraControls.push({ key: "skill-target", icon: Sparkles, control:
+              <SkillTargetPicker values={draft.skill_target_keys ?? []} options={options} count={count}
+                onChange={(keys) => patchChar(p.character_id, { skill_target_keys: keys,
+                  target_character_id: keys[0]?.startsWith("ally:") ? Number(keys[0].split(":")[1]) : p.character_id,
+                  target_enemy_id: keys[0]?.startsWith("enemy:") ? Number(keys[0].split(":")[1]) : null,
+                })} />,
             });
-
-            if (selectedSkillTargetMode === "enemy-single" && targetableEnemies.length > 1) {
-              extraControls.push({
-                key: "enemy-target",
-                icon: Skull,
-                control: (
-                  <TargetPickerButton
-                    title="공격 대상 선택"
-                    placeholder="대상 선택"
-                    value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : null}
-                    onChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
-                    options={targetableEnemies.map((enemy) => ({ key: String(enemy.enemy_id), label: enemy.name }))}
-                  />
-                ),
-              });
-            } else if (selectedSkillTargetMode === "ally-single") {
-              const targetCandidates = selectedSkill?.category === "강화"
-                ? targetableParticipants
-                : healableParticipants;
-              if (targetCandidates.length > 1) {
-                extraControls.push({
-                  key: "ally-target",
-                  icon: HeartPulse,
-                  control: (
-                    <TargetPickerButton
-                      title="기술 대상 선택"
-                      placeholder="대상 선택"
-                      value={draft.target_character_id != null ? String(draft.target_character_id) : null}
-                      onChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
-                      options={targetCandidates.map((target) => ({
-                        key: String(target.character_id),
-                        label: `${target.name}${target.downed ? " (기절)" : target.character_id === p.character_id ? " (본인)" : ""}`,
-                      }))}
-                    />
-                  ),
-                });
-              }
-            }
           } else if (draft && draft.kind === "attack" && targetableEnemies.length > 1) {
             extraControls.push({
               key: "enemy-target",
@@ -1367,27 +1377,35 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               icon: ListChecks,
               control: (
                 <Select
-                  value={draft?.kind}
-                  onValueChange={(kind: CharacterActionKind) => {
+                  value={draft?.kind === "skill" && selectedSkill ? `skill:${selectedSkill.id}` : draft?.kind}
+                  onValueChange={(value) => {
+                    const kind = (value.startsWith("skill:") ? "skill" : value) as CharacterActionKind;
                     const nextPatch: Partial<CharDraft> = {
                       kind,
                       item_id: kind === "item" ? draft?.item_id ?? null : null,
                       protect_target_character_id: kind === "defend" ? p.character_id : draft?.protect_target_character_id ?? p.character_id,
                     };
                     if (kind === "skill") {
-                      nextPatch.skill_node_id = firstBattleSkillId(affordableSkills);
+                      nextPatch.skill_node_id = Number(value.slice("skill:".length));
+                      nextPatch.skill_target_keys = [];
+                      nextPatch.target_enemy_id = targetableEnemies[0]?.enemy_id ?? null;
                       nextPatch.target_character_id = p.character_id;
                     }
                     patchChar(p.character_id, nextPatch);
                     if (kind === "item") void ensureItemsLoaded(p.character_id);
                   }}
                 >
-                  <SelectTrigger className="h-8 w-full text-[11px]">
+                  <SelectTrigger className="h-auto min-h-8 w-full text-[11px] [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:text-left">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="max-w-[calc(100vw-2rem)]">
                     <SelectGroup>
                       {kindOptions.map((kind) => {
+                        if (kind === "skill" && affordableSkills.length > 0) return affordableSkills.map((skill) => (
+                          <SelectItem key={`skill:${skill.id}`} value={`skill:${skill.id}`} className="whitespace-normal break-words">
+                            기술({skill.display_name})
+                          </SelectItem>
+                        ));
                         const skillUnavailable = kind === "skill" && affordableSkills.length === 0;
                         const healUnavailable = kind === "heal" && p.mp < 1;
                         const unavailable = skillUnavailable || healUnavailable;
@@ -1484,7 +1502,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         title="아직 확정되지 않은 행동입니다"
                       >
                         {actionPreview.kind === "skill" ? (
-                          <span className="truncate">{actionPreview.skill_name ?? "기술 사용"}</span>
+                          <span className="whitespace-normal break-words">기술({actionPreview.skill_name ?? "기술"})</span>
                         ) : actionPreview.kind === "defend"
                           && actionPreview.protect_target_character_id != null
                           && actionPreview.protect_target_character_id !== p.character_id ? (
@@ -1502,6 +1520,21 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         )}
                       </div>
                     )}
+
+                    {(p.environment_stacks?.length ?? 0) > 0 && <InfoTooltip content={
+                      <span className="flex flex-wrap items-center gap-1">
+                        {p.environment_stacks?.map((stack, index) => <span key={stack.id}>
+                          {index > 0 && <span className="mr-1 text-muted">|</span>}
+                          <span style={{ color: stack.color }}>{stack.name} {stack.count}</span>
+                        </span>)}
+                      </span>
+                    }>
+                      <div tabIndex={0} className="flex cursor-help flex-wrap gap-1 py-0.5" aria-label={p.environment_stacks?.map((stack) => `${stack.name} ${stack.count}`).join(" | ")}>
+                        {p.environment_stacks?.map((stack) => <div key={stack.id} className="contents">
+                          {Array.from({ length: stack.count }, (_, index) => <span key={index} aria-hidden="true" className="block h-2.5 w-0.5 rotate-20 rounded-full" style={{ backgroundColor: stack.color }} />)}
+                        </div>)}
+                      </div>
+                    </InfoTooltip>}
 
                     {(p.downed || p.retreated || p.defending || (active && p.joined_round === session.round)) && (
                       <div className="flex flex-wrap gap-2">
@@ -1524,7 +1557,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
                     {p.status_effects != null && p.status_effects.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
-                        {p.status_effects.map((effect, index) => {
+                        {displayStatusEffects(p.status_effects).map((effect, index) => {
                           const isBuff = effect.affinity === "buff";
                           const label = effect.skill_name || effect.var_name || effect.effect_type;
                           return (
@@ -1566,7 +1599,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                           actionControls.length >= 3 && index === actionControls.length - 1 && "col-span-2",
                         )}
                       >
-                        <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />
+                        {key !== "action" && <Icon className="h-3.5 w-3.5 shrink-0 text-muted" />}
                         {control}
                       </div>
                     ))}

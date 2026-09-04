@@ -358,6 +358,16 @@ def ensure_schema(engine: Engine) -> None:
         if "uq_usage_character_recollection_mission" not in usage_indexes:
             statements.append("CREATE UNIQUE INDEX uq_usage_character_recollection_mission ON item_usages (character_id, selected_mission_id)")
 
+    if "environments" in table_names:
+        environment_columns = {col["name"] for col in inspector.get_columns("environments")}
+        for name, definition in (("dispellable", "BOOLEAN NOT NULL DEFAULT false"), ("enemy_condition", "VARCHAR NOT NULL DEFAULT 'always'"), ("condition_enemy_id", "INTEGER")):
+            if name not in environment_columns:
+                statements.append(f"ALTER TABLE environments ADD COLUMN {name} {definition}")
+        if "stackable" not in environment_columns:
+            statements.append("ALTER TABLE environments ADD COLUMN stackable BOOLEAN NOT NULL DEFAULT true")
+        if "color" not in environment_columns:
+            statements.append("ALTER TABLE environments ADD COLUMN color VARCHAR NOT NULL DEFAULT '#e879f9'")
+
     if "purchases" in table_names:
         purchase_columns = {col["name"] for col in inspector.get_columns("purchases")}
         if "source" not in purchase_columns:

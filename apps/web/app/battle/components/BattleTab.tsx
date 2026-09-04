@@ -501,7 +501,7 @@ export default function BattleTab() {
                                   </div>
                                   <p className="mt-1 text-xs text-muted">
                                     {skill.skill_type === "소환"
-                                      ? `${skill.summon_name ?? "소환수"} · HP ${numberFormatter.format(skill.summon_hp ?? 0)} · 공격 ${numberFormatter.format(skill.summon_attack ?? 0)} · 수량 ${numberFormatter.format(skill.summon_count ?? 1)}`
+                                      ? `${skill.summon_name ?? "하수인"} · HP ${numberFormatter.format(skill.summon_hp ?? 0)} · 공격 ${numberFormatter.format(skill.summon_attack ?? 0)} · 수량 ${numberFormatter.format(skill.summon_count ?? 1)}`
                                       : `대상 ${numberFormatter.format(skill.target_count)}명 · 피해 ${numberFormatter.format(skill.damage_percent)}%`}
                                   </p>
                                 </div>

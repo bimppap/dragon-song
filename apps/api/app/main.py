@@ -1068,7 +1068,7 @@ async def upload_enemy_summon_image(
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """소환 스킬의 소환수 이미지를 업로드한다. skill_index는 에너미의 skills 배열 내 인덱스다."""
+    """소환 스킬의 하수인 이미지를 업로드한다. skill_index는 에너미의 skills 배열 내 인덱스다."""
     enemy = db.get(Enemy, enemy_id)
     if not enemy:
         raise HTTPException(status_code=404, detail="에너미를 찾을 수 없습니다.")

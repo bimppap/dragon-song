@@ -1,4 +1,5 @@
 import math
+import random
 import re
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
@@ -3198,6 +3199,11 @@ def create_environment(db: Session, data: EnvironmentCreate) -> EnvironmentRead:
     environment = Environment(
         chapter=data.chapter.strip(),
         name=data.name.strip(),
+        color=data.color,
+        dispellable=data.dispellable,
+        enemy_condition=data.enemy_condition,
+        condition_enemy_id=data.condition_enemy_id,
+        stackable=data.stackable,
         stacks_per_round=data.stacks_per_round,
         damage_per_stack=data.damage_per_stack,
     )
@@ -3213,6 +3219,11 @@ def update_environment(db: Session, environment_id: int, data: EnvironmentCreate
         raise HTTPException(status_code=404, detail="환경을 찾을 수 없습니다.")
     environment.chapter = data.chapter.strip()
     environment.name = data.name.strip()
+    environment.color = data.color
+    environment.dispellable = data.dispellable
+    environment.enemy_condition = data.enemy_condition
+    environment.condition_enemy_id = data.condition_enemy_id
+    environment.stackable = data.stackable
     environment.stacks_per_round = data.stacks_per_round
     environment.damage_per_stack = data.damage_per_stack
     db.commit()
@@ -3229,7 +3240,7 @@ def delete_environment(db: Session, environment_id: int) -> None:
 
 
 # ── Battle ───────────────────────────────────────────────────────────────────
-# 참가자/에너미/소환수 상태는 JSON 스냅샷(dict)으로 BattleSession에 저장한다.
+# 참가자/에너미/하수인 상태는 JSON 스냅샷(dict)으로 BattleSession에 저장한다.
 # 아이템 효과의 stat 이름 → 전투 스냅샷 dict 키 매핑(경제/성장 스탯은 전투 중 의미가 없어 제외한다).
 BATTLE_ITEM_EFFECT_KEYS: dict[str, str] = {
     "hp": "hp", "hp_max": "max_hp", "mp": "mp", "mp_max": "max_mp",
@@ -3576,11 +3587,97 @@ def _remove_status_effects_by_affinity(target: dict, affinity: str, count: int) 
     for effect in _ensure_status_effects(target):
         if removed < count and effect.get("affinity") == affinity:
             removed += 1
+            if effect.get("effect_type") == "stat_modifier":
+                stat = effect["stat"]
+                target[stat] = target.get(stat, 0) - effect.get("applied_delta", 0)
             removed_names.append(effect.get("skill_name") or effect.get("var_name") or affinity)
             continue
         kept.append(effect)
     target["status_effects"] = kept
     return removed, removed_names
+
+
+def _cleanse_combat_debuffs(db: Session, target: dict, count: int) -> tuple[int, list[str]]:
+    removed, names = _remove_status_effects_by_affinity(target, "debuff", count)
+    stacks = dict(target.get("env_stacks", {}))
+    if removed < count and stacks:
+        environments = db.query(Environment).filter(Environment.id.in_([int(key) for key in stacks]), Environment.dispellable.is_(True)).order_by(Environment.id).all()
+        for environment in environments:
+            key = str(environment.id)
+            cleared = min(max(0, stacks.get(key, 0)), count - removed)
+            if cleared:
+                stacks[key] -= cleared
+                if stacks[key] <= 0:
+                    stacks.pop(key, None)
+                removed += cleared
+                names.append(environment.name)
+            if removed >= count:
+                break
+        target["env_stacks"] = stacks
+    return removed, names
+
+
+def _add_combat_stat_stack(target: dict, *, source: str, name: str, stat: str, amount: float, percent: bool, stackable: bool, debuff: bool = True) -> bool:
+    effects = list(_ensure_status_effects(target))
+    matching = [effect for effect in effects if effect.get("stack_source") == source]
+    if matching and not stackable:
+        return False
+    if debuff and _consume_purification_guard_stack(target):
+        return False
+    effects = list(_ensure_status_effects(target))
+    current = target.get(stat, 0)
+    # 같은 능력치에 걸린 효과를 역산해 원래 값 기준으로 퍼센트 스택을 더한다.
+    base = current - sum(effect.get("applied_delta", 0) for effect in effects if effect.get("effect_type") == "stat_modifier" and effect.get("stat") == stat)
+    delta = abs(base) * amount / 100 if percent else amount
+    if isinstance(current, int):
+        delta = _floor_amount(delta)
+    delta = -delta if debuff else delta
+    if debuff:
+        delta = max(-current, delta)
+    target[stat] = current + delta
+    target["status_effects"] = effects + [{
+        "effect_type": "stat_modifier", "affinity": "debuff" if debuff else "buff", "skill_name": name,
+        "stack_source": source, "stat": stat, "applied_delta": delta, "stackable": stackable, "stacks": 1,
+    }]
+    return True
+
+
+def _apply_minion_phase(participants: list[dict], enemies: list[dict], summons: list[dict], round_no: int, phase: str, events: list[str]) -> None:
+    for minion in summons:
+        kind = minion.get("action_type", "attack")
+        if minion["hp"] <= 0 or kind == "attack" or minion.get("trigger_phase") != phase or minion.get("trigger_round", round_no) > round_no or minion.get("last_trigger_round") == round_no:
+            continue
+        name = _summon_log_name(minion)
+        if kind == "buff":
+            target = next((enemy for enemy in enemies if enemy["enemy_id"] == minion.get("buff_enemy_id") and enemy["hp"] > 0), None)
+            if target:
+                stat = "attack" if minion.get("buff_stat", "attack") == "attack" else "damage_bonus"
+                target.setdefault(stat, 0.0)
+                amount = minion.get("effect_percent", 0)
+                _add_combat_stat_stack(target, source=f"minion:{minion.get('spawn_round', 0)}:{minion['id']}", name=name, stat=stat,
+                                      amount=amount if stat == "attack" else amount / 100,
+                                      percent=stat == "attack", stackable=True, debuff=False)
+                events.append(f"👹 하수인 {name} 강화 → {target['name']} {'공격력' if stat == 'attack' else '피해량'} +{amount}%")
+        else:
+            for target in participants:
+                if not _combatant_targetable(target, round_no):
+                    continue
+                if kind == "debuff":
+                    stat = minion.get("effect_stat", "atk")
+                    amount = minion.get("effect_percent", 0)
+                    applied = _add_combat_stat_stack(target, source=f"minion:{minion.get('spawn_round', 0)}:{minion['id']}", name=name, stat=stat, amount=amount, percent=True, stackable=True)
+                    events.append(f"👹 하수인 {name} 약화 → {target['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} -{amount}%{' (방지)' if not applied else ''}")
+                elif kind == "explosion":
+                    raw = max(0, minion["attack"] - (_eff_def(target) if target.get("defending") else 0))
+                    damage = max(0, _floor_amount(raw * (1 - target.get("dmg_r", 0))))
+                    damage, absorbed = _apply_hit(target, damage)
+                    events.append(f"💥 하수인 {name} 폭발 → {target['name']} {damage} 피해 [{target['hp']}/{target['max_hp']}]")
+                    if target["hp"] <= 0:
+                        target["downed"] = True
+        minion["last_trigger_round"] = round_no
+        if kind == "explosion":
+            minion["hp"] = 0
+            events.append(f"👹 하수인 {name} 폭발 후 소멸")
 
 
 def _consume_one_time_outgoing_damage_bonus(actor: dict) -> float:
@@ -3699,6 +3796,14 @@ def _apply_damage_to_enemy(enemy: dict, damage: int) -> tuple[int, bool]:
     return dealt, overkill
 
 
+def _explicit_skill_targets(keys: list[str], candidates: dict, count: int) -> list:
+    if len(keys) != len(set(keys)) or len(keys) != min(count, len(candidates)):
+        raise HTTPException(status_code=400, detail=f"기술 적용 대상을 {min(count, len(candidates))}명 선택해 주세요.")
+    if any(key not in candidates for key in keys):
+        raise HTTPException(status_code=400, detail="선택한 기술 대상에게 적용할 수 없습니다.")
+    return [candidates[key] for key in keys]
+
+
 def _multi_target_skill_count(actor: dict, skill_lv: int) -> int:
     return max(1, _floor_amount(2 + skill_lv * 0.34 + actor["skill_target"]))
 
@@ -3742,7 +3847,7 @@ def _apply_ongoing_telegraph_skill_effects(enemies: list[dict], events: list[str
 
 
 def _assign_summon_log_numbers(summons: list[dict]) -> None:
-    # 이전에 생성된 전투 데이터에도 같은 이름의 소환수가 여럿이면 안정적인 번호를 부여한다.
+    # 이전에 생성된 전투 데이터에도 같은 이름의 하수인이 여럿이면 안정적인 번호를 부여한다.
     summons_by_name: dict[str, list[dict]] = {}
     for summon in summons:
         summons_by_name.setdefault(summon["name"], []).append(summon)
@@ -3832,15 +3937,8 @@ def _apply_item_effects_to_snapshot(db: Session, p: dict, effects: list[dict], s
             continue
         if stat == "cleanse_debuffs":
             if sign > 0:
-                debuff_effects = _ensure_status_effects(p)
-                _, removed_names = _remove_status_effects_by_affinity(p, "debuff", len(debuff_effects))
-                env_ids = [int(eid) for eid, stacks in p.get("env_stacks", {}).items() if stacks]
-                env_names = (
-                    [name for _id, name in db.query(Environment.id, Environment.name).filter(Environment.id.in_(env_ids)).all()]
-                    if env_ids else []
-                )
-                p["env_stacks"] = {}
-                cleared_names = removed_names + env_names
+                total = len(_ensure_status_effects(p)) + sum(p.get("env_stacks", {}).values())
+                _, cleared_names = _cleanse_combat_debuffs(db, p, total)
                 if cleared_names:
                     notes.append(f"{', '.join(cleared_names)} 약화 해제!")
             continue
@@ -3914,7 +4012,13 @@ def _get_active_battle_skills_by_character(db: Session, character_ids: list[int]
     return by_character
 
 
-def _to_battle_session_read(session: BattleSession) -> BattleSessionRead:
+def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessionRead:
+    environments = {str(env.id): env for env in db.query(Environment).filter(Environment.chapter == session.chapter).all()} if session.chapter else {}
+    participants = [{**participant, "environment_stacks": [
+        {"id": int(env_id), "name": environments[env_id].name if env_id in environments else "환경",
+         "color": environments[env_id].color if env_id in environments else "#e879f9", "count": count}
+        for env_id, count in participant.get("env_stacks", {}).items() if count > 0
+    ]} for participant in session.participants]
     return BattleSessionRead(
         id=session.id,
         mode=session.mode,
@@ -3925,7 +4029,7 @@ def _to_battle_session_read(session: BattleSession) -> BattleSessionRead:
         pending_enemy_actions=session.pending_enemy_actions,
         enemies=session.enemies,
         summons=session.summons,
-        participants=session.participants,
+        participants=participants,
         log=session.log,
         created_at=session.created_at,
         updated_at=session.updated_at,
@@ -3962,7 +4066,7 @@ def _get_battle_for_update(db: Session, session_id: int) -> BattleSession | None
 def _commit_battle_session(db: Session, session: BattleSession) -> BattleSessionRead:
     """공개 응답을 flush 직후 만들고 커밋해, 커지는 비공개 롤백 JSON의 재조회까지 피한다."""
     db.flush()
-    result = _to_battle_session_read(session)
+    result = _to_battle_session_read(db, session)
     db.commit()
     return result
 
@@ -4104,7 +4208,7 @@ def get_battle_session(db: Session, session_id: int, member: Member) -> BattleSe
     # 러너는 실전(real) 전투만 관전할 수 있다. 연습 전투는 관리자 전용이다.
     if not is_admin_role(member.role) and session.mode != "real":
         raise HTTPException(status_code=403, detail="열람 권한이 없습니다.")
-    return _to_battle_session_read(session)
+    return _to_battle_session_read(db, session)
 
 
 def get_live_real_battle(
@@ -4137,7 +4241,7 @@ def get_live_real_battle(
         .filter(BattleSession.id == metadata.id)
         .first()
     )
-    return (_to_battle_session_read(session) if session else None), False
+    return (_to_battle_session_read(db, session) if session else None), False
 
 
 def get_battle_sessions(
@@ -4334,13 +4438,14 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 f"마나 재생량 {_formula_number(p['mp_regen'])}",
             ]
 
+    _apply_minion_phase(participants, enemies, summons, round_no, "telegraph", events)
     _apply_ongoing_telegraph_skill_effects(enemies, events)
     if all(enemy["hp"] <= 0 for enemy in enemies):
         session.status = "victory"
         events.append("🏆 지속 효과로 전투 승리")
         session.participants = participants
         session.enemies = enemies
-        session.summons = summons
+        session.summons = [summon for summon in summons if summon["hp"] > 0]
         session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
         if session.mode == "real":
             _finalize_real_battle(db, participants)
@@ -4355,10 +4460,18 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     for env in environments:
         if not affected:
             break
-        events.append(f"🌫️ 환경 · {env.name} 스택 +{env.stacks_per_round}")
+        condition_enemy = next((enemy for enemy in enemies if enemy["enemy_id"] == env.condition_enemy_id), None)
+        condition_alive = condition_enemy is not None and condition_enemy["hp"] > 0
+        if env.enemy_condition == "alive" and not condition_alive:
+            continue
+        if env.enemy_condition == "dead" and condition_alive:
+            continue
+        stack_note = f"+{env.stacks_per_round}" if env.stackable else f"미보유 대상 +{env.stacks_per_round}"
+        events.append(f"🌫️ 환경 · {env.name} {stack_note}")
         newly_downed_names: list[str] = []
         for p in affected:
-            stacks = p["env_stacks"].get(str(env.id), 0) + env.stacks_per_round
+            previous_stacks = p["env_stacks"].get(str(env.id), 0)
+            stacks = previous_stacks + env.stacks_per_round if env.stackable or previous_stacks == 0 else previous_stacks
             # dict(p)는 얕은 복사라 env_stacks 딕셔너리 자체는 라운드 스냅샷과 공유된다.
             # 그 안의 값을 직접 mutate하면 undo용 스냅샷까지 오염되므로 새 딕셔너리로 교체한다.
             p["env_stacks"] = {**p["env_stacks"], str(env.id): stacks}
@@ -4366,7 +4479,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             if dmg <= 0:
                 continue
             p["hp"] = max(0, p["hp"] - dmg)
-            events.append(f"　→ {p['name']} 스택 {stacks} · {dmg} 피해 [{p['hp']}/{p['max_hp']}]")
+            events.append(f"　→ {p['name']} · {dmg} 피해 [{p['hp']}/{p['max_hp']}]")
             if p["hp"] == 0 and not p["downed"]:
                 p["downed"] = True
                 newly_downed_names.append(p["name"])
@@ -4377,6 +4490,8 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         session.status = "defeat"
         events.append("💀 전투 패배")
         session.participants = participants
+        session.enemies = enemies
+        session.summons = [summon for summon in summons if summon["hp"] > 0]
         session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
         if session.mode == "real":
             _finalize_real_battle(db, participants)
@@ -4395,16 +4510,20 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             skill = enemy["skills"][action.skill_index]
 
         if action.kind == "attack" and skill and skill["skill_type"] != "소환":
-            is_aoe = skill["skill_type"].startswith("광역")
+            is_aoe = skill["skill_type"].startswith("광역") and not skill.get("manual_target_count", False)
             if is_aoe:
                 target_ids = [p["character_id"] for p in participants if _combatant_targetable(p, round_no)]
                 target_label = "전원"
             else:
-                target_count = max(1, skill["target_count"])
+                target_count = len(set(action.target_character_ids)) if skill.get("manual_target_count") else max(1, skill["target_count"])
+                if skill.get("manual_target_count") and target_count == 0 and any(_combatant_targetable(p, round_no) for p in participants):
+                    raise HTTPException(status_code=400, detail="수동 지정 기술의 대상을 1명 이상 선택해 주세요.")
                 chosen = [
-                    cid for cid in action.target_character_ids
+                    cid for cid in dict.fromkeys(action.target_character_ids)
                     if cid in by_char_id and _combatant_targetable(by_char_id[cid], round_no)
                 ][:target_count]
+                if skill.get("manual_target_count") and len(chosen) != target_count:
+                    raise HTTPException(status_code=400, detail="현재 공격할 수 없는 대상이 포함되어 있습니다.")
                 if not chosen:
                     living_now = sorted(
                         (p for p in participants if _combatant_targetable(p, round_no)),
@@ -4415,14 +4534,17 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 target_label = ", ".join(by_char_id[cid]["name"] for cid in target_ids) if target_ids else "대상 없음"
             base = _floor_amount(enemy["attack"] * skill["damage_percent"] / 100)
             events.append(f"🔮 {enemy['name']} - {skill['name']}")
-            events.append(f"이번 차례 공격 대상 : {target_label} / 예상 피해 : {base}")
+            if skill["skill_type"] == "지속 디버프":
+                events.append(f"이번 차례 약화 대상 : {target_label}")
+            else:
+                events.append(f"이번 차례 공격 대상 : {target_label} / 예상 피해 : {base}")
             pending_actions.append({
                 "enemy_id": enemy["enemy_id"], "kind": "attack",
                 "skill_index": action.skill_index, "target_character_ids": target_ids,
             })
         elif action.kind == "summon" and skill and skill["skill_type"] == "소환":
             count = skill.get("summon_count") or 1
-            summon_name = skill.get("summon_name") or f"{enemy['name']}의 소환수"
+            summon_name = skill.get("summon_name") or f"{enemy['name']}의 하수인"
             same_name_summons = [s for s in summons if s["name"] == summon_name]
             if same_name_summons and any(not isinstance(s.get("log_number"), int) for s in same_name_summons):
                 for number, existing_summon in enumerate(
@@ -4439,6 +4561,14 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 next_log_number += 1
                 summons.append({
                     "id": next_summon_id,
+                    "spawn_round": round_no,
+                    "action_type": skill.get("summon_action_type", "attack"),
+                    "trigger_phase": skill.get("summon_trigger_phase", "enemy"),
+                    "trigger_round": round_no + (1 if skill.get("summon_trigger_phase") == "telegraph" else 0),
+                    "effect_stat": skill.get("summon_effect_stat", "atk"),
+                    "effect_percent": skill.get("summon_effect_percent", 0),
+                    "buff_enemy_id": skill.get("summon_buff_enemy_id") or enemy["enemy_id"],
+                    "buff_stat": skill.get("summon_buff_stat", "attack"),
                     "name": summon_name,
                     "hp": skill.get("summon_hp") or 1,
                     "max_hp": skill.get("summon_hp") or 1,
@@ -4460,7 +4590,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     session.pending_enemy_actions = pending_actions
     session.phase = "ally"
     session.participants = participants
-    session.summons = summons
+    session.summons = [summon for summon in summons if summon["hp"] > 0]
     session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
 
     return _commit_battle_session(db, session)
@@ -4498,6 +4628,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     } if session.mode == "real" else None
     turn_item_usages: list[dict] = []
     events: list[str] = ["🗡️ 조사단의 행동!"]
+    _apply_minion_phase(participants, enemies, summons, round_no, "ally", events)
     # 값: 이벤트 문자열 하나에 계산 결과 숫자가 여럿(예: 재생의 HP/MP)이면 등장 순서대로 담은 리스트,
     # 하나뿐이면 문자열 그대로.
     calculations: dict[str, str | list[str]] = {}
@@ -4579,7 +4710,16 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             return ordered
         return [preferred] + [enemy for enemy in ordered if enemy["enemy_id"] != preferred_enemy_id]
 
-    def _resolve_damage_targets(preferred_enemy_id: int | None, count: int) -> list[tuple[str, dict]]:
+    initial_damage_candidates = {f"summon:{summon['id']}": ("summon", summon) for summon in summons if summon["hp"] > 0}
+    initial_damage_candidates.update({f"enemy:{enemy['enemy_id']}": ("enemy", enemy) for enemy in enemies if _enemy_targetable(enemy, round_no)})
+    initial_healable_candidates = {f"ally:{target['character_id']}": target for target in participants if _healable(target, round_no)}
+    initial_active_candidates = {f"ally:{target['character_id']}": target for target in participants if _combatant_targetable(target, round_no)}
+
+    def _resolve_damage_targets(preferred_enemy_id: int | None, count: int, keys: list[str] | None = None) -> list[tuple[str, dict]]:
+        if keys is not None:
+            selected = _explicit_skill_targets(keys, initial_damage_candidates, count)
+            # 앞선 행동으로 쓰러진 대상은 건너뛰고, 선택하지 않은 대상으로 바꾸지 않는다.
+            return [(kind, target) for kind, target in selected if target["hp"] > 0]
         targets: list[tuple[str, dict]] = []
         for summon in summons:
             if summon["hp"] <= 0:
@@ -4600,6 +4740,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         return dealt, overkill
 
     def _single_ally_target(actor: dict, action: CharacterActionInput, *, active_only: bool = False) -> dict | None:
+        if action.skill_target_keys is not None:
+            candidates = initial_active_candidates if active_only else initial_healable_candidates
+            targets = _explicit_skill_targets(action.skill_target_keys, candidates, 1)
+            if not targets:
+                return None
+            target = targets[0]
+            return target if (_combatant_targetable(target, round_no) if active_only else _healable(target, round_no)) else None
         chosen = by_char_id.get(action.target_character_id) if action.target_character_id else None
         if active_only:
             if chosen and _combatant_targetable(chosen, round_no):
@@ -4613,9 +4760,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             return actor
         return next((p for p in participants if _healable(p, round_no)), None)
 
-    def _multi_ally_targets(count: int) -> list[dict]:
+    def _multi_ally_targets(count: int, keys: list[str] | None = None) -> list[dict]:
         # 체력 낮은 순 → 동률이면 주목도 높은 순 → 그것도 같으면 이름 가나다순.
         healable = [p for p in participants if _healable(p, round_no)]
+        if keys is not None:
+            return [target for target in _explicit_skill_targets(keys, initial_healable_candidates, count) if _healable(target, round_no)]
         return sorted(healable, key=lambda target: (target["hp"], -target["attn"], target["name"]))[:count]
 
     def _selected_skill(actor: dict, action: CharacterActionInput) -> dict | None:
@@ -4742,7 +4891,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             tier6_bonus = _skill_has_tier6_bonus(selected_skill)
 
             if var_name == "ab_strike":
-                targets = _resolve_damage_targets(action.target_enemy_id, 1)
+                targets = _resolve_damage_targets(action.target_enemy_id, 1, action.skill_target_keys)
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
@@ -4754,13 +4903,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     dealt, overkill = _apply_damage_to_summon(target, damage)
                     summon_name = _summon_log_name(target)
                     events.append(
-                        f"✨ {p['name']}의 {skill_name} → 소환수 {summon_name} {dealt} 피해 · "
+                        f"✨ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
                     calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
-                        events.append(f"💀 소환수 {summon_name} 처치")
+                        events.append(f"💀 하수인 {summon_name} 처치")
                 else:
                     dealt, overkill = _apply_damage_to_enemy(target, damage)
                     events.append(
@@ -4774,7 +4923,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_crushing":
-                targets = _resolve_damage_targets(action.target_enemy_id, _multi_target_skill_count(p, skill_lv))
+                targets = _resolve_damage_targets(action.target_enemy_id, _multi_target_skill_count(p, skill_lv), action.skill_target_keys)
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
@@ -4787,13 +4936,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         dealt, overkill = _apply_damage_to_summon(target, damage)
                         summon_name = _summon_log_name(target)
                         events.append(
-                            f"🌊 {p['name']}의 {skill_name} → 소환수 {summon_name} {dealt} 피해 · "
+                            f"🌊 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
                             f"{' (오버킬)' if overkill else ''}"
                         )
                         calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
-                            events.append(f"💀 소환수 {summon_name} 처치")
+                            events.append(f"💀 하수인 {summon_name} 처치")
                         continue
 
                     dealt, overkill = _apply_damage_to_enemy(target, damage)
@@ -4826,7 +4975,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_harm":
-                targets = _resolve_damage_targets(action.target_enemy_id, 1)
+                targets = _resolve_damage_targets(action.target_enemy_id, 1, action.skill_target_keys)
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
@@ -4838,13 +4987,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     dealt, overkill = _apply_damage_to_summon(target, damage)
                     summon_name = _summon_log_name(target)
                     events.append(
-                        f"☠️ {p['name']}의 {skill_name} → 소환수 {summon_name} {dealt} 피해 · "
+                        f"☠️ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
                         f"[{target['hp']}/{target['max_hp']}]"
                         f"{' (오버킬)' if overkill else ''}"
                     )
                     calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
-                        events.append(f"💀 소환수 {summon_name} 처치")
+                        events.append(f"💀 하수인 {summon_name} 처치")
                 else:
                     dealt, overkill = _apply_damage_to_enemy(target, damage)
                     events.append(
@@ -4881,7 +5030,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 before_hp = p["hp"]
                 healed, revived = _apply_skill_heal(p, p, heal_ratio)
                 p["attn"] += healed * skill_lv
-                removed, removed_names = _remove_status_effects_by_affinity(p, "debuff", skill_lv)
+                removed, removed_names = _cleanse_combat_debuffs(db, p, skill_lv)
                 log = (
                     f"🪨 {p['name']}의 {skill_name} → {healed} 치유"
                     f"{' (부활)' if revived else ''} · [{p['hp']}/{p['max_hp']}]"
@@ -4953,7 +5102,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 removed = 0
                 removed_names: list[str] = []
                 if tier6_bonus:
-                    removed, removed_names = _remove_status_effects_by_affinity(target, "debuff", skill_lv % 6)
+                    removed, removed_names = _cleanse_combat_debuffs(db, target, skill_lv % 6)
                 log = (
                     f"💚 {p['name']}의 {skill_name} → {target['name']} {healed} 치유"
                     f"{' (부활)' if revived else ''} · [{target['hp']}/{target['max_hp']}]"
@@ -4967,7 +5116,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_aid":
-                targets = _multi_ally_targets(_multi_target_skill_count(p, skill_lv))
+                targets = _multi_ally_targets(_multi_target_skill_count(p, skill_lv), action.skill_target_keys)
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
@@ -5010,7 +5159,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 heal_ratio = (((skill_lv * skill_power) + 0.1) * (1 + skill_eff_fixed)) * (1 + p["heal_eff"])
                 before_hp = target["hp"]
                 healed, revived = _apply_skill_heal(p, target, heal_ratio)
-                removed, removed_names = _remove_status_effects_by_affinity(target, "debuff", skill_lv + 1)
+                removed, removed_names = _cleanse_combat_debuffs(db, target, skill_lv + 1)
                 if tier6_bonus and removed > 0:
                     _add_status_effect(
                         target,
@@ -5159,13 +5308,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     else f"{p['name']} 공격"
                 )
                 events.append(
-                    f"⚔️ {action_label}: 소환수 {target_summon_name}에게 {dmg} 피해 "
+                    f"⚔️ {action_label}: 하수인 {target_summon_name}에게 {dmg} 피해 "
                     f"[{target_summon['hp']}/{target_summon['max_hp']}]"
                     f"{' (오버킬)' if overkill else ''}"
                 )
                 calculations[events[-1]] = damage_formula
                 if target_summon["hp"] <= 0:
-                    events.append(f"💀 소환수 {target_summon_name} 처치")
+                    events.append(f"💀 하수인 {target_summon_name} 처치")
                 continue
 
             dealt = min(dmg, target_enemy["hp"])
@@ -5285,7 +5434,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
     session.participants = participants
     session.enemies = enemies
-    session.summons = summons
+    session.summons = [summon for summon in summons if summon["hp"] > 0]
     if rollback_state and rollback_state.get("version") == 1:
         session.rollback_state = rollback_state
     session.log = list(session.log) + [{
@@ -5305,7 +5454,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
 
 def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead:
-    """3턴: 에너미 턴. 1턴에서 암시한 행동과 소환수의 자동 공격을 처리하고 라운드를 마무리한다."""
+    """3턴: 에너미 턴. 1턴에서 암시한 행동과 하수인의 자동 공격을 처리하고 라운드를 마무리한다."""
     session = _get_battle_for_update(db, session_id)
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
@@ -5336,6 +5485,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         }]
 
     events: list[str] = ["👹 에너미의 행동!"]
+    _apply_minion_phase(participants, enemies, summons, round_no, "enemy", events)
     calculations: dict[str, str] = {}
 
     by_char_id = {p["character_id"]: p for p in participants}
@@ -5412,8 +5562,8 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             })
         return recipient, dmg, absorbed, redirected, counter_results, damage_formula
 
-    # 소환수는 행동 암시 턴에 이미 소환되므로, 이번 라운드에 소환된 소환수도 곧바로 공격한다.
-    attacking_summons = [s for s in summons if s["hp"] > 0]
+    # 하수인는 행동 암시 턴에 이미 소환되므로, 이번 라운드에 소환된 하수인도 곧바로 공격한다.
+    attacking_summons = [s for s in summons if s["hp"] > 0 and s.get("action_type", "attack") == "attack"]
 
     for enemy_action in session.pending_enemy_actions:
         enemy = enemies_by_id.get(enemy_action.get("enemy_id"))
@@ -5426,7 +5576,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             skill = enemy["skills"][skill_index]
 
         if enemy_action.get("kind") == "attack" and skill and skill["skill_type"] != "소환":
-            is_aoe = skill["skill_type"].startswith("광역")
+            is_aoe = skill["skill_type"].startswith("광역") and not skill.get("manual_target_count", False)
             if is_aoe:
                 targets = [p for p in participants if _combatant_targetable(p, round_no)]
             else:
@@ -5441,13 +5591,22 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                         (p for p in participants if _combatant_targetable(p, round_no)),
                         key=lambda t: -(t["attn"] + t["presence"]),
                     )
-                    targets = living_now[: max(1, skill["target_count"])]
+                    targets = living_now[: len(target_ids) if skill.get("manual_target_count") else max(1, skill["target_count"])]
+            if skill["skill_type"] == "지속 디버프":
+                stat = skill.get("debuff_stat", "atk")
+                amount = skill.get("debuff_amount", 0)
+                ratio_stat = ITEM_EFFECT_STAT_TYPES.get(stat) is float
+                for target in targets:
+                    applied = _add_combat_stat_stack(target, source=f"enemy:{enemy['enemy_id']}:skill:{skill_index}", name=skill["name"], stat=stat,
+                        amount=amount / 100 if ratio_stat else amount, percent=False, stackable=skill.get("debuff_stackable", False))
+                    events.append(f"🔻 {enemy['name']}의 {skill['name']} → {target['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} -{amount}{'%' if ratio_stat else ''}{' (이미 적용 또는 방지)' if not applied else ''}")
+                continue
             damage_penalty = _consume_one_time_outgoing_damage_penalty(enemy)
-            base = max(0, _floor_amount(enemy["attack"] * skill["damage_percent"] / 100 * (1 - damage_penalty)))
+            base = max(0, _floor_amount(enemy["attack"] * skill["damage_percent"] / 100 * (1 - damage_penalty) * (1 + enemy.get("damage_bonus", 0))))
             base_formula = (
                 f"floor(공격력 {_formula_number(enemy['attack'])} × "
                 f"기술 피해율 {_formula_number(skill['damage_percent'] / 100)} × "
-                f"(1 - 공격력 감소율 {_formula_number(damage_penalty)}))"
+                f"(1 - 공격력 감소율 {_formula_number(damage_penalty)}) × (1 + 피해량 증가율 {_formula_number(enemy.get('damage_bonus', 0))}))"
             )
             newly_downed_names: list[str] = []
             for t in targets:
@@ -5478,25 +5637,23 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             if all(value["hp"] <= 0 for value in enemies):
                 break
         elif enemy_action.get("kind") == "summon":
-            pass  # 소환수는 행동 암시 턴에 이미 소환되었고, 이번 라운드 공격은 아래 소환수 행동에서 처리된다.
+            pass  # 하수인는 행동 암시 턴에 이미 소환되었고, 이번 라운드 공격은 아래 하수인 행동에서 처리된다.
         else:
             events.append(f"💤 {enemy['name']} 무반응")
 
-    # 소환수 행동 (단일 대상 자동 공격)
+    # 하수인 행동 (단일 대상 자동 공격)
     if not all(enemy["hp"] <= 0 for enemy in enemies):
         for summon in attacking_summons:
-            targets = sorted(
-                (p for p in participants if _combatant_targetable(p, round_no)),
-                key=lambda p: -(p["attn"] + p["presence"]),
-            )
+            targets = [p for p in participants if _combatant_targetable(p, round_no)]
             if not targets:
                 break
+            target = random.choice(targets)
             recipient, dmg, absorbed, redirected, counter_results, damage_formula = hit(
-                summon, targets[0], summon["attack"], _formula_number(summon["attack"])
+                summon, target, summon["attack"], _formula_number(summon["attack"])
             )
             redirect_note = f" (→ {recipient['name']}이(가) 대신 방어)" if redirected else ""
             events.append(
-                f"👹 소환수 {_summon_log_name(summon)} 공격 → {targets[0]['name']}{redirect_note} {dmg} 피해"
+                f"👹 하수인 {_summon_log_name(summon)} 공격 → {target['name']}{redirect_note} {dmg} 피해"
                 f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · "
                 f"{recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
             )
@@ -5506,12 +5663,12 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 events.append(f"💫 {recipient['name']} 기절")
             for counter in counter_results:
                 events.append(
-                    f"↩️ {counter['recipient_name']}의 {counter['skill_name']} → 소환수 {_summon_log_name(summon)} "
+                    f"↩️ {counter['recipient_name']}의 {counter['skill_name']} → 하수인 {_summon_log_name(summon)} "
                     f"{counter['damage']} 반격 피해"
                 )
                 calculations[events[-1]] = counter["formula"]
             if summon["hp"] <= 0:
-                events.append(f"💀 소환수 {_summon_log_name(summon)} 처치")
+                events.append(f"💀 하수인 {_summon_log_name(summon)} 처치")
 
     victory = all(e["hp"] <= 0 for e in enemies)
     no_active_left = not any(_combatant_active(p) for p in participants)

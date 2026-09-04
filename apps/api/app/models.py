@@ -494,6 +494,11 @@ class Environment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     chapter: Mapped[str] = mapped_column(String, nullable=False, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    color: Mapped[str] = mapped_column(String, nullable=False, default="#e879f9", server_default=text("'#e879f9'"))
+    dispellable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    enemy_condition: Mapped[str] = mapped_column(String, nullable=False, default="always", server_default=text("'always'"))
+    condition_enemy_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    stackable: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))
     stacks_per_round: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     damage_per_stack: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(

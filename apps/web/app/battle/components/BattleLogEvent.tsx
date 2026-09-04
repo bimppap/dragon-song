@@ -117,6 +117,9 @@ export default function BattleLogEvent({
   calculation?: string | string[];
   showFormula: boolean;
 }) {
+  // 이미 저장된 환경 로그도 현재 표시 형식에 맞춘다.
+  if (event.startsWith("🌫️ 환경 ·")) event = event.replace(/ 스택 (?=[+]\d+\s*$)/, " ");
+  else if (/^\s*→/.test(event)) event = event.replace(/ 스택 \d+(?= · \d[\d,]* 피해 \[)/, "");
   const matches = [...event.matchAll(NUMBER_PATTERN)];
   if (matches.length === 0) return event;
 

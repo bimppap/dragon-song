@@ -1402,6 +1402,16 @@ export async function fetchActiveChapter(): Promise<Chapter | null> {
 }
 
 export interface EnemySkill {
+  manual_target_count?: boolean;
+  debuff_stat?: string;
+  debuff_amount?: number;
+  debuff_stackable?: boolean;
+  summon_action_type?: "attack" | "explosion" | "debuff" | "buff";
+  summon_trigger_phase?: "telegraph" | "ally" | "enemy";
+  summon_effect_stat?: string;
+  summon_effect_percent?: number;
+  summon_buff_enemy_id?: number | null;
+  summon_buff_stat?: "attack" | "damage";
   skill_type: string;
   name: string;
   target_count: number;
@@ -1478,7 +1488,7 @@ export async function deleteEnemy(enemyId: number): Promise<void> {
 }
 
 export async function uploadEnemySummonImage(enemyId: number, skillIndex: number, file: File): Promise<Enemy> {
-  const enemy = await uploadFile<Enemy>(`/enemies/${enemyId}/skills/${skillIndex}/summon-image`, file, "file", "소환수 이미지 업로드 실패");
+  const enemy = await uploadFile<Enemy>(`/enemies/${enemyId}/skills/${skillIndex}/summon-image`, file, "file", "하수인 이미지 업로드 실패");
   invalidateApiCache("enemies:");
   return enemy;
 }
@@ -1488,6 +1498,11 @@ export interface Environment {
   id: number;
   chapter: string;
   name: string;
+  color: string;
+  stackable: boolean;
+  dispellable: boolean;
+  enemy_condition: "always" | "alive" | "dead";
+  condition_enemy_id: number | null;
   stacks_per_round: number;
   damage_per_stack: number;
   created_at: string;
@@ -1496,6 +1511,11 @@ export interface Environment {
 export interface EnvironmentCreate {
   chapter: string;
   name: string;
+  color: string;
+  stackable: boolean;
+  dispellable: boolean;
+  enemy_condition: "always" | "alive" | "dead";
+  condition_enemy_id: number | null;
   stacks_per_round: number;
   damage_per_stack: number;
 }
@@ -1541,6 +1561,7 @@ export type CharacterActionKind = "attack" | "skill" | "defend" | "heal" | "resc
 export type EnemyActionKind = "attack" | "summon" | "none";
 
 export interface BattleEnemyState {
+  status_effects?: BattleStatusEffect[];
   enemy_id: number;
   name: string;
   attack: number;
@@ -1551,6 +1572,9 @@ export interface BattleEnemyState {
 }
 
 export interface BattleSummonState {
+  action_type?: "attack" | "explosion" | "debuff" | "buff";
+  trigger_phase?: "telegraph" | "ally" | "enemy";
+  trigger_round?: number;
   id: number;
   name: string;
   log_number?: number | null;
@@ -1560,6 +1584,7 @@ export interface BattleSummonState {
 }
 
 export interface BattleStatusEffect {
+  stack_source?: string;
   affinity: "buff" | "debuff";
   effect_type: string;
   skill_name?: string | null;
@@ -1570,6 +1595,7 @@ export interface BattleStatusEffect {
 }
 
 export interface BattleParticipant {
+  environment_stacks?: { id: number; name: string; color: string; count: number }[];
   character_id: number;
   name: string;
   status_effects?: BattleStatusEffect[];
@@ -1655,6 +1681,7 @@ export interface BattleStartRequest {
 }
 
 export interface BattleCharacterActionInput {
+  skill_target_keys?: string[];
   character_id: number;
   kind: CharacterActionKind;
   skill_node_id?: number | null;
