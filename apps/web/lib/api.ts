@@ -929,11 +929,13 @@ export async function consumeItem(
   itemId: number,
   chosenStats?: string[],
   delivery?: DeliveryPayload,
+  missionId?: number,
 ): Promise<CharacterDetail> {
   const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
     method: "POST",
     body: JSON.stringify({
       chosen_stats: chosenStats ?? [],
+      mission_id: missionId ?? null,
       delivery_date: delivery?.date ?? null,
       delivery_note: delivery?.note ?? null,
       delivery_image_url: delivery?.image_url ?? null,
@@ -1910,4 +1912,8 @@ export async function uploadCharacterSkillImage(
 
 export async function fetchDeliveryRecipients(): Promise<{ id: number; name: string }[]> {
   return request("/shop/delivery-recipients", undefined, "수신자 목록 조회 실패");
+}
+
+export async function fetchRecollectionMissions(characterId: number, itemId: number): Promise<RecollectionMission[]> {
+  return request(`/characters/${characterId}/items/${itemId}/recollection-missions`, undefined, "회고할 임무 조회 실패");
 }

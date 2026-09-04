@@ -2,13 +2,11 @@
 
 import { Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Item } from "@/lib/api";
 
 export interface CartEntry {
   item: Item;
   qty: number;
-  missionId?: number | null;
 }
 
 interface Props {
@@ -16,7 +14,6 @@ interface Props {
   loading: boolean;
   onUpdateQty: (itemId: number, qty: number) => void;
   onRemove: (itemId: number) => void;
-  onMissionChange: (itemId: number, missionId: number) => void;
   onPurchase: () => void;
 }
 
@@ -27,7 +24,7 @@ function formatPrice(goldAmount: number, cpAmount: number): string {
   return parts.length > 0 ? parts.join(" + ") : "-";
 }
 
-export default function Cart({ entries, loading, onUpdateQty, onRemove, onMissionChange, onPurchase }: Props) {
+export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurchase }: Props) {
   const totalGold = entries.reduce((sum, e) => sum + (e.item.price_gold ?? 0) * e.qty, 0);
   const totalCp = entries.reduce((sum, e) => sum + (e.item.price_cp ?? 0) * e.qty, 0);
   const totalQty = entries.reduce((sum, e) => sum + e.qty, 0);
@@ -48,7 +45,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onMissio
             장바구니가 비어있습니다.
           </li>
         )}
-        {entries.map(({ item, qty, missionId }) => {
+        {entries.map(({ item, qty }) => {
           const isRecollection = item.effects.some((effect) => effect.stat === "mission_exp_recollection");
           return (
           <li key={item.id} className="px-4 py-3 space-y-2">
@@ -68,7 +65,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onMissio
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => onUpdateQty(item.id, qty - 1)}
-                  disabled={qty <= 1 || isRecollection}
+                  disabled={qty <= 1}
                   className="w-6 h-6 flex items-center justify-center rounded border border-line text-muted hover:bg-primary-light/20 disabled:opacity-30 transition"
                 >
                   <Minus size={11} />
@@ -76,7 +73,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onMissio
                 <span className="font-num w-7 text-center text-sm font-semibold text-ivory">{qty}</span>
                 <button
                   onClick={() => onUpdateQty(item.id, qty + 1)}
-                  disabled={isRecollection}
+                  disabled={qty >= Math.min(item.remaining_per_character ?? Infinity, item.remaining_global ?? Infinity)}
                   className="w-6 h-6 flex items-center justify-center rounded border border-line text-muted hover:bg-primary-light/20 transition"
                 >
                   <Plus size={11} />
@@ -92,25 +89,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onMissio
             <div className="font-num text-xs text-muted">
               단가 {formatPrice(item.price_gold ?? 0, item.price_cp ?? 0)}
             </div>
-            {isRecollection && (
-              <Select
-                value={missionId != null ? String(missionId) : undefined}
-                onValueChange={(value) => onMissionChange(item.id, Number(value))}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="경험치를 받을 임무 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectGroup>
-                    {item.eligible_missions.map((mission) => (
-                      <SelectItem key={mission.id} value={String(mission.id)}>
-                        {mission.name} · 경험치 {mission.reward_experience}
-                      </SelectItem>
-                    ))}
-                  </SelectGroup>
-                </SelectContent>
-              </Select>
-            )}
+            {isRecollection && <p className="text-xs text-muted">사용할 때 임무를 선택합니다. 구매 가능: {item.remaining_per_character ?? 0}개</p>}
           </li>
           );
         })}
@@ -127,10 +106,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onMissio
         <Button
           variant="cta"
           className="w-full"
-          disabled={loading || entries.length === 0 || entries.some((entry) => (
-            entry.item.effects.some((effect) => effect.stat === "mission_exp_recollection")
-            && entry.missionId == null
-          ))}
+          disabled={loading || entries.length === 0}
           onClick={onPurchase}
         >
           <ShoppingCart size={15} />

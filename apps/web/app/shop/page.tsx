@@ -27,15 +27,13 @@ function useCartEntries() {
   const [cart, setCart] = useState<CartEntry[]>([]);
 
   function handleAddToCart(item: Item) {
-    const isRecollection = item.effects.some((effect) => effect.stat === "mission_exp_recollection");
     setCart((prev) => {
       const existing = prev.find((e) => e.item.id === item.id);
-      if (isRecollection && existing) return prev;
       if (existing)
         return prev.map((e) =>
           e.item.id === item.id ? { ...e, qty: e.qty + 1 } : e,
         );
-      return [...prev, { item, qty: 1, missionId: null }];
+      return [...prev, { item, qty: 1 }];
     });
   }
 
@@ -49,15 +47,11 @@ function useCartEntries() {
     }
   }
 
-  function handleMissionChange(itemId: number, missionId: number) {
-    setCart((prev) => prev.map((entry) => entry.item.id === itemId ? { ...entry, missionId } : entry));
-  }
-
   function handleRemove(itemId: number) {
     setCart((prev) => prev.filter((e) => e.item.id !== itemId));
   }
 
-  return { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove, handleMissionChange };
+  return { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove };
 }
 
 function ShopCurtain() {
@@ -108,7 +102,7 @@ function ShopContentFrame({ closed, children }: { closed: boolean; children: Rea
 
 function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurchased: () => void) {
   const { confirm, alert } = useDialog();
-  const { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove, handleMissionChange } = useCartEntries();
+  const { cart, setCart, handleAddToCart, handleUpdateQty, handleRemove } = useCartEntries();
   const [cartLoading, setCartLoading] = useState(false);
 
   async function handlePurchase() {
@@ -121,7 +115,7 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
     try {
       await bulkPurchase(
         characterId,
-        cart.map((e) => ({ item_id: e.item.id, quantity: e.qty, mission_id: e.missionId ?? null })),
+        cart.map((e) => ({ item_id: e.item.id, quantity: e.qty })),
       );
       // 구매 직후 바로 장착/사용할지 아이템별로 확인
       for (const { item } of cart) {
@@ -147,7 +141,7 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
     }
   }
 
-  return { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handleMissionChange, handlePurchase };
+  return { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase };
 }
 
 function RunnerShop({
@@ -159,7 +153,7 @@ function RunnerShop({
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [balance, setBalance] = useState<{ gold: number; cp: number } | null>(null);
-  const { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handleMissionChange, handlePurchase } =
+  const { cart, cartLoading, handleAddToCart, handleUpdateQty, handleRemove, handlePurchase } =
     usePurchaseCart(characterId, shopOpen, () => setRefreshKey((k) => k + 1));
   const cartItemIds = new Set(cart.map((e) => e.item.id));
 
@@ -203,7 +197,6 @@ function RunnerShop({
               loading={cartLoading}
               onUpdateQty={handleUpdateQty}
               onRemove={handleRemove}
-              onMissionChange={handleMissionChange}
               onPurchase={handlePurchase}
             />
           </div>

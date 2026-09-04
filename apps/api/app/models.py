@@ -326,6 +326,11 @@ class ItemUsage(Base):
     """캐릭터의 소모형 아이템 사용 이력(구매/사용 이력 병합 표시용)."""
     __tablename__ = "item_usages"
 
+    __table_args__ = (Index("uq_usage_character_recollection_mission", "character_id", "selected_mission_id", unique=True),)
+    selected_mission_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    selected_mission_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    granted_experience: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
     item_id: Mapped[int] = mapped_column(Integer, ForeignKey("items.id"), nullable=False, index=True)

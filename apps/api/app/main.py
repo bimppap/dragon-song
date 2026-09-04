@@ -644,10 +644,17 @@ def use_item(
         delivery_image_url=data.delivery_image_url if data else None,
         delivery_letter=data.delivery_letter if data else None,
         delivery_recipient_id=data.delivery_recipient_id if data else None,
+        mission_id=data.mission_id if data else None,
     )
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
+
+
+@app.get("/characters/{character_id}/items/{item_id}/recollection-missions")
+def list_recollection_missions(character_id: int, item_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.get_recollection_missions(db, character_id, item_id)
 
 
 @app.get("/items/{item_id}/delivery-dates", response_model=list[str])

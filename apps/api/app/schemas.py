@@ -477,6 +477,7 @@ class BulkPurchaseRequest(BaseModel):
 class UseItemRequest(BaseModel):
     """가능성/잠재성의 메달처럼 사용 시점에 선택이 필요한 아이템을 위한 선택값. 그 외 아이템은 무시된다."""
     chosen_stats: list[str] = Field(default_factory=list)
+    mission_id: int | None = Field(default=None, gt=0)
     # "delivery_date_slot" 아이템(질문권) 사용 시: 요청 날짜와 지문(텍스트).
     delivery_date: date | None = None
     delivery_note: str | None = None

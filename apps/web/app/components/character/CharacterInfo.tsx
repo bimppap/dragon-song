@@ -50,7 +50,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
+import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
 import DatePicker from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
@@ -492,7 +492,7 @@ function OwnedItemTile({
   characterId: number;
   loading: boolean;
   readOnly?: boolean;
-  onUse: (chosenStats?: string[], delivery?: DeliveryPayload) => void;
+  onUse: (chosenStats?: string[], delivery?: DeliveryPayload, missionId?: number) => void;
   onEquip: () => void;
   onUnequip: () => void;
 }) {
@@ -546,6 +546,28 @@ function OwnedItemTile({
           size="sm"
           variant="outline"
           onClick={async () => {
+            if (item.effects.some((effect) => effect.stat === "mission_exp_recollection")) {
+              try {
+                const missions = await fetchRecollectionMissions(characterId, item.item_id);
+                if (!missions.length) { toast("회고할 수 있는 미달성 임무가 없습니다.", "error"); return; }
+                const selected: { current: number | undefined } = { current: undefined };
+                const ok = await confirm({
+                  title: "회고록 사용",
+                  description: "선택한 임무의 경험치만 받습니다.",
+                  confirmText: "사용하기",
+                  content: <Select onValueChange={(value) => { selected.current = Number(value); }}>
+                    <SelectTrigger className="mt-3" aria-label="회고할 임무"><SelectValue placeholder="경험치를 받을 임무 선택" /></SelectTrigger>
+                    <SelectContent>{missions.map((mission) => <SelectItem key={mission.id} value={String(mission.id)}>
+                      {mission.name} · 경험치 {mission.reward_experience.toLocaleString()}
+                    </SelectItem>)}</SelectContent>
+                  </Select>,
+                });
+                if (!ok) return;
+                if (selected.current === undefined) { toast("임무를 선택해 주세요.", "error"); return; }
+                onUse(undefined, undefined, selected.current);
+              } catch (error) { toast(error instanceof Error ? error.message : "회고할 임무 조회 실패", "error"); }
+              return;
+            }
             if (gradeChoiceEffect) {
               const requiredCount = gradeChoiceEffect.stat === "grade_choice_1" ? 1 : 2;
               const chosenRef: { current: string[] } = { current: [] };
@@ -860,14 +882,15 @@ export default function CharacterInfo({
 
   async function handleItemAction(
     itemId: number,
-    action: (characterId: number, itemId: number, chosenStats?: string[], delivery?: DeliveryPayload) => Promise<CharacterDetail>,
+    action: (characterId: number, itemId: number, chosenStats?: string[], delivery?: DeliveryPayload, missionId?: number) => Promise<CharacterDetail>,
     chosenStats?: string[],
     delivery?: DeliveryPayload,
+    missionId?: number,
   ) {
     if (selectedDetail == null) return;
     setItemActionLoadingId(itemId);
     try {
-      const nextDetail = await action(selectedDetail.id, itemId, chosenStats, delivery);
+      const nextDetail = await action(selectedDetail.id, itemId, chosenStats, delivery, missionId);
       setDetail(nextDetail);
     } catch (error) {
       toast(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.", "error");
@@ -1225,7 +1248,7 @@ export default function CharacterInfo({
                       characterId={selectedDetail.id}
                       readOnly={readOnly}
                       loading={itemActionLoadingId === item.item_id}
-                      onUse={(chosenStats, delivery) => handleItemAction(item.item_id, consumeItem, chosenStats, delivery)}
+                      onUse={(chosenStats, delivery, missionId) => handleItemAction(item.item_id, consumeItem, chosenStats, delivery, missionId)}
                       onEquip={() => handleItemAction(item.item_id, equipItem)}
                       onUnequip={() => handleItemAction(item.item_id, unequipItem)}
                     />

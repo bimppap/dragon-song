@@ -345,6 +345,19 @@ def ensure_schema(engine: Engine) -> None:
     if "attendance_missions" in table_names:
         statements.append("DROP TABLE attendance_missions")
 
+    if "item_usages" in table_names:
+        usage_columns = {col["name"] for col in inspector.get_columns("item_usages")}
+        for name, definition in (
+            ("selected_mission_id", "INTEGER"),
+            ("selected_mission_name", "VARCHAR"),
+            ("granted_experience", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if name not in usage_columns:
+                statements.append(f"ALTER TABLE item_usages ADD COLUMN {name} {definition}")
+        usage_indexes = {index["name"] for index in inspector.get_indexes("item_usages")}
+        if "uq_usage_character_recollection_mission" not in usage_indexes:
+            statements.append("CREATE UNIQUE INDEX uq_usage_character_recollection_mission ON item_usages (character_id, selected_mission_id)")
+
     if "purchases" in table_names:
         purchase_columns = {col["name"] for col in inspector.get_columns("purchases")}
         if "source" not in purchase_columns:
