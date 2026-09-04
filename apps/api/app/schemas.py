@@ -483,6 +483,7 @@ class UseItemRequest(BaseModel):
     # "delivery_freeform" 아이템(선물 상자) 사용 시: 이미지/편지 중 최소 하나.
     delivery_image_url: str | None = None
     delivery_letter: str | None = None
+    delivery_recipient_id: int | None = Field(default=None, gt=0)
 
 
 class CharacterStatUpgradeRequest(BaseModel):

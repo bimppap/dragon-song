@@ -1114,12 +1114,23 @@ def _validate_delivery_date_slot(db: Session, item_id: int, delivery_date: date 
     return {"date": delivery_date.isoformat(), "note": delivery_note.strip()}
 
 
-def _validate_delivery_freeform(delivery_image_url: str | None, delivery_letter: str | None) -> dict:
+def get_delivery_recipients(db: Session) -> list[dict]:
+    return [{"id": character.id, "name": character.name} for character in (
+        db.query(Character).join(Member, Character.member_id == Member.id)
+        .filter(Member.role.in_(["RUNNER", "STAFF"]))
+        .order_by(Character.name, Character.id).all()
+    )]
+
+
+def _validate_delivery_freeform(db: Session, recipient_id: int | None, delivery_image_url: str | None, delivery_letter: str | None) -> dict:
+    recipient = next((c for c in get_delivery_recipients(db) if c["id"] == recipient_id), None)
+    if recipient is None:
+        raise HTTPException(status_code=400, detail="선물 상자를 받을 러너 또는 스태프 캐릭터 1명을 선택해 주세요.")
     image_url = (delivery_image_url or "").strip() or None
     letter = (delivery_letter or "").strip() or None
     if image_url is None and letter is None:
         raise HTTPException(status_code=400, detail="이미지 또는 편지 중 최소 하나는 입력해 주세요.")
-    return {"image_url": image_url, "letter": letter}
+    return {"image_url": image_url, "letter": letter, "recipient_id": recipient["id"], "recipient_name": recipient["name"]}
 
 
 def get_taken_delivery_dates(db: Session, item_id: int) -> list[str]:
@@ -1137,6 +1148,7 @@ def use_item(
     delivery_note: str | None = None,
     delivery_image_url: str | None = None,
     delivery_letter: str | None = None,
+    delivery_recipient_id: int | None = None,
 ) -> CharacterDetailRead:
     character = (
         db.query(Character)
@@ -1166,7 +1178,7 @@ def use_item(
     if "delivery_date_slot" in special_stats:
         delivery_payload = _validate_delivery_date_slot(db, item_id, delivery_date, delivery_note)
     elif "delivery_freeform" in special_stats:
-        delivery_payload = _validate_delivery_freeform(delivery_image_url, delivery_letter)
+        delivery_payload = _validate_delivery_freeform(db, delivery_recipient_id, delivery_image_url, delivery_letter)
 
     _apply_item_effects(character, item.effects or [], sign=1)
     # 특수 효과: 기술 리셋(소모한 SP 환급). 능력치 효과와 별개로 처리한다.

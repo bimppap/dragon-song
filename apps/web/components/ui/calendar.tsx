@@ -12,16 +12,17 @@ export type CalendarProps = React.ComponentProps<typeof DayPicker>;
 export function Calendar({ className, classNames, formatters, showOutsideDays = true, ...props }: CalendarProps) {
   return <DayPicker
     showOutsideDays={showOutsideDays}
+    navLayout="around"
     className={cn("pixel-calendar w-full", className)}
     classNames={{
-      root: "w-full",
-      months: "flex w-full flex-col",
-      month: "w-full",
+      root: "relative w-full",
+      months: "relative flex w-full flex-col",
+      month: "relative w-full",
       month_caption: "relative flex h-7 items-center justify-center border-b border-line",
       caption_label: "font-pixel-sm text-xs font-semibold tracking-[0.16em] text-gold",
       nav: "absolute left-0 top-0 flex gap-0.5",
-      button_previous: cn(buttonVariants({ variant: "ghost", size: "icon" }), "size-5 p-0 text-muted hover:text-gold"),
-      button_next: cn(buttonVariants({ variant: "ghost", size: "icon" }), "size-5 p-0 text-muted hover:text-gold"),
+      button_previous: cn(buttonVariants({ variant: "ghost", size: "icon" }), "absolute top-0 left-0 z-10 size-7 p-0 text-muted hover:text-gold"),
+      button_next: cn(buttonVariants({ variant: "ghost", size: "icon" }), "absolute top-0 right-0 z-10 size-7 p-0 text-muted hover:text-gold"),
       month_grid: "w-full table-fixed border-separate border-spacing-0.5",
       weekdays: "",
       weekday: "h-4 text-[9px] font-semibold text-muted",

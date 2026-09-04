@@ -48,7 +48,7 @@ export default function HomeChapterCalendar({ chapters, initialMonth }: { chapte
 
   return <div className="w-full">
     <div className="relative flex h-6 items-center justify-center border-b border-line">
-      <div className="absolute left-0 flex gap-0.5"><button type="button" onClick={() => setMonth((value) => plusMonths(value, -1))} className="p-0.5 text-muted hover:text-gold" aria-label="이전 달"><ChevronLeft size={12} /></button><button type="button" onClick={() => setMonth((value) => plusMonths(value, 1))} className="p-0.5 text-muted hover:text-gold" aria-label="다음 달"><ChevronRight size={12} /></button></div>
+      <div className="pointer-events-none absolute inset-x-0 flex justify-between"><button type="button" onClick={() => setMonth((value) => plusMonths(value, -1))} className="pointer-events-auto p-0.5 text-muted hover:text-gold" aria-label="이전 달"><ChevronLeft size={12} /></button><button type="button" onClick={() => setMonth((value) => plusMonths(value, 1))} className="pointer-events-auto p-0.5 text-muted hover:text-gold" aria-label="다음 달"><ChevronRight size={12} /></button></div>
       <span className="font-pixel-sm text-[10px] font-semibold tracking-[0.16em] text-gold">{month.getFullYear()}.{String(month.getMonth() + 1).padStart(2, "0")}</span>
     </div>
     <div className="grid grid-cols-7 border-b border-line">{WEEKDAYS.map((weekday) => <div key={weekday} className="py-0.5 text-center text-[8px] font-semibold text-muted">{weekday}</div>)}</div>

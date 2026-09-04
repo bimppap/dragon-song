@@ -643,6 +643,7 @@ def use_item(
         delivery_note=data.delivery_note if data else None,
         delivery_image_url=data.delivery_image_url if data else None,
         delivery_letter=data.delivery_letter if data else None,
+        delivery_recipient_id=data.delivery_recipient_id if data else None,
     )
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
@@ -653,6 +654,11 @@ def use_item(
 def get_item_delivery_dates(item_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     """배달 요청(질문권 등)이 이미 선점한 날짜 목록. 러너가 사용 팝업에서 달력을 비활성화하는 데 쓴다."""
     return crud.get_taken_delivery_dates(db, item_id)
+
+
+@app.get("/shop/delivery-recipients")
+def list_delivery_recipients(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_delivery_recipients(db)
 
 
 @app.get("/shop/delivery-requests", response_model=list[DeliveryRequestRead])

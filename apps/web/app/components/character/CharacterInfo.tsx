@@ -50,7 +50,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
+import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
 import DatePicker from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
@@ -404,9 +404,11 @@ function DeliveryDateSlotForm({
 
 function DeliveryFreeformForm({
   characterId,
+  recipients,
   onChange,
 }: {
   characterId: number;
+  recipients: { id: number; name: string }[];
   onChange: (payload: DeliveryPayload) => void;
 }) {
   const { toast } = useToast();
@@ -414,6 +416,7 @@ function DeliveryFreeformForm({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [letter, setLetter] = useState("");
+  const [recipientId, setRecipientId] = useState<number>();
 
   async function handleFileChange(file: File | null) {
     if (!file) return;
@@ -423,7 +426,7 @@ function DeliveryFreeformForm({
     try {
       const url = await uploadDeliveryImage(characterId, file);
       setImageUrl(url);
-      onChange({ image_url: url, letter });
+      onChange({ image_url: url, letter, recipient_id: recipientId });
     } catch (error) {
       toast(error instanceof Error ? error.message : "이미지 업로드 실패", "error");
       setPreviewUrl(null);
@@ -434,6 +437,17 @@ function DeliveryFreeformForm({
 
   return (
     <div className="mt-3 flex flex-col gap-3">
+      <div className="space-y-1.5">
+        <p id="gift-recipient-label" className="text-xs font-semibold text-muted">수신자 (러너·스태프 캐릭터 1명)</p>
+        <Select value={recipientId?.toString() ?? ""} disabled={uploading} onValueChange={(value) => {
+          const id = Number(value);
+          setRecipientId(id);
+          onChange({ image_url: imageUrl, letter, recipient_id: id });
+        }}>
+          <SelectTrigger aria-labelledby="gift-recipient-label"><SelectValue placeholder="선물 상자를 받을 캐릭터 선택" /></SelectTrigger>
+          <SelectContent>{recipients.map((recipient) => <SelectItem key={recipient.id} value={String(recipient.id)}>{recipient.name}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">이미지 (선택)</p>
         {previewUrl && (
@@ -455,7 +469,8 @@ function DeliveryFreeformForm({
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">편지 (선택)</p>
         <Textarea
           value={letter}
-          onChange={(event) => { setLetter(event.target.value); onChange({ image_url: imageUrl, letter: event.target.value }); }}
+          disabled={uploading}
+          onChange={(event) => { setLetter(event.target.value); onChange({ image_url: imageUrl, letter: event.target.value, recipient_id: recipientId }); }}
           rows={3}
           placeholder="전달할 편지 내용을 입력하세요."
         />
@@ -569,18 +584,27 @@ function OwnedItemTile({
               return;
             }
             if (deliveryStat === "delivery_freeform") {
+              let recipients: { id: number; name: string }[];
+              try { recipients = await fetchDeliveryRecipients(); }
+              catch (error) { toast(error instanceof Error ? error.message : "수신자 목록 조회 실패", "error"); return; }
+              if (!recipients.length) { toast("선택 가능한 수신자가 없습니다.", "error"); return; }
               const payloadRef: { current: DeliveryPayload } = { current: {} };
               const ok = await confirm({
-                title: "배달 요청",
+                title: "선물 상자 배달 요청",
                 confirmText: "요청하기",
                 content: (
                   <DeliveryFreeformForm
+                    recipients={recipients}
                     characterId={characterId}
                     onChange={(payload) => { payloadRef.current = payload; }}
                   />
                 ),
               });
               if (!ok) return;
+              if (!payloadRef.current.recipient_id) {
+                toast("선물 상자를 받을 캐릭터를 선택해 주세요.", "error");
+                return;
+              }
               if (!payloadRef.current.image_url && !(payloadRef.current.letter || "").trim()) {
                 toast("이미지 또는 편지 중 최소 하나는 입력해 주세요.", "error");
                 return;
