@@ -46,6 +46,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
           </li>
         )}
         {entries.map(({ item, qty }) => {
+          const isChallengeAcquisition = item.effects.some((effect) => effect.stat === "challenge_acquisition");
           const isRecollection = item.effects.some((effect) => effect.stat === "mission_exp_recollection");
           return (
           <li key={item.id} className="px-4 py-3 space-y-2">
@@ -89,6 +90,7 @@ export default function Cart({ entries, loading, onUpdateQty, onRemove, onPurcha
             <div className="font-num text-xs text-muted">
               단가 {formatPrice(item.price_gold ?? 0, item.price_cp ?? 0)}
             </div>
+            {isChallengeAcquisition && <p className="text-xs text-muted">사용할 때 도전과제를 선택합니다. 구매 가능: {item.remaining_per_character ?? 0}개</p>}
             {isRecollection && <p className="text-xs text-muted">사용할 때 임무를 선택합니다. 구매 가능: {item.remaining_per_character ?? 0}개</p>}
           </li>
           );

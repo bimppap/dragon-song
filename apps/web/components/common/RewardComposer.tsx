@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS, type ItemEffectStat } from "@/lib/api";
 
-type RewardableStat = Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2">;
+type RewardableStat = Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition">;
 
 export type RewardFormEntry =
   | { id: string; type: "stat"; stat: RewardableStat; amount: string }
@@ -25,7 +25,7 @@ interface Props {
   onChange: (entries: RewardFormEntry[]) => void;
 }
 
-const EXCLUDED_STATS = new Set<ItemEffectStat>(["ap_reset", "grade_choice_1", "grade_choice_2"]);
+const EXCLUDED_STATS = new Set<ItemEffectStat>(["ap_reset", "grade_choice_1", "grade_choice_2", "challenge_acquisition"]);
 const STAT_OPTIONS = ITEM_EFFECT_STAT_OPTIONS.filter((option) => !EXCLUDED_STATS.has(option.value)) as {
   value: RewardableStat;
   label: string;

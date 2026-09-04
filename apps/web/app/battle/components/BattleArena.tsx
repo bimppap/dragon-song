@@ -700,7 +700,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       const detail = await fetchCharacterDetail(characterId);
       setItemsByCharacter((prev) => ({
         ...prev,
-        [characterId]: detail.owned_items.filter((i) => i.item_type === "consumable" && i.quantity > i.used_quantity),
+        [characterId]: detail.owned_items.filter((i) => i.item_type === "consumable" && i.quantity > i.used_quantity && !i.effects.some((effect) => effect.stat === "challenge_acquisition")),
       }));
     } catch {
       setItemsByCharacter((prev) => ({ ...prev, [characterId]: [] }));

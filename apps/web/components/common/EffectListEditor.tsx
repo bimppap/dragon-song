@@ -22,7 +22,7 @@ interface Props {
 }
 
 const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
-  "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs", "mission_exp_recollection",
+  "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
   "delivery_date_slot", "delivery_freeform",
 ]);
 
@@ -63,7 +63,7 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
                   value={effect.stat}
                   onValueChange={(value) => handleUpdate(index, {
                     stat: value as ItemEffect["stat"],
-                    chapter: value === "mission_exp_recollection" ? effect.chapter ?? null : null,
+                    chapter: (value === "mission_exp_recollection" || value === "challenge_acquisition") ? effect.chapter ?? null : null,
                   })}
                 >
                   <SelectTrigger className="flex-1">
@@ -88,7 +88,7 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
                   className="w-32"
                   disabled={isSpecial}
                 />
-                {effect.stat === "mission_exp_recollection" && (
+                {(effect.stat === "mission_exp_recollection" || effect.stat === "challenge_acquisition") && (
                   <Select
                     value={effect.chapter ?? undefined}
                     onValueChange={(chapter) => handleUpdate(index, { chapter })}

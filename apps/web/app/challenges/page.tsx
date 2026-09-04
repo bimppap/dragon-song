@@ -46,6 +46,7 @@ import {
   saveChallengeProgress,
   updateChallenge,
   uploadChallengeImage,
+  uploadChallengePurchaseImage,
 } from "@/lib/api";
 import type {
   Challenge,
@@ -94,7 +95,8 @@ function RunnerChallengeList() {
     ])
       .then(([list, itemList, chapters, myCharacter]) => {
         if (cancelled) return;
-        setChallenges(list);
+        const achievedImages = new Map(myCharacter?.achieved_challenges.map((challenge) => [challenge.challenge_id, challenge.image_url]) ?? []);
+        setChallenges(list.map((challenge) => achievedImages.has(challenge.id) ? { ...challenge, image_url: achievedImages.get(challenge.id) ?? null } : challenge));
         setItems(itemList);
         setChapterList(chapters);
         setAchievedChallengeIds(new Set(myCharacter?.achieved_challenges.map((c) => c.challenge_id) ?? []));
@@ -265,6 +267,14 @@ export function ChallengeAdmin() {
   const [editingChallenge, setEditingChallenge] = useState<Challenge | null>(null);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [purchaseImageFile, setPurchaseImageFile] = useState<File | null>(null);
+  const [purchaseImagePreview, setPurchaseImagePreview] = useState<string | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (purchaseImagePreview?.startsWith("blob:")) URL.revokeObjectURL(purchaseImagePreview);
+    };
+  }, [purchaseImagePreview]);
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
@@ -426,6 +436,9 @@ export function ChallengeAdmin() {
       if (imageFile) {
         saved = await uploadChallengeImage(saved.id, imageFile);
       }
+      if (purchaseImageFile) {
+        saved = await uploadChallengePurchaseImage(saved.id, purchaseImageFile);
+      }
       setChallenges((prev) => (
         prev.some((c) => c.id === saved.id)
           ? prev.map((c) => (c.id === saved.id ? saved : c))
@@ -456,6 +469,8 @@ export function ChallengeAdmin() {
     setForm(DEFAULT_FORM);
     setImageFile(null);
     setImagePreview(null);
+    setPurchaseImageFile(null);
+    setPurchaseImagePreview(null);
     setModalOpen(true);
   }
 
@@ -465,6 +480,8 @@ export function ChallengeAdmin() {
     setForm(toChallengeFormState(challenge));
     setImageFile(null);
     setImagePreview(challenge.image_url);
+    setPurchaseImageFile(null);
+    setPurchaseImagePreview(challenge.purchase_image_url);
     setModalOpen(true);
   }
 
@@ -583,7 +600,8 @@ export function ChallengeAdmin() {
                   <table className="min-w-full text-sm">
                     <thead className="bg-inset text-muted">
                       <tr>
-                        <th className="px-4 py-3 text-left font-semibold" />
+                        <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">이미지</th>
+                        <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">구매 이미지</th>
                         <th className="px-4 py-3 text-left font-semibold">이름</th>
                         <th className="px-4 py-3 text-left font-semibold">내용</th>
                         <th className="px-4 py-3 text-left font-semibold">보상 구성</th>
@@ -608,6 +626,20 @@ export function ChallengeAdmin() {
                                 <Image src={challenge.image_url} alt={challenge.name} fill sizes="40px" unoptimized className="object-cover" />
                               ) : (
                                 <ImageIcon size={16} className="text-muted" />
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-4">
+                            <div
+                              className={cn(
+                                "relative flex size-10 shrink-0 items-center justify-center overflow-hidden",
+                                !challenge.purchase_image_url && "border border-line bg-inset",
+                              )}
+                            >
+                              {challenge.purchase_image_url ? (
+                                <Image src={challenge.purchase_image_url} alt={`${challenge.name} 구매 이미지`} fill sizes="40px" unoptimized className="object-cover" />
+                              ) : (
+                                <ImageIcon size={16} className="text-muted" aria-label="구매 이미지 없음" />
                               )}
                             </div>
                           </td>
@@ -715,6 +747,28 @@ export function ChallengeAdmin() {
                         className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
                       />
                       <p className="text-xs text-muted">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-semibold text-ivory" htmlFor="challenge-purchase-image">구매 이미지</label>
+                  <div className="flex items-center gap-4">
+                    <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+                      {purchaseImagePreview ? (
+                        <Image src={purchaseImagePreview} alt="도전과제 구매 이미지 미리보기" fill unoptimized className="object-cover object-top" />
+                      ) : <ImageIcon size={22} className="text-muted" />}
+                    </div>
+                    <div className="space-y-1">
+                      <input id="challenge-purchase-image" type="file" accept="image/*"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0] ?? null;
+                          setPurchaseImageFile(file);
+                          setPurchaseImagePreview(file ? URL.createObjectURL(file) : (editingChallenge?.purchase_image_url ?? null));
+                        }}
+                        className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
+                      />
+                      <p className="text-xs text-muted">아이템으로 달성한 캐릭터에게 표시됩니다. 미등록 시 기존 이미지를 사용합니다.</p>
                     </div>
                   </div>
                 </div>

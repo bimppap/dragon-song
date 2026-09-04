@@ -37,7 +37,7 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 #   상점 관리 "배달" 탭에서 완료 처리하기 전까지 구매/사용 이력에 "대기"로 표시된다.
 ITEM_EFFECT_SPECIAL_STATS = {
     "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
-    "delivery_date_slot", "delivery_freeform", "mission_exp_recollection",
+    "delivery_date_slot", "delivery_freeform", "mission_exp_recollection", "challenge_acquisition",
 }
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap", "sp",
@@ -52,7 +52,7 @@ ItemEffectStat = Literal[
     "start_sh", "revive_hp", "act_time",
     "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform",
-    "mission_exp_recollection",
+    "mission_exp_recollection", "challenge_acquisition",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
 
@@ -64,10 +64,12 @@ class ItemEffect(BaseModel):
 
     @model_validator(mode="after")
     def validate_chapter(self):
-        if self.stat == "mission_exp_recollection" and not (self.chapter or "").strip():
-            raise ValueError("이전 챕터 임무 경험치 효과에는 챕터를 선택해야 합니다.")
-        if self.stat != "mission_exp_recollection":
+        if self.stat in {"mission_exp_recollection", "challenge_acquisition"} and not (self.chapter or "").strip():
+            raise ValueError("챕터 대상 효과에는 챕터를 선택해야 합니다.")
+        if self.stat not in {"mission_exp_recollection", "challenge_acquisition"}:
             self.chapter = None
+        else:
+            self.chapter = self.chapter.strip()
         return self
 
 
@@ -401,9 +403,14 @@ class ItemCreate(BaseModel):
                 raise ValueError("동반자와 장신구는 전투용 소모품으로 설정할 수 없습니다.")
             if any(e.stat in (
                 "ap_reset", "grade_choice_1", "grade_choice_2", "hp_heal_p",
-                "cleanse_debuffs", "mission_exp_recollection",
+                "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
+        if any(e.stat == "challenge_acquisition" for e in self.effects):
+            if self.battle_only:
+                raise ValueError("도전과제 획득 아이템은 전투 전용으로 설정할 수 없습니다.")
+            if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
+                raise ValueError("도전과제 획득 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
         if not self.price_gold and not self.price_cp:
             raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
         return self
@@ -478,6 +485,7 @@ class UseItemRequest(BaseModel):
     """가능성/잠재성의 메달처럼 사용 시점에 선택이 필요한 아이템을 위한 선택값. 그 외 아이템은 무시된다."""
     chosen_stats: list[str] = Field(default_factory=list)
     mission_id: int | None = Field(default=None, gt=0)
+    challenge_id: int | None = Field(default=None, gt=0)
     # "delivery_date_slot" 아이템(질문권) 사용 시: 요청 날짜와 지문(텍스트).
     delivery_date: date | None = None
     delivery_note: str | None = None
@@ -580,6 +588,7 @@ class CharacterOwnedItemRead(BaseModel):
 
 
 class CharacterAchievedChallengeRead(BaseModel):
+    acquired_via_item: bool = False
     challenge_id: int
     chapter: str
     name: str
@@ -639,6 +648,7 @@ class ChallengeCreate(BaseModel):
 
 
 class ChallengeRead(BaseModel):
+    purchase_image_url: str | None = None
     id: int
     chapter: str
     name: str

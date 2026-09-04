@@ -73,7 +73,7 @@ class MissionRecollectionTest(unittest.TestCase):
         usage = self.db.query(ItemUsage).one()
         self.assertEqual(usage.selected_mission_name, "임무 A")
         self.assertEqual(usage.granted_experience, 7)
-        self.assertIn("임무 A (경험치 7)", crud.get_item_history(self.db, self.character.id)[0].item_name)
+        self.assertEqual(crud.get_item_history(self.db, self.character.id)[0].item_name, "회고록 I - 임무 A")
         self.assertEqual(self.stock().remaining_per_character, 1)
 
     def test_experience_preview_matches_legacy_and_current_rewards(self):

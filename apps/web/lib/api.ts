@@ -315,6 +315,7 @@ export type ItemEffectStat =
   | "start_sh" | "revive_hp" | "act_time"
   | "ap_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs"
   | "mission_exp_recollection"
+  | "challenge_acquisition"
   | "delivery_date_slot" | "delivery_freeform";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
@@ -361,6 +362,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "grade_choice_1", label: "능력치 1개 선택 +1" },
   { value: "grade_choice_2", label: "능력치 2개 선택 +1" },
   { value: "cleanse_debuffs", label: "전투 중 약화 전부 해제" },
+  { value: "challenge_acquisition", label: "특정 챕터 도전과제 획득" },
   { value: "mission_exp_recollection", label: "이전 챕터 미완료 임무의 경험치 취득" },
   { value: "delivery_date_slot", label: "출석부 지문 1회 작성 가능 (사이트 외 기능)" },
   { value: "delivery_freeform", label: "이미지 또는 편지 또는 둘 다 배달 (사이트 외 기능)" },
@@ -381,7 +383,7 @@ export const PERCENT_EFFECT_STATS = new Set<ItemEffectStat>([
 /** 효과 하나를 "라벨 +N" 형태의 문자열로 표현한다. */
 export function formatEffect(effect: ItemEffect): string {
   const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
-  if (effect.stat === "mission_exp_recollection") return effect.chapter ? `${label} (${effect.chapter})` : label;
+  if (effect.stat === "mission_exp_recollection" || effect.stat === "challenge_acquisition") return effect.chapter ? `${label} (${effect.chapter})` : label;
   if (
     effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2"
     || effect.stat === "cleanse_debuffs" || effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform"
@@ -567,6 +569,7 @@ export interface CharacterOwnedItem {
 }
 
 export interface CharacterAchievedChallenge {
+  acquired_via_item: boolean;
   challenge_id: number;
   chapter: string;
   name: string;
@@ -597,11 +600,12 @@ export interface CharacterDetail extends Character {
 
 export type RewardGrant =
   | { type: "item"; item_id: number; quantity: number }
-  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2">; amount: number };
+  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition">; amount: number };
 
 export type ChallengeRewardItemGrant = RewardGrant;
 
 export interface Challenge {
+  purchase_image_url: string | null;
   id: number;
   chapter: string;
   name: string;
@@ -930,12 +934,14 @@ export async function consumeItem(
   chosenStats?: string[],
   delivery?: DeliveryPayload,
   missionId?: number,
+  challengeId?: number,
 ): Promise<CharacterDetail> {
   const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
     method: "POST",
     body: JSON.stringify({
       chosen_stats: chosenStats ?? [],
       mission_id: missionId ?? null,
+      challenge_id: challengeId ?? null,
       delivery_date: delivery?.date ?? null,
       delivery_note: delivery?.note ?? null,
       delivery_image_url: delivery?.image_url ?? null,
@@ -943,7 +949,7 @@ export async function consumeItem(
       delivery_recipient_id: delivery?.recipient_id ?? null,
     }),
   }, "아이템 사용 실패");
-  invalidateApiCache("characters:", "items:", "skills:character:");
+  invalidateApiCache("characters:", "items:", "skills:character:", "challenges:");
   return detail;
 }
 
@@ -1943,4 +1949,14 @@ export async function fetchDeliveryRecipients(): Promise<{ id: number; name: str
 
 export async function fetchRecollectionMissions(characterId: number, itemId: number): Promise<RecollectionMission[]> {
   return request(`/characters/${characterId}/items/${itemId}/recollection-missions`, undefined, "회고할 임무 조회 실패");
+}
+
+export async function fetchAcquisitionChallenges(characterId: number, itemId: number): Promise<{ id: number; name: string }[]> {
+  return request(`/characters/${characterId}/items/${itemId}/acquisition-challenges`, undefined, "획득 가능한 도전과제 조회 실패");
+}
+
+export async function uploadChallengePurchaseImage(challengeId: number, file: File): Promise<Challenge> {
+  const challenge = await uploadFile<Challenge>(`/challenges/${challengeId}/purchase-image`, file, "file", "도전과제 구매 이미지 업로드 실패");
+  invalidateApiCache("challenges:", "characters:");
+  return challenge;
 }

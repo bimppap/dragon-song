@@ -684,6 +684,8 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             Challenge.name,
             Challenge.description,
             Challenge.image_url,
+            Challenge.purchase_image_url,
+            ChallengeProgress.acquired_via_item,
             Challenge.reward,
             Challenge.reward_items,
         )
@@ -737,11 +739,12 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         ],
         achieved_challenges=[
             CharacterAchievedChallengeRead(
+                acquired_via_item=row.acquired_via_item,
                 challenge_id=row.challenge_id,
                 chapter=row.chapter,
                 name=row.name,
                 description=row.description,
-                image_url=row.image_url,
+                image_url=(row.purchase_image_url or row.image_url) if row.acquired_via_item else row.image_url,
                 reward=row.reward,
                 reward_items=row.reward_items or [],
             )
@@ -899,6 +902,12 @@ def _validate_item_recollection_chapter(db: Session, data: ItemCreate) -> None:
         raise HTTPException(status_code=400, detail="회고록 효과에 지정된 챕터가 존재하지 않습니다.")
 
 
+def _validate_item_acquisition_chapter(db: Session, data: ItemCreate) -> None:
+    for effect in data.effects:
+        if effect.stat == "challenge_acquisition" and db.query(Chapter.id).filter(Chapter.name == effect.chapter.strip()).first() is None:
+            raise HTTPException(status_code=400, detail="도전과제 획득 효과에 지정된 챕터가 존재하지 않습니다.")
+
+
 def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.name = data.name
     item.price_gold = data.price_gold
@@ -921,6 +930,7 @@ def create_item(db: Session, data: ItemCreate) -> Item:
     _validate_item_chapter_window(db, data)
     _validate_item_restricted_mission(db, data)
     _validate_item_recollection_chapter(db, data)
+    _validate_item_acquisition_chapter(db, data)
     item = Item(
         name=data.name,
     )
@@ -939,6 +949,7 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
     _validate_item_chapter_window(db, data)
     _validate_item_restricted_mission(db, data)
     _validate_item_recollection_chapter(db, data)
+    _validate_item_acquisition_chapter(db, data)
     equipped = db.query(CharacterItemState).filter(
         CharacterItemState.item_id == item_id, CharacterItemState.equipped.is_(True)
     ).first()
@@ -1151,6 +1162,7 @@ def use_item(
     delivery_letter: str | None = None,
     delivery_recipient_id: int | None = None,
     mission_id: int | None = None,
+    challenge_id: int | None = None,
 ) -> CharacterDetailRead:
     character = (
         db.query(Character)
@@ -1182,6 +1194,18 @@ def use_item(
     elif "delivery_freeform" in special_stats:
         delivery_payload = _validate_delivery_freeform(db, delivery_recipient_id, delivery_image_url, delivery_letter)
 
+    selected_challenge = None
+    if "challenge_acquisition" in special_stats:
+        selected_challenge = next((challenge for challenge in _eligible_acquisition_challenges(db, character_id, item) if challenge.id == challenge_id), None)
+        if selected_challenge is None:
+            raise HTTPException(status_code=400, detail="해당 챕터의 미달성 도전과제를 선택해 주세요.")
+        progress = db.query(ChallengeProgress).filter_by(character_id=character_id, challenge_id=selected_challenge.id).first()
+        if progress is None:
+            progress = ChallengeProgress(character_id=character_id, challenge_id=selected_challenge.id)
+            db.add(progress)
+        progress.achieved = True
+        progress.acquired_via_item = True
+
     selected_mission = None
     if "mission_exp_recollection" in special_stats:
         selected_mission = next((mission for mission in _eligible_recollection_missions(db, character_id, item) if mission.id == mission_id), None)
@@ -1202,6 +1226,8 @@ def use_item(
     state.used_quantity += 1
     usage = ItemUsage(
         character_id=character_id, item_id=item_id, quantity=1,
+        selected_challenge_id=selected_challenge.id if selected_challenge else None,
+        selected_challenge_name=selected_challenge.name if selected_challenge else None,
         selected_mission_id=selected_mission.id if selected_mission else None,
         selected_mission_name=selected_mission.name if selected_mission else None,
         granted_experience=_recollection_experience(selected_mission) if selected_mission else 0,
@@ -1473,6 +1499,45 @@ def _recollection_remaining(db: Session, character_id: int, item: Item, eligible
     return max(0, eligible_count - outstanding)
 
 
+def _challenge_acquisition_chapter(item: Item) -> str | None:
+    return next((str(effect.get("chapter") or "").strip() or None for effect in item.effects or []
+                 if effect.get("stat") == "challenge_acquisition"), None)
+
+
+def _eligible_acquisition_challenges(db: Session, character_id: int, item: Item) -> list[Challenge]:
+    chapter = _challenge_acquisition_chapter(item)
+    if chapter is None:
+        return []
+    completed = db.query(ChallengeProgress.challenge_id).filter(
+        ChallengeProgress.character_id == character_id, ChallengeProgress.achieved.is_(True))
+    acquired = db.query(ItemUsage.selected_challenge_id).filter(
+        ItemUsage.character_id == character_id, ItemUsage.selected_challenge_id.is_not(None))
+    rewarded = db.query(Reward.source_id).filter(
+        Reward.character_id == character_id, Reward.type == "challenge", Reward.source_id.is_not(None))
+    return db.query(Challenge).filter(
+        Challenge.chapter == chapter, Challenge.is_public.is_(True),
+        Challenge.id.notin_(completed), Challenge.id.notin_(acquired), Challenge.id.notin_(rewarded),
+    ).order_by(Challenge.created_at, Challenge.id).all()
+
+
+def get_acquisition_challenges(db: Session, character_id: int, item_id: int) -> list[dict]:
+    item = db.get(Item, item_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
+    return [{"id": challenge.id, "name": challenge.name} for challenge in _eligible_acquisition_challenges(db, character_id, item)]
+
+
+def _challenge_acquisition_remaining(db: Session, character_id: int, item: Item, eligible_count: int) -> int:
+    # 같은 챕터를 대상으로 하는 모든 아이템의 미사용 수량을 예약분으로 차감한다.
+    chapter = _challenge_acquisition_chapter(item)
+    sibling_ids = [sibling.id for sibling in db.query(Item).all() if _challenge_acquisition_chapter(sibling) == chapter]
+    purchased = db.query(func.coalesce(func.sum(Purchase.quantity), 0)).filter(
+        Purchase.character_id == character_id, Purchase.item_id.in_(sibling_ids)).scalar()
+    used = db.query(func.coalesce(func.sum(CharacterItemState.used_quantity), 0)).filter(
+        CharacterItemState.character_id == character_id, CharacterItemState.item_id.in_(sibling_ids)).scalar()
+    return max(0, eligible_count - max(0, purchased - used))
+
+
 def get_items_with_stock(db: Session, character_id: int | None = None, *, admin: bool = False) -> list[ItemWithStock]:
     items = db.query(Item).all()
     chapters_by_name = _chapters_by_name(db)
@@ -1491,6 +1556,7 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
     ) if character_id is not None else {}
 
     result = []
+    acquisition_capacity: dict[str, tuple[int, int]] = {}
     for item in items:
         total_purchased = total_purchased_by_item.get(item.id, 0)
         char_purchased = char_purchased_by_item.get(item.id, 0)
@@ -1521,6 +1587,21 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
             remaining = _recollection_remaining(db, character_id, item, len(eligible_missions))
             remaining_per_character = min(remaining_per_character, remaining) if remaining_per_character is not None else remaining
             recollection_available = remaining > 0
+        acquisition_chapter = _challenge_acquisition_chapter(item)
+        acquisition_available = True
+        if acquisition_chapter is not None:
+            if character_id is None:
+                if not admin:
+                    continue
+            else:
+                if acquisition_chapter not in acquisition_capacity:
+                    eligible_count = len(_eligible_acquisition_challenges(db, character_id, item))
+                    acquisition_capacity[acquisition_chapter] = (eligible_count, _challenge_acquisition_remaining(db, character_id, item, eligible_count))
+                eligible_count, remaining = acquisition_capacity[acquisition_chapter]
+                if not admin and eligible_count == 0:
+                    continue
+                remaining_per_character = min(remaining_per_character, remaining) if remaining_per_character is not None else remaining
+                acquisition_available = remaining > 0
         result.append(ItemWithStock(
             id=item.id,
             name=item.name,
@@ -1549,6 +1630,7 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
                 _is_item_purchasable(item, chapters_by_name, active_chapter)
                 and not restricted_by_mission
                 and recollection_available
+                and acquisition_available
             ),
             eligible_missions=[
                 {"id": mission.id, "name": mission.name, "reward_experience": _recollection_experience(mission)}
@@ -1572,6 +1654,7 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
     total_cost_cp = 0
     validated: list[tuple[Item, int]] = []
     recollection_in_cart: dict[str, int] = {}
+    acquisition_in_cart: dict[str, int] = {}
     chapters_by_name = _chapters_by_name(db)
     active_chapter = _active_chapter(chapters_by_name)
     rewarded_mission_ids = _rewarded_mission_ids(db, character.id)
@@ -1617,6 +1700,14 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
             if requested > remaining:
                 raise HTTPException(status_code=400, detail=f"'{item.name}'은(는) 미달성 임무 수와 보유 회고록 수에 따라 {remaining}개까지 구매할 수 있습니다.")
             recollection_in_cart[recollection_chapter] = requested
+
+        acquisition_chapter = _challenge_acquisition_chapter(item)
+        if acquisition_chapter is not None:
+            remaining = _challenge_acquisition_remaining(db, character.id, item, len(_eligible_acquisition_challenges(db, character.id, item)))
+            requested = acquisition_in_cart.get(acquisition_chapter, 0) + qty
+            if requested > remaining:
+                raise HTTPException(status_code=400, detail=f"'{item.name}'은(는) 미달성 도전과제 수와 보유 아이템 수에 따라 {remaining}개까지 구매할 수 있습니다.")
+            acquisition_in_cart[acquisition_chapter] = requested
 
         total_cost_gold += (item.price_gold or 0) * qty
         total_cost_cp += (item.price_cp or 0) * qty
@@ -1752,8 +1843,9 @@ def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
             id=row.ItemUsage.id * 2 + 1,
             kind="use",
             item_id=row.ItemUsage.item_id,
-            item_name=(f"{row.item_name} - {row.ItemUsage.selected_mission_name} (경험치 {row.ItemUsage.granted_experience})"
-                       if row.ItemUsage.selected_mission_name else row.item_name),
+            item_name=(f"{row.item_name} - {row.ItemUsage.selected_mission_name}"
+                       if row.ItemUsage.selected_mission_name else
+                       f"{row.item_name} - {row.ItemUsage.selected_challenge_name}" if row.ItemUsage.selected_challenge_name else row.item_name),
             item_image_url=row.item_image_url,
             quantity=row.ItemUsage.quantity,
             created_at=row.ItemUsage.created_at,
@@ -5340,6 +5432,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             item = items_by_id.get(action.item_id) if action.item_id else None
             if item is None or item.item_type != "consumable":
                 events.append(f"⚠️ {p['name']} 사용할 아이템이 지정되지 않았습니다.")
+                continue
+            if _challenge_acquisition_chapter(item) is not None:
+                events.append(f"⚠️ {p['name']}: 도전과제 획득 아이템은 캐릭터 정보에서 사용해 주세요.")
                 continue
             if session.mode == "real":
                 key = (p["character_id"], item.id)

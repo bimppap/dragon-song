@@ -540,12 +540,43 @@ async def upload_challenge_image(
     return challenge
 
 
+@app.post("/challenges/{challenge_id}/purchase-image", response_model=ChallengeRead)
+async def upload_challenge_purchase_image(
+    challenge_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """도전과제 구매 이미지를 WebP로 변환해 버킷 challenge-purchase/ 디렉토리에 업로드하고, 기존 이미지는 삭제한다."""
+    challenge = db.get(Challenge, challenge_id)
+    if not challenge:
+        raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
+
+    data = await file.read()
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("challenge-purchase", challenge.id, challenge.name), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
+
+    old_path = storage.public_url_to_path(challenge.purchase_image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+
+    challenge.purchase_image_url = f"{result['public_url']}?v={int(time.time())}"
+    db.commit()
+    db.refresh(challenge)
+    return challenge
+
+
 @app.delete("/challenges/{challenge_id}")
 async def delete_challenge(challenge_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    challenge = db.get(Challenge, challenge_id)
+    purchase_image_url = challenge.purchase_image_url if challenge else None
     image_url = crud.delete_challenge(db, challenge_id)
-    old_path = storage.public_url_to_path(image_url)
-    if old_path:
-        await storage.delete_from_bucket(old_path)
+    for url in {image_url, purchase_image_url}:
+        old_path = storage.public_url_to_path(url)
+        if old_path:
+            await storage.delete_from_bucket(old_path)
     return {"deleted": True}
 
 
@@ -645,6 +676,7 @@ def use_item(
         delivery_letter=data.delivery_letter if data else None,
         delivery_recipient_id=data.delivery_recipient_id if data else None,
         mission_id=data.mission_id if data else None,
+        challenge_id=data.challenge_id if data else None,
     )
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
@@ -655,6 +687,12 @@ def use_item(
 def list_recollection_missions(character_id: int, item_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     _require_own_character_or_admin(db, member, character_id)
     return crud.get_recollection_missions(db, character_id, item_id)
+
+
+@app.get("/characters/{character_id}/items/{item_id}/acquisition-challenges")
+def list_acquisition_challenges(character_id: int, item_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.get_acquisition_challenges(db, character_id, item_id)
 
 
 @app.get("/items/{item_id}/delivery-dates", response_model=list[str])

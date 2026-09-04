@@ -348,6 +348,8 @@ def ensure_schema(engine: Engine) -> None:
     if "item_usages" in table_names:
         usage_columns = {col["name"] for col in inspector.get_columns("item_usages")}
         for name, definition in (
+            ("selected_challenge_id", "INTEGER"),
+            ("selected_challenge_name", "VARCHAR"),
             ("selected_mission_id", "INTEGER"),
             ("selected_mission_name", "VARCHAR"),
             ("granted_experience", "INTEGER NOT NULL DEFAULT 0"),
@@ -355,6 +357,8 @@ def ensure_schema(engine: Engine) -> None:
             if name not in usage_columns:
                 statements.append(f"ALTER TABLE item_usages ADD COLUMN {name} {definition}")
         usage_indexes = {index["name"] for index in inspector.get_indexes("item_usages")}
+        if "uq_usage_character_acquired_challenge" not in usage_indexes:
+            statements.append("CREATE UNIQUE INDEX uq_usage_character_acquired_challenge ON item_usages (character_id, selected_challenge_id)")
         if "uq_usage_character_recollection_mission" not in usage_indexes:
             statements.append("CREATE UNIQUE INDEX uq_usage_character_recollection_mission ON item_usages (character_id, selected_mission_id)")
 
@@ -393,6 +397,13 @@ def ensure_schema(engine: Engine) -> None:
             )
         if "chapter" not in settlement_columns:
             statements.append("ALTER TABLE settlement_requests ADD COLUMN chapter VARCHAR")
+
+    if "challenges" in table_names:
+        if "purchase_image_url" not in {col["name"] for col in inspector.get_columns("challenges")}:
+            statements.append("ALTER TABLE challenges ADD COLUMN purchase_image_url VARCHAR")
+    if "challenge_progress" in table_names:
+        if "acquired_via_item" not in {col["name"] for col in inspector.get_columns("challenge_progress")}:
+            statements.append("ALTER TABLE challenge_progress ADD COLUMN acquired_via_item BOOLEAN NOT NULL DEFAULT false")
 
     if not statements:
         return
