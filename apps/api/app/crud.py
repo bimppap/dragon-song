@@ -54,6 +54,8 @@ from app.schemas import (
     CharacterOwnedItemRead,
     CharacterRead,
     CharacterSkillNodeRead,
+    CharacterCardDetailsRead,
+    CharacterCardItemRead,
     CharacterSkillTreeRead,
     DeliveryRequestRead,
     EnemyCreate,
@@ -619,6 +621,37 @@ def get_characters_visible_to_runner(db: Session) -> list[CharacterRead]:
         .all()
     )
     return [_to_character_read(c) for c in characters]
+
+
+def get_character_card_details(db: Session, *, admin: bool = False) -> list[CharacterCardDetailsRead]:
+    query = db.query(Character)
+    if not admin:
+        query = query.filter(Character.member_id.is_not(None))
+    characters = query.order_by(Character.id).all()
+    if not characters:
+        return []
+    by_id = {character.id: character for character in characters}
+    result = {character.id: CharacterCardDetailsRead(character_id=character.id) for character in characters}
+    # 깊은 기술 우선, 같은 단계는 최근 습득 우선. 서 루트와 비공개 기술은 표시하지 않는다.
+    skills = db.query(CharacterSkillUnlock, SkillNode).join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id).filter(
+        CharacterSkillUnlock.character_id.in_(by_id), SkillNode.tier > 0, SkillNode.is_public.is_(True),
+    ).order_by(SkillNode.tier.desc(), CharacterSkillUnlock.unlocked_at.desc(), SkillNode.id).all()
+    for unlock, node in skills:
+        card = result[unlock.character_id]
+        if card.skill is None:
+            card.skill = _to_character_skill_node_read(node, unlock, by_id[unlock.character_id])
+    equipment = db.query(CharacterItemState, Item).join(Item, CharacterItemState.item_id == Item.id).filter(
+        CharacterItemState.character_id.in_(by_id), CharacterItemState.equipped.is_(True),
+        Item.item_type.in_(["companion", "accessory"]),
+    ).order_by(Item.id).all()
+    for state, item in equipment:
+        result[state.character_id].equipment.append(CharacterCardItemRead(
+            item_id=item.id, item_type=item.item_type, name=item.name,
+            description=item.description_after_purchase if item.special_merchant else item.description_user,
+            image_url=item.image_after_purchase_url if item.special_merchant else item.image_url,
+            effects=item.effects or [],
+        ))
+    return list(result.values())
 
 
 def update_character_flags(db: Session, character_id: int, data: CharacterFlagsUpdate) -> CharacterRead:
@@ -6136,6 +6169,42 @@ def _find_parent_node(db: Session, node: SkillNode) -> SkillNode | None:
     )
 
 
+def _to_character_skill_node_read(node: SkillNode, unlock: CharacterSkillUnlock | None, character: Character) -> CharacterSkillNodeRead:
+    is_public = node.is_public
+    unlocked = node.tier == 0 or unlock is not None
+    return CharacterSkillNodeRead(
+        id=node.id,
+        book=node.book,
+        branch=node.branch,
+        col=node.col,
+        tier=node.tier,
+        tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
+        default_name=_resolved_skill_node_name(node) if is_public else "비공개 기술",
+        image_url=(unlock.custom_image_url if unlock and unlock.custom_image_url else node.image_url) if is_public else None,
+        effects=(node.effects or []) if is_public else [],
+        trigger_type=_resolved_skill_node_value(node, "trigger_type") if is_public else None,
+        category=_resolved_skill_node_value(node, "category") if is_public else None,
+        stackable=_resolved_skill_node_value(node, "stackable") if is_public else None,
+        cost=_resolved_skill_node_value(node, "cost") if is_public else None,
+        power=_resolved_skill_node_value(node, "power") if is_public else None,
+        target=_resolved_skill_node_value(node, "target") if is_public else None,
+        activation_order=_resolved_skill_node_value(node, "activation_order") if is_public else None,
+        formula=_resolved_skill_node_value(node, "formula") if is_public else None,
+        description=_resolved_skill_node_value(node, "description") if is_public else None,
+        is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")) if is_public else False,
+        is_public=is_public,
+        unlocked=unlocked,
+        custom_name=unlock.custom_name if unlock and is_public else None,
+        custom_image_url=unlock.custom_image_url if unlock and is_public else None,
+        display_name=_skill_display_name(
+            node,
+            skill_lv=character.skill_lv,
+            custom_name=unlock.custom_name if unlock and unlock.custom_name else None,
+        ) if is_public else "비공개 기술",
+        unlocked_at=unlock.unlocked_at if unlock else None,
+    )
+
+
 def get_character_skill_tree(db: Session, character_id: int, book: str) -> CharacterSkillTreeRead:
     """이름 중복 정리는 쓰기 경로에서만 수행한다(get_skill_nodes 주석 참고). 캐릭터 정보 화면은
     서 4개를 병렬로 조회하므로, 여기서 매번 정규화 스캔을 반복하면 그 비용이 4배로 늘어난다."""
@@ -6158,45 +6227,7 @@ def get_character_skill_tree(db: Session, character_id: int, book: str) -> Chara
     unlock_by_node = {u.node_id: u for u in unlocks}
     latest_unlock = max(unlocks, key=lambda u: u.unlocked_at, default=None)
 
-    node_reads = []
-    for node in nodes:
-        # 0단계(서 아이덴티티 노드)는 역할과 무관하게 모든 캐릭터에게 항상 활성화되어 있다.
-        unlock = unlock_by_node.get(node.id)
-        unlocked = node.tier == 0 or unlock is not None
-        is_public = node.is_public
-        node_reads.append(
-            CharacterSkillNodeRead(
-                id=node.id,
-                book=node.book,
-                branch=node.branch,
-                col=node.col,
-                tier=node.tier,
-                tier_label=TIER_LABELS.get(node.tier, str(node.tier)),
-                default_name=_resolved_skill_node_name(node) if is_public else "비공개 기술",
-                image_url=(unlock.custom_image_url if unlock and unlock.custom_image_url else node.image_url) if is_public else None,
-                effects=(node.effects or []) if is_public else [],
-                trigger_type=_resolved_skill_node_value(node, "trigger_type") if is_public else None,
-                category=_resolved_skill_node_value(node, "category") if is_public else None,
-                stackable=_resolved_skill_node_value(node, "stackable") if is_public else None,
-                cost=_resolved_skill_node_value(node, "cost") if is_public else None,
-                power=_resolved_skill_node_value(node, "power") if is_public else None,
-                target=_resolved_skill_node_value(node, "target") if is_public else None,
-                activation_order=_resolved_skill_node_value(node, "activation_order") if is_public else None,
-                formula=_resolved_skill_node_value(node, "formula") if is_public else None,
-                description=_resolved_skill_node_value(node, "description") if is_public else None,
-                is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")) if is_public else False,
-                is_public=is_public,
-                unlocked=unlocked,
-                custom_name=unlock.custom_name if unlock and is_public else None,
-                custom_image_url=unlock.custom_image_url if unlock and is_public else None,
-                display_name=_skill_display_name(
-                    node,
-                    skill_lv=character.skill_lv,
-                    custom_name=unlock.custom_name if unlock and unlock.custom_name else None,
-                ) if is_public else "비공개 기술",
-                unlocked_at=unlock.unlocked_at if unlock else None,
-            )
-        )
+    node_reads = [_to_character_skill_node_read(node, unlock_by_node.get(node.id), character) for node in nodes]
 
     return CharacterSkillTreeRead(
         book=book,

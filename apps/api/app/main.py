@@ -53,6 +53,7 @@ from app.schemas import (
     CharacterDetailRead,
     CharacterFlagsUpdate,
     CharacterRead,
+    CharacterCardDetailsRead,
     ChallengeCreate,
     ChallengeProgressBulkUpdate,
     ChallengeProgressRead,
@@ -258,6 +259,11 @@ def list_characters(member: Member = Depends(get_current_member), db: Session = 
         characters = crud.get_characters_visible_to_runner(db)
         characters = [crud.scrub_admin_only_stats(c) for c in characters]
     return characters
+
+
+@app.get("/characters/card-details", response_model=list[CharacterCardDetailsRead])
+def list_character_card_details(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_character_card_details(db, admin=is_admin_role(member.role))
 
 
 @app.get("/characters/{character_id}", response_model=CharacterDetailRead)

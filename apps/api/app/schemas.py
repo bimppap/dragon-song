@@ -1134,6 +1134,21 @@ class CharacterSkillNodeRead(SkillNodeRead):
     unlocked_at: datetime | None = None
 
 
+class CharacterCardItemRead(BaseModel):
+    item_id: int
+    item_type: Literal["companion", "accessory"]
+    name: str
+    description: str
+    image_url: str | None = None
+    effects: list[ItemEffect] = Field(default_factory=list)
+
+
+class CharacterCardDetailsRead(BaseModel):
+    character_id: int
+    skill: CharacterSkillNodeRead | None = None
+    equipment: list[CharacterCardItemRead] = Field(default_factory=list)
+
+
 class CharacterSkillTreeRead(BaseModel):
     book: SkillBook
     character_sp: int

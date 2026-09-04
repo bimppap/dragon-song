@@ -1960,3 +1960,22 @@ export async function uploadChallengePurchaseImage(challengeId: number, file: Fi
   invalidateApiCache("challenges:", "characters:");
   return challenge;
 }
+
+export interface CharacterCardItem {
+  item_id: number;
+  item_type: "companion" | "accessory";
+  name: string;
+  description: string;
+  image_url: string | null;
+  effects: ItemEffect[];
+}
+
+export interface CharacterCardDetails {
+  character_id: number;
+  skill: CharacterSkillNode | null;
+  equipment: CharacterCardItem[];
+}
+
+export async function fetchCharacterCardDetails(): Promise<CharacterCardDetails[]> {
+  return request("/characters/card-details", undefined, "캐릭터 상세 슬롯 조회 실패");
+}
