@@ -56,12 +56,12 @@ class EnemyEffectsTest(unittest.TestCase):
         self.db.commit()
         first = self.telegraph(battle)
         self.assertEqual(first.participants[0]["env_stacks"], {str(alive.id): 2})
-        self.assertEqual(first.participants[0]["hp"], 97)
+        self.assertEqual(first.participants[0]["hp"], 100)
         battle.enemies = [{**enemy, "hp": 0 if enemy["enemy_id"] == 1 else 1000} for enemy in battle.enemies]
         self.db.commit()
         second = self.telegraph(battle)
         self.assertEqual(second.participants[0]["env_stacks"], {str(alive.id): 2, str(dead.id): 1})
-        self.assertEqual(second.participants[0]["hp"], 97)
+        self.assertEqual(second.participants[0]["hp"], 100)
 
     def test_cleanse_protects_default_environment_and_restores_stat(self):
         locked = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="해제 불가"))

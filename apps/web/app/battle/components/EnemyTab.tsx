@@ -702,7 +702,7 @@ export default function EnemyTab() {
                   환경
                 </p>
                 <p className="text-xs text-muted">
-                  매 라운드 &ldquo;적의 행동 암시&rdquo; 턴마다 캐릭터에게 스택이 쌓이고, (스택 수 − 1) × 스택당 피해를 입힙니다. 최대 스택은 0이면 제한이 없고, 한 챕터에 여러 환경을 등록할 수 있습니다.
+                  매 라운드 &ldquo;적의 행동 암시&rdquo; 턴에 기존 스택만큼 고정 피해를 먼저 입힌 뒤 스택을 쌓습니다. 고정 피해는 방어력과 피해 감소를 무시합니다. 최대 스택은 0이면 제한이 없고, 한 챕터에 여러 환경을 등록할 수 있습니다.
                 </p>
               </div>
 
@@ -716,7 +716,7 @@ export default function EnemyTab() {
                         <span className="font-semibold text-ivory">{environment.name}</span>
                         <span className="text-xs text-muted">
                           <span className="mr-1 inline-block h-3 w-1 rotate-20 rounded-full" style={{ backgroundColor: environment.color }} aria-hidden="true" />
-                          라운드당 스택 +{environment.stacks_per_round} · 스택당 {environment.damage_per_stack} 피해 · {environment.max_stacks > 0 ? `최대 ${environment.max_stacks}스택` : "스택 제한 없음"} · {environment.stackable ? "중첩 허용" : "중첩 불가"} · {environment.dispellable ? "해제 가능" : "해제 불가"}
+                          라운드당 스택 +{environment.stacks_per_round} · 스택당 고정 피해 {environment.damage_per_stack} · {environment.max_stacks > 0 ? `최대 ${environment.max_stacks}스택` : "스택 제한 없음"} · {environment.stackable ? "중첩 허용" : "중첩 불가"} · {environment.dispellable ? "해제 가능" : "해제 불가"}
                           {environment.enemy_condition !== "always" && ` · ${enemies.find((enemy) => enemy.id === environment.condition_enemy_id)?.name ?? "지정 에너미"} ${environment.enemy_condition === "alive" ? "생존 시" : "생존하지 않을 때"}`}
                         </span>
                       </div>
@@ -772,7 +772,7 @@ export default function EnemyTab() {
                   />
                 </div>
                 <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-ivory/85">스택당 피해량</label>
+                  <label className="text-xs font-semibold text-ivory/85">스택당 고정 피해</label>
                   <Input
                     type="number" min={0}
                     value={environmentDraft.damage_per_stack}

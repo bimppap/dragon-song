@@ -96,6 +96,39 @@ class EnvironmentDisplayTest(unittest.TestCase):
         self.assertEqual(tick(), 3)
         self.assertEqual(tick(), 3)
 
+    def test_environment_damage_is_fixed_and_ignores_defense(self):
+        env = crud.create_environment(
+            self.db,
+            EnvironmentCreate(chapter="1장", name="독", stacks_per_round=2, damage_per_stack=17),
+        )
+        character = Character(name="러너", hp=100, hp_max=100, def_=9999, dmg_r=1)
+        self.db.add(character)
+        self.db.flush()
+        participant = crud._snapshot_combatant(character)
+        participant.update(defending=True, dmg_r=1, env_stacks={str(env.id): 2})
+        battle = BattleSession(
+            mode="practice",
+            chapter="1장",
+            phase="telegraph",
+            round=1,
+            participants=[participant],
+            enemies=[{"enemy_id": 1, "name": "적", "hp": 100, "skills": []}],
+            summons=[],
+            log=[],
+        )
+        self.db.add(battle)
+        self.db.commit()
+
+        result = crud.resolve_battle_telegraph(self.db, battle.id, BattleTelegraphRequest())
+
+        self.assertEqual(result.participants[0]["hp"], 66)
+        self.assertEqual(result.log[-1]["events"][:3], [
+            "🌫️ 환경 · 독",
+            "　→ 러너 · 피해 34 [66/100]",
+            "🌫️ 환경 · 독 스택 +2 (스택 제한 없음)",
+        ])
+        self.assertEqual(result.participants[0]["env_stacks"][str(env.id)], 4)
+
     def test_color_validation_and_default(self):
         self.assertEqual(EnvironmentCreate(chapter="1장", name="독").color, "#e879f9")
         with self.assertRaises(ValidationError):

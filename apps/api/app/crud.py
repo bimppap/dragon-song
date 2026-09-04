@@ -4637,7 +4637,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             _finalize_real_battle(db, participants)
         return _commit_battle_session(db, session)
 
-    # 환경 효과: 챕터에 등록된 환경마다 대상 캐릭터에게 스택을 쌓고 (스택 − 1) × 스택당 피해를 입힌다.
+    # 환경 효과: 이번 라운드에 이미 보유한 스택으로 고정 피해를 먼저 입힌 뒤 스택을 쌓는다.
     environments = (
         db.query(Environment).filter(Environment.chapter == session.chapter).order_by(Environment.id.asc()).all()
         if session.chapter else []
@@ -4654,25 +4654,27 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         if env.enemy_condition == "dead" and condition_alive:
             continue
         stack_note = f"+{env.stacks_per_round}" if env.stackable else f"미보유 대상 +{env.stacks_per_round}"
-        max_note = f" · 최대 {env.max_stacks}스택" if env.max_stacks > 0 else ""
-        events.append(f"🌫️ 환경 · {env.name} {stack_note}{max_note}")
+        max_note = f"최대 {env.max_stacks}스택" if env.max_stacks > 0 else "스택 제한 없음"
+        events.append(f"🌫️ 환경 · {env.name}")
         newly_downed_names: list[str] = []
         for p in affected:
-            _, stacks = _apply_environment_stack_delta(
+            current_stacks = max(0, int(p["env_stacks"].get(str(env.id), 0)))
+            dmg = current_stacks * env.damage_per_stack
+            if dmg > 0:
+                # 환경은 적의 공격이 아닌 맵 효과라 방어력, 피해 감소, 보호를 적용하지 않는다.
+                p["hp"] = max(0, p["hp"] - dmg)
+                events.append(f"　→ {p['name']} · 피해 {dmg} [{p['hp']}/{p['max_hp']}]")
+                if p["hp"] == 0 and not p["downed"]:
+                    p["downed"] = True
+                    newly_downed_names.append(p["name"])
+            _apply_environment_stack_delta(
                 p,
                 environment_id=env.id,
                 stack_delta=env.stacks_per_round,
                 stackable=env.stackable,
                 max_stacks=env.max_stacks,
             )
-            dmg = max(0, (stacks - 1) * env.damage_per_stack)
-            if dmg <= 0:
-                continue
-            p["hp"] = max(0, p["hp"] - dmg)
-            events.append(f"　→ {p['name']} · {dmg} 피해 [{p['hp']}/{p['max_hp']}]")
-            if p["hp"] == 0 and not p["downed"]:
-                p["downed"] = True
-                newly_downed_names.append(p["name"])
+        events.append(f"🌫️ 환경 · {env.name} 스택 {stack_note} ({max_note})")
         if newly_downed_names:
             events.append(f"💫 {', '.join(sorted(newly_downed_names))} 기절")
 
