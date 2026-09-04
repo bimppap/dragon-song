@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { CloudFog, Footprints, Image as ImageIcon, Pencil, Plus, Sparkles, Trash2, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -44,12 +45,20 @@ const EFFECT_STATS = [
   ["attn", "주목도"], ["presence", "존재감 (%)"], ["skill_eff_fixed", "기술 효율 (%)"], ["skill_eff_true", "고정 기술 효율"],
   ["skill_target", "기술 대상 수"], ["hp_regen_true", "고정 체력 재생"], ["hp_regen_fixed", "체력 재생률 (%)"], ["mp_regen", "마나 재생"],
 ];
+const EMPTY_SETTING_VALUE = "__empty_setting__";
+
 function SettingSelect({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) {
-  return <label className="flex min-w-0 flex-col gap-1.5 text-xs text-ivory/85">{label}
-    <select value={value} onChange={(event) => onChange(event.target.value)} className="h-9 w-full rounded-lg border border-line bg-surface px-2 text-ivory">
-      {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
-    </select>
-  </label>;
+  return <div className="flex min-w-0 flex-col gap-1.5 text-xs text-ivory/85">
+    <span>{label}</span>
+    <Select value={value || EMPTY_SETTING_VALUE} onValueChange={(next) => onChange(next === EMPTY_SETTING_VALUE ? "" : next)}>
+      <SelectTrigger aria-label={label} className="h-auto min-h-9 text-xs [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:text-left">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>{options.map(([key, text]) => <SelectItem key={key || EMPTY_SETTING_VALUE} value={key || EMPTY_SETTING_VALUE}>{text}</SelectItem>)}</SelectGroup>
+      </SelectContent>
+    </Select>
+  </div>;
 }
 
 const ALL_CHAPTERS = "__all__";
@@ -688,7 +697,7 @@ export default function EnemyTab() {
               <div className="grid gap-3 sm:grid-cols-3">
                 <SettingSelect label="환경 적용 조건" value={environmentDraft.enemy_condition} options={[["always", "항상 적용"], ["alive", "지정 에너미가 살아있을 때"], ["dead", "지정 에너미가 살아있지 않을 때"]]} onChange={(value) => setEnvironmentDraft((prev) => ({ ...prev, enemy_condition: value as Environment["enemy_condition"] }))} />
                 {environmentDraft.enemy_condition !== "always" && <SettingSelect label="조건 에너미" value={environmentDraft.condition_enemy_id} options={[["", "에너미 선택"], ...enemies.filter((enemy) => enemy.chapter === selectedChapter).map((enemy) => [String(enemy.id), enemy.name])]} onChange={(value) => setEnvironmentDraft((prev) => ({ ...prev, condition_enemy_id: value }))} />}
-                <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={environmentDraft.dispellable} onChange={(event) => setEnvironmentDraft((prev) => ({ ...prev, dispellable: event.target.checked }))} />기술·정화수로 해제 가능</label>
+                <label className="flex items-center gap-2 text-xs"><Checkbox checked={environmentDraft.dispellable} onCheckedChange={(checked) => setEnvironmentDraft((prev) => ({ ...prev, dispellable: checked === true }))} />기술·정화수로 해제 가능</label>
               </div>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)_minmax(0,1fr)_auto_auto]">
                 <div className="flex flex-col gap-1.5">
