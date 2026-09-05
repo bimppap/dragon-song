@@ -3594,8 +3594,9 @@ def _snapshot_combatant(character: Character) -> dict:
         "downed": False, "retreated": False, "joined_round": 0,
         # 이번 라운드에 "방어"를 선택했는지와, 그렇다면 누구 대신 맞아줄지(기본값 본인). 매 아군 턴 시작 시 초기화된다.
         "defending": False, "protect_target": None,
-        # 전투 보상(행동 보상) 계산용: "무반응"이 아닌 행동을 한 라운드 수 + 난입한 라운드(행동 불가라도 참여로 인정) 수.
+        # 전투 보상 계산용: "무반응"이 아닌 행동을 실제로 선택한 라운드 수.
         "action_reward_rounds": 0,
+        "action_reward_version": 2,
         # 챕터 환경 효과별 누적 스택. {environment_id(str): 스택 수}. 전투/난입 시작 시 0에서 출발한다.
         "env_stacks": {},
         # 환경 스택을 얻은 순서. 같은 environment_id를 스택 수만큼 보관한다.
@@ -3662,6 +3663,35 @@ def _ensure_combatant_snapshot_defaults(p: dict) -> None:
     p.setdefault("env_stacks", {})
     p.setdefault("env_stack_order", [])
     _ensure_status_effects(p)
+
+
+def _legacy_join_reward_was_counted(session: BattleSession, participant: dict) -> bool:
+    joined_round = int(participant.get("joined_round", 0) or 0)
+    if joined_round <= 0:
+        return False
+    character_id = participant.get("character_id")
+    return any(
+        snapshot.get("round") == joined_round
+        and snapshot.get("phase") == "ally"
+        and any(
+            value.get("character_id") == character_id
+            for value in (snapshot.get("participants") or [])
+        )
+        for snapshot in (session.round_snapshots or [])
+    )
+
+
+def _meaningful_action_reward_rounds(participant: dict, session: BattleSession | None = None) -> int:
+    """실제로 무반응 외 행동을 선택한 라운드 수를 반환한다.
+
+    구버전은 난입 라운드를 행동 보상 1회로 잘못 더했으므로, 난입 캐릭터의 기존 수치에서
+    그 1회를 제외한다. version 2부터는 실제 행동만 기록한다.
+    """
+    rounds = max(0, int(participant.get("action_reward_rounds", 0) or 0))
+    version = max(1, int(participant.get("action_reward_version", 1) or 1))
+    if version < 2 and session is not None and _legacy_join_reward_was_counted(session, participant):
+        rounds = max(0, rounds - 1)
+    return rounds
 
 
 def _enemy_skill_is_aoe(skill: dict) -> bool:
@@ -4305,15 +4335,23 @@ def _battle_event_amount(event: str, suffix: str) -> int:
     return int(match.group(1).replace(",", "")) if match else 0
 
 
+def _battle_environment_damage_amount(event: str) -> int:
+    if not event.startswith("　→"):
+        return 0
+    match = re.search(r"·\s*피해\s+(\d[\d,]*)\s+\[", event)
+    return int(match.group(1).replace(",", "")) if match else 0
+
+
 def _battle_log_entry_metrics(entry: dict) -> dict[str, int]:
     """이전에 저장된 전투도 통계를 볼 수 있도록 행동 로그의 결과값만 분류한다.
 
-    환경 피해는 '적이 가한 피해'가 아니므로 제외하고, 적이 소환한 하수인 피해는 포함한다.
+    적과 하수인의 공격뿐 아니라 환경으로 실제 적용된 피해도 적 피해량에 포함한다.
     """
     metrics = _empty_battle_log_metrics()
     phase = entry.get("phase")
     for raw_event in entry.get("events") or []:
         event = str(raw_event)
+        metrics["enemy_damage"] += _battle_environment_damage_amount(event)
         healing = _battle_event_amount(event, "치유")
         if phase == "ally" and healing > 0:
             metrics["ally_healing"] += healing
@@ -5000,10 +5038,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     living = [p for p in participants if _combatant_active(p)]
     actable = [p for p in living if not _just_joined(p, round_no)]
 
-    # 행동 보상 집계: 이번 라운드에 난입해 행동은 못 하지만 참여는 한 캐릭터, 또는 "무반응"이 아닌 행동을 한 캐릭터에게 1라운드씩 적립.
-    for p in living:
-        if _just_joined(p, round_no):
-            p["action_reward_rounds"] += 1
+    # 행동 보상 집계: 실제로 "무반응"이 아닌 행동을 선택한 캐릭터에게만 1라운드씩 적립한다.
     for p in actable:
         action = actions_by_char.get(p["character_id"])
         if action and action.kind != "none":
@@ -6188,7 +6223,7 @@ def _get_battle_reward_or_404(db: Session, session_id: int, *, for_update: bool 
 
 
 def _compute_battle_rewards(db: Session, session: BattleSession) -> list[BattleRewardEntry]:
-    """승리보상(참여 캐릭터 전원 고정 골드) + 행동보상(무반응이 아닌 라운드 수 × 골드) + 전원보상(member 연결된 모든 캐릭터 경험치)."""
+    """실제 행동 참가자의 승리·행동 보상 + 전원보상(member 연결된 모든 캐릭터 경험치)."""
     chapter = db.query(Chapter).filter(Chapter.name == session.chapter).first() if session.chapter else None
     victory_gold_rate = chapter.battle_victory_reward_gold if chapter else 0
     action_gold_rate = chapter.battle_action_reward_gold if chapter else 0
@@ -6201,15 +6236,16 @@ def _compute_battle_rewards(db: Session, session: BattleSession) -> list[BattleR
 
     entries: dict[int, BattleRewardEntry] = {}
     for p in session.participants:
-        action_rounds = p.get("action_reward_rounds", 0)
+        action_rounds = _meaningful_action_reward_rounds(p, session)
+        victory_gold = victory_gold_rate if action_rounds > 0 else 0
         action_gold = action_rounds * action_gold_rate
         entries[p["character_id"]] = BattleRewardEntry(
             character_id=p["character_id"],
             character_name=participant_names.get(p["character_id"], p.get("name", "")),
-            victory_gold=victory_gold_rate,
+            victory_gold=victory_gold,
             action_rounds=action_rounds,
             action_gold=action_gold,
-            total_gold=victory_gold_rate + action_gold,
+            total_gold=victory_gold + action_gold,
         )
 
     member_characters = db.query(Character).filter(Character.member_id.isnot(None)).all()

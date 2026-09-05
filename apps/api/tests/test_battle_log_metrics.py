@@ -13,6 +13,7 @@ class BattleLogMetricsTest(unittest.TestCase):
                     "☠️ 요정 A의 맹독 I → 오버그로스에게 1,200 지속 피해 · [1300/2500]",
                     "🌫️ 환경 · 늪의 저주",
                     "　→ 요정 A · 피해 34 [66/100]",
+                    "이번 차례 공격 대상 : 요정 A / 예상 피해 : 999",
                     "💥 하수인 폭탄 폭발 → 요정 B 7 피해 [93/100]",
                 ],
             },
@@ -44,7 +45,7 @@ class BattleLogMetricsTest(unittest.TestCase):
             "ally_skill_damage": 1200,
             "ally_basic_damage": 0,
             "ally_healing": 0,
-            "enemy_damage": 7,
+            "enemy_damage": 41,
         })
         self.assertEqual(enriched[1]["metrics"], {
             "ally_skill_damage": 45,
