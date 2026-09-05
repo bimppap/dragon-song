@@ -1,14 +1,13 @@
 """전투 조회가 커지는 JSON 상태를 불필요하게 읽거나 전송하지 않는지 검증한다."""
 
 import unittest
-from datetime import timezone
 
 from sqlalchemy import create_engine, event, inspect
 from sqlalchemy.orm import Session
 
 from app import crud
 from app.db import Base
-from app.models import BattleSession
+from app.models import KST, BattleSession
 
 
 class BattlePerformanceTest(unittest.TestCase):
@@ -46,7 +45,7 @@ class BattlePerformanceTest(unittest.TestCase):
 
         known_updated_at = session.updated_at
         if known_updated_at.tzinfo is None:
-            known_updated_at = known_updated_at.replace(tzinfo=timezone.utc)
+            known_updated_at = known_updated_at.replace(tzinfo=KST)
         second, unchanged = crud.get_live_real_battle(self.db, session.id, known_updated_at)
 
         self.assertTrue(unchanged)

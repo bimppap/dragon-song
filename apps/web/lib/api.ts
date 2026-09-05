@@ -1348,6 +1348,8 @@ export interface Chapter {
   start_date: string;
   end_date: string;
   battle_date: string | null;
+  /** 전투 시작 시각(KST, "HH:MM:SS"). 러너는 전투일의 이 시각부터 에너미를 볼 수 있다. */
+  battle_time: string | null;
   image_url: string | null;
   music_url: string | null;
   battle_victory_reward_gold: number;
@@ -1355,6 +1357,8 @@ export interface Chapter {
   battle_participation_reward_exp: number;
   is_active: boolean;
   is_battle_day: boolean;
+  /** 전투일이면서 전투 시각이 지났는지 */
+  is_battle_open: boolean;
   created_at: string;
 }
 
@@ -1363,6 +1367,7 @@ export interface ChapterCreate {
   start_date: string;
   end_date: string;
   battle_date?: string | null;
+  battle_time?: string | null;
   music_url?: string | null;
   battle_victory_reward_gold?: number;
   battle_action_reward_gold?: number;

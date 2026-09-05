@@ -6,6 +6,7 @@ import { ImagePlus, Music, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import DatePicker from "@/components/ui/date-picker";
+import TimePicker from "@/components/ui/time-picker";
 import { Badge } from "@/components/ui/badge";
 import Modal from "@/components/common/Modal";
 import { createChapter, deleteChapter, fetchChapters, updateChapter, uploadChapterImage, uploadChapterMusic, type Chapter } from "@/lib/api";
@@ -16,10 +17,11 @@ interface ChapterFormState {
   start_date: string;
   end_date: string;
   battle_date: string;
+  battle_time: string;
   music_url: string;
 }
 
-const EMPTY_FORM: ChapterFormState = { name: "", start_date: "", end_date: "", battle_date: "", music_url: "" };
+const EMPTY_FORM: ChapterFormState = { name: "", start_date: "", end_date: "", battle_date: "", battle_time: "", music_url: "" };
 
 function chapterForm(chapter: Chapter): ChapterFormState {
   return {
@@ -27,6 +29,8 @@ function chapterForm(chapter: Chapter): ChapterFormState {
     start_date: chapter.start_date,
     end_date: chapter.end_date,
     battle_date: chapter.battle_date ?? "",
+    // 서버는 "HH:MM:SS"로 주지만 시간 입력은 "HH:MM"만 받는다.
+    battle_time: chapter.battle_time?.slice(0, 5) ?? "",
     music_url: chapter.music_url ?? "",
   };
 }
@@ -115,6 +119,7 @@ export default function ChapterTab() {
         ...form,
         name: form.name.trim(),
         battle_date: form.battle_date || null,
+        battle_time: form.battle_time || null,
         music_url: musicFile ? null : form.music_url.trim() || null,
       });
       if (imageFile) created = await uploadChapterImage(created.id, imageFile);
@@ -147,6 +152,7 @@ export default function ChapterTab() {
         ...editForm,
         name: editForm.name.trim(),
         battle_date: editForm.battle_date || null,
+        battle_time: editForm.battle_time || null,
         music_url: editMusicFile ? editing.music_url : editForm.music_url.trim() || null,
       });
       if (editImageFile) updated = await uploadChapterImage(updated.id, editImageFile);
@@ -188,7 +194,10 @@ export default function ChapterTab() {
       {chapters.length === 0 ? <p className="text-sm text-muted">등록된 챕터가 없습니다.</p> : <div className="flex flex-col gap-2">
         {chapters.map((chapter) => <button key={chapter.id} type="button" onClick={() => openEdit(chapter)} className="flex flex-col gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-left transition-colors hover:border-gold/60 hover:bg-primary/20 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-3">{chapter.is_active && <Badge className="border-gold bg-gold/15 text-xs font-semibold text-gold">진행 중</Badge>}<span className="text-sm font-semibold text-ivory">{chapter.name}</span></div>
-          <span className="text-xs text-muted">{chapter.start_date} ~ {chapter.end_date} · 전투 {chapter.battle_date ?? "미정"}</span>
+          <span className="text-xs text-muted">
+            {chapter.start_date} ~ {chapter.end_date} · 전투 {chapter.battle_date ?? "미정"}
+            {chapter.battle_date && chapter.battle_time ? ` ${chapter.battle_time.slice(0, 5)}` : ""}
+          </span>
         </button>)}
       </div>}
     </section>
@@ -205,6 +214,12 @@ export default function ChapterTab() {
         <div className="flex items-center gap-2">
           <span className="shrink-0 text-sm text-muted">전투 일정</span>
           <DatePicker className="min-w-0 flex-1" value={form.battle_date} onChange={(value) => setForm((prev) => ({ ...prev, battle_date: value }))} />
+          <TimePicker
+            className="w-32 shrink-0"
+            placeholder="시각"
+            value={form.battle_time}
+            onChange={(value) => setForm((prev) => ({ ...prev, battle_time: value }))}
+          />
         </div>
 
         <div className="flex items-center gap-4">
@@ -244,6 +259,12 @@ export default function ChapterTab() {
         <div className="flex items-center gap-2">
           <span className="shrink-0 text-sm text-muted">전투 일정</span>
           <DatePicker className="min-w-0 flex-1" value={editForm.battle_date} onChange={(value) => setEditForm((prev) => ({ ...prev, battle_date: value }))} />
+          <TimePicker
+            className="w-32 shrink-0"
+            placeholder="시각"
+            value={editForm.battle_time}
+            onChange={(value) => setEditForm((prev) => ({ ...prev, battle_time: value }))}
+          />
         </div>
 
         <div className="flex items-center gap-4">

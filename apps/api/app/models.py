@@ -1,7 +1,14 @@
-from datetime import date, datetime, timezone
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, text
+from datetime import date, datetime, time, timedelta, timezone
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, Time, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
+
+# 게임의 하루는 한국 시간 기준이다. 저장 시각도 모두 KST로 남긴다.
+KST = timezone(timedelta(hours=9))
+
+
+def now_kst() -> datetime:
+    return datetime.now(KST)
 
 
 class Chapter(Base):
@@ -12,6 +19,8 @@ class Chapter(Base):
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     end_date: Mapped[date] = mapped_column(Date, nullable=False)
     battle_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # 전투 시작 시각(KST). 러너는 전투일의 이 시각부터 에너미를 볼 수 있다.
+    battle_time: Mapped[time | None] = mapped_column(Time, nullable=True)
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
     music_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # 이 챕터의 실전 전투가 끝났을 때 지급되는 보상 설정(전투 페이지 "보상 전송" 카드에서 사용).
@@ -21,7 +30,7 @@ class Chapter(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -40,7 +49,7 @@ class Reward(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -59,7 +68,7 @@ class Member(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -76,7 +85,7 @@ class RefreshToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -194,7 +203,7 @@ class Item(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -206,8 +215,8 @@ class ShopState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )
 
 
@@ -225,8 +234,8 @@ class CharacterItemState(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )
 
 
@@ -271,7 +280,7 @@ class SkillNode(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -293,7 +302,7 @@ class CharacterSkillUnlock(Base):
     unlocked_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -323,7 +332,7 @@ class Purchase(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -348,7 +357,7 @@ class ItemUsage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -375,7 +384,7 @@ class DeliveryRequest(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
@@ -407,7 +416,7 @@ class Challenge(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -432,8 +441,8 @@ class ChallengeProgress(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )
 
 
@@ -457,7 +466,7 @@ class Mission(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -475,8 +484,8 @@ class MissionProgress(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )
 
 
@@ -496,7 +505,7 @@ class Enemy(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -520,7 +529,7 @@ class Environment(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -552,13 +561,13 @@ class SettlementRequest(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )
 
 
@@ -577,7 +586,7 @@ class AttendanceEntry(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
 
 
@@ -598,8 +607,8 @@ class AttendanceRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )
 
 
@@ -616,8 +625,8 @@ class NaverSession(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )
 
 
@@ -653,11 +662,11 @@ class BattleSession(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
+        default=now_kst,
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-        default=lambda: datetime.now(timezone.utc),
-        onupdate=lambda: datetime.now(timezone.utc),
+        default=now_kst,
+        onupdate=now_kst,
     )

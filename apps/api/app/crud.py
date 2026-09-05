@@ -17,6 +17,7 @@ from app.game_data import (
     skill_has_cleanse_count,
     skill_power_slots,
 )
+from app.models import KST, now_kst
 from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
     GRADE_STAT_FIELDS,
@@ -115,19 +116,20 @@ def _normalized_battle_enemies(raw_enemies: list[dict] | None) -> list[dict]:
 
 
 def _today() -> date:
-    return datetime.now(timezone.utc).date()
-
-
-KST = timezone(timedelta(hours=9))
-
-
-def _today_kst() -> date:
-    """출석은 한국 시간 기준 하루 단위로 처리한다."""
-    return datetime.now(KST).date()
+    """게임의 하루(챕터·전투일·출석 등)는 모두 한국 시간 기준으로 센다."""
+    return now_kst().date()
 
 
 def _is_battle_day(chapter: Chapter, today: date) -> bool:
     return chapter.battle_date == today if chapter.battle_date else False
+
+
+def _is_battle_open(chapter: Chapter, now: datetime | None = None) -> bool:
+    """전투일이고 전투 시각(미지정이면 그날 0시)이 지났는지. 러너에게 에너미를 공개하는 기준."""
+    current = now or now_kst()
+    if not _is_battle_day(chapter, current.date()):
+        return False
+    return chapter.battle_time is None or current.time() >= chapter.battle_time
 
 
 def _to_chapter_read(chapter: Chapter, *, today: date | None = None) -> ChapterRead:
@@ -138,6 +140,7 @@ def _to_chapter_read(chapter: Chapter, *, today: date | None = None) -> ChapterR
         start_date=chapter.start_date,
         end_date=chapter.end_date,
         battle_date=chapter.battle_date,
+        battle_time=chapter.battle_time,
         image_url=chapter.image_url,
         music_url=chapter.music_url,
         battle_victory_reward_gold=chapter.battle_victory_reward_gold,
@@ -145,6 +148,7 @@ def _to_chapter_read(chapter: Chapter, *, today: date | None = None) -> ChapterR
         battle_participation_reward_exp=chapter.battle_participation_reward_exp,
         is_active=chapter.start_date <= current_day <= chapter.end_date,
         is_battle_day=_is_battle_day(chapter, current_day),
+        is_battle_open=_is_battle_open(chapter),
         created_at=chapter.created_at,
     )
 
@@ -218,7 +222,7 @@ def _apply_growth_from_exp(db: Session, character: Character, source_id: int | N
             {"type": "lv", "amount": gained},
             {"type": "ap", "amount": gained * GROWTH_AP_PER_LEVEL},
         ],
-        rewarded_at=_today_kst(),
+        rewarded_at=_today(),
     )
     db.add(reward)
     return reward
@@ -335,7 +339,7 @@ def issue_refresh_token(db: Session, member_id: int) -> str:
     db.add(RefreshToken(
         token=token,
         member_id=member_id,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=now_kst() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
     ))
     db.commit()
     return token
@@ -343,7 +347,7 @@ def issue_refresh_token(db: Session, member_id: int) -> str:
 
 def _get_valid_refresh_token(db: Session, token: str) -> RefreshToken:
     row = db.query(RefreshToken).filter(RefreshToken.token == token).first()
-    if not row or row.revoked_at is not None or row.expires_at < datetime.now(timezone.utc):
+    if not row or row.revoked_at is not None or row.expires_at < now_kst():
         raise HTTPException(status_code=401, detail="유효하지 않거나 만료된 refresh token입니다.")
     return row
 
@@ -359,7 +363,7 @@ def refresh_access_token(db: Session, token: str) -> str:
 def revoke_refresh_token(db: Session, token: str) -> None:
     row = db.query(RefreshToken).filter(RefreshToken.token == token).first()
     if row and row.revoked_at is None:
-        row.revoked_at = datetime.now(timezone.utc)
+        row.revoked_at = now_kst()
         db.commit()
 
 
@@ -864,7 +868,7 @@ def _attended_dates_for_character(db: Session, character_id: int) -> set[date]:
 def _attendance_streak(db: Session, character_id: int) -> int:
     """오늘(미출석이면 어제)부터 거슬러 올라가며 연속으로 출석한 일수."""
     present_dates = _attended_dates_for_character(db, character_id)
-    return _streak_ending_at(present_dates, _today_kst())
+    return _streak_ending_at(present_dates, _today())
 
 
 def _chapters_by_name(db: Session) -> dict[str, Chapter]:
@@ -1169,7 +1173,7 @@ def _get_or_create_item_state(db: Session, character_id: int, item_id: int) -> C
 def _validate_delivery_date_slot(db: Session, item_id: int, delivery_date: date | None, delivery_note: str | None) -> dict:
     if delivery_date is None or not (delivery_note or "").strip():
         raise HTTPException(status_code=400, detail="날짜와 지문을 모두 입력해 주세요.")
-    if delivery_date <= _today_kst():
+    if delivery_date <= _today():
         raise HTTPException(status_code=400, detail="미래 날짜만 선택할 수 있습니다.")
     existing = db.query(DeliveryRequest).filter(DeliveryRequest.item_id == item_id).all()
     taken = {req.payload.get("date") for req in existing if isinstance(req.payload, dict)}
@@ -1328,7 +1332,7 @@ def complete_delivery_request(db: Session, request_id: int) -> DeliveryRequestRe
     if request.status == "completed":
         raise HTTPException(status_code=400, detail="이미 완료된 요청입니다.")
     request.status = "completed"
-    request.completed_at = datetime.now(timezone.utc)
+    request.completed_at = now_kst()
     db.commit()
     character_name = db.query(Character.name).filter(Character.id == request.character_id).scalar()
     item_name = db.query(Item.name).filter(Item.id == request.item_id).scalar()
@@ -1992,7 +1996,7 @@ def update_challenge_progress(
             raise HTTPException(status_code=404, detail="도전과제 진행 현황을 찾을 수 없습니다.")
         progress.achieved = entry.achieved or entry.character_id in paid_character_ids
         progress.memo = entry.memo.strip()
-        progress.updated_at = datetime.now(timezone.utc)
+        progress.updated_at = now_kst()
 
     db.commit()
     return _read_challenge_progress(db, challenge_id)
@@ -2091,7 +2095,7 @@ def pay_attendance_rewards(db: Session) -> AttendanceRewardPayResult:
                 {"type": "gold", "amount": ATTENDANCE_REWARD_GOLD},
                 {"type": "stat", "stat": "cp", "amount": ATTENDANCE_REWARD_CP},
             ],
-            rewarded_at=_today_kst(),
+            rewarded_at=_today(),
         ))
         entry.reward_paid = True
         paid_count += 1
@@ -2192,9 +2196,9 @@ async def check_naver_session(db: Session) -> NaverSessionRead:
     if not session.nid_aut or not session.nid_ses:
         raise HTTPException(status_code=400, detail="등록된 네이버 세션 쿠키가 없습니다.")
 
-    html = await _fetch_naver_attendance_html(session.nid_aut, session.nid_ses, _today_kst())
+    html = await _fetch_naver_attendance_html(session.nid_aut, session.nid_ses, _today())
     session.is_valid = _is_logged_in_attendance_page(html)
-    session.last_checked_at = datetime.now(timezone.utc)
+    session.last_checked_at = now_kst()
     db.commit()
     db.refresh(session)
     return _to_naver_session_read(session)
@@ -2209,7 +2213,7 @@ async def run_auto_attendance(db: Session, target_date: date) -> AutoAttendanceR
 
     html = await _fetch_naver_attendance_html(session.nid_aut, session.nid_ses, target_date)
     session.is_valid = _is_logged_in_attendance_page(html)
-    session.last_checked_at = datetime.now(timezone.utc)
+    session.last_checked_at = now_kst()
     db.commit()
 
     if not session.is_valid:
@@ -2271,7 +2275,7 @@ async def run_auto_attendance(db: Session, target_date: date) -> AutoAttendanceR
                 {"type": "gold", "amount": ATTENDANCE_REWARD_GOLD},
                 {"type": "stat", "stat": "cp", "amount": ATTENDANCE_REWARD_CP},
             ],
-            rewarded_at=_today_kst(),
+            rewarded_at=_today(),
         ))
         entry.reward_paid = True
         newly_rewarded.append(character)
@@ -2296,7 +2300,7 @@ def get_attendance_streak_ranking(db: Session) -> list[AttendanceStreakEntry]:
     """연속출석 순위를 5위까지 반환한다. 연속 출석일이 같으면 같은 순위를 공유한다(밀집 순위)."""
     characters = db.query(Character).order_by(Character.name.asc()).all()
     dates_by_character = _attended_dates_by_character(db)
-    today = _today_kst()
+    today = _today()
 
     streaks = [
         (character, _streak_ending_at(dates_by_character.get(character.id, set()), today))
@@ -2361,7 +2365,7 @@ def _to_healer_candidate_read(db: Session, character: Character, today: date) ->
 
 def list_healer_candidates(db: Session, on_date: date | None = None) -> list[HealerCandidateRead]:
     """관리 페이지 치유 탭: 치유 포지션 캐릭터와 지정한 날짜(기본값 오늘)의 비전투 치유 사용 가능 여부."""
-    target_date = on_date or _today_kst()
+    target_date = on_date or _today()
     characters = (
         db.query(Character)
         .filter(Character.faction == "치유")
@@ -2386,7 +2390,7 @@ def perform_noncombat_heal(
     if healer.faction != "치유":
         raise HTTPException(status_code=400, detail="치유 포지션 캐릭터만 비전투 치유를 사용할 수 있습니다.")
 
-    today = _today_kst()
+    today = _today()
     target_date = heal_date or today
     if target_date > today:
         raise HTTPException(status_code=400, detail="미래 날짜에는 치유를 기록할 수 없습니다.")
@@ -2685,7 +2689,7 @@ def pay_settlement(db: Session, settlement_id: int, data: SettlementPayRequest) 
         character_id=character.id,
         source_id=req.id,
         reward_items=reward_items,
-        rewarded_at=_today_kst(),
+        rewarded_at=_today(),
     )
     db.add(reward)
     db.flush()
@@ -2791,7 +2795,7 @@ def revoke_reward(db: Session, reward_id: int) -> RewardWithCharacterRead:
         character_id=character.id,
         source_id=reward.id,
         reward_items=negated,
-        rewarded_at=_today_kst(),
+        rewarded_at=_today(),
     )
     db.add(revoke)
     db.flush()
@@ -2855,7 +2859,7 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
             character_id=character.id,
             source_id=None,
             reward_items=reward_items,
-            rewarded_at=_today_kst(),
+            rewarded_at=_today(),
         )
         db.add(reward)
         rewards.append(reward)
@@ -3103,7 +3107,7 @@ def update_mission_progress(
             raise HTTPException(status_code=404, detail="임무 진행 현황을 찾을 수 없습니다.")
         progress.achieved = entry.achieved or entry.character_id in paid_character_ids
         progress.memo = entry.memo.strip()
-        progress.updated_at = datetime.now(timezone.utc)
+        progress.updated_at = now_kst()
 
     db.commit()
     return _read_mission_progress(db, mission_id)
@@ -3200,6 +3204,7 @@ def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
         start_date=data.start_date,
         end_date=data.end_date,
         battle_date=data.battle_date,
+        battle_time=data.battle_time,
         music_url=data.music_url.strip() if data.music_url else None,
         battle_victory_reward_gold=data.battle_victory_reward_gold,
         battle_action_reward_gold=data.battle_action_reward_gold,
@@ -3219,6 +3224,7 @@ def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> Chapter
     chapter.start_date = data.start_date
     chapter.end_date = data.end_date
     chapter.battle_date = data.battle_date
+    chapter.battle_time = data.battle_time
     chapter.music_url = data.music_url.strip() if data.music_url else None
     chapter.battle_victory_reward_gold = data.battle_victory_reward_gold
     chapter.battle_action_reward_gold = data.battle_action_reward_gold
@@ -3281,7 +3287,7 @@ def get_enemies_for_member(db: Session, member: Member, chapter: str | None = No
 
     today = _today()
     active_chapter = _get_active_chapter_model(db, today=today)
-    if not active_chapter or not _is_battle_day(active_chapter, today):
+    if not active_chapter or not _is_battle_open(active_chapter):
         return []
     if chapter is not None and chapter != active_chapter.name:
         return []
@@ -4669,9 +4675,9 @@ def get_live_real_battle(
     if known_session_id == metadata.id and known_updated_at is not None:
         stored_updated_at = metadata.updated_at
         if stored_updated_at.tzinfo is None:
-            stored_updated_at = stored_updated_at.replace(tzinfo=timezone.utc)
+            stored_updated_at = stored_updated_at.replace(tzinfo=KST)
         if known_updated_at.tzinfo is None:
-            known_updated_at = known_updated_at.replace(tzinfo=timezone.utc)
+            known_updated_at = known_updated_at.replace(tzinfo=KST)
         if stored_updated_at.astimezone(timezone.utc) == known_updated_at.astimezone(timezone.utc):
             return None, True
 

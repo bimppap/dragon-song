@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -184,6 +184,8 @@ class ChapterCreate(BaseModel):
     start_date: date
     end_date: date
     battle_date: date | None = None
+    # 전투 시작 시각(KST). 러너는 전투일의 이 시각부터 에너미를 볼 수 있다.
+    battle_time: time | None = None
     music_url: str | None = None
     # 이 챕터의 실전 전투 종료 후 지급되는 보상 설정.
     battle_victory_reward_gold: int = Field(default=0, ge=0)
@@ -196,6 +198,8 @@ class ChapterCreate(BaseModel):
             raise ValueError("챕터 시작일은 종료일보다 늦을 수 없습니다.")
         if self.battle_date and not (self.start_date <= self.battle_date <= self.end_date):
             raise ValueError("전투 일정은 챕터 진행 기간 안에서만 지정할 수 있습니다.")
+        if self.battle_time and not self.battle_date:
+            raise ValueError("전투 시각은 전투 날짜를 함께 지정해야 합니다.")
         return self
 
 
@@ -205,6 +209,7 @@ class ChapterRead(BaseModel):
     start_date: date
     end_date: date
     battle_date: date | None = None
+    battle_time: time | None = None
     image_url: str | None = None
     music_url: str | None = None
     battle_victory_reward_gold: int
@@ -212,6 +217,8 @@ class ChapterRead(BaseModel):
     battle_participation_reward_exp: int
     is_active: bool
     is_battle_day: bool
+    # 전투일이면서 전투 시각(없으면 그날 0시)이 지났는지. 러너에게 에너미를 공개하는 기준이다.
+    is_battle_open: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}

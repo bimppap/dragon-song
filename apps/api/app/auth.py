@@ -8,7 +8,7 @@ from fastapi import Depends, Header, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal, get_db
-from app.models import Member
+from app.models import Member, now_kst
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-me")
 JWT_ALGORITHM = "HS256"
@@ -27,7 +27,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 def create_access_token(member_id: int) -> str:
     payload = {
         "sub": str(member_id),
-        "exp": datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
+        "exp": now_kst() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 

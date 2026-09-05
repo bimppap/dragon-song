@@ -412,7 +412,7 @@ export default function BattleTab() {
                 <CardTitle>{activeChapter ? `${activeChapter.name} 에너미` : "현재 챕터 에너미"}</CardTitle>
                 {activeChapter?.battle_date ? (
                   <Badge variant={activeChapter.is_battle_day ? "success" : "outline"} className="font-num">
-                    전투 일정 {activeChapter.battle_date}
+                    전투 일정 {activeChapter.battle_date}{activeChapter.battle_time ? ` ${activeChapter.battle_time.slice(0, 5)}` : ""}
                   </Badge>
                 ) : null}
               </div>

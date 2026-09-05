@@ -128,8 +128,8 @@ export default function RunnerBattleOverview() {
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-xl font-semibold text-ivory">{chapter?.name ?? "진행 중인 챕터 없음"}</h1>
         {chapter?.battle_date ? (
-          <Badge variant={chapter.is_battle_day ? "success" : "outline"} className="font-num">
-            전투 일정 {chapter.battle_date}
+          <Badge variant={chapter.is_battle_open ? "success" : "outline"} className="font-num">
+            전투 일정 {chapter.battle_date}{chapter.battle_time ? ` ${chapter.battle_time.slice(0, 5)}` : ""}
           </Badge>
         ) : (
           <Badge variant="outline">전투 일정 미정</Badge>
@@ -146,7 +146,7 @@ export default function RunnerBattleOverview() {
         <p className="text-center text-sm text-muted">전투 정보를 불러오는 중입니다.</p>
       ) : !chapter ? (
         <EmptyState>진행 중인 챕터가 없습니다.</EmptyState>
-      ) : !chapter.is_battle_day ? (
+      ) : !chapter.is_battle_open ? (
         <div className="rounded-xl border border-dashed border-line bg-inset/40 px-6 py-10 text-center text-lg font-semibold text-muted">
           적의 동향을 살피는 중입니다...
         </div>
