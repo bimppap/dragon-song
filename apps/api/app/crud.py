@@ -132,7 +132,8 @@ def _is_battle_open(chapter: Chapter, now: datetime | None = None) -> bool:
     return chapter.battle_time is None or current.time() >= chapter.battle_time
 
 
-def _to_chapter_read(chapter: Chapter, *, today: date | None = None) -> ChapterRead:
+def _to_chapter_read(chapter: Chapter, *, today: date | None = None, admin: bool = True) -> ChapterRead:
+    """전투 시작 시각은 관리자에게만 내려준다(러너는 날짜와 공개 여부만 안다)."""
     current_day = today or _today()
     return ChapterRead(
         id=chapter.id,
@@ -140,7 +141,7 @@ def _to_chapter_read(chapter: Chapter, *, today: date | None = None) -> ChapterR
         start_date=chapter.start_date,
         end_date=chapter.end_date,
         battle_date=chapter.battle_date,
-        battle_time=chapter.battle_time,
+        battle_time=chapter.battle_time if admin else None,
         image_url=chapter.image_url,
         music_url=chapter.music_url,
         battle_victory_reward_gold=chapter.battle_victory_reward_gold,
@@ -3192,10 +3193,10 @@ def _get_active_chapter_model(db: Session, *, today: date | None = None) -> Chap
     )
 
 
-def get_chapters(db: Session) -> list[ChapterRead]:
+def get_chapters(db: Session, *, admin: bool = True) -> list[ChapterRead]:
     chapters = db.query(Chapter).order_by(Chapter.start_date.desc()).all()
     today = _today()
-    return [_to_chapter_read(chapter, today=today) for chapter in chapters]
+    return [_to_chapter_read(chapter, today=today, admin=admin) for chapter in chapters]
 
 
 def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
@@ -3247,12 +3248,12 @@ def delete_chapter(db: Session, chapter_id: int) -> tuple[str | None, str | None
     return image_url, music_url
 
 
-def get_active_chapter(db: Session) -> ChapterRead | None:
+def get_active_chapter(db: Session, *, admin: bool = True) -> ChapterRead | None:
     today = _today()
     chapter = _get_active_chapter_model(db, today=today)
     if not chapter:
         return None
-    return _to_chapter_read(chapter, today=today)
+    return _to_chapter_read(chapter, today=today, admin=admin)
 
 
 # ── Enemy ─────────────────────────────────────────────────────────────────────

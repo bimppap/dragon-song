@@ -129,7 +129,7 @@ export default function RunnerBattleOverview() {
         <h1 className="text-xl font-semibold text-ivory">{chapter?.name ?? "진행 중인 챕터 없음"}</h1>
         {chapter?.battle_date ? (
           <Badge variant={chapter.is_battle_open ? "success" : "outline"} className="font-num">
-            전투 일정 {chapter.battle_date}{chapter.battle_time ? ` ${chapter.battle_time.slice(0, 5)}` : ""}
+            전투 일정 {chapter.battle_date}
           </Badge>
         ) : (
           <Badge variant="outline">전투 일정 미정</Badge>

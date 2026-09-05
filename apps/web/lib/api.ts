@@ -1348,7 +1348,7 @@ export interface Chapter {
   start_date: string;
   end_date: string;
   battle_date: string | null;
-  /** 전투 시작 시각(KST, "HH:MM:SS"). 러너는 전투일의 이 시각부터 에너미를 볼 수 있다. */
+  /** 전투 시작 시각(KST, "HH:MM:SS"). 관리자에게만 내려오고, 러너에게는 항상 null이다. */
   battle_time: string | null;
   image_url: string | null;
   music_url: string | null;

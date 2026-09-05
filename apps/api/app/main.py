@@ -969,8 +969,8 @@ def pay_challenge_rewards(challenge_id: int, member: Member = Depends(require_ad
 
 
 @app.get("/chapters", response_model=list[ChapterRead])
-def list_chapters(db: Session = Depends(get_db)):
-    return crud.get_chapters(db)
+def list_chapters(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_chapters(db, admin=is_admin_role(member.role))
 
 
 @app.post("/chapters", response_model=ChapterRead)
@@ -1059,8 +1059,8 @@ async def delete_chapter(chapter_id: int, member: Member = Depends(require_admin
 
 
 @app.get("/chapters/active", response_model=ChapterRead | None)
-def get_active_chapter(db: Session = Depends(get_db)):
-    return crud.get_active_chapter(db)
+def get_active_chapter(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_active_chapter(db, admin=is_admin_role(member.role))
 
 
 @app.get("/enemies", response_model=list[EnemyRead])
