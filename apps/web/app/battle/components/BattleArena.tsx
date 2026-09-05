@@ -119,6 +119,12 @@ function isActive(p: BattleParticipant): boolean {
 
 type ParticipantSort = "attention" | "name" | "hp";
 
+const PARTICIPANT_SORTS: { value: ParticipantSort; label: string }[] = [
+  { value: "attention", label: "주목도 순" },
+  { value: "name", label: "이름순" },
+  { value: "hp", label: "현재 체력순" },
+];
+
 /** 주목도는 관리자/스텝 전용 정보라, 러너에게 보여줄 로그에서는 "· +20 주목도"류 구간을 잘라낸다. */
 const ATTN_LOG_SUFFIX_PATTERN = /\s*·\s*(?:\+?\d[\d,]*\s*주목도|주목도\s*\d[\d,]*\s*이전\s*\/\s*\d[\d,]*\s*획득)\s*$/;
 function stripAttnInfo(event: string): string {
@@ -1360,19 +1366,21 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
       {isAdmin && (
         <div className="flex items-center justify-end gap-2">
-          <label htmlFor="participant-sort" className="text-xs font-semibold text-muted">캐릭터 정렬</label>
-          <Select value={participantSort} onValueChange={(value: ParticipantSort) => setParticipantSort(value)}>
-            <SelectTrigger id="participant-sort" className="h-8 w-36 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value="attention">주목도 순</SelectItem>
-                <SelectItem value="name">이름순</SelectItem>
-                <SelectItem value="hp">현재 체력순</SelectItem>
-              </SelectGroup>
-            </SelectContent>
-          </Select>
+          <span className="text-xs font-semibold text-muted">캐릭터 정렬</span>
+          <div className="flex rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
+            {PARTICIPANT_SORTS.map(({ value, label }) => (
+              <Button
+                key={value}
+                type="button"
+                size="sm"
+                variant={participantSort === value ? "default" : "ghost"}
+                aria-pressed={participantSort === value}
+                onClick={() => setParticipantSort(value)}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
 
