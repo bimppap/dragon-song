@@ -36,6 +36,7 @@ interface Draft {
   activationOrder: string;
   cost: string;
   powerPercent: string;
+  environmentStackRemove: string;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -48,6 +49,7 @@ const EMPTY_DRAFT: Draft = {
   activationOrder: "",
   cost: "",
   powerPercent: "",
+  environmentStackRemove: "0",
 };
 
 function ratioToPercent(value: number | null): string {
@@ -100,6 +102,7 @@ export default function AdminSkillEditor() {
       activationOrder: node.activation_order != null ? String(node.activation_order) : "",
       cost: node.cost != null ? String(node.cost) : "",
       powerPercent: ratioToPercent(node.power),
+      environmentStackRemove: String(node.environment_stack_remove ?? 0),
     });
     setImageFile(null);
     setImagePreview(node.image_url);
@@ -130,6 +133,7 @@ export default function AdminSkillEditor() {
         activation_order: Number(draft.activationOrder),
         cost: Number(draft.cost),
         power: Number(draft.powerPercent) / 100,
+        environment_stack_remove: Number(draft.environmentStackRemove),
       };
       let updated = await updateSkillNode(editing.id, {
         default_name: draft.name,
@@ -159,6 +163,7 @@ export default function AdminSkillEditor() {
   const costIsValid = /^\d+$/.test(draft.cost.trim());
   const powerPercent = Number(draft.powerPercent);
   const powerIsValid = draft.powerPercent.trim() !== "" && Number.isFinite(powerPercent) && powerPercent >= 0;
+  const environmentStackRemoveIsValid = /^\d+$/.test(draft.environmentStackRemove.trim());
   const metadataIsValid = !isSkillNode || (
     TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
     && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
@@ -166,6 +171,7 @@ export default function AdminSkillEditor() {
     && activationOrderIsValid
     && costIsValid
     && powerIsValid
+    && environmentStackRemoveIsValid
   );
 
   async function handleVisibilityChange(value: string) {
@@ -337,6 +343,20 @@ export default function AdminSkillEditor() {
                     placeholder="예: 150"
                     aria-invalid={draft.powerPercent !== "" && !powerIsValid}
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">환경 스택 제거 수</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={draft.environmentStackRemove}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, environmentStackRemove: e.target.value }))}
+                    placeholder="0 이상의 정수"
+                    aria-invalid={!environmentStackRemoveIsValid}
+                  />
+                  <p className="text-xs text-muted">가장 오래된 해제 가능 환경 스택부터 제거합니다.</p>
                 </div>
               </div>
 

@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.crud import update_skill_node
 from app.db import Base
+from app.game_data import build_skill_node_specs
 from app.models import SkillNode
 from app.schemas import SkillNodeUpdate
 
@@ -44,6 +45,7 @@ class SkillAdminUpdateTest(unittest.TestCase):
                 activation_order=-1,
                 cost=4,
                 power=1.25,
+                environment_stack_remove=3,
             ),
         )
 
@@ -56,10 +58,27 @@ class SkillAdminUpdateTest(unittest.TestCase):
         self.assertEqual(updated.activation_order, -1)
         self.assertEqual(updated.cost, 4)
         self.assertEqual(updated.power, 1.25)
+        self.assertEqual(updated.environment_stack_remove, 3)
 
     def test_rejects_non_integer_target(self):
         with self.assertRaises(ValidationError):
             SkillNodeUpdate(default_name="기술", target="1+N")
+
+    def test_rejects_negative_environment_stack_remove(self):
+        with self.assertRaises(ValidationError):
+            SkillNodeUpdate(default_name="기술", environment_stack_remove=-1)
+
+    def test_anvil_default_stack_remove_count_follows_skill_tier(self):
+        anvil_nodes = [
+            spec
+            for spec in build_skill_node_specs("불굴의 서")
+            if spec.get("branch") == 0 and spec.get("col") in (None, 0)
+        ]
+
+        self.assertEqual(
+            [node["environment_stack_remove"] for node in anvil_nodes],
+            [1, 2, 3, 4, 5, 6],
+        )
 
 
 if __name__ == "__main__":

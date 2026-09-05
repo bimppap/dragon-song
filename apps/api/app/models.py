@@ -257,6 +257,7 @@ class SkillNode(Base):
     power: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 위력
     target: Mapped[str | None] = mapped_column(String, nullable=True)  # 기술 대상 (자유 형식: "1", "ALL", "1+N" 등)
     activation_order: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 발동 순서
+    environment_stack_remove: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 가장 오래된 해제 가능 환경 스택 제거 수
     formula: Mapped[str | None] = mapped_column(String, nullable=True)  # 계산 공식 (관리자 전용 표시)
     description: Mapped[str | None] = mapped_column(String, nullable=True)  # 개요 (관리자 전용 표시)
     # skill.xlsx에 값이 비어있어 기획 확정 전 임시로 채운 노드인지 여부 (UI에서 색으로 구분 표시).

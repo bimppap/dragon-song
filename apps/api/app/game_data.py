@@ -168,6 +168,7 @@ def _skill(
     power: float | None = None,
     target: str | None = None,
     order: int | None = None,
+    environment_stack_remove: int | tuple[int, ...] | None = None,
     formula: str | None = None,
     description: str | None = None,
     tier6_name: str | None = None,
@@ -184,6 +185,7 @@ def _skill(
         "power": power,
         "target": target,
         "order": order,
+        "environment_stack_remove": environment_stack_remove,
         "formula": formula,
         "description": description,
         "tier6_name": tier6_name,
@@ -255,9 +257,9 @@ SKILL_BOOKS: dict[str, dict] = {
             {
                 "root": _skill(
                     "모루", trigger_type="즉발형", category="복합", stackable=False, var_name="ab_anvil",
-                    cost=3, power=0.15, target="SELF", order=3,
-                    formula="회복: ((skill_lv*skill_power)*(1+skill_eff_fixed))*(1+heal_eff)",
-                    description="자가 회복 + 기술 등급만큼 자신의 약화 스택 제거, 주목도 상승(상승량: 회복 수치*skill_lv).",
+                    cost=3, power=0.15, target="SELF", order=3, environment_stack_remove=(1, 2, 3, 4, 5, 6),
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)+기술 효율 고정",
+                    description="자신을 회복하고 설정된 수만큼 가장 오래된 해제 가능 환경 스택을 제거합니다. 회복량만큼 주목도를 얻습니다.",
                     tier6_name="불굴",
                 ),
                 "derived": _skill(
@@ -417,6 +419,9 @@ def build_skill_node_specs(book: str) -> list[dict]:
             description = f"{description}\n[6단계 추가 효과] {skill['tier6_effect']}" if description else f"[6단계 추가 효과] {skill['tier6_effect']}"
         # 1단계·6단계는 실제 기획 데이터, 2~5단계는 근거 데이터가 없어 항상 임시값이다.
         placeholder = skill["placeholder"] or tier not in (1, 6)
+        environment_stack_remove = skill["environment_stack_remove"]
+        if isinstance(environment_stack_remove, tuple):
+            environment_stack_remove = environment_stack_remove[tier - 1]
         return {
             "default_name": name,
             "trigger_type": skill["trigger_type"],
@@ -427,6 +432,7 @@ def build_skill_node_specs(book: str) -> list[dict]:
             "power": skill["power"],
             "target": skill["target"],
             "activation_order": skill["order"],
+            "environment_stack_remove": environment_stack_remove,
             "formula": skill["formula"],
             "description": description,
             "is_placeholder": placeholder,

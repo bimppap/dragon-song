@@ -469,6 +469,14 @@ class ItemWithStock(ItemRead):
     eligible_missions: list[RecollectionMissionRead] = Field(default_factory=list)
 
 
+class ItemNameRead(BaseModel):
+    """보상 표기 등에서 쓰는 아이템 이름 목록. 상점 미공개 아이템도 이름만 노출한다."""
+    id: int
+    name: str
+
+    model_config = {"from_attributes": True}
+
+
 class ShopStatusRead(BaseModel):
     is_open: bool
 
@@ -1137,6 +1145,7 @@ class SkillNodeRead(BaseModel):
     power: float | None = None
     target: str | None = None
     activation_order: int | None = None
+    environment_stack_remove: int | None = None
     formula: str | None = None
     description: str | None = None
     is_placeholder: bool = False
@@ -1161,6 +1170,7 @@ class SkillNodeUpdate(BaseModel):
     power: float | None = Field(default=None, ge=0)
     target: str | None = None
     activation_order: int | None = None
+    environment_stack_remove: int | None = Field(default=None, ge=0)
 
     @field_validator("target")
     @classmethod

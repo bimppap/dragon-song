@@ -98,7 +98,7 @@ function HighlightedDescription({ text, className }: { text: string; className: 
 
 /**
  * 기술 정보 툴팁. 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서·기술 비용·기술 설명은 러너에게도 보여주고,
- * 관리자에게는 기술 위력을 추가로 보여준다.
+ * 관리자에게는 기술 위력과 환경 스택 제거 수를 추가로 보여준다.
  */
 export function SkillTooltipContent({
   node,
@@ -140,7 +140,13 @@ export function SkillTooltipContent({
         <InfoRow label="발동 순서:" value={node.activation_order != null ? String(node.activation_order) : "정보 없음"} />
         <InfoRow label="기술 비용:" value={node.cost != null ? `${node.cost} MP` : "정보 없음"} />
         {variant === "admin" && (
-          <InfoRow label="기술 위력:" value={node.power != null ? formatPowerPercent(node.power) : "정보 없음"} />
+          <>
+            <InfoRow label="기술 위력:" value={node.power != null ? formatPowerPercent(node.power) : "정보 없음"} />
+            <InfoRow
+              label="환경 스택 제거:"
+              value={node.environment_stack_remove != null ? `${node.environment_stack_remove}개` : "0개"}
+            />
+          </>
         )}
       </ul>
       {node.description && (

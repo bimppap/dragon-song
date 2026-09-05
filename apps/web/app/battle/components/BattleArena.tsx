@@ -54,6 +54,7 @@ import { useBattleSocket, type BattleDraftPreview } from "@/lib/useBattleSocket"
 import { isAdminRole, useAuth } from "@/lib/auth";
 import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
+import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
 
 function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect[] {
   const result: BattleStatusEffect[] = [];
@@ -1745,6 +1746,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       {/* 전투 로그 */}
       {groupedLog.length > 0 && (
         <div className="space-y-3 rounded-xl border border-line bg-inset p-4">
+          {isAdmin ? <BattleRoundMetricsTable log={session.log} /> : null}
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">전투 로그</span>
           {[...groupedLog].reverse().map((group, groupIndex) => (
             <div key={group.round} className={cn("space-y-2", groupIndex > 0 && "border-t border-line pt-3")}>

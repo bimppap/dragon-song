@@ -408,6 +408,11 @@ export interface RecollectionMission {
   reward_experience: number;
 }
 
+export interface ItemName {
+  id: number;
+  name: string;
+}
+
 export interface Item {
   id: number;
   name: string;
@@ -863,6 +868,11 @@ export async function fetchItems(character_id?: number): Promise<Item[]> {
   const params = character_id != null ? `?character_id=${character_id}` : "";
   const cacheKey = character_id != null ? `items:character:${character_id}` : "items:all";
   return cachedRequest<Item[]>(cacheKey, `/items${params}`, ITEM_CACHE_TTL_MS, "아이템 조회 실패");
+}
+
+/** 보상 표기용 아이템 이름 목록. 상점 미공개 아이템도 포함하므로 이름이 "아이템 #n"으로 떨어지지 않는다. */
+export async function fetchItemNames(): Promise<ItemName[]> {
+  return cachedRequest<ItemName[]>("items:names", "/items/names", ITEM_CACHE_TTL_MS, "아이템 이름 조회 실패");
 }
 
 export async function createItem(data: ItemCreate): Promise<Item> {
@@ -1630,9 +1640,17 @@ export interface BattleLogRound {
   round: number;
   phase?: BattlePhase;
   events: string[];
+  metrics?: BattleLogMetrics;
   /** 이벤트 문자열을 키로 하는, 계산 당시 실제 피연산자가 대입된 결과식. */
   /** 값 하나에 계산 결과 숫자가 여럿(예: 재생의 HP/MP)이면 등장 순서대로 담은 배열, 하나뿐이면 문자열 그대로. */
   calculations?: Record<string, string | string[]>;
+}
+
+export interface BattleLogMetrics {
+  ally_skill_damage: number;
+  ally_basic_damage: number;
+  ally_healing: number;
+  enemy_damage: number;
 }
 
 export interface BattlePendingEnemyAction {
@@ -1849,6 +1867,7 @@ export interface SkillNode {
   power: number | null;
   target: string | null;
   activation_order: number | null;
+  environment_stack_remove: number | null;
   formula: string | null;
   description: string | null;
   is_placeholder: boolean;
@@ -1892,6 +1911,7 @@ export async function updateSkillNode(
     power?: number;
     target?: string;
     activation_order?: number;
+    environment_stack_remove?: number;
   },
 ): Promise<SkillNode> {
   const node = await request<SkillNode>(`/skills/${nodeId}`, {

@@ -176,6 +176,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN image_url VARCHAR")
         if "is_public" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT true")
+        if "environment_stack_remove" not in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN environment_stack_remove INTEGER")
 
         # 기술트리 개편: 진영(faction, 공격/수비/치유) 3계열 -> 캐릭터 역할과 무관한 4개 "서"
         # (용맹/불굴/헌신/탐구)로 전환. 기존 트리 구조와 호환되지 않으므로 전면 재시딩하고,

@@ -61,6 +61,7 @@ from app.schemas import (
     ChallengeUpdate,
     HealerCandidateRead,
     ItemCreate,
+    ItemNameRead,
     ItemRead,
     ItemWithStock,
     BulkPurchaseRequest,
@@ -599,6 +600,12 @@ def save_challenge_progress(
     db: Session = Depends(get_db),
 ):
     return crud.update_challenge_progress(db, challenge_id, data)
+
+
+@app.get("/items/names", response_model=list[ItemNameRead])
+def list_item_names(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """보상 표기용 아이템 이름 목록. 상점 미공개 아이템도 이름은 조회할 수 있다."""
+    return crud.get_item_names(db)
 
 
 @app.get("/items", response_model=list[ItemWithStock])
