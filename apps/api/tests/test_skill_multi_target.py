@@ -25,7 +25,7 @@ class SkillMultiTargetTest(unittest.TestCase):
         self.db.flush()
 
         self.cure = self._skill_node("헌신의 서", 0, "회복", "회복", "ab_cure", power=0.5, target="2")
-        self.charge = self._skill_node("탐구의 서", 1, "충전", "회복", "ab_charge", power=None, target="2")
+        self.charge = self._skill_node("탐구의 서", 1, "충전", "회복", "ab_charge", power=2, target="2")
         self.db.add_all([
             CharacterSkillUnlock(character_id=self.caster.id, node_id=self.cure.id),
             CharacterSkillUnlock(character_id=self.caster.id, node_id=self.charge.id),
@@ -86,6 +86,9 @@ class SkillMultiTargetTest(unittest.TestCase):
         self.assertTrue(all(p["hp"] > 50 for p in healed))
         heal_events = [event for event in result.log[-1]["events"] if "치유" in event]
         self.assertEqual(len(heal_events), 2)
+        # 여러 명을 치유하면 통합 회복값이 아니라 평균 회복값으로 주목도가 오른다.
+        caster = next(p for p in result.participants if p["character_id"] == self.caster.id)
+        self.assertEqual(caster["attn"], 100)
 
     def test_charge_restores_mana_to_each_target_and_excludes_caster(self):
         result = self._resolve(self.charge, [f"ally:{self.ally_a.id}", f"ally:{self.ally_b.id}"])

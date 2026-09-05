@@ -1,5 +1,6 @@
 import unittest
 
+from fastapi import HTTPException
 from pydantic import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -85,6 +86,40 @@ class SkillAdminUpdateTest(unittest.TestCase):
         self.assertTrue(all(node["target"] == "2" for node in crushing_nodes))
         self.assertTrue(all(node["target_side"] == "ENEMY" for node in crushing_nodes))
 
+    def test_counter_has_two_power_slots_and_saves_them(self):
+        node = SkillNode(
+            book="불굴의 서", branch=1, col=0, tier=1, default_name="반격",
+            var_name="ab_counter", power=0.05, powers={"counter_damage": 2.0},
+        )
+        self.db.add(node)
+        self.db.commit()
+
+        updated = update_skill_node(
+            self.db,
+            node.id,
+            SkillNodeUpdate(default_name="반격", power=0.07, powers={"counter_damage": 2.5}),
+        )
+
+        self.assertEqual(
+            [(slot.key, slot.label) for slot in updated.power_slots],
+            [("power", "피해 감소"), ("counter_damage", "반격 피해")],
+        )
+        self.assertEqual(updated.power, 0.07)
+        self.assertEqual(updated.powers, {"counter_damage": 2.5})
+
+    def test_rejects_power_key_the_skill_does_not_have(self):
+        with self.assertRaises(HTTPException):
+            update_skill_node(
+                self.db,
+                self.node_id,
+                SkillNodeUpdate(default_name="기존 기술", powers={"counter_damage": 2.0}),
+            )
+
+    def test_single_power_skill_keeps_one_slot(self):
+        updated = update_skill_node(self.db, self.node_id, SkillNodeUpdate(default_name="기존 기술"))
+
+        self.assertEqual([(slot.key, slot.label) for slot in updated.power_slots], [("power", "기술 위력")])
+
     def test_anvil_default_stack_remove_count_follows_skill_tier(self):
         anvil_nodes = [
             spec
@@ -96,6 +131,20 @@ class SkillAdminUpdateTest(unittest.TestCase):
             [node["environment_stack_remove"] for node in anvil_nodes],
             [1, 2, 3, 4, 5, 6],
         )
+
+    def test_purification_and_protect_carry_their_numbers_as_power_slots(self):
+        purification = [
+            spec for spec in build_skill_node_specs("헌신의 서")
+            if spec.get("var_name") == "ab_purification"
+        ]
+        protect = [
+            spec for spec in build_skill_node_specs("불굴의 서")
+            if spec.get("var_name") == "ab_protect"
+        ]
+
+        # 기술 등급으로 계산하던 값들을 기술 데이터로 옮겼다(정화는 단계별, 보호는 단계 공통).
+        self.assertEqual([node["powers"]["cleanse_count"] for node in purification], [1, 2, 3, 4, 5, 6])
+        self.assertTrue(all(node["powers"]["attn_transfer"] == 0.1 for node in protect))
 
 
 if __name__ == "__main__":

@@ -112,7 +112,7 @@ class EncourageSkillTest(unittest.TestCase):
         self.assertIn(encourage_event, events)
         self.assertEqual(
             result.log[-1]["calculations"][encourage_event],
-            "round(기술 위력 0.2 × (1 + 기술 효율 비례 0.1) × 100)%",
+            "floor(기술 위력 0.2 × (1 + 기술 효율 비례 0.1) × 100)%",
         )
         attack_event = next(event for event in events if event.startswith("⚔️ 실험 요정 A 공격:"))
         self.assertEqual(attack_event, "⚔️ 실험 요정 A 공격: 13 피해 · 오버그로스 [2487/2500]")

@@ -178,6 +178,13 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT true")
         if "environment_stack_remove" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN environment_stack_remove INTEGER")
+        if "powers" not in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN powers JSON NOT NULL DEFAULT '{}'")
+            if "var_name" in skill_node_columns:
+                # 반격의 반격 피해(공격력+방어력의 200%)는 코드 상수였던 값을 기술 데이터로 옮긴 것이다.
+                statements.append(
+                    "UPDATE skill_nodes SET powers = '{\"counter_damage\": 2.0}' WHERE var_name = 'ab_counter'"
+                )
         if "target_side" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN target_side VARCHAR")
             if "var_name" in skill_node_columns:

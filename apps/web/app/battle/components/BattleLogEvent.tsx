@@ -55,14 +55,14 @@ function formulaFor(
     const actorName = event.match(/^♻️\s+(.+?)\s+재생/)?.[1];
     const actor = session.participants.find((candidate) => candidate.name === actorName);
     if (actor) {
-      return `고정 체력 재생 ${actor.hp_regen_true} + round(최대 체력 ${actor.max_hp} × 비율 체력 재생 ${decimal(actor.hp_regen_fixed)})`;
+      return `고정 체력 재생 ${actor.hp_regen_true} + floor(최대 체력 ${actor.max_hp} × 비율 체력 재생 ${decimal(actor.hp_regen_fixed)})`;
     }
   }
 
   if (kind === "healing" && event.includes("구조")) {
     const targetName = event.match(/→\s+(.+?)\s+구조/)?.[1];
     const target = session.participants.find((candidate) => candidate.name === targetName);
-    if (target) return `max(최소 부활 체력 1, round(최대 체력 ${target.max_hp} × 부활 비율 0.1))`;
+    if (target) return `max(최소 부활 체력 1, floor(최대 체력 ${target.max_hp} × 부활 비율 0.1))`;
   }
 
   if (kind === "healing" && event.startsWith("💚") && !event.includes("의 ")) {

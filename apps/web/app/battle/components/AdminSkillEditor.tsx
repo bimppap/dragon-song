@@ -26,6 +26,26 @@ import {
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 const TRIGGER_TYPES: SkillTriggerType[] = ["즉발형", "지속형", "혼합형"];
 const SKILL_CATEGORIES: SkillCategory[] = ["피해", "복합", "강화", "약화", "회복"];
+type PowerSlot = SkillNode["power_slots"][number];
+
+const DEFAULT_POWER_SLOTS: PowerSlot[] = [{ key: "power", label: "기술 위력", unit: "percent" }];
+
+/** 서버가 기술마다 내려주는 위력 입력 칸 정의. 예전 응답 호환을 위해 비어 있으면 단일 위력으로 본다. */
+function powerSlotsOf(node: SkillNode): PowerSlot[] {
+  return node.power_slots?.length ? node.power_slots : DEFAULT_POWER_SLOTS;
+}
+
+/** percent 슬롯은 퍼센트로 입력받아 배율로 저장하고, flat 슬롯은 입력값을 그대로 쓴다. */
+function slotValueToInput(slot: PowerSlot, value: number | null): string {
+  if (value == null) return "";
+  return slot.unit === "flat" ? String(value) : ratioToPercent(value);
+}
+
+function slotInputToValue(slot: PowerSlot, input: string): number {
+  const value = Number(input);
+  return slot.unit === "flat" ? value : value / 100;
+}
+
 const TARGET_SIDES: { value: SkillTargetSide; label: string }[] = [
   { value: "ALLY", label: "아군" },
   { value: "ENEMY", label: "적군" },
@@ -41,7 +61,8 @@ interface Draft {
   targetSide: SkillTargetSide | "";
   activationOrder: string;
   cost: string;
-  powerPercent: string;
+  /** 위력 슬롯 키 → 퍼센트 입력값. 위력이 하나인 기술은 "power" 하나만 쓴다. */
+  powerPercents: Record<string, string>;
   environmentStackRemove: string;
 }
 
@@ -55,7 +76,7 @@ const EMPTY_DRAFT: Draft = {
   targetSide: "",
   activationOrder: "",
   cost: "",
-  powerPercent: "",
+  powerPercents: {},
   environmentStackRemove: "0",
 };
 
@@ -109,7 +130,10 @@ export default function AdminSkillEditor() {
       targetSide: node.target_side ?? "",
       activationOrder: node.activation_order != null ? String(node.activation_order) : "",
       cost: node.cost != null ? String(node.cost) : "",
-      powerPercent: ratioToPercent(node.power),
+      powerPercents: Object.fromEntries(powerSlotsOf(node).map((slot) => [
+        slot.key,
+        slotValueToInput(slot, slot.key === "power" ? node.power : node.powers?.[slot.key] ?? null),
+      ])),
       environmentStackRemove: String(node.environment_stack_remove ?? 0),
     });
     setImageFile(null);
@@ -141,7 +165,15 @@ export default function AdminSkillEditor() {
         target_side: draft.targetSide as SkillTargetSide,
         activation_order: Number(draft.activationOrder),
         cost: Number(draft.cost),
-        power: Number(draft.powerPercent) / 100,
+        power: slotInputToValue(
+          powerSlotsOf(editing).find((slot) => slot.key === "power") ?? DEFAULT_POWER_SLOTS[0],
+          draft.powerPercents.power ?? "",
+        ),
+        powers: Object.fromEntries(
+          powerSlotsOf(editing)
+            .filter((slot) => slot.key !== "power")
+            .map((slot) => [slot.key, slotInputToValue(slot, draft.powerPercents[slot.key] ?? "")]),
+        ),
         environment_stack_remove: Number(draft.environmentStackRemove),
       };
       let updated = await updateSkillNode(editing.id, {
@@ -170,8 +202,11 @@ export default function AdminSkillEditor() {
   const targetIsValid = draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
   const activationOrderIsValid = /^-?\d+$/.test(draft.activationOrder.trim());
   const costIsValid = /^\d+$/.test(draft.cost.trim());
-  const powerPercent = Number(draft.powerPercent);
-  const powerIsValid = draft.powerPercent.trim() !== "" && Number.isFinite(powerPercent) && powerPercent >= 0;
+  const powerSlots = editing ? powerSlotsOf(editing) : DEFAULT_POWER_SLOTS;
+  const powerIsValid = powerSlots.every((slot) => {
+    const value = draft.powerPercents[slot.key] ?? "";
+    return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0;
+  });
   const environmentStackRemoveIsValid = /^\d+$/.test(draft.environmentStackRemove.trim());
   const metadataIsValid = !isSkillNode || (
     TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
@@ -359,18 +394,28 @@ export default function AdminSkillEditor() {
                   />
                 </div>
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 위력 (%)</label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={draft.powerPercent}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, powerPercent: e.target.value }))}
-                    placeholder="예: 150"
-                    aria-invalid={draft.powerPercent !== "" && !powerIsValid}
-                  />
-                </div>
+                {powerSlots.map((slot) => {
+                  const value = draft.powerPercents[slot.key] ?? "";
+                  return (
+                    <div key={slot.key} className="space-y-1.5">
+                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
+                        {slot.unit === "flat" ? slot.label : `${slot.label} (%)`}
+                      </label>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="any"
+                        value={value}
+                        onChange={(e) => setDraft((prev) => ({
+                          ...prev,
+                          powerPercents: { ...prev.powerPercents, [slot.key]: e.target.value },
+                        }))}
+                        placeholder={slot.unit === "flat" ? "예: 2" : "예: 150"}
+                        aria-invalid={value !== "" && !(Number.isFinite(Number(value)) && Number(value) >= 0)}
+                      />
+                    </div>
+                  );
+                })}
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">환경 스택 제거 수</label>

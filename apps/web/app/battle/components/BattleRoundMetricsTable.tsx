@@ -1,6 +1,14 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import type { BattleLogMetrics, BattleLogRound } from "@/lib/api";
 
@@ -71,19 +79,24 @@ export default function BattleRoundMetricsTable({ log }: { log: BattleLogRound[]
             <tr className="bg-surface text-muted">
               <th colSpan={4} scope="colgroup" className="border-b border-line px-3 py-2 font-semibold">
                 <div className="flex items-center justify-center gap-2">
-                  <select
-                    aria-label="누적 전투량 기준 라운드"
-                    className="rounded-md border border-line bg-inset px-2 py-1 font-semibold text-ivory outline-none focus:border-gold"
-                    value={selected.round}
-                    onChange={(event) => {
-                      const nextRound = Number(event.target.value);
+                  <Select
+                    value={String(selected.round)}
+                    onValueChange={(value) => {
+                      const nextRound = Number(value);
                       setSelectedRound(nextRound === latest.round ? null : nextRound);
                     }}
                   >
-                    {rounds.map(({ round }) => (
-                      <option key={round} value={round}>{round}라운드</option>
-                    ))}
-                  </select>
+                    <SelectTrigger aria-label="누적 전투량 기준 라운드" className="h-8 w-28 text-xs font-semibold">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {rounds.map(({ round }) => (
+                          <SelectItem key={round} value={String(round)}>{round}라운드</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                   <span>기준 누적 전투량</span>
                 </div>
               </th>

@@ -1127,6 +1127,14 @@ class AutoAttendanceResult(BaseModel):
 TIER_LABELS = {0: "기본", 1: "1단계", 2: "2단계", 3: "3단계", 4: "4단계", 5: "5단계", 6: "6단계"}
 
 
+class SkillPowerSlot(BaseModel):
+    """기술 편집 화면이 그려야 하는 위력 입력 칸. key "power"는 power 필드를, 나머지는 powers의 키를 뜻한다."""
+
+    key: str
+    label: str
+    unit: Literal["percent", "flat"] = "percent"
+
+
 class SkillNodeRead(BaseModel):
     """var_name(내부 변수명)은 러너·관리자 모두에게 노출하지 않으므로 이 스키마에 포함하지 않는다."""
 
@@ -1144,6 +1152,8 @@ class SkillNodeRead(BaseModel):
     stackable: bool | None = None
     cost: float | None = None
     power: float | None = None
+    powers: dict[str, float] = Field(default_factory=dict)
+    power_slots: list[SkillPowerSlot] = Field(default_factory=list)
     target: str | None = None
     target_side: SkillTargetSide | None = None
     activation_order: int | None = None
@@ -1170,6 +1180,7 @@ class SkillNodeUpdate(BaseModel):
     cost: int | None = Field(default=None, ge=0)
     # 전투 로직은 위력을 배율로 사용한다. UI에서는 퍼센트로 입력받아 100으로 나눈 값을 보낸다.
     power: float | None = Field(default=None, ge=0)
+    powers: dict[str, float] = Field(default_factory=dict)
     target: str | None = None
     target_side: SkillTargetSide | None = None
     activation_order: int | None = None

@@ -50,6 +50,7 @@ class CounterSkillTest(unittest.TestCase):
             var_name="ab_counter",
             cost=3,
             power=0.1,
+            powers={"counter_damage": 2.0},
             target="1",
             target_side="ALLY",
             activation_order=3,
@@ -114,11 +115,11 @@ class CounterSkillTest(unittest.TestCase):
             )]),
         )
 
-        cast_event = "↩️ 실험 요정 B의 반격 I → 실험 요정 A 반격 태세 (피해 감소 +12%)"
+        cast_event = "↩️ 실험 요정 B의 반격 I → 실험 요정 A (피해 감소 +11%) · 실험 요정 B 반격 태세"
         self.assertIn(cast_event, ally_result.log[-1]["events"])
         self.assertEqual(
             ally_result.log[-1]["calculations"][cast_event],
-            "round(기술 등급 1 × 기술 위력 0.1 × (1 + 시전자 방어 효율 0.2) × 100)%",
+            "floor(기술 위력 0.1 × (1 + 기술 효율 비례 0.1) × 100)%",
         )
 
         enemy_result = crud.resolve_battle_enemy_turn(self.db, self.battle.id)
@@ -127,14 +128,16 @@ class CounterSkillTest(unittest.TestCase):
         target = next(p for p in enemy_result.participants if p["character_id"] == self.target.id)
         self.assertEqual(caster["hp"], 100)
         self.assertEqual(target["hp"], 56)
-        self.assertEqual(enemy_result.enemies[0]["hp"], 67)
+        self.assertEqual(enemy_result.enemies[0]["hp"], 65)
 
-        counter_event = "↩️ 실험 요정 B의 반격 I → 훈련용 에너미 33 반격 피해 · [67/100]"
+        counter_event = "↩️ 실험 요정 B의 반격 I → 훈련용 에너미 35 피해 · [65/100]"
         self.assertIn(counter_event, enemy_result.log[-1]["events"])
         self.assertEqual(
             enemy_result.log[-1]["calculations"][counter_event],
-            "min(floor((공격력 10 + 방어력 5) × (1 + 기술 등급 1) × "
-            "(1 + 기술 효율 비례 0.1)), 남은 체력 100)",
+            "min(floor(((공격력 10 × (1 + 공격력 증폭 0) + "
+            "방어력 5 × (1 + 방어력 증폭 0) × (1 + 방어 효율 0.2)) × "
+            "기술 위력 2 × (1 + 기술 효율 비례 0.1) + 기술 효율 고정 0) × "
+            "(1 + 피해 증폭 0)), 남은 체력 100)",
         )
 
 

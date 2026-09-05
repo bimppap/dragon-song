@@ -142,7 +142,11 @@ export function SkillTooltipContent({
         <InfoRow label="기술 비용:" value={node.cost != null ? `${node.cost} MP` : "정보 없음"} />
         {variant === "admin" && (
           <>
-            <InfoRow label="기술 위력:" value={node.power != null ? formatPowerPercent(node.power) : "정보 없음"} />
+            {(node.power_slots?.length ? node.power_slots : [{ key: "power", label: "기술 위력", unit: "percent" as const }]).map((slot) => {
+              const value = slot.key === "power" ? node.power : node.powers?.[slot.key] ?? null;
+              const text = value == null ? "정보 없음" : slot.unit === "flat" ? String(value) : formatPowerPercent(value);
+              return <InfoRow key={slot.key} label={`${slot.label}:`} value={text} />;
+            })}
             <InfoRow
               label="환경 스택 제거:"
               value={node.environment_stack_remove != null ? `${node.environment_stack_remove}개` : "0개"}

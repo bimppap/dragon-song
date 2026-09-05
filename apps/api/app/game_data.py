@@ -166,6 +166,7 @@ def _skill(
     var_name: str | None = None,
     cost: float | None = None,
     power: float | None = None,
+    powers: dict[str, float | tuple[float, ...]] | None = None,
     target: str | None = None,
     target_side: str | None = None,
     order: int | None = None,
@@ -184,6 +185,7 @@ def _skill(
         "var_name": var_name,
         "cost": cost,
         "power": power,
+        "powers": powers or {},
         "target": target,
         "target_side": target_side,
         "order": order,
@@ -194,6 +196,34 @@ def _skill(
         "tier6_effect": tier6_effect,
         "placeholder": placeholder,
     }
+
+
+# 기술 하나에 위력이 여러 개 필요한 경우(주로 혼합형) var_name별로 입력 칸을 정의한다.
+# key "power"는 기존 power 컬럼을, 나머지는 skill_nodes.powers JSON의 키를 가리킨다.
+# unit "percent"는 퍼센트로 입력받아 배율로 저장하고, "flat"은 입력값을 그대로 쓴다(예: 마나 회복량).
+DEFAULT_POWER_SLOTS: list[dict[str, str]] = [{"key": "power", "label": "기술 위력", "unit": "percent"}]
+SKILL_POWER_SLOTS: dict[str, list[dict[str, str]]] = {
+    "ab_counter": [
+        {"key": "power", "label": "피해 감소", "unit": "percent"},
+        {"key": "counter_damage", "label": "반격 피해", "unit": "percent"},
+    ],
+    "ab_charge": [
+        {"key": "power", "label": "마나 회복", "unit": "flat"},
+    ],
+    "ab_protect": [
+        {"key": "power", "label": "기술 위력", "unit": "percent"},
+        {"key": "attn_transfer", "label": "주목도 이전", "unit": "percent"},
+    ],
+    "ab_purification": [
+        {"key": "power", "label": "기술 위력", "unit": "percent"},
+        {"key": "cleanse_count", "label": "약화 해제 수", "unit": "flat"},
+    ],
+}
+
+
+def skill_power_slots(var_name: str | None) -> list[dict[str, str]]:
+    """이 기술이 입력받아야 하는 위력 목록. 관리자 기술 편집 화면이 이 정의대로 칸을 그린다."""
+    return SKILL_POWER_SLOTS.get(var_name or "", DEFAULT_POWER_SLOTS)
 
 
 SKILL_BOOKS: dict[str, dict] = {
@@ -275,8 +305,8 @@ SKILL_BOOKS: dict[str, dict] = {
             {
                 "root": _skill(
                     "반격", trigger_type="혼합형", category="강화", stackable=False, var_name="ab_counter",
-                    cost=3, power=0.05, target="1", target_side="ALLY", order=3,
-                    formula="피해 감소: dmg_r+(skill_lv*skill_power)*(1+def_eff) / 반격 피해: (atk+def)*(1+skill_lv)*(1+skill_eff_fixed)",
+                    cost=3, power=0.05, powers={"counter_damage": 2.0}, target="1", target_side="ALLY", order=3,
+                    formula="피해 감소: 기술 위력*(1+기술 효율 비례) / 반격 피해: (공격력+방어력)*반격 피해*(1+기술 효율 비례)",
                     description="자신 또는 지정한 아군에게 오는 공격을 막으며 반격합니다.",
                     placeholder=True,
                 ),
@@ -289,8 +319,8 @@ SKILL_BOOKS: dict[str, dict] = {
             {
                 "root": _skill(
                     "보호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_protect",
-                    cost=2, power=0.05, target="1", target_side="ALLY", order=7,
-                    formula="회복: (((skill_lv+1)*skill_power)*(1+skill_eff_fixed))*(1+heal_eff)",
+                    cost=2, power=0.05, powers={"attn_transfer": 0.1}, target="1", target_side="ALLY", order=7,
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정 / 주목도 이전: 주목도 이전*(1+기술 효율 비례)",
                     description="지정한 아군의 체력을 회복시키며 주목도를 감소시키고, 감소량의 2배만큼 자신의 주목도를 높입니다.",
                     tier6_name="수호",
                 ),
@@ -310,7 +340,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "회복", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_cure",
                     cost=2, power=0.2, target="1", target_side="ALLY", order=5,
-                    formula="회복: (((skill_lv*skill_power)+0.15)*(1+skill_eff_fixed))*(1+heal_eff)",
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정",
                     description="지정한 아군의 체력을 회복시키는 기본 회복 기술입니다.",
                     tier6_name="생명",
                     tier6_effect="오버힐 허용, 대상에게 걸린 약화 n개 해제(n = skill_lv mod 6)",
@@ -325,7 +355,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "구호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_aid",
                     cost=3, power=0.1, target="2", target_side="ALLY", order=2,
-                    formula="회복: ((skill_lv*skill_power)*(1+skill_eff_fixed))*(1+heal_eff)",
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정",
                     description="복수의 아군을 체력이 낮은 순서대로 회복시킵니다.",
                     tier6_effect="일회성 강화 부여: 기술 등급만큼 피해 증폭",
                     placeholder=True,
@@ -337,8 +367,9 @@ SKILL_BOOKS: dict[str, dict] = {
             {
                 "root": _skill(
                     "정화", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_purification",
-                    cost=2, power=0.15, target="1", target_side="ALLY", order=2,
-                    formula="회복: (((skill_lv*skill_power)+0.1)*(1+skill_eff_fixed))*(1+heal_eff)",
+                    cost=2, power=0.15, powers={"cleanse_count": (1, 2, 3, 4, 5, 6)},
+                    target="1", target_side="ALLY", order=2,
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정",
                     description="지정한 아군의 체력을 회복시키고 기술 등급만큼 약화 스택을 제거합니다.",
                     tier6_name="승화",
                     tier6_effect="해제한 약화 수만큼 강화 스택 부여(약화 상태 방지, 스택*5만큼 피해 증폭)",
@@ -355,7 +386,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "격려", trigger_type="즉발형", category="강화", stackable=False, var_name="ab_encourage",
                     cost=2, power=0.2, target="1", target_side="ALLY", order=2,
-                    formula="강화 수치: (skill_lv*skill_power)*(1+skill_eff_fixed)",
+                    formula="강화 수치: 기술 위력*(1+기술 효율 비례)",
                     description="지정한 아군에게 일회성 강화를 부여합니다.",
                     tier6_name="각성",
                     placeholder=True,
@@ -371,7 +402,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "저주", trigger_type="즉발형", category="약화", stackable=False, var_name="ab_curse",
                     cost=3, power=0.05, target="1", target_side="ENEMY", order=3,
-                    formula="약화 수치: ((skill_lv+1)*skill_power)*(1+skill_eff_fixed)",
+                    formula="약화 수치: 기술 위력*(1+기술 효율 비례)",
                     description="지정한 적군의 피해 증폭을 감소시킵니다.",
                     tier6_name="봉인",
                 ),
@@ -384,8 +415,8 @@ SKILL_BOOKS: dict[str, dict] = {
             {
                 "root": _skill(
                     "충전", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",
-                    cost=4, target="1", target_side="ALLY", order=1,
-                    formula="기술 비용 감소: skill_lv*0.34 / 마나 회복: 2+skill_lv*0.34",
+                    cost=4, power=2, target="1", target_side="ALLY", order=1,
+                    formula="마나 회복: 기술 위력*(1+기술 효율 비례)",
                     description="지정한 아군의 마나를 회복시킵니다. 자신은 대상이 되지 않습니다.",
                     placeholder=True,
                 ),
@@ -424,6 +455,11 @@ def build_skill_node_specs(book: str) -> list[dict]:
         environment_stack_remove = skill["environment_stack_remove"]
         if isinstance(environment_stack_remove, tuple):
             environment_stack_remove = environment_stack_remove[tier - 1]
+        # 위력도 환경 스택 제거 수처럼 단계별 값을 튜플로 적을 수 있다.
+        powers = {
+            key: (value[tier - 1] if isinstance(value, tuple) else value)
+            for key, value in skill["powers"].items()
+        }
         return {
             "default_name": name,
             "trigger_type": skill["trigger_type"],
@@ -432,6 +468,7 @@ def build_skill_node_specs(book: str) -> list[dict]:
             "var_name": skill["var_name"],
             "cost": skill["cost"],
             "power": skill["power"],
+            "powers": powers,
             "target": skill["target"],
             "target_side": skill["target_side"],
             "activation_order": skill["order"],

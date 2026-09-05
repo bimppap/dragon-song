@@ -1866,6 +1866,10 @@ export interface SkillNode {
   stackable: boolean | null;
   cost: number | null;
   power: number | null;
+  /** 위력이 여러 개인 기술(주로 혼합형)의 이름 붙은 추가 위력. 키는 power_slots의 key와 같다. */
+  powers: Record<string, number>;
+  /** 이 기술이 입력받아야 하는 위력 목록. key "power"는 power 필드를 가리킨다. */
+  power_slots: { key: string; label: string; unit: "percent" | "flat" }[];
   target: string | null;
   target_side: SkillTargetSide | null;
   activation_order: number | null;
@@ -1911,6 +1915,7 @@ export async function updateSkillNode(
     stackable?: boolean;
     cost?: number;
     power?: number;
+    powers?: Record<string, number>;
     target?: string;
     target_side?: SkillTargetSide;
     activation_order?: number;

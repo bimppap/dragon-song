@@ -254,7 +254,9 @@ class SkillNode(Base):
     stackable: Mapped[bool | None] = mapped_column(Boolean, nullable=True)  # 중첩 가능 여부
     var_name: Mapped[str | None] = mapped_column(String, nullable=True)  # 내부 변수명 (API 미노출)
     cost: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 비용
-    power: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 위력
+    power: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 위력 (위력이 하나면 이 값만 쓴다)
+    # 혼합형처럼 위력이 여러 개인 기술의 추가 위력. {"counter_damage": 2.0}처럼 game_data의 슬롯 키를 그대로 쓴다.
+    powers: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     target: Mapped[str | None] = mapped_column(String, nullable=True)  # 기술 대상 ("SELF" 또는 적용 인원 정수)
     target_side: Mapped[str | None] = mapped_column(String, nullable=True)  # 대상 진영 (ALLY/ENEMY)
     activation_order: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 발동 순서

@@ -37,6 +37,7 @@ import {
   type BattleStatusEffect,
   type CharacterSkillNode,
   type CharacterSkillTree,
+  type EnemySkill,
   type CharacterActionKind,
   type CharacterOwnedItem,
   type Character,
@@ -140,6 +141,33 @@ function isTargetable(p: BattleParticipant, currentRound: number): boolean {
 /** 치유 대상은 기절한 캐릭터도 포함한다(퇴각/난입 캐릭터만 제외). */
 function isHealable(p: BattleParticipant, currentRound: number): boolean {
   return !p.retreated && p.joined_round !== currentRound;
+}
+
+/**
+ * 에너미 기술의 기본 공격 대상을 서버(_select_enemy_skill_targets)와 같은 규칙으로 미리 고른다.
+ * 주목도 순은 (주목도 + 존재감) 내림차순, 무작위는 말 그대로 무작위로 뽑는다.
+ */
+function autoSelectEnemyTargets(
+  candidates: BattleParticipant[],
+  count: number,
+  mode: string | null | undefined,
+): number[] {
+  const picked = [...candidates];
+  if (mode === "random") {
+    for (let i = picked.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [picked[i], picked[j]] = [picked[j], picked[i]];
+    }
+  } else {
+    picked.sort((a, b) => (b.attn + b.presence) - (a.attn + a.presence));
+  }
+  return picked.slice(0, Math.max(0, Math.min(count, picked.length))).map((p) => p.character_id);
+}
+
+/** 자동 선정 대상이 있는 기술인지(수동 지정·전체 공격은 미리 채우지 않는다). */
+function autoTargetsForEnemySkill(skill: EnemySkill | null | undefined, candidates: BattleParticipant[]): number[] {
+  if (!skill || skill.manual_target_count || isEnemySkillAoe(skill)) return [];
+  return autoSelectEnemyTargets(candidates, Math.max(1, skill.target_count), skill.auto_target_mode);
 }
 
 function isEnemyTargetable(enemy: BattleSession["enemies"][number], currentRound: number): boolean {
@@ -712,11 +740,16 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
   function resetTelegraphDrafts(data: BattleSession) {
     const next: Record<number, TelegraphDraft> = {};
+    const candidates = data.participants.filter((participant) => isTargetable(participant, data.round));
     for (const enemy of data.enemies) {
       if (enemy.hp <= 0 || enemy.joined_round === data.round) continue;
       const firstAttackIndex = enemy.skills.findIndex((s) => s.skill_type !== "소환");
       next[enemy.enemy_id] = firstAttackIndex >= 0
-        ? { kind: "attack", skill_index: firstAttackIndex, target_character_ids: [] }
+        ? {
+          kind: "attack",
+          skill_index: firstAttackIndex,
+          target_character_ids: autoTargetsForEnemySkill(enemy.skills[firstAttackIndex], candidates),
+        }
         : { kind: "none", skill_index: null, target_character_ids: [] };
     }
     setTelegraphDrafts(next);
@@ -1211,7 +1244,11 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       onValueChange={(v) => {
                         if (v === "none") { patchTelegraph(enemy.enemy_id, { kind: "none", skill_index: null, target_character_ids: [] }); return; }
                         const [kind, idx] = v.split(":");
-                        patchTelegraph(enemy.enemy_id, { kind: kind as EnemyActionKind, skill_index: Number(idx), target_character_ids: [] });
+                        patchTelegraph(enemy.enemy_id, {
+                          kind: kind as EnemyActionKind,
+                          skill_index: Number(idx),
+                          target_character_ids: autoTargetsForEnemySkill(enemy.skills[Number(idx)], targetableParticipants),
+                        });
                       }}
                     >
                       <SelectTrigger className="h-8 w-72 text-xs">
@@ -1244,7 +1281,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       <p className="mb-1.5 text-[11px] text-muted">
                         {selectedSkill?.manual_target_count
                           ? `대상 수동 지정 · ${draft.target_character_ids.length}명 선택 (매 라운드 인원 변경 가능)`
-                          : `${selectedSkill?.skill_type === "환경" ? "환경 부여" : selectedSkill?.skill_type === "지속 디버프" ? "약화" : "공격"} 대상 선택 (${draft.target_character_ids.length}/${targetCount}명, 비워두면 ${selectedSkill?.auto_target_mode === "random" ? "무작위" : "주목도 순"} 자동 선정)`}
+                          : `${selectedSkill?.skill_type === "환경" ? "환경 부여" : selectedSkill?.skill_type === "지속 디버프" ? "약화" : "공격"} 대상 선택 (${draft.target_character_ids.length}/${targetCount}명)`}
                       </p>
                       <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                         {targetableParticipants.map((p) => {
