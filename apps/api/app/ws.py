@@ -20,20 +20,28 @@ class BattleConnectionManager:
 
     def __init__(self) -> None:
         self._rooms: dict[int, set[WebSocket]] = {}
+        self._staff_rooms: dict[int, set[WebSocket]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
-    async def connect(self, session_id: int, websocket: WebSocket) -> None:
+    async def connect(self, session_id: int, websocket: WebSocket, *, is_staff: bool) -> None:
         await websocket.accept()
         self._rooms.setdefault(session_id, set()).add(websocket)
+        if is_staff:
+            self._staff_rooms.setdefault(session_id, set()).add(websocket)
 
     def disconnect(self, session_id: int, websocket: WebSocket) -> None:
         room = self._rooms.get(session_id)
         if room is None:
             return
         room.discard(websocket)
+        staff_room = self._staff_rooms.get(session_id)
+        if staff_room is not None:
+            staff_room.discard(websocket)
+            if not staff_room:
+                self._staff_rooms.pop(session_id, None)
         if not room:
             self._rooms.pop(session_id, None)
 
@@ -43,8 +51,9 @@ class BattleConnectionManager:
         message: dict,
         *,
         exclude: WebSocket | None = None,
+        staff_only: bool = False,
     ) -> None:
-        room = self._rooms.get(session_id)
+        room = (self._staff_rooms if staff_only else self._rooms).get(session_id)
         if not room:
             return
         recipients = tuple(ws for ws in room if ws is not exclude)
@@ -90,13 +99,40 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
     "관리자 조작"/"러너 화면" 탭을 같은 커넥션으로 토글하며 미리보는데, 이때 자기 자신에게
     온 echo가 없으면 미리보기가 절대 반영되지 않는다.
     """
-    if raw.get("type") != "draft_update" or not is_admin_role(member.role):
+    if not is_admin_role(member.role):
+        return
+    if raw.get("type") == "draft_update":
+        await manager.broadcast(
+            session_id,
+            {
+                "type": "draft_preview",
+                "phase": raw.get("phase"),
+                "draft": raw.get("draft"),
+            },
+        )
+        return
+
+    if raw.get("type") != "editing_state":
+        return
+    input_id = raw.get("input_id")
+    client_id = raw.get("client_id")
+    field = raw.get("field")
+    active = raw.get("active")
+    if not isinstance(input_id, str) or not input_id or len(input_id) > 120:
+        return
+    if not isinstance(client_id, str) or not client_id or len(client_id) > 120:
+        return
+    if field not in {"action", "target"} or not isinstance(active, bool):
         return
     await manager.broadcast(
         session_id,
         {
-            "type": "draft_preview",
-            "phase": raw.get("phase"),
-            "draft": raw.get("draft"),
+            "type": "editing_state",
+            "editor_id": member.id,
+            "editor_client_id": client_id,
+            "input_id": input_id,
+            "field": field,
+            "active": active,
         },
+        staff_only=True,
     )

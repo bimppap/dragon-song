@@ -49,7 +49,7 @@ import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
-import { useBattleSocket, type BattleDraftPreview } from "@/lib/useBattleSocket";
+import { useBattleSocket, type BattleDraftPreview, type BattleEditingState } from "@/lib/useBattleSocket";
 import { isAdminRole, useAuth } from "@/lib/auth";
 import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
@@ -104,6 +104,13 @@ interface TelegraphDraft {
   skill_index: number | null;
   target_character_ids: number[];
 }
+
+interface RemoteEditingState extends BattleEditingState {
+  updatedAt: number;
+}
+
+const EDITING_STATE_TTL_MS = 8_000;
+const EDITING_STATE_HEARTBEAT_MS = EDITING_STATE_TTL_MS / 2;
 
 function defaultCharKind(faction: string | null, mp: number): CharacterActionKind {
   if (faction === "수비") return "defend";
@@ -449,18 +456,23 @@ interface TargetOption {
   disabled?: boolean;
 }
 
-function SkillTargetPicker({ values, options, onChange, count }: {
+function SkillTargetPicker({ values, options, onChange, count, editingClassName, onOpenChange }: {
   values: string[]; options: TargetOption[]; onChange: (keys: string[]) => void; count: number;
+  editingClassName?: string; onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
   const required = Math.min(count, options.length);
+  function setPickerOpen(nextOpen: boolean) {
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }
   return <>
-    <Button variant="outline" className="h-auto min-h-8 w-full whitespace-normal text-[11px]" onClick={() => {
+    <Button variant="outline" className={cn("h-auto min-h-8 w-full whitespace-normal text-[11px]", editingClassName)} onClick={() => {
       setSelection(values.filter((key) => options.some((option) => option.key === key)).slice(0, required));
-      setOpen(true);
+      setPickerOpen(true);
     }}>{values.length ? options.filter((option) => values.includes(option.key)).map((option) => option.label).join(", ") : "기술 대상 선택"}</Button>
-    {open && <div className="fixed inset-0 z-110 flex items-center justify-center bg-black/50 p-4" onClick={() => setOpen(false)}>
+    {open && <div className="fixed inset-0 z-110 flex items-center justify-center bg-black/50 p-4" onClick={() => setPickerOpen(false)}>
       <div role="dialog" aria-modal="true" aria-label="기술 적용 대상 선택" className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-line bg-surface p-4" onClick={(event) => event.stopPropagation()}>
         <p className="mb-3 text-sm font-semibold">기술 적용 인원: {count}명 · 선택 {selection.length}/{required}명</p>
         {required < count && <p className="mb-3 text-xs text-muted">선택 가능한 대상 {required}명에게 적용합니다.</p>}
@@ -470,8 +482,8 @@ function SkillTargetPicker({ values, options, onChange, count }: {
             className={cn("rounded-lg border border-line p-2 text-sm disabled:opacity-40", checked && "border-gold bg-gold/15 text-gold")}
             onClick={() => setSelection((prev) => checked ? prev.filter((key) => key !== option.key) : [...prev, option.key])}>{option.label}</button>;
         })}</div>
-        <div className="mt-4 flex justify-end gap-2"><Button variant="ghost" onClick={() => setOpen(false)}>취소</Button>
-          <Button disabled={required === 0 || selection.length !== required} onClick={() => { onChange(selection); setOpen(false); }}>선택 완료</Button></div>
+        <div className="mt-4 flex justify-end gap-2"><Button variant="ghost" onClick={() => setPickerOpen(false)}>취소</Button>
+          <Button disabled={required === 0 || selection.length !== required} onClick={() => { onChange(selection); setPickerOpen(false); }}>선택 완료</Button></div>
       </div>
     </div>}
   </>;
@@ -484,12 +496,16 @@ function TargetPickerButton({
   onChange,
   placeholder,
   title,
+  editingClassName,
+  onOpenChange,
 }: {
   value: string | null;
   options: TargetOption[];
   onChange: (key: string) => void;
   placeholder: string;
   title: string;
+  editingClassName?: string;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.key === value) ?? null;
@@ -498,13 +514,17 @@ function TargetPickerButton({
       ? a.label.localeCompare(b.label, "ko")
       : 0
   ));
+  function setPickerOpen(nextOpen: boolean) {
+    setOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }
 
   return (
     <>
       <button
         type="button"
-        onClick={() => setOpen(true)}
-        className="flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[11px] text-ivory transition focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+        onClick={() => setPickerOpen(true)}
+        className={cn("flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[11px] text-ivory transition focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent", editingClassName)}
       >
         <span className={cn("flex min-w-0 items-center gap-1.5 truncate", !selected && "text-muted")}>
           {selected?.icon}
@@ -515,7 +535,7 @@ function TargetPickerButton({
       {open && (
         <div
           className="fixed inset-0 z-110 flex items-center justify-center bg-black/50 p-4"
-          onClick={() => setOpen(false)}
+          onClick={() => setPickerOpen(false)}
         >
           <div
             className="w-full max-w-3xl max-h-[85vh] overflow-y-auto rounded-xl border border-line bg-surface p-3 shadow-xl"
@@ -533,7 +553,7 @@ function TargetPickerButton({
                     disabled={option.disabled}
                     onClick={() => {
                       onChange(option.key);
-                      setOpen(false);
+                      setPickerOpen(false);
                     }}
                     className={cn(
                       "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition-colors",
@@ -565,6 +585,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [internalSession, setSession] = useState<BattleSession | null>(null);
   const session = externalSession !== undefined ? externalSession : internalSession;
   const [ownDraftPreview, setOwnDraftPreview] = useState<BattleDraftPreview | null>(null);
+  const [remoteEditing, setRemoteEditing] = useState<Record<string, RemoteEditingState>>({});
+  const [localEditing, setLocalEditing] = useState<Record<string, Pick<BattleEditingState, "input_id" | "field">>>({});
   const draftPreview = controlled ? (externalDraftPreview ?? null) : ownDraftPreview;
   const [loading, setLoading] = useState(!controlled);
   const [submitting, setSubmitting] = useState(false);
@@ -590,21 +612,71 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [joiningEnemy, setJoiningEnemy] = useState(false);
 
   // controlled 모드(러너 관전 화면)에서는 부모가 이미 소켓을 갖고 있으므로 여기서는 연결하지 않는다.
-  const { connected: battleSocketConnected, send: sendBattleWs } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
+  const { connected: battleSocketConnected, send: sendBattleWs, clientId: battleClientId } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
     if (msg.type === "battle_update") {
       setSession(msg.session);
       setOwnDraftPreview(null);
+      setRemoteEditing({});
+      setLocalEditing({});
     } else if (msg.type === "battle_deleted") {
       onExit();
     } else if (msg.type === "draft_preview") {
       setOwnDraftPreview(msg.draft);
+    } else if (msg.type === "editing_state" && msg.editor_client_id !== battleClientId) {
+      const key = `${msg.editor_client_id}:${msg.input_id}`;
+      setRemoteEditing((previous) => {
+        if (!msg.active) {
+          if (!(key in previous)) return previous;
+          const next = { ...previous };
+          delete next[key];
+          return next;
+        }
+        return { ...previous, [key]: { ...msg, updatedAt: Date.now() } };
+      });
     }
   });
+
+  useEffect(() => {
+    const states = Object.values(remoteEditing);
+    if (states.length === 0) return;
+    const nextExpiry = Math.min(...states.map((state) => state.updatedAt + EDITING_STATE_TTL_MS));
+    const timer = setTimeout(() => {
+      const expiresBefore = Date.now() - EDITING_STATE_TTL_MS;
+      setRemoteEditing((previous) => Object.fromEntries(
+        Object.entries(previous).filter(([, state]) => state.updatedAt > expiresBefore),
+      ));
+    }, Math.max(0, nextExpiry - Date.now()));
+    return () => clearTimeout(timer);
+  }, [remoteEditing]);
 
   const syncDraftsFromBattle = useEffectEvent((data: BattleSession) => {
     resetCharDrafts(data);
     resetTelegraphDrafts(data);
   });
+
+  function updateEditingState(inputId: string, field: BattleEditingState["field"], active: boolean) {
+    if (!isAdmin || controlled) return;
+    const key = `${field}:${inputId}`;
+    setLocalEditing((previous) => {
+      if (active) return { ...previous, [key]: { input_id: inputId, field } };
+      if (!(key in previous)) return previous;
+      const next = { ...previous };
+      delete next[key];
+      return next;
+    });
+    sendBattleWs({ type: "editing_state", input_id: inputId, field, active });
+  }
+
+  useEffect(() => {
+    const inputs = Object.values(localEditing);
+    if (inputs.length === 0 || !isAdmin || controlled) return;
+    const timer = setInterval(() => {
+      for (const input of inputs) {
+        sendBattleWs({ type: "editing_state", ...input, active: true });
+      }
+    }, EDITING_STATE_HEARTBEAT_MS);
+    return () => clearInterval(timer);
+  }, [localEditing, isAdmin, controlled, sendBattleWs]);
 
   useEffect(() => {
     if (controlled) return; // 부모가 세션을 직접 공급하는 모드에서는 자체 조회를 하지 않는다.
@@ -1122,6 +1194,19 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     });
   }, [session?.participants, effectiveParticipantSort]);
 
+  const editingFieldByInputId = useMemo(() => {
+    const fields = new Map<string, BattleEditingState["field"]>();
+    for (const state of Object.values(remoteEditing)) fields.set(state.input_id, state.field);
+    return fields;
+  }, [remoteEditing]);
+
+  function editingClassName(inputId: string, field: BattleEditingState["field"]) {
+    if (editingFieldByInputId.get(inputId) !== field) return "";
+    return field === "action"
+      ? "border-red-500 ring-1 ring-red-500/50"
+      : "border-sky-500 ring-1 ring-sky-500/50";
+  }
+
   const participantsById = useMemo(
     () => new Map((session?.participants ?? []).map((participant) => [participant.character_id, participant])),
     [session?.participants],
@@ -1276,6 +1361,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const selectedSkill = draft?.skill_index != null ? enemy.skills[draft.skill_index] : null;
           const needsManualTargets = draft?.kind === "attack" && selectedSkill && (selectedSkill.manual_target_count || !isEnemySkillAoe(selectedSkill));
           const targetCount = selectedSkill?.manual_target_count ? targetableParticipants.length : selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
+          const actionInputId = `enemy:${enemy.enemy_id}:action`;
           const pendingLabel = !dead && phase !== "telegraph"
             ? describePendingAction(enemy, pendingActionsByEnemy.get(enemy.enemy_id), participantsById, environmentsById)
             : null;
@@ -1302,6 +1388,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     <span className="text-xs font-semibold text-muted">행동</span>
                     <Select
                       value={draft.kind === "none" ? "none" : `${draft.kind}:${draft.skill_index}`}
+                      onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
                       onValueChange={(v) => {
                         if (v === "none") { patchTelegraph(enemy.enemy_id, { kind: "none", skill_index: null, target_character_ids: [] }); return; }
                         const [kind, idx] = v.split(":");
@@ -1312,7 +1399,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         });
                       }}
                     >
-                      <SelectTrigger className="h-8 w-72 text-xs">
+                      <SelectTrigger className={cn("h-8 w-72 text-xs", editingClassName(actionInputId, "action"))}>
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -1456,6 +1543,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const selectedSkillTargetMode = draft?.kind === "skill" && selectedSkill
             ? getBattleSkillTargetMode(selectedSkill)
             : null;
+          const actionInputId = `character:${p.character_id}:action`;
+          const targetInputId = `character:${p.character_id}:target`;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
           if (draft?.kind === "skill" && selectedSkill && AUTO_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name)) {
@@ -1494,6 +1583,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   .map((target) => ({ key: `ally:${target.character_id}`, label: `${target.name}${target.downed ? " (기절)" : ""}` }));
             extraControls.push({ key: "skill-target", icon: Sparkles, control:
               <SkillTargetPicker values={draft.skill_target_keys ?? []} options={options} count={count}
+                editingClassName={editingClassName(targetInputId, "target")}
+                onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
                 onChange={(keys) => patchChar(p.character_id, { skill_target_keys: keys,
                   target_character_id: keys[0]?.startsWith("ally:") ? Number(keys[0].split(":")[1]) : p.character_id,
                   target_enemy_id: keys[0]?.startsWith("enemy:") ? Number(keys[0].split(":")[1]) : null,
@@ -1508,6 +1599,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   title="공격 대상 선택"
                   placeholder="대상 선택"
                   value={draft.target_enemy_id != null ? String(draft.target_enemy_id) : null}
+                  editingClassName={editingClassName(targetInputId, "target")}
+                  onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
                   onChange={(value) => patchChar(p.character_id, { target_enemy_id: Number(value) })}
                   options={targetableEnemies.map((enemy) => ({ key: String(enemy.enemy_id), label: enemy.name }))}
                 />
@@ -1522,6 +1615,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   title="치유 대상 선택"
                   placeholder="치유 대상 선택"
                   value={draft.target_character_id != null ? String(draft.target_character_id) : null}
+                  editingClassName={editingClassName(targetInputId, "target")}
+                  onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
                   onChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
                   options={healableParticipants.map((target) => ({
                     key: String(target.character_id),
@@ -1539,6 +1634,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   title="구조 대상 선택"
                   placeholder="구조 대상 선택"
                   value={draft.target_character_id != null ? String(draft.target_character_id) : null}
+                  editingClassName={editingClassName(targetInputId, "target")}
+                  onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
                   onChange={(value) => patchChar(p.character_id, { target_character_id: Number(value) })}
                   options={downedParticipants.map((target) => ({ key: String(target.character_id), label: target.name }))}
                 />
@@ -1581,6 +1678,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   title="보호 대상 선택"
                   placeholder="보호 대상"
                   value={draft.protect_target_character_id != null ? String(draft.protect_target_character_id) : String(p.character_id)}
+                  editingClassName={editingClassName(targetInputId, "target")}
+                  onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
                   onChange={(value) => patchChar(p.character_id, { protect_target_character_id: Number(value) })}
                   options={targetableParticipants.map((target) => {
                     const isSelf = target.character_id === p.character_id;
@@ -1603,6 +1702,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               control: (
                 <Select
                   value={draft?.kind === "skill" && selectedSkill ? `skill:${selectedSkill.id}` : draft?.kind}
+                  onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
                   onValueChange={(value) => {
                     const kind = (value.startsWith("skill:") ? "skill" : value) as CharacterActionKind;
                     const nextPatch: Partial<CharDraft> = {
@@ -1620,7 +1720,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     if (kind === "item") void ensureItemsLoaded(p.character_id);
                   }}
                 >
-                  <SelectTrigger className="h-auto min-h-8 w-full text-[11px] [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:text-left">
+                  <SelectTrigger className={cn("h-auto min-h-8 w-full text-[11px] [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:text-left", editingClassName(actionInputId, "action"))}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="max-w-[calc(100vw-2rem)]">

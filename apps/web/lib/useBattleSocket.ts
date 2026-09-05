@@ -18,10 +18,19 @@ export interface BattleDraftPreviewEntry {
 
 export type BattleDraftPreview = Record<number, BattleDraftPreviewEntry>;
 
+export interface BattleEditingState {
+  editor_id: number;
+  editor_client_id: string;
+  input_id: string;
+  field: "action" | "target";
+  active: boolean;
+}
+
 export type BattleWsMessage =
   | { type: "battle_update"; session: BattleSession }
   | { type: "battle_deleted"; session_id: number }
-  | { type: "draft_preview"; phase: BattlePhase; draft: BattleDraftPreview };
+  | { type: "draft_preview"; phase: BattlePhase; draft: BattleDraftPreview }
+  | ({ type: "editing_state" } & BattleEditingState);
 
 /**
  * 전투 세션 하나에 대한 WebSocket 연결을 관리한다. 외부 상태관리 라이브러리 없이
@@ -31,6 +40,11 @@ export type BattleWsMessage =
 export function useBattleSocket(sessionId: number | null, onMessage: (msg: BattleWsMessage) => void) {
   const [connected, setConnected] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
+  const [clientId] = useState(() => (
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2)
+  ));
   const attemptRef = useRef(0);
   const handleMessage = useEffectEvent((msg: BattleWsMessage) => onMessage(msg));
 
@@ -77,9 +91,12 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
 
   const send = useCallback((message: unknown) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
+      const payload = message != null && typeof message === "object" && !Array.isArray(message)
+        ? { ...message, client_id: clientId }
+        : message;
+      wsRef.current.send(JSON.stringify(payload));
     }
-  }, []);
+  }, [clientId]);
 
-  return { connected, send };
+  return { connected, send, clientId };
 }

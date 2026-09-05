@@ -1242,7 +1242,7 @@ async def battle_ws(websocket: WebSocket, session_id: int, token: str | None = Q
     finally:
         db.close()
 
-    await manager.connect(session_id, websocket)
+    await manager.connect(session_id, websocket, is_staff=is_admin_role(member.role))
     try:
         while True:
             raw = await websocket.receive_json()

@@ -37,6 +37,24 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(manager._rooms[1], {alive})
 
+    async def test_staff_only_broadcast_excludes_runner_connections(self):
+        manager = BattleConnectionManager()
+        started: list[FakeWebSocket] = []
+        release = asyncio.Event()
+        staff = FakeWebSocket(started, release)
+        runner = FakeWebSocket(started, release)
+        manager._rooms[1] = {staff, runner}
+        manager._staff_rooms[1] = {staff}
+
+        task = asyncio.create_task(manager.broadcast(1, {"type": "editing_state"}, staff_only=True))
+        for _ in range(10):
+            await asyncio.sleep(0)
+            if started:
+                break
+        self.assertEqual(started, [staff])
+        release.set()
+        await task
+
 
 if __name__ == "__main__":
     unittest.main()
