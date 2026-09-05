@@ -26,11 +26,20 @@ export interface BattleEditingState {
   active: boolean;
 }
 
+export interface BattleDraftPatch {
+  editor_id: number;
+  editor_client_id: string;
+  draft_type: "character" | "enemy";
+  entity_id: number;
+  patch: Record<string, unknown>;
+}
+
 export type BattleWsMessage =
   | { type: "battle_update"; session: BattleSession }
   | { type: "battle_deleted"; session_id: number }
   | { type: "draft_preview"; phase: BattlePhase; draft: BattleDraftPreview }
-  | ({ type: "editing_state" } & BattleEditingState);
+  | ({ type: "editing_state" } & BattleEditingState)
+  | ({ type: "draft_patch" } & BattleDraftPatch);
 
 /**
  * 전투 세션 하나에 대한 WebSocket 연결을 관리한다. 외부 상태관리 라이브러리 없이

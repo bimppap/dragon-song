@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Ban, Check, Eye, Files, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -111,6 +111,7 @@ interface RemoteEditingState extends BattleEditingState {
 
 const EDITING_STATE_TTL_MS = 8_000;
 const EDITING_STATE_HEARTBEAT_MS = EDITING_STATE_TTL_MS / 2;
+const EDITING_INDICATOR_GRACE_MS = 2_000;
 
 function defaultCharKind(faction: string | null, mp: number): CharacterActionKind {
   if (faction === "수비") return "defend";
@@ -587,6 +588,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [ownDraftPreview, setOwnDraftPreview] = useState<BattleDraftPreview | null>(null);
   const [remoteEditing, setRemoteEditing] = useState<Record<string, RemoteEditingState>>({});
   const [localEditing, setLocalEditing] = useState<Record<string, Pick<BattleEditingState, "input_id" | "field">>>({});
+  const editingCloseTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const draftPreview = controlled ? (externalDraftPreview ?? null) : ownDraftPreview;
   const [loading, setLoading] = useState(!controlled);
   const [submitting, setSubmitting] = useState(false);
@@ -618,6 +620,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       setOwnDraftPreview(null);
       setRemoteEditing({});
       setLocalEditing({});
+      for (const timer of Object.values(editingCloseTimersRef.current)) clearTimeout(timer);
+      editingCloseTimersRef.current = {};
     } else if (msg.type === "battle_deleted") {
       onExit();
     } else if (msg.type === "draft_preview") {
@@ -633,6 +637,20 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         }
         return { ...previous, [key]: { ...msg, updatedAt: Date.now() } };
       });
+    } else if (msg.type === "draft_patch" && msg.editor_client_id !== battleClientId) {
+      if (msg.draft_type === "character") {
+        setCharDrafts((previous) => {
+          const draft = previous[msg.entity_id];
+          if (!draft) return previous;
+          return { ...previous, [msg.entity_id]: { ...draft, ...(msg.patch as Partial<CharDraft>) } };
+        });
+      } else {
+        setTelegraphDrafts((previous) => {
+          const draft = previous[msg.entity_id];
+          if (!draft) return previous;
+          return { ...previous, [msg.entity_id]: { ...draft, ...(msg.patch as Partial<TelegraphDraft>) } };
+        });
+      }
     }
   });
 
@@ -657,15 +675,33 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   function updateEditingState(inputId: string, field: BattleEditingState["field"], active: boolean) {
     if (!isAdmin || controlled) return;
     const key = `${field}:${inputId}`;
+    const closeTimer = editingCloseTimersRef.current[key];
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      delete editingCloseTimersRef.current[key];
+    }
+    if (!active) {
+      editingCloseTimersRef.current[key] = setTimeout(() => {
+        setLocalEditing((previous) => {
+          if (!(key in previous)) return previous;
+          const next = { ...previous };
+          delete next[key];
+          return next;
+        });
+        sendBattleWs({ type: "editing_state", input_id: inputId, field, active: false });
+        delete editingCloseTimersRef.current[key];
+      }, EDITING_INDICATOR_GRACE_MS);
+      return;
+    }
     setLocalEditing((previous) => {
-      if (active) return { ...previous, [key]: { input_id: inputId, field } };
-      if (!(key in previous)) return previous;
-      const next = { ...previous };
-      delete next[key];
-      return next;
+      return { ...previous, [key]: { input_id: inputId, field } };
     });
-    sendBattleWs({ type: "editing_state", input_id: inputId, field, active });
+    sendBattleWs({ type: "editing_state", input_id: inputId, field, active: true });
   }
+
+  useEffect(() => () => {
+    for (const timer of Object.values(editingCloseTimersRef.current)) clearTimeout(timer);
+  }, []);
 
   useEffect(() => {
     const inputs = Object.values(localEditing);
@@ -891,27 +927,27 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
   function patchChar(characterId: number, patch: Partial<CharDraft>) {
     setCharDrafts((prev) => ({ ...prev, [characterId]: { ...prev[characterId], ...patch } }));
+    if (isAdmin && !controlled) {
+      sendBattleWs({ type: "draft_patch", draft_type: "character", entity_id: characterId, patch });
+    }
   }
 
   function patchTelegraph(enemyId: number, patch: Partial<TelegraphDraft>) {
     setTelegraphDrafts((prev) => ({ ...prev, [enemyId]: { ...prev[enemyId], ...patch } }));
+    if (isAdmin && !controlled) {
+      sendBattleWs({ type: "draft_patch", draft_type: "enemy", entity_id: enemyId, patch });
+    }
   }
 
   function toggleTelegraphTarget(enemyId: number, characterId: number, maxCount: number) {
-    setTelegraphDrafts((prev) => {
-      const draft = prev[enemyId];
-      if (!draft) return prev;
-      const exists = draft.target_character_ids.includes(characterId);
-      let nextIds: number[];
-      if (exists) {
-        nextIds = draft.target_character_ids.filter((id) => id !== characterId);
-      } else if (draft.target_character_ids.length >= maxCount) {
-        return prev;
-      } else {
-        nextIds = [...draft.target_character_ids, characterId];
-      }
-      return { ...prev, [enemyId]: { ...draft, target_character_ids: nextIds } };
-    });
+    const draft = telegraphDrafts[enemyId];
+    if (!draft) return;
+    const exists = draft.target_character_ids.includes(characterId);
+    if (!exists && draft.target_character_ids.length >= maxCount) return;
+    const target_character_ids = exists
+      ? draft.target_character_ids.filter((id) => id !== characterId)
+      : [...draft.target_character_ids, characterId];
+    patchTelegraph(enemyId, { target_character_ids });
   }
 
   async function ensureItemsLoaded(characterId: number) {

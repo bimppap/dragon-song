@@ -1,6 +1,9 @@
 import asyncio
 import unittest
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
+from app import ws
 from app.ws import BattleConnectionManager
 
 
@@ -54,6 +57,61 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(started, [staff])
         release.set()
         await task
+
+    async def test_draft_patch_is_shared_only_with_staff(self):
+        original_manager = ws.manager
+        mock_manager = SimpleNamespace(broadcast=AsyncMock())
+        ws.manager = mock_manager
+        try:
+            await ws.handle_ws_message(
+                1,
+                SimpleNamespace(id=7, role="STAFF"),
+                SimpleNamespace(),
+                {
+                    "type": "draft_patch",
+                    "client_id": "browser-tab-a",
+                    "draft_type": "character",
+                    "entity_id": 12,
+                    "patch": {"target_enemy_id": 3},
+                },
+            )
+        finally:
+            ws.manager = original_manager
+
+        mock_manager.broadcast.assert_awaited_once_with(
+            1,
+            {
+                "type": "draft_patch",
+                "editor_id": 7,
+                "editor_client_id": "browser-tab-a",
+                "draft_type": "character",
+                "entity_id": 12,
+                "patch": {"target_enemy_id": 3},
+            },
+            staff_only=True,
+        )
+
+    async def test_draft_patch_drops_unknown_fields(self):
+        original_manager = ws.manager
+        mock_manager = SimpleNamespace(broadcast=AsyncMock())
+        ws.manager = mock_manager
+        try:
+            await ws.handle_ws_message(
+                1,
+                SimpleNamespace(id=7, role="ADMIN"),
+                SimpleNamespace(),
+                {
+                    "type": "draft_patch",
+                    "client_id": "browser-tab-a",
+                    "draft_type": "enemy",
+                    "entity_id": 2,
+                    "patch": {"unknown": "value"},
+                },
+            )
+        finally:
+            ws.manager = original_manager
+
+        mock_manager.broadcast.assert_not_awaited()
 
 
 if __name__ == "__main__":

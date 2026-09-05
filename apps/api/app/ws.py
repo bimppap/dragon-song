@@ -8,6 +8,21 @@ from app.schemas import BattleSessionRead
 
 SEND_TIMEOUT_SECONDS = 3.0
 
+# 브라우저가 보낸 임시 초안은 DB에 저장하지 않지만, 다른 운영 화면에 그대로
+# 병합되므로 각 초안 유형에서 실제로 사용하는 필드만 전달한다.
+DRAFT_PATCH_FIELDS: dict[str, frozenset[str]] = {
+    "character": frozenset({
+        "kind",
+        "skill_node_id",
+        "skill_target_keys",
+        "target_enemy_id",
+        "target_character_id",
+        "protect_target_character_id",
+        "item_id",
+    }),
+    "enemy": frozenset({"kind", "skill_index", "target_character_ids"}),
+}
+
 
 class BattleConnectionManager:
     """세션별 WebSocket 커넥션을 메모리에 보관하고 브로드캐스트한다.
@@ -109,6 +124,33 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
                 "phase": raw.get("phase"),
                 "draft": raw.get("draft"),
             },
+        )
+        return
+
+    if raw.get("type") == "draft_patch":
+        client_id = raw.get("client_id")
+        draft_type = raw.get("draft_type")
+        entity_id = raw.get("entity_id")
+        patch = raw.get("patch")
+        if not isinstance(client_id, str) or not client_id or len(client_id) > 120:
+            return
+        if draft_type not in DRAFT_PATCH_FIELDS or type(entity_id) is not int or entity_id <= 0:
+            return
+        if not isinstance(patch, dict) or len(patch) == 0 or len(patch) > 8:
+            return
+        if not set(patch).issubset(DRAFT_PATCH_FIELDS[draft_type]):
+            return
+        await manager.broadcast(
+            session_id,
+            {
+                "type": "draft_patch",
+                "editor_id": member.id,
+                "editor_client_id": client_id,
+                "draft_type": draft_type,
+                "entity_id": entity_id,
+                "patch": patch,
+            },
+            staff_only=True,
         )
         return
 
