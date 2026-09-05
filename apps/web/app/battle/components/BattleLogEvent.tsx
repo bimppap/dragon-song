@@ -83,8 +83,18 @@ function shouldShowFormula(event: string, value: string, kind: NumberKind): bool
   return !value.startsWith("-") && !/(?:마나|MP).*?(?:소모|비용)/i.test(event);
 }
 
-function isCalculatedResultNumber(event: string, end: number, kind: NumberKind): boolean {
+function isCalculatedResultNumber(
+  event: string,
+  start: number,
+  end: number,
+  value: string,
+  kind: NumberKind,
+): boolean {
   const suffix = event.slice(end, Math.min(event.length, end + 10));
+  // 격려처럼 "피해 증폭 +20%" 형태로 끝나는 버프 수치도 계산식을 붙인다.
+  if (value.endsWith("%") && /(?:증폭|감소|효율|확률)\s*$/.test(event.slice(0, start))) return true;
+  // 환경 피해처럼 "피해 6 [94/100]" 형태로 이름표가 숫자 앞에 오는 경우도 계산 결과로 본다.
+  if (kind === "damage" && /(?:^|\s)피해\s$/.test(event.slice(0, start))) return true;
   if (kind === "damage") return /^\s*(?:피해|반격 피해|지속 피해)/.test(suffix);
   if (kind === "healing") return /^\s*(?:치유|회복)/.test(suffix);
   if (kind === "attn") return /^\s*주목도/.test(suffix);
@@ -131,7 +141,7 @@ export default function BattleLogEvent({
     const value = match[0];
     const end = start + value.length;
     const kind = numberKind(event, start, end);
-    const isCalcNumber = isCalculatedResultNumber(event, end, kind);
+    const isCalcNumber = isCalculatedResultNumber(event, start, end, value, kind);
     const storedCalculation = isCalcNumber && calculationList
       ? calculationList[Math.min(calculationIndex, calculationList.length - 1)]
       : null;

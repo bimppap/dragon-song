@@ -127,6 +127,10 @@ class EnvironmentDisplayTest(unittest.TestCase):
             "　→ 러너 · 피해 34 [66/100]",
             "🌫️ 환경 · 독 스택 +2 (스택 제한 없음)",
         ])
+        self.assertEqual(
+            result.log[-1]["calculations"]["　→ 러너 · 피해 34 [66/100]"],
+            "환경 데미지 17 × 보유 스택수 2",
+        )
         self.assertEqual(result.participants[0]["env_stacks"][str(env.id)], 4)
 
     def test_first_environment_stack_omits_redundant_heading(self):

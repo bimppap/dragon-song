@@ -4812,7 +4812,11 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             if dmg > 0:
                 # 환경은 적의 공격이 아닌 맵 효과라 방어력, 피해 감소, 보호를 적용하지 않는다.
                 p["hp"] = max(0, p["hp"] - dmg)
-                damage_events.append(f"　→ {p['name']} · 피해 {dmg} [{p['hp']}/{p['max_hp']}]")
+                damage_event = f"　→ {p['name']} · 피해 {dmg} [{p['hp']}/{p['max_hp']}]"
+                damage_events.append(damage_event)
+                calculations[damage_event] = (
+                    f"환경 데미지 {_formula_number(env.damage_per_stack)} × 보유 스택수 {current_stacks}"
+                )
                 if p["hp"] == 0 and not p["downed"]:
                     p["downed"] = True
                     newly_downed_names.append(p["name"])
@@ -5588,6 +5592,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 )
                 events.append(
                     f"📣 {p['name']}의 {skill_name} → {target['name']} 피해 증폭 +{int(round(bonus * 100))}%"
+                )
+                calculations[events[-1]] = (
+                    f"round(기술 위력 {_formula_number(skill_power)} × "
+                    f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}) × 100)%"
                 )
                 continue
 
