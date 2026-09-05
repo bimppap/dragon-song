@@ -129,6 +129,33 @@ class EnvironmentDisplayTest(unittest.TestCase):
         ])
         self.assertEqual(result.participants[0]["env_stacks"][str(env.id)], 4)
 
+    def test_first_environment_stack_omits_redundant_heading(self):
+        env = crud.create_environment(
+            self.db,
+            EnvironmentCreate(chapter="1장", name="늪의 저주", stacks_per_round=1, max_stacks=6),
+        )
+        character = Character(name="러너", hp=100, hp_max=100)
+        self.db.add(character)
+        self.db.flush()
+        battle = BattleSession(
+            mode="practice",
+            chapter="1장",
+            phase="telegraph",
+            round=1,
+            participants=[crud._snapshot_combatant(character)],
+            enemies=[{"enemy_id": 1, "name": "적", "hp": 100, "skills": []}],
+            summons=[],
+            log=[],
+        )
+        self.db.add(battle)
+        self.db.commit()
+
+        result = crud.resolve_battle_telegraph(self.db, battle.id, BattleTelegraphRequest())
+
+        events = result.log[-1]["events"]
+        self.assertEqual(events[0], "🌫️ 환경 · 늪의 저주 스택 +1 (최대 6스택)")
+        self.assertNotIn("🌫️ 환경 · 늪의 저주", events)
+
     def test_color_validation_and_default(self):
         self.assertEqual(EnvironmentCreate(chapter="1장", name="독").color, "#e879f9")
         with self.assertRaises(ValidationError):

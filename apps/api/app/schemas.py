@@ -6,6 +6,8 @@ EnemySkillType = Literal["지정 공격", "광역 공격", "소환", "지속 디
 Faction = Literal["공격", "수비", "치유"]
 # 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다.
 SkillBook = Literal["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"]
+SkillTriggerType = Literal["즉발형", "지속형", "혼합형"]
+SkillCategory = Literal["피해", "복합", "강화", "약화", "회복"]
 MemberRole = Literal["RUNNER", "ADMIN", "STAFF"]
 
 # 아이템 효과가 적용될 수 있는 캐릭터 능력치와 값의 정수/실수 여부.
@@ -1151,6 +1153,26 @@ class SkillNodeRead(BaseModel):
 class SkillNodeUpdate(BaseModel):
     default_name: str = Field(min_length=1, max_length=50)
     description: str | None = Field(default=None, max_length=2000)
+    trigger_type: SkillTriggerType | None = None
+    category: SkillCategory | None = None
+    stackable: bool | None = None
+    cost: int | None = Field(default=None, ge=0)
+    # 전투 로직은 위력을 배율로 사용한다. UI에서는 퍼센트로 입력받아 100으로 나눈 값을 보낸다.
+    power: float | None = Field(default=None, ge=0)
+    target: str | None = None
+    activation_order: int | None = None
+
+    @field_validator("target")
+    @classmethod
+    def validate_target(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if normalized == "SELF":
+            return normalized
+        if not normalized.isdigit() or int(normalized) < 1:
+            raise ValueError("기술 대상은 SELF 또는 1 이상의 정수여야 합니다.")
+        return str(int(normalized))
 
 
 class SkillVisibilityUpdate(BaseModel):

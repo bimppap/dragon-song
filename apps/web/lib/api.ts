@@ -1829,6 +1829,8 @@ export async function sendBattleRewards(sessionId: number): Promise<BattleReward
 
 /** 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다. */
 export type SkillBook = "용맹의 서" | "불굴의 서" | "헌신의 서" | "탐구의 서";
+export type SkillTriggerType = "즉발형" | "지속형" | "혼합형";
+export type SkillCategory = "피해" | "복합" | "강화" | "약화" | "회복";
 
 export interface SkillNode {
   id: number;
@@ -1840,8 +1842,8 @@ export interface SkillNode {
   default_name: string;
   image_url: string | null;
   effects: ItemEffect[];
-  trigger_type: string | null;
-  category: string | null;
+  trigger_type: SkillTriggerType | null;
+  category: SkillCategory | null;
   stackable: boolean | null;
   cost: number | null;
   power: number | null;
@@ -1880,7 +1882,17 @@ export async function fetchSkillNodes(book: SkillBook): Promise<SkillNode[]> {
 
 export async function updateSkillNode(
   nodeId: number,
-  data: { default_name: string; description: string | null },
+  data: {
+    default_name: string;
+    description: string | null;
+    trigger_type?: SkillTriggerType;
+    category?: SkillCategory;
+    stackable?: boolean;
+    cost?: number;
+    power?: number;
+    target?: string;
+    activation_order?: number;
+  },
 ): Promise<SkillNode> {
   const node = await request<SkillNode>(`/skills/${nodeId}`, {
     method: "PUT",

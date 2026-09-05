@@ -115,6 +115,8 @@ function isActive(p: BattleParticipant): boolean {
   return !p.downed && !p.retreated;
 }
 
+type ParticipantSort = "attention" | "name" | "hp";
+
 /** 주목도는 관리자/스텝 전용 정보라, 러너에게 보여줄 로그에서는 "· +20 주목도"류 구간을 잘라낸다. */
 const ATTN_LOG_SUFFIX_PATTERN = /\s*·\s*(?:\+?\d[\d,]*\s*주목도|주목도\s*\d[\d,]*\s*이전\s*\/\s*\d[\d,]*\s*획득)\s*$/;
 function stripAttnInfo(event: string): string {
@@ -445,7 +447,8 @@ function TargetPickerButton({
 
 export default function BattleArena({ sessionId, readOnly = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
   const { member } = useAuth();
-  const showLogFormulas = member != null && isAdminRole(member.role);
+  const isAdmin = member != null && isAdminRole(member.role);
+  const showLogFormulas = isAdmin;
   const { confirm } = useDialog();
   const { toast } = useToast();
   const controlled = externalSession !== undefined;
@@ -465,6 +468,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, CharacterSkillNode[]>>({});
   const [chapterEnvironments, setChapterEnvironments] = useState<Environment[]>([]);
   const [loadedEnvironmentChapter, setLoadedEnvironmentChapter] = useState<string | null>(null);
+  const [participantSort, setParticipantSort] = useState<ParticipantSort>("attention");
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCandidates, setJoinCandidates] = useState<Character[]>([]);
@@ -987,14 +991,15 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     return groups;
   }, [session?.log]);
 
-  // 주목도가 전원 0이면 이름 가나다순, 한 명이라도 있으면 주목도 높은 순으로 정렬한다.
+  const effectiveParticipantSort: ParticipantSort = isAdmin ? participantSort : "hp";
   const sortedParticipants = useMemo(() => {
     const participants = session?.participants ?? [];
-    const hasAttn = participants.some((p) => p.attn !== 0);
-    return [...participants].sort((a, b) => (
-      hasAttn ? b.attn - a.attn : a.name.localeCompare(b.name, "ko")
-    ));
-  }, [session?.participants]);
+    return participants.toSorted((a, b) => {
+      if (effectiveParticipantSort === "attention") return b.attn - a.attn || a.name.localeCompare(b.name, "ko");
+      if (effectiveParticipantSort === "hp") return a.hp - b.hp || a.name.localeCompare(b.name, "ko");
+      return a.name.localeCompare(b.name, "ko");
+    });
+  }, [session?.participants, effectiveParticipantSort]);
 
   const participantsById = useMemo(
     () => new Map((session?.participants ?? []).map((participant) => [participant.character_id, participant])),
@@ -1281,6 +1286,24 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             반영
           </Button>
           <p className="text-xs text-muted">이번 라운드에 행동 가능한 모든 캐릭터에게 적용됩니다(치유/구조 제외).</p>
+        </div>
+      )}
+
+      {isAdmin && (
+        <div className="flex items-center justify-end gap-2">
+          <label htmlFor="participant-sort" className="text-xs font-semibold text-muted">캐릭터 정렬</label>
+          <Select value={participantSort} onValueChange={(value: ParticipantSort) => setParticipantSort(value)}>
+            <SelectTrigger id="participant-sort" className="h-8 w-36 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectGroup>
+                <SelectItem value="attention">주목도 순</SelectItem>
+                <SelectItem value="name">이름순</SelectItem>
+                <SelectItem value="hp">현재 체력순</SelectItem>
+              </SelectGroup>
+            </SelectContent>
+          </Select>
         </div>
       )}
 

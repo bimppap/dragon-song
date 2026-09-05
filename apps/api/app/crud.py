@@ -3889,6 +3889,14 @@ def _persistent_outgoing_damage_bonus(actor: dict) -> float:
     return bonus
 
 
+def _consume_outgoing_damage_amplification(actor: dict) -> float:
+    return (
+        float(actor["dmg_p"])
+        + _persistent_outgoing_damage_bonus(actor)
+        + _consume_one_time_outgoing_damage_bonus(actor)
+    )
+
+
 def _consume_one_time_outgoing_damage_penalty(actor: dict) -> float:
     consumed = 0.0
     kept: list[dict] = []
@@ -3921,15 +3929,22 @@ def _signed_number(value: int | float) -> str:
     return f"{value:+g}" if isinstance(value, float) else f"{value:+d}"
 
 
-def _damage_from_skill_ratio(actor: dict, skill_ratio: float) -> tuple[int, str]:
-    extra_damage = _persistent_outgoing_damage_bonus(actor) + _consume_one_time_outgoing_damage_bonus(actor)
-    raw = actor["atk"] * (1 + actor["atk_p"]) * skill_ratio * (1 + actor["dmg_p"] + extra_damage)
+def _damage_from_skill_power(actor: dict, skill_power: float, skill_eff_fixed: float) -> tuple[int, str]:
+    damage_amp = _consume_outgoing_damage_amplification(actor)
+    raw = (
+        actor["atk"]
+        * (1 + actor["atk_p"])
+        * (skill_power * (1 + skill_eff_fixed))
+        * (1 + damage_amp)
+        + actor["skill_eff_true"]
+    )
     formula = (
         f"floor(공격력 {_formula_number(actor['atk'])} × "
         f"(1 + 공격력 증폭률 {_formula_number(actor['atk_p'])}) × "
-        f"기술 배율 {_formula_number(skill_ratio)} × "
-        f"(1 + 피해량 증폭률 {_formula_number(actor['dmg_p'])} + "
-        f"추가 피해 증폭률 {_formula_number(extra_damage)}))"
+        f"(기술 위력 {_formula_number(skill_power)} × "
+        f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)})) × "
+        f"(1 + 피해 증폭 {_formula_number(damage_amp)}) + "
+        f"기술 효율 고정 {_formula_number(actor['skill_eff_true'])})"
     )
     return max(0, _floor_amount(raw)), formula
 
@@ -4655,7 +4670,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             continue
         stack_note = f"+{env.stacks_per_round}" if env.stackable else f"미보유 대상 +{env.stacks_per_round}"
         max_note = f"최대 {env.max_stacks}스택" if env.max_stacks > 0 else "스택 제한 없음"
-        events.append(f"🌫️ 환경 · {env.name}")
+        damage_events: list[str] = []
         newly_downed_names: list[str] = []
         for p in affected:
             current_stacks = max(0, int(p["env_stacks"].get(str(env.id), 0)))
@@ -4663,7 +4678,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             if dmg > 0:
                 # 환경은 적의 공격이 아닌 맵 효과라 방어력, 피해 감소, 보호를 적용하지 않는다.
                 p["hp"] = max(0, p["hp"] - dmg)
-                events.append(f"　→ {p['name']} · 피해 {dmg} [{p['hp']}/{p['max_hp']}]")
+                damage_events.append(f"　→ {p['name']} · 피해 {dmg} [{p['hp']}/{p['max_hp']}]")
                 if p["hp"] == 0 and not p["downed"]:
                     p["downed"] = True
                     newly_downed_names.append(p["name"])
@@ -4674,6 +4689,9 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 stackable=env.stackable,
                 max_stacks=env.max_stacks,
             )
+        if damage_events:
+            events.append(f"🌫️ 환경 · {env.name}")
+            events.extend(damage_events)
         events.append(f"🌫️ 환경 · {env.name} 스택 {stack_note} ({max_note})")
         if newly_downed_names:
             events.append(f"💫 {', '.join(sorted(newly_downed_names))} 기절")
@@ -4853,10 +4871,19 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         if action and action.kind != "none":
             p["action_reward_rounds"] += 1
 
-    # 0.5) 반격 태세는 시전한 그 라운드에만 유지되고, 다음 라운드 시작 시 자동으로 사라진다.
+    # 0.5) 반격 태세는 시전한 그 라운드에만 유지된다. 이전 버전에서 남은 라운드 한정 효과도 정리한다.
     for p in participants:
         effects = _ensure_status_effects(p)
-        kept = [e for e in effects if not (e.get("effect_type") == "counter" and e.get("round") != round_no)]
+        kept = [
+            e for e in effects
+            if not (
+                (e.get("effect_type") == "counter" and e.get("round") != round_no)
+                or (
+                    isinstance(e.get("expires_round"), int)
+                    and e["expires_round"] < round_no
+                )
+            )
+        ]
         if len(kept) != len(effects):
             p["status_effects"] = kept
 
@@ -5094,8 +5121,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                skill_ratio = ((1 + skill_lv) * skill_power) * (1 + skill_eff_fixed)
-                damage, damage_formula = _damage_from_skill_ratio(p, skill_ratio)
+                scaled_skill_power = (1 + skill_lv) * skill_power
+                damage, damage_formula = _damage_from_skill_power(p, scaled_skill_power, skill_eff_fixed)
                 _apply_damage_attn(p, damage)
                 target_kind, target = targets[0]
                 if target_kind == "summon":
@@ -5126,8 +5153,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                skill_ratio = ((1 + skill_lv) * skill_power) * (1 + skill_eff_fixed)
-                damage, damage_formula = _damage_from_skill_ratio(p, skill_ratio)
+                scaled_skill_power = (1 + skill_lv) * skill_power
+                damage, damage_formula = _damage_from_skill_power(p, scaled_skill_power, skill_eff_fixed)
                 total_damage_for_attn = 0
                 for target_kind, target in targets:
                     total_damage_for_attn += damage
@@ -5178,8 +5205,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                skill_ratio = (skill_lv * skill_power) * (1 + skill_eff_fixed)
-                damage, damage_formula = _damage_from_skill_ratio(p, skill_ratio)
+                scaled_skill_power = skill_lv * skill_power
+                damage, damage_formula = _damage_from_skill_power(p, scaled_skill_power, skill_eff_fixed)
                 _apply_damage_attn(p, damage)
                 target_kind, target = targets[0]
                 if target_kind == "summon":
@@ -5393,7 +5420,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if target is None:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                bonus = max(0.0, (skill_lv * skill_power) * (1 + skill_eff_fixed))
+                bonus = max(0.0, skill_power * (1 + skill_eff_fixed))
                 _add_status_effect(
                     target,
                     {
@@ -5405,6 +5432,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         "var_name": var_name,
                         "stackable": bool(selected_skill.get("stackable")),
                         "value": bonus,
+                        "expires_round": round_no,
                     },
                     participants=participants,
                     enemies=enemies,
@@ -5473,24 +5501,25 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 target_enemy = next((enemy for enemy in enemies if _enemy_targetable(enemy, round_no)), None)
             if target_enemy is None:
                 continue
+            damage_amp = _consume_outgoing_damage_amplification(p)
             if action.kind == "skill":
                 _spend_skill_cost(p, selected_skill)
-                raw = (p["atk"] * (1 + p["atk_p"]) + p["skill_eff_true"]) * (1 + p["dmg_p"]) * _skill_coef(p)
+                raw = (p["atk"] * (1 + p["atk_p"]) + p["skill_eff_true"]) * (1 + damage_amp) * _skill_coef(p)
                 damage_formula = (
                     f"floor((공격력 {_formula_number(p['atk'])} × "
                     f"(1 + 공격력 증폭률 {_formula_number(p['atk_p'])}) + "
                     f"고정 기술 효율 {_formula_number(p['skill_eff_true'])}) × "
-                    f"(1 + 피해량 증폭률 {_formula_number(p['dmg_p'])}) × "
+                    f"(1 + 피해 증폭 {_formula_number(damage_amp)}) × "
                     f"(1 + 기술 등급 {_formula_number(p['skill_lv'])} × "
                     f"기술 효율 {_formula_number(p['skill_eff_fixed'])}))"
                 )
             else:
                 # 일반 공격은 기술 효율(skill_eff_true/skill_eff_fixed) 보너스를 받지 않는다 - 그건 기술 사용 전용이다.
-                raw = p["atk"] * (1 + p["atk_p"]) * (1 + p["dmg_p"])
+                raw = p["atk"] * (1 + p["atk_p"]) * (1 + damage_amp)
                 damage_formula = (
                     f"floor(공격력 {_formula_number(p['atk'])} × "
                     f"(1 + 공격력 증폭률 {_formula_number(p['atk_p'])}) × "
-                    f"(1 + 피해량 증폭률 {_formula_number(p['dmg_p'])}))"
+                    f"(1 + 피해 증폭 {_formula_number(damage_amp)}))"
                 )
             dmg = max(0, _floor_amount(raw))
             attn_mult = 4 if p["faction"] == "수비" else 1
@@ -5621,6 +5650,16 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 heal_formula if target["over_heal"]
                 else f"min({heal_formula}, 잃은 체력 {_formula_number(target['max_hp'] - before)})"
             )
+
+    # 격려처럼 해당 라운드에만 유효한 효과는 아군 행동이 모두 끝나면 소멸한다.
+    for p in participants:
+        p["status_effects"] = [
+            effect for effect in _ensure_status_effects(p)
+            if not (
+                isinstance(effect.get("expires_round"), int)
+                and effect["expires_round"] <= round_no
+            )
+        ]
 
     victory = all(e["hp"] <= 0 for e in enemies)
     no_active_left = not any(_combatant_active(p) for p in participants)
@@ -6233,7 +6272,19 @@ def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> Skill
     if not node:
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
     node.default_name = data.default_name.strip()
-    node.description = data.description.strip() if data.description else None
+    if "description" in data.model_fields_set:
+        node.description = data.description.strip() if data.description else None
+    for field in (
+        "trigger_type",
+        "category",
+        "stackable",
+        "cost",
+        "power",
+        "target",
+        "activation_order",
+    ):
+        if field in data.model_fields_set:
+            setattr(node, field, getattr(data, field))
     _normalize_duplicate_skill_node_names(db, book=node.book)
     db.commit()
     db.refresh(node)

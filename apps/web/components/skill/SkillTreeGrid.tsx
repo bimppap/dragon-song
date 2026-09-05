@@ -67,6 +67,10 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
+function formatPowerPercent(value: number): string {
+  return `${Number((value * 100).toFixed(6))}%`;
+}
+
 const DESCRIPTION_NUMBER_PATTERN = /[+-]?(?:\d[\d,.]*|[nN]+)(?:\s*(?:명|개|회|턴|라운드|단계|등급|스택|%|배|HP|MP|SP))?/g;
 
 function HighlightedDescription({ text, className }: { text: string; className: string }) {
@@ -94,7 +98,7 @@ function HighlightedDescription({ text, className }: { text: string; className: 
 
 /**
  * 기술 정보 툴팁. 명칭·발동 타입·분류·중첩 가능·기술 대상·발동 순서·기술 비용·기술 설명은 러너에게도 보여주고,
- * 관리자에게는 그 외 관리자 전용 정보(기술 위력·계산 공식)를 추가로 보여준다.
+ * 관리자에게는 기술 위력을 추가로 보여준다.
  */
 export function SkillTooltipContent({
   node,
@@ -134,12 +138,9 @@ export function SkillTooltipContent({
         <InfoRow label="중첩 가능:" value={stackableText} />
         <InfoRow label="기술 대상:" value={node.target ?? "정보 없음"} />
         <InfoRow label="발동 순서:" value={node.activation_order != null ? String(node.activation_order) : "정보 없음"} />
-        <InfoRow label="기술 비용:" value={node.cost != null ? String(node.cost) : "정보 없음"} />
+        <InfoRow label="기술 비용:" value={node.cost != null ? `${node.cost} MP` : "정보 없음"} />
         {variant === "admin" && (
-          <>
-            <InfoRow label="기술 위력:" value={node.power != null ? String(node.power) : "정보 없음"} />
-            <InfoRow label="계산 공식:" value={node.formula ?? "정보 없음"} />
-          </>
+          <InfoRow label="기술 위력:" value={node.power != null ? formatPowerPercent(node.power) : "정보 없음"} />
         )}
       </ul>
       {node.description && (
@@ -160,7 +161,7 @@ interface SkillTreeGridProps<T extends SkillTreeGridNode> {
   isLocked?: (node: T) => boolean;
   onNodeClick?: (node: T) => void;
   showLabels?: boolean;
-  /** 툴팁에 노출할 정보 범위. 러너는 제한된 필드만, 관리자는 변수명을 제외한 전부를 본다. */
+  /** 툴팁에 노출할 정보 범위. 관리자는 러너 정보에 기술 위력을 추가로 본다. */
   tooltipVariant?: "runner" | "admin";
   /** 서(book)별 테마 색상. 미지정 시 기본 에메랄드 색상을 사용한다. */
   accent?: BookAccent;

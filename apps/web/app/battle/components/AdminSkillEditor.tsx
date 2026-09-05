@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Check, Image as ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,14 +17,41 @@ import {
   updateSkillVisibility,
   uploadSkillImage,
   type SkillBook,
+  type SkillCategory,
   type SkillNode,
+  type SkillTriggerType,
 } from "@/lib/api";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
+const TRIGGER_TYPES: SkillTriggerType[] = ["즉발형", "지속형", "혼합형"];
+const SKILL_CATEGORIES: SkillCategory[] = ["피해", "복합", "강화", "약화", "회복"];
 
 interface Draft {
   name: string;
   description: string;
+  triggerType: SkillTriggerType | "";
+  category: SkillCategory | "";
+  stackable: boolean;
+  target: string;
+  activationOrder: string;
+  cost: string;
+  powerPercent: string;
+}
+
+const EMPTY_DRAFT: Draft = {
+  name: "",
+  description: "",
+  triggerType: "",
+  category: "",
+  stackable: false,
+  target: "",
+  activationOrder: "",
+  cost: "",
+  powerPercent: "",
+};
+
+function ratioToPercent(value: number | null): string {
+  return value == null ? "" : String(Number((value * 100).toFixed(6)));
 }
 
 export default function AdminSkillEditor() {
@@ -31,7 +59,7 @@ export default function AdminSkillEditor() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState<SkillNode | null>(null);
-  const [draft, setDraft] = useState<Draft>({ name: "", description: "" });
+  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -62,7 +90,17 @@ export default function AdminSkillEditor() {
 
   function startEdit(node: SkillNode) {
     setEditing(node);
-    setDraft({ name: node.default_name, description: node.description ?? "" });
+    setDraft({
+      name: node.default_name,
+      description: node.description ?? "",
+      triggerType: node.trigger_type ?? "",
+      category: node.category ?? "",
+      stackable: node.stackable ?? false,
+      target: node.target ?? "",
+      activationOrder: node.activation_order != null ? String(node.activation_order) : "",
+      cost: node.cost != null ? String(node.cost) : "",
+      powerPercent: ratioToPercent(node.power),
+    });
     setImageFile(null);
     setImagePreview(node.image_url);
   }
@@ -84,7 +122,20 @@ export default function AdminSkillEditor() {
     setSaving(true);
     setError(null);
     try {
-      let updated = await updateSkillNode(editing.id, { default_name: draft.name, description: draft.description.trim() || null });
+      const skillMetadata = editing.tier === 0 ? {} : {
+        trigger_type: draft.triggerType as SkillTriggerType,
+        category: draft.category as SkillCategory,
+        stackable: draft.stackable,
+        target: draft.target.trim().toUpperCase(),
+        activation_order: Number(draft.activationOrder),
+        cost: Number(draft.cost),
+        power: Number(draft.powerPercent) / 100,
+      };
+      let updated = await updateSkillNode(editing.id, {
+        default_name: draft.name,
+        description: draft.description.trim() || null,
+        ...skillMetadata,
+      });
       if (imageFile) {
         updated = await uploadSkillImage(editing.id, imageFile);
       }
@@ -101,6 +152,21 @@ export default function AdminSkillEditor() {
       setSaving(false);
     }
   }
+
+  const isSkillNode = editing !== null && editing.tier !== 0;
+  const targetIsValid = draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
+  const activationOrderIsValid = /^-?\d+$/.test(draft.activationOrder.trim());
+  const costIsValid = /^\d+$/.test(draft.cost.trim());
+  const powerPercent = Number(draft.powerPercent);
+  const powerIsValid = draft.powerPercent.trim() !== "" && Number.isFinite(powerPercent) && powerPercent >= 0;
+  const metadataIsValid = !isSkillNode || (
+    TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
+    && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
+    && targetIsValid
+    && activationOrderIsValid
+    && costIsValid
+    && powerIsValid
+  );
 
   async function handleVisibilityChange(value: string) {
     const nextTier = Number(value);
@@ -176,6 +242,7 @@ export default function AdminSkillEditor() {
         open={editing !== null}
         onClose={closeEdit}
         title={editing ? `${editing.book} · ${editing.tier_label} 기술 편집` : undefined}
+        className="max-w-2xl"
       >
         <div className="space-y-4">
           <div className="space-y-1.5">
@@ -186,6 +253,102 @@ export default function AdminSkillEditor() {
               placeholder="기술 이름"
             />
           </div>
+
+          {isSkillNode ? (
+            <div className="space-y-3 border-y border-line py-4">
+              <h3 className="text-sm font-semibold text-ivory">기술 설정</h3>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">발동 타입</label>
+                  <Select
+                    value={draft.triggerType}
+                    onValueChange={(value) => setDraft((prev) => ({ ...prev, triggerType: value as SkillTriggerType }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="발동 타입 선택" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {TRIGGER_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">분류</label>
+                  <Select
+                    value={draft.category}
+                    onValueChange={(value) => setDraft((prev) => ({ ...prev, category: value as SkillCategory }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="분류 선택" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {SKILL_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상</label>
+                  <Input
+                    value={draft.target}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, target: e.target.value }))}
+                    placeholder="SELF 또는 1 이상의 정수"
+                    aria-invalid={draft.target !== "" && !targetIsValid}
+                  />
+                  {draft.target !== "" && !targetIsValid ? (
+                    <p className="text-xs text-red-500">SELF 또는 1 이상의 정수를 입력하세요.</p>
+                  ) : null}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">발동 순서</label>
+                  <Input
+                    type="number"
+                    step="1"
+                    value={draft.activationOrder}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, activationOrder: e.target.value }))}
+                    placeholder="정수"
+                    aria-invalid={draft.activationOrder !== "" && !activationOrderIsValid}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 비용 (MP)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={draft.cost}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, cost: e.target.value }))}
+                    placeholder="0 이상의 정수"
+                    aria-invalid={draft.cost !== "" && !costIsValid}
+                  />
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 위력 (%)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="any"
+                    value={draft.powerPercent}
+                    onChange={(e) => setDraft((prev) => ({ ...prev, powerPercent: e.target.value }))}
+                    placeholder="예: 150"
+                    aria-invalid={draft.powerPercent !== "" && !powerIsValid}
+                  />
+                </div>
+              </div>
+
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
+                <Checkbox
+                  checked={draft.stackable}
+                  onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, stackable: checked === true }))}
+                />
+                중첩 가능 (스택 사용)
+              </label>
+            </div>
+          ) : null}
 
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 이미지</label>
@@ -225,7 +388,7 @@ export default function AdminSkillEditor() {
               <X size={14} />
               취소
             </Button>
-            <Button size="sm" onClick={saveEdit} disabled={saving || !draft.name.trim()}>
+            <Button size="sm" onClick={saveEdit} disabled={saving || !draft.name.trim() || !metadataIsValid}>
               <Check size={14} />
               {saving ? "저장 중..." : "저장"}
             </Button>
