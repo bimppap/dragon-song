@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useState, type ReactNode } from "react";
+import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useState } from "react";
 import { ArrowLeft, Ban, Check, Eye, Files, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -217,6 +217,9 @@ const SINGLE_ENEMY_SKILL_NAMES = new Set(["강타", "격류", "위해"]);
 const MULTI_ENEMY_SKILL_NAMES = new Set(["분쇄", "파괴"]);
 const SINGLE_ALLY_SKILL_NAMES = new Set(["반격", "보호", "수호", "회복", "생명", "정화", "승화"]);
 const MULTI_ALLY_SKILL_NAMES = new Set(["구호"]);
+// 충전은 기절한 아군에게는 걸 수 없고 시전자 자신도 대상이 되지 않는다(서버 ab_charge와 동일 조건).
+const ACTIVE_ALLY_SKILL_NAMES = new Set(["충전"]);
+const SELF_EXCLUDED_SKILL_NAMES = new Set(["충전"]);
 
 type BattleSkillTargetMode = "enemy-single" | "enemy-multi" | "ally-single" | "ally-multi" | "self" | "none";
 
@@ -232,12 +235,20 @@ function pickBattleSkillsFromTrees(trees: CharacterSkillTree[]): CharacterSkillN
   });
 }
 
+/** 기술 대상은 SELF 또는 1 이상의 정수만 허용한다. 그 외 값은 대상 수를 알 수 없으므로 null이다. */
+function skillTargetCount(target: string | null): number | null {
+  const text = (target ?? "").trim();
+  return /^\d+$/.test(text) ? Math.max(1, Number(text)) : null;
+}
+
 function getBattleSkillTargetMode(skill: CharacterSkillNode): BattleSkillTargetMode {
   if (SELF_TARGET_SKILL_NAMES.has(skill.default_name) || skill.target === "SELF") return "self";
+  const configuredCount = skillTargetCount(skill.target);
+  const multi = configuredCount != null && configuredCount > 1;
+  if (skill.target_side === "ENEMY") return multi ? "enemy-multi" : "enemy-single";
+  if (skill.target_side === "ALLY") return multi ? "ally-multi" : "ally-single";
   if (MULTI_ALLY_SKILL_NAMES.has(skill.default_name)) return "ally-multi";
-  if (MULTI_ENEMY_SKILL_NAMES.has(skill.default_name) || (skill.category === "피해" && skill.target === "1 + N")) {
-    return "enemy-multi";
-  }
+  if (MULTI_ENEMY_SKILL_NAMES.has(skill.default_name)) return "enemy-multi";
   if (
     SINGLE_ENEMY_SKILL_NAMES.has(skill.default_name)
     || (skill.category === "피해" && skill.target === "1")
@@ -252,6 +263,11 @@ function getBattleSkillTargetMode(skill: CharacterSkillNode): BattleSkillTargetM
     return "ally-single";
   }
   return "none";
+}
+
+/** 서버(_skill_target_count)와 같이 기술에 적힌 기술 대상만 인원으로 쓴다. */
+function getBattleSkillTargetCount(skill: CharacterSkillNode): number {
+  return skillTargetCount(skill.target) ?? 1;
 }
 
 function firstBattleSkillId(skills: CharacterSkillNode[]) {
@@ -796,16 +812,24 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
   async function handleSubmitAllyTurn() {
     if (!session) return;
-    const characterActions: BattleCharacterActionInput[] = Object.entries(charDrafts).map(([id, draft]) => ({
-      character_id: Number(id),
-      kind: draft.kind,
-      skill_node_id: draft.kind === "skill" ? (draft.skill_node_id ?? undefined) : undefined,
-      skill_target_keys: draft.kind === "skill" ? draft.skill_target_keys : undefined,
-      target_enemy_id: draft.target_enemy_id ?? undefined,
-      target_character_id: draft.target_character_id ?? undefined,
-      protect_target_character_id: draft.kind === "defend" ? (draft.protect_target_character_id ?? undefined) : undefined,
-      item_id: draft.item_id ?? undefined,
-    }));
+    const characterActions: BattleCharacterActionInput[] = Object.entries(charDrafts).map(([id, draft]) => {
+      const characterId = Number(id);
+      // 기술 대상이 SELF인 기술은 대상을 고르지 않고 시전자 본인으로 자동 지정한다.
+      const skill = draft.kind === "skill" ? resolveSelectedSkill(characterId, draft.skill_node_id) : null;
+      const selfTargeted = skill != null && getBattleSkillTargetMode(skill) === "self";
+      return {
+        character_id: characterId,
+        kind: draft.kind,
+        skill_node_id: draft.kind === "skill" ? (draft.skill_node_id ?? undefined) : undefined,
+        skill_target_keys: draft.kind === "skill"
+          ? (selfTargeted ? [`ally:${characterId}`] : draft.skill_target_keys)
+          : undefined,
+        target_enemy_id: draft.target_enemy_id ?? undefined,
+        target_character_id: selfTargeted ? characterId : draft.target_character_id ?? undefined,
+        protect_target_character_id: draft.kind === "defend" ? (draft.protect_target_character_id ?? undefined) : undefined,
+        item_id: draft.item_id ?? undefined,
+      };
+    });
     try {
       setSubmitting(true);
       const updated = await submitBattleAllyTurn(session.id, characterActions);
@@ -1006,6 +1030,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     () => new Map((session?.participants ?? []).map((participant) => [participant.character_id, participant])),
     [session?.participants],
   );
+  /** 캐릭터 카드와 같은 규칙으로 이 캐릭터가 사용할 기술을 찾는다. */
+  const resolveSelectedSkill = useCallback((characterId: number, skillNodeId: number | null) => {
+    const participant = participantsById.get(characterId);
+    if (!participant) return null;
+    const affordable = affordableBattleSkills(skillsByCharacter[characterId] ?? [], participant);
+    return (skillNodeId != null ? affordable.find((skill) => skill.id === skillNodeId) : null) ?? affordable[0] ?? null;
+  }, [participantsById, skillsByCharacter]);
   const targetableParticipants = useMemo(
     () => (session?.participants ?? []).filter((participant) => isTargetable(participant, session?.round ?? 0)),
     [session?.participants, session?.round],
@@ -1327,15 +1358,30 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             : null;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
-          if (draft?.kind === "skill" && selectedSkill) {
+          if (draft?.kind === "skill" && selectedSkillTargetMode === "self") {
+            extraControls.push({
+              key: "skill-target",
+              icon: Sparkles,
+              control: (
+                <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
+                  {p.name} (본인) 자동 지정
+                </div>
+              ),
+            });
+          } else if (draft?.kind === "skill" && selectedSkill) {
             const multi = selectedSkillTargetMode === "enemy-multi" || selectedSkillTargetMode === "ally-multi";
-            const count = multi ? Math.max(1, Math.floor(2 + Math.max(0, selectedSkill.tier - 1) * 0.34 + p.skill_target)) : 1;
+            const count = multi ? getBattleSkillTargetCount(selectedSkill) : 1;
             const options: TargetOption[] = selectedSkillTargetMode?.startsWith("enemy")
-              ? [...session.summons.filter((summon) => summon.hp > 0).map((summon) => ({ key: `summon:${summon.id}`, label: `${summon.name} (하수인)` })),
-                 ...targetableEnemies.map((enemy) => ({ key: `enemy:${enemy.enemy_id}`, label: enemy.name }))]
-              : selectedSkillTargetMode === "self" || selectedSkillTargetMode === "none"
+              ? targetableEnemies.map((enemy) => ({ key: `enemy:${enemy.enemy_id}`, label: enemy.name }))
+              : selectedSkillTargetMode === "none"
                 ? [{ key: `ally:${p.character_id}`, label: `${p.name} (본인)` }]
-                : (selectedSkill.category === "강화" ? targetableParticipants : healableParticipants).map((target) => ({ key: `ally:${target.character_id}`, label: `${target.name}${target.downed ? " (기절)" : ""}` }));
+                : (
+                  selectedSkill.category === "강화" || ACTIVE_ALLY_SKILL_NAMES.has(selectedSkill.default_name)
+                    ? targetableParticipants
+                    : healableParticipants
+                )
+                  .filter((target) => !SELF_EXCLUDED_SKILL_NAMES.has(selectedSkill.default_name) || target.character_id !== p.character_id)
+                  .map((target) => ({ key: `ally:${target.character_id}`, label: `${target.name}${target.downed ? " (기절)" : ""}` }));
             extraControls.push({ key: "skill-target", icon: Sparkles, control:
               <SkillTargetPicker values={draft.skill_target_keys ?? []} options={options} count={count}
                 onChange={(keys) => patchChar(p.character_id, { skill_target_keys: keys,

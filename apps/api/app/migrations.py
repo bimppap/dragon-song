@@ -178,6 +178,26 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT true")
         if "environment_stack_remove" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN environment_stack_remove INTEGER")
+        if "target_side" not in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN target_side VARCHAR")
+            if "var_name" in skill_node_columns:
+                statements.append(
+                    "UPDATE skill_nodes SET target_side = 'ENEMY' "
+                    "WHERE var_name IN ('ab_strike', 'ab_crushing', 'ab_harm', 'ab_curse')"
+                )
+                statements.append(
+                    "UPDATE skill_nodes SET target_side = 'ALLY' "
+                    "WHERE var_name IN ('ab_anvil', 'ab_counter', 'ab_protect', 'ab_cure', "
+                    "'ab_aid', 'ab_purification', 'ab_encourage', 'ab_charge')"
+                )
+                # 분쇄는 기술 대상 증가 능력치와 무관하게 살아 있는 에너미를 최대 2명 지정한다.
+                statements.append("UPDATE skill_nodes SET target = '2' WHERE var_name = 'ab_crushing'")
+
+        # 기술 대상은 SELF 또는 1 이상의 정수만 허용한다. 시드에 남아 있던 자유 표기를 정리한다.
+        if "var_name" in skill_node_columns:
+            statements.append("UPDATE skill_nodes SET target = '2' WHERE var_name = 'ab_aid' AND target = '2+N'")
+            statements.append("UPDATE skill_nodes SET target = '1' WHERE var_name = 'ab_charge' AND target = '자신 제외'")
+            statements.append("UPDATE skill_nodes SET target = NULL WHERE var_name = 'ab_suppressing' AND target = 'ALL'")
 
         # 기술트리 개편: 진영(faction, 공격/수비/치유) 3계열 -> 캐릭터 역할과 무관한 4개 "서"
         # (용맹/불굴/헌신/탐구)로 전환. 기존 트리 구조와 호환되지 않으므로 전면 재시딩하고,

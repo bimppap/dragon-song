@@ -19,12 +19,17 @@ import {
   type SkillBook,
   type SkillCategory,
   type SkillNode,
+  type SkillTargetSide,
   type SkillTriggerType,
 } from "@/lib/api";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 const TRIGGER_TYPES: SkillTriggerType[] = ["즉발형", "지속형", "혼합형"];
 const SKILL_CATEGORIES: SkillCategory[] = ["피해", "복합", "강화", "약화", "회복"];
+const TARGET_SIDES: { value: SkillTargetSide; label: string }[] = [
+  { value: "ALLY", label: "아군" },
+  { value: "ENEMY", label: "적군" },
+];
 
 interface Draft {
   name: string;
@@ -33,6 +38,7 @@ interface Draft {
   category: SkillCategory | "";
   stackable: boolean;
   target: string;
+  targetSide: SkillTargetSide | "";
   activationOrder: string;
   cost: string;
   powerPercent: string;
@@ -46,6 +52,7 @@ const EMPTY_DRAFT: Draft = {
   category: "",
   stackable: false,
   target: "",
+  targetSide: "",
   activationOrder: "",
   cost: "",
   powerPercent: "",
@@ -99,6 +106,7 @@ export default function AdminSkillEditor() {
       category: node.category ?? "",
       stackable: node.stackable ?? false,
       target: node.target ?? "",
+      targetSide: node.target_side ?? "",
       activationOrder: node.activation_order != null ? String(node.activation_order) : "",
       cost: node.cost != null ? String(node.cost) : "",
       powerPercent: ratioToPercent(node.power),
@@ -130,6 +138,7 @@ export default function AdminSkillEditor() {
         category: draft.category as SkillCategory,
         stackable: draft.stackable,
         target: draft.target.trim().toUpperCase(),
+        target_side: draft.targetSide as SkillTargetSide,
         activation_order: Number(draft.activationOrder),
         cost: Number(draft.cost),
         power: Number(draft.powerPercent) / 100,
@@ -167,6 +176,7 @@ export default function AdminSkillEditor() {
   const metadataIsValid = !isSkillNode || (
     TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
     && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
+    && TARGET_SIDES.some(({ value }) => value === draft.targetSide)
     && targetIsValid
     && activationOrderIsValid
     && costIsValid
@@ -305,6 +315,23 @@ export default function AdminSkillEditor() {
                   {draft.target !== "" && !targetIsValid ? (
                     <p className="text-xs text-red-500">SELF 또는 1 이상의 정수를 입력하세요.</p>
                   ) : null}
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상 진영</label>
+                  <Select
+                    value={draft.targetSide}
+                    onValueChange={(value) => setDraft((prev) => ({ ...prev, targetSide: value as SkillTargetSide }))}
+                  >
+                    <SelectTrigger><SelectValue placeholder="아군/적군 선택" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {TARGET_SIDES.map(({ value, label }) => (
+                          <SelectItem key={value} value={value}>{label}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 <div className="space-y-1.5">

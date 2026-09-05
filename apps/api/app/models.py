@@ -255,7 +255,8 @@ class SkillNode(Base):
     var_name: Mapped[str | None] = mapped_column(String, nullable=True)  # 내부 변수명 (API 미노출)
     cost: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 비용
     power: Mapped[float | None] = mapped_column(Float, nullable=True)  # 기술 위력
-    target: Mapped[str | None] = mapped_column(String, nullable=True)  # 기술 대상 (자유 형식: "1", "ALL", "1+N" 등)
+    target: Mapped[str | None] = mapped_column(String, nullable=True)  # 기술 대상 ("SELF" 또는 적용 인원 정수)
+    target_side: Mapped[str | None] = mapped_column(String, nullable=True)  # 대상 진영 (ALLY/ENEMY)
     activation_order: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 발동 순서
     environment_stack_remove: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 가장 오래된 해제 가능 환경 스택 제거 수
     formula: Mapped[str | None] = mapped_column(String, nullable=True)  # 계산 공식 (관리자 전용 표시)

@@ -8,6 +8,7 @@ Faction = Literal["공격", "수비", "치유"]
 SkillBook = Literal["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"]
 SkillTriggerType = Literal["즉발형", "지속형", "혼합형"]
 SkillCategory = Literal["피해", "복합", "강화", "약화", "회복"]
+SkillTargetSide = Literal["ALLY", "ENEMY"]
 MemberRole = Literal["RUNNER", "ADMIN", "STAFF"]
 
 # 아이템 효과가 적용될 수 있는 캐릭터 능력치와 값의 정수/실수 여부.
@@ -1144,6 +1145,7 @@ class SkillNodeRead(BaseModel):
     cost: float | None = None
     power: float | None = None
     target: str | None = None
+    target_side: SkillTargetSide | None = None
     activation_order: int | None = None
     environment_stack_remove: int | None = None
     formula: str | None = None
@@ -1169,6 +1171,7 @@ class SkillNodeUpdate(BaseModel):
     # 전투 로직은 위력을 배율로 사용한다. UI에서는 퍼센트로 입력받아 100으로 나눈 값을 보낸다.
     power: float | None = Field(default=None, ge=0)
     target: str | None = None
+    target_side: SkillTargetSide | None = None
     activation_order: int | None = None
     environment_stack_remove: int | None = Field(default=None, ge=0)
 

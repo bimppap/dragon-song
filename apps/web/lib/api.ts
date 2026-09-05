@@ -1849,6 +1849,7 @@ export async function sendBattleRewards(sessionId: number): Promise<BattleReward
 export type SkillBook = "용맹의 서" | "불굴의 서" | "헌신의 서" | "탐구의 서";
 export type SkillTriggerType = "즉발형" | "지속형" | "혼합형";
 export type SkillCategory = "피해" | "복합" | "강화" | "약화" | "회복";
+export type SkillTargetSide = "ALLY" | "ENEMY";
 
 export interface SkillNode {
   id: number;
@@ -1866,6 +1867,7 @@ export interface SkillNode {
   cost: number | null;
   power: number | null;
   target: string | null;
+  target_side: SkillTargetSide | null;
   activation_order: number | null;
   environment_stack_remove: number | null;
   formula: string | null;
@@ -1910,6 +1912,7 @@ export async function updateSkillNode(
     cost?: number;
     power?: number;
     target?: string;
+    target_side?: SkillTargetSide;
     activation_order?: number;
     environment_stack_remove?: number;
   },

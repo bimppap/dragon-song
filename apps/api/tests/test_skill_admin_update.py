@@ -42,6 +42,7 @@ class SkillAdminUpdateTest(unittest.TestCase):
                 category="복합",
                 stackable=True,
                 target="03",
+                target_side="ENEMY",
                 activation_order=-1,
                 cost=4,
                 power=1.25,
@@ -55,6 +56,7 @@ class SkillAdminUpdateTest(unittest.TestCase):
         self.assertEqual(updated.category, "복합")
         self.assertTrue(updated.stackable)
         self.assertEqual(updated.target, "3")
+        self.assertEqual(updated.target_side, "ENEMY")
         self.assertEqual(updated.activation_order, -1)
         self.assertEqual(updated.cost, 4)
         self.assertEqual(updated.power, 1.25)
@@ -67,6 +69,21 @@ class SkillAdminUpdateTest(unittest.TestCase):
     def test_rejects_negative_environment_stack_remove(self):
         with self.assertRaises(ValidationError):
             SkillNodeUpdate(default_name="기술", environment_stack_remove=-1)
+
+    def test_rejects_invalid_target_side(self):
+        with self.assertRaises(ValidationError):
+            SkillNodeUpdate(default_name="기술", target_side="EVERYONE")
+
+    def test_crushing_default_targets_two_enemies(self):
+        crushing_nodes = [
+            spec
+            for spec in build_skill_node_specs("용맹의 서")
+            if spec.get("var_name") == "ab_crushing"
+        ]
+
+        self.assertTrue(crushing_nodes)
+        self.assertTrue(all(node["target"] == "2" for node in crushing_nodes))
+        self.assertTrue(all(node["target_side"] == "ENEMY" for node in crushing_nodes))
 
     def test_anvil_default_stack_remove_count_follows_skill_tier(self):
         anvil_nodes = [

@@ -1,6 +1,6 @@
 import unittest
 from fastapi import HTTPException
-from app.crud import _damage_from_skill_power, _explicit_skill_targets, _multi_target_skill_count
+from app.crud import _damage_from_skill_power, _explicit_skill_targets, _skill_target_count
 
 
 class SkillTargetSelectionTest(unittest.TestCase):
@@ -16,7 +16,10 @@ class SkillTargetSelectionTest(unittest.TestCase):
 
     def test_fewer_available_targets_and_skill_count(self):
         self.assertEqual(_explicit_skill_targets(["ally:1"], {"ally:1": 1}, 4), [1])
-        self.assertEqual(_multi_target_skill_count({"skill_target": 1}, 3), 4)
+        # 적용 인원은 기술에 적힌 기술 대상만 따르고, SELF·미설정은 1명으로 본다.
+        self.assertEqual(_skill_target_count({"target": "2"}), 2)
+        self.assertEqual(_skill_target_count({"target": "SELF"}), 1)
+        self.assertEqual(_skill_target_count({"target": None}), 1)
 
     def test_skill_damage_applies_proportional_and_fixed_efficiency_in_order(self):
         actor = {
