@@ -260,7 +260,8 @@ class SkillNode(Base):
     target: Mapped[str | None] = mapped_column(String, nullable=True)  # 기술 대상 ("SELF" 또는 적용 인원 정수)
     target_side: Mapped[str | None] = mapped_column(String, nullable=True)  # 대상 진영 (ALLY/ENEMY)
     activation_order: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 발동 순서
-    environment_stack_remove: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 가장 오래된 해제 가능 환경 스택 제거 수
+    # 약화 해제 수: 모루는 가장 오래된 환경 스택을, 정화는 약화 효과를 이 개수만큼 해제한다.
+    cleanse_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     formula: Mapped[str | None] = mapped_column(String, nullable=True)  # 계산 공식 (관리자 전용 표시)
     description: Mapped[str | None] = mapped_column(String, nullable=True)  # 개요 (관리자 전용 표시)
     # skill.xlsx에 값이 비어있어 기획 확정 전 임시로 채운 노드인지 여부 (UI에서 색으로 구분 표시).

@@ -108,7 +108,7 @@ class EncourageSkillTest(unittest.TestCase):
         )
 
         events = result.log[-1]["events"]
-        encourage_event = "📣 실험 요정 D의 격려 I → 실험 요정 A 피해 증폭 +22%"
+        encourage_event = "📣 실험 요정 D의 격려 I → 실험 요정 A 피해 증폭 +22% · MP -2 [8/10]"
         self.assertIn(encourage_event, events)
         self.assertEqual(
             result.log[-1]["calculations"][encourage_event],

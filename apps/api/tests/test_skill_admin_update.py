@@ -47,7 +47,6 @@ class SkillAdminUpdateTest(unittest.TestCase):
                 activation_order=-1,
                 cost=4,
                 power=1.25,
-                environment_stack_remove=3,
             ),
         )
 
@@ -61,15 +60,18 @@ class SkillAdminUpdateTest(unittest.TestCase):
         self.assertEqual(updated.activation_order, -1)
         self.assertEqual(updated.cost, 4)
         self.assertEqual(updated.power, 1.25)
-        self.assertEqual(updated.environment_stack_remove, 3)
 
     def test_rejects_non_integer_target(self):
         with self.assertRaises(ValidationError):
             SkillNodeUpdate(default_name="기술", target="1+N")
 
-    def test_rejects_negative_environment_stack_remove(self):
+    def test_rejects_negative_cleanse_count(self):
         with self.assertRaises(ValidationError):
-            SkillNodeUpdate(default_name="기술", environment_stack_remove=-1)
+            SkillNodeUpdate(default_name="기술", cleanse_count=-1)
+
+    def test_rejects_cleanse_count_on_skill_without_it(self):
+        with self.assertRaises(HTTPException):
+            update_skill_node(self.db, self.node_id, SkillNodeUpdate(default_name="기존 기술", cleanse_count=2))
 
     def test_rejects_invalid_target_side(self):
         with self.assertRaises(ValidationError):
@@ -120,7 +122,7 @@ class SkillAdminUpdateTest(unittest.TestCase):
 
         self.assertEqual([(slot.key, slot.label) for slot in updated.power_slots], [("power", "기술 위력")])
 
-    def test_anvil_default_stack_remove_count_follows_skill_tier(self):
+    def test_anvil_default_cleanse_count_follows_skill_tier(self):
         anvil_nodes = [
             spec
             for spec in build_skill_node_specs("불굴의 서")
@@ -128,11 +130,11 @@ class SkillAdminUpdateTest(unittest.TestCase):
         ]
 
         self.assertEqual(
-            [node["environment_stack_remove"] for node in anvil_nodes],
+            [node["cleanse_count"] for node in anvil_nodes],
             [1, 2, 3, 4, 5, 6],
         )
 
-    def test_purification_and_protect_carry_their_numbers_as_power_slots(self):
+    def test_purification_and_protect_carry_their_numbers_as_data(self):
         purification = [
             spec for spec in build_skill_node_specs("헌신의 서")
             if spec.get("var_name") == "ab_purification"
@@ -143,7 +145,7 @@ class SkillAdminUpdateTest(unittest.TestCase):
         ]
 
         # 기술 등급으로 계산하던 값들을 기술 데이터로 옮겼다(정화는 단계별, 보호는 단계 공통).
-        self.assertEqual([node["powers"]["cleanse_count"] for node in purification], [1, 2, 3, 4, 5, 6])
+        self.assertEqual([node["cleanse_count"] for node in purification], [1, 2, 3, 4, 5, 6])
         self.assertTrue(all(node["powers"]["attn_transfer"] == 0.1 for node in protect))
 
 

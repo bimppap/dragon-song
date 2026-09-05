@@ -57,7 +57,7 @@ const BATTLE_DESCRIPTIONS: { label: string; icon: React.ElementType; accent: str
     formula: "기절 상태의 캐릭터에게 사용할 수 있다. 구조된 캐릭터는 최대 체력의 10%를 회복하고 기절 상태에서 벗어난다.",
   },
   {
-    label: "마나",
+    label: "MP",
     icon: Zap,
     accent: "text-sky-500",
     formula: "기술을 사용할 때 소모된다. 기술마다 비용이 다르며, 부족할 경우 기술을 사용하지 못한다.",

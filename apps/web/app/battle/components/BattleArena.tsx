@@ -176,6 +176,78 @@ function autoTargetsForEnemySkill(skill: EnemySkill | null | undefined, candidat
   return autoSelectEnemyTargets(candidates, Math.max(1, skill.target_count), skill.auto_target_mode);
 }
 
+interface StackBarItem {
+  key: string;
+  label: string;
+  count: number;
+  /** 환경 스택처럼 색이 데이터로 오는 경우 */
+  color?: string;
+  /** 상태이상처럼 강화/약화로 색이 정해지는 경우 */
+  tone?: "buff" | "debuff";
+}
+
+const STACK_BAR_TONE = {
+  buff: { bar: "bg-emerald-400", text: "text-emerald-400" },
+  debuff: { bar: "bg-fuchsia-400", text: "text-fuchsia-400" },
+} as const;
+
+/** 환경 스택·상태이상을 개수만큼 대각선 바로 보여주고, 커서를 올리면 이름과 개수를 알려준다. */
+function StackBars({ items, className }: { items: StackBarItem[]; className?: string }) {
+  if (items.length === 0) return null;
+  return (
+    <InfoTooltip content={
+      <span className="flex flex-wrap items-center gap-1">
+        {items.map((item, index) => (
+          <span key={item.key}>
+            {index > 0 && <span className="mr-1 text-muted">|</span>}
+            <span className={item.tone ? STACK_BAR_TONE[item.tone].text : undefined} style={item.tone ? undefined : { color: item.color }}>
+              {item.label} × {item.count}
+            </span>
+          </span>
+        ))}
+      </span>
+    }>
+      <div
+        tabIndex={0}
+        className={cn("inline-flex w-fit cursor-help flex-wrap gap-1 py-0.5", className)}
+        aria-label={items.map((item) => `${item.label} × ${item.count}`).join(" | ")}
+      >
+        {items.map((item) => (
+          <div key={item.key} className="contents">
+            {Array.from({ length: item.count }, (_, index) => (
+              <span
+                key={index}
+                aria-hidden="true"
+                className={cn("block h-2.5 w-0.5 rotate-20 rounded-full", item.tone && STACK_BAR_TONE[item.tone].bar)}
+                style={item.tone ? undefined : { backgroundColor: item.color }}
+              />
+            ))}
+          </div>
+        ))}
+      </div>
+    </InfoTooltip>
+  );
+}
+
+/**
+ * 상태이상 목록을 대각선 바 항목으로 바꾼다(강화는 초록, 약화는 자주).
+ * 같은 시전자가 같은 기술을 여러 번 건 경우는 한 항목으로 묶어 개수로 보여준다.
+ */
+function statusEffectBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
+  const grouped = new Map<string, StackBarItem>();
+  for (const effect of displayStatusEffects(effects)) {
+    const skillName = effect.skill_name || effect.var_name || effect.effect_type;
+    const label = effect.source_name ? `${effect.source_name}의 ${skillName}` : skillName;
+    const tone = effect.affinity === "buff" ? "buff" : "debuff";
+    const key = `${tone}:${label}`;
+    const count = Math.max(1, effect.stacks ?? 1);
+    const existing = grouped.get(key);
+    if (existing) existing.count += count;
+    else grouped.set(key, { key, label, count, tone });
+  }
+  return [...grouped.values()];
+}
+
 function isEnemyTargetable(enemy: BattleSession["enemies"][number], currentRound: number): boolean {
   return enemy.hp > 0 && enemy.joined_round !== currentRound;
 }
@@ -251,6 +323,8 @@ const SINGLE_ENEMY_SKILL_NAMES = new Set(["강타", "격류", "위해"]);
 const MULTI_ENEMY_SKILL_NAMES = new Set(["분쇄", "파괴"]);
 const SINGLE_ALLY_SKILL_NAMES = new Set(["반격", "보호", "수호", "회복", "생명", "정화", "승화"]);
 const MULTI_ALLY_SKILL_NAMES = new Set(["구호"]);
+// 구호는 관리자가 대상을 고르지 않고 서버가 현재 체력이 낮은 순으로 자동 지정한다.
+const AUTO_ALLY_TARGET_SKILL_NAMES = new Set(["구호"]);
 // 충전은 기절한 아군에게는 걸 수 없고 시전자 자신도 대상이 되지 않는다(서버 ab_charge와 동일 조건).
 const ACTIVE_ALLY_SKILL_NAMES = new Set(["충전"]);
 const SELF_EXCLUDED_SKILL_NAMES = new Set(["충전"]);
@@ -856,13 +930,14 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       // 기술 대상이 SELF인 기술은 대상을 고르지 않고 시전자 본인으로 자동 지정한다.
       const skill = draft.kind === "skill" ? resolveSelectedSkill(characterId, draft.skill_node_id) : null;
       const selfTargeted = skill != null && getBattleSkillTargetMode(skill) === "self";
+      const autoTargeted = skill != null && AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name);
       return {
         character_id: characterId,
         kind: draft.kind,
         skill_node_id: draft.kind === "skill" ? (draft.skill_node_id ?? undefined) : undefined,
-        skill_target_keys: draft.kind === "skill"
-          ? (selfTargeted ? [`ally:${characterId}`] : draft.skill_target_keys)
-          : undefined,
+        skill_target_keys: draft.kind !== "skill" || autoTargeted
+          ? undefined
+          : (selfTargeted ? [`ally:${characterId}`] : draft.skill_target_keys),
         target_enemy_id: draft.target_enemy_id ?? undefined,
         target_character_id: selfTargeted ? characterId : draft.target_character_id ?? undefined,
         protect_target_character_id: draft.kind === "defend" ? (draft.protect_target_character_id ?? undefined) : undefined,
@@ -1235,11 +1310,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                 <span className="font-num text-xs text-muted">공격력 {enemy.attack}</span>
               </div>
               <HpBar hp={enemy.hp} max={enemy.max_hp} color="bg-red-500" />
-              {(enemy.status_effects?.length ?? 0) > 0 && <div className="mt-2 flex flex-wrap gap-1">
-                {displayStatusEffects(enemy.status_effects ?? []).map((effect, index) => <Badge key={index} variant="outline" className={effect.affinity === "buff" ? "text-emerald-300" : "text-fuchsia-300"}>
-                  {effect.skill_name ?? effect.effect_type} ×{effect.stacks ?? 1}
-                </Badge>)}
-              </div>}
+              {(enemy.status_effects?.length ?? 0) > 0 && (
+                <StackBars items={statusEffectBarItems(enemy.status_effects ?? [])} className="mt-2" />
+              )}
 
               {canAct && !dead && phase === "telegraph" && draft && (
                 <div className="mt-3 space-y-2">
@@ -1403,7 +1476,17 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             : null;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
-          if (draft?.kind === "skill" && selectedSkillTargetMode === "self") {
+          if (draft?.kind === "skill" && selectedSkill && AUTO_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name)) {
+            extraControls.push({
+              key: "skill-target",
+              icon: Sparkles,
+              control: (
+                <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
+                  체력 낮은 순 {getBattleSkillTargetCount(selectedSkill)}명 자동 지정
+                </div>
+              ),
+            });
+          } else if (draft?.kind === "skill" && selectedSkillTargetMode === "self") {
             extraControls.push({
               key: "skill-target",
               icon: Sparkles,
@@ -1522,7 +1605,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     const disabled = !isSelf && p.mp < 1;
                     return {
                       key: String(target.character_id),
-                      label: isSelf ? `${target.name} (본인)` : disabled ? `${target.name} (마나 부족)` : target.name,
+                      label: isSelf ? `${target.name} (본인)` : disabled ? `${target.name} (MP 부족)` : target.name,
                       disabled,
                     };
                   })}
@@ -1572,9 +1655,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         return (
                           <SelectItem key={kind} value={kind} disabled={unavailable}>
                             {skillUnavailable
-                              ? "기술(마나 부족)"
+                              ? "기술(MP 부족)"
                               : healUnavailable
-                                ? "치유(마나 부족)"
+                                ? "치유(MP 부족)"
                                 : CHAR_ACTION_LABEL[kind]}
                           </SelectItem>
                         );
@@ -1681,20 +1764,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       </div>
                     )}
 
-                    {(p.environment_stacks?.length ?? 0) > 0 && <InfoTooltip content={
-                      <span className="flex flex-wrap items-center gap-1">
-                        {p.environment_stacks?.map((stack, index) => <span key={stack.id}>
-                          {index > 0 && <span className="mr-1 text-muted">|</span>}
-                          <span style={{ color: stack.color }}>{stack.name} {stack.count}</span>
-                        </span>)}
-                      </span>
-                    }>
-                      <div tabIndex={0} className="flex cursor-help flex-wrap gap-1 py-0.5" aria-label={p.environment_stacks?.map((stack) => `${stack.name} ${stack.count}`).join(" | ")}>
-                        {p.environment_stacks?.map((stack) => <div key={stack.id} className="contents">
-                          {Array.from({ length: stack.count }, (_, index) => <span key={index} aria-hidden="true" className="block h-2.5 w-0.5 rotate-20 rounded-full" style={{ backgroundColor: stack.color }} />)}
-                        </div>)}
-                      </div>
-                    </InfoTooltip>}
+                    <StackBars items={(p.environment_stacks ?? []).map((stack) => ({
+                      key: String(stack.id),
+                      label: stack.name,
+                      count: stack.count,
+                      color: stack.color,
+                    }))} />
 
                     {(p.downed || p.retreated || p.defending || (active && p.joined_round === session.round)) && (
                       <div className="flex flex-wrap gap-2">

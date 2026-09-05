@@ -1157,7 +1157,8 @@ class SkillNodeRead(BaseModel):
     target: str | None = None
     target_side: SkillTargetSide | None = None
     activation_order: int | None = None
-    environment_stack_remove: int | None = None
+    cleanse_count: int | None = None
+    has_cleanse_count: bool = False
     formula: str | None = None
     description: str | None = None
     is_placeholder: bool = False
@@ -1184,7 +1185,7 @@ class SkillNodeUpdate(BaseModel):
     target: str | None = None
     target_side: SkillTargetSide | None = None
     activation_order: int | None = None
-    environment_stack_remove: int | None = Field(default=None, ge=0)
+    cleanse_count: int | None = Field(default=None, ge=0)
 
     @field_validator("target")
     @classmethod

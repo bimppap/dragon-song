@@ -63,7 +63,7 @@ interface Draft {
   cost: string;
   /** 위력 슬롯 키 → 퍼센트 입력값. 위력이 하나인 기술은 "power" 하나만 쓴다. */
   powerPercents: Record<string, string>;
-  environmentStackRemove: string;
+  cleanseCount: string;
 }
 
 const EMPTY_DRAFT: Draft = {
@@ -77,7 +77,7 @@ const EMPTY_DRAFT: Draft = {
   activationOrder: "",
   cost: "",
   powerPercents: {},
-  environmentStackRemove: "0",
+  cleanseCount: "0",
 };
 
 function ratioToPercent(value: number | null): string {
@@ -134,7 +134,7 @@ export default function AdminSkillEditor() {
         slot.key,
         slotValueToInput(slot, slot.key === "power" ? node.power : node.powers?.[slot.key] ?? null),
       ])),
-      environmentStackRemove: String(node.environment_stack_remove ?? 0),
+      cleanseCount: String(node.cleanse_count ?? 0),
     });
     setImageFile(null);
     setImagePreview(node.image_url);
@@ -174,7 +174,7 @@ export default function AdminSkillEditor() {
             .filter((slot) => slot.key !== "power")
             .map((slot) => [slot.key, slotInputToValue(slot, draft.powerPercents[slot.key] ?? "")]),
         ),
-        environment_stack_remove: Number(draft.environmentStackRemove),
+        ...(editing.has_cleanse_count ? { cleanse_count: Number(draft.cleanseCount) } : {}),
       };
       let updated = await updateSkillNode(editing.id, {
         default_name: draft.name,
@@ -207,7 +207,7 @@ export default function AdminSkillEditor() {
     const value = draft.powerPercents[slot.key] ?? "";
     return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0;
   });
-  const environmentStackRemoveIsValid = /^\d+$/.test(draft.environmentStackRemove.trim());
+  const cleanseCountIsValid = !isSkillNode || !editing.has_cleanse_count || /^\d+$/.test(draft.cleanseCount.trim());
   const metadataIsValid = !isSkillNode || (
     TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
     && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
@@ -216,7 +216,7 @@ export default function AdminSkillEditor() {
     && activationOrderIsValid
     && costIsValid
     && powerIsValid
-    && environmentStackRemoveIsValid
+    && cleanseCountIsValid
   );
 
   async function handleVisibilityChange(value: string) {
@@ -417,19 +417,21 @@ export default function AdminSkillEditor() {
                   );
                 })}
 
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">환경 스택 제거 수</label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={draft.environmentStackRemove}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, environmentStackRemove: e.target.value }))}
-                    placeholder="0 이상의 정수"
-                    aria-invalid={!environmentStackRemoveIsValid}
-                  />
-                  <p className="text-xs text-muted">가장 오래된 해제 가능 환경 스택부터 제거합니다.</p>
-                </div>
+                {editing.has_cleanse_count && (
+                  <div className="space-y-1.5">
+                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted">약화 해제 수</label>
+                    <Input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={draft.cleanseCount}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, cleanseCount: e.target.value }))}
+                      placeholder="0 이상의 정수"
+                      aria-invalid={!cleanseCountIsValid}
+                    />
+                    <p className="text-xs text-muted">가장 오래된 것부터 해제합니다.</p>
+                  </div>
+                )}
               </div>
 
               <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">

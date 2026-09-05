@@ -55,7 +55,7 @@ class AnvilSkillTest(unittest.TestCase):
             power=0.15,
             target="SELF",
             activation_order=3,
-            environment_stack_remove=1,
+            cleanse_count=1,
             is_public=True,
         )
         self.db.add(self.skill)
@@ -116,7 +116,7 @@ class AnvilSkillTest(unittest.TestCase):
         )
 
         participant = result.participants[0]
-        event = "🪨 실험 요정 B의 모루 I → 18 치유 · 늪의 저주 스택 -1"
+        event = "🪨 실험 요정 B의 모루 I → 18 치유 · 늪의 저주 스택 -1 · MP -3 [7/10]"
         self.assertIn(event, result.log[-1]["events"])
         self.assertEqual(participant["hp"], 96)
         self.assertEqual(participant["attn"], 23)

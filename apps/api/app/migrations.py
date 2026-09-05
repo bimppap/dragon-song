@@ -176,8 +176,11 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN image_url VARCHAR")
         if "is_public" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT true")
-        if "environment_stack_remove" not in skill_node_columns:
-            statements.append("ALTER TABLE skill_nodes ADD COLUMN environment_stack_remove INTEGER")
+        # 환경 스택 제거 수는 정화의 약화 해제와 같은 설정이라 "약화 해제 수"로 합쳤다.
+        if "environment_stack_remove" in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes RENAME COLUMN environment_stack_remove TO cleanse_count")
+        elif "cleanse_count" not in skill_node_columns:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN cleanse_count INTEGER")
         if "powers" not in skill_node_columns:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN powers JSON NOT NULL DEFAULT '{}'")
             if "var_name" in skill_node_columns:

@@ -170,7 +170,7 @@ def _skill(
     target: str | None = None,
     target_side: str | None = None,
     order: int | None = None,
-    environment_stack_remove: int | tuple[int, ...] | None = None,
+    cleanse_count: int | tuple[int, ...] | None = None,
     formula: str | None = None,
     description: str | None = None,
     tier6_name: str | None = None,
@@ -189,7 +189,7 @@ def _skill(
         "target": target,
         "target_side": target_side,
         "order": order,
-        "environment_stack_remove": environment_stack_remove,
+        "cleanse_count": cleanse_count,
         "formula": formula,
         "description": description,
         "tier6_name": tier6_name,
@@ -214,11 +214,14 @@ SKILL_POWER_SLOTS: dict[str, list[dict[str, str]]] = {
         {"key": "power", "label": "기술 위력", "unit": "percent"},
         {"key": "attn_transfer", "label": "주목도 이전", "unit": "percent"},
     ],
-    "ab_purification": [
-        {"key": "power", "label": "기술 위력", "unit": "percent"},
-        {"key": "cleanse_count", "label": "약화 해제 수", "unit": "flat"},
-    ],
 }
+
+# 약화 해제 수를 가진 기술(모루는 환경 스택을, 정화는 약화 효과를 해제한다).
+CLEANSE_COUNT_VAR_NAMES = {"ab_anvil", "ab_purification"}
+
+
+def skill_has_cleanse_count(var_name: str | None) -> bool:
+    return var_name in CLEANSE_COUNT_VAR_NAMES
 
 
 def skill_power_slots(var_name: str | None) -> list[dict[str, str]]:
@@ -289,7 +292,7 @@ SKILL_BOOKS: dict[str, dict] = {
             {
                 "root": _skill(
                     "모루", trigger_type="즉발형", category="복합", stackable=False, var_name="ab_anvil",
-                    cost=3, power=0.15, target="SELF", target_side="ALLY", order=3, environment_stack_remove=(1, 2, 3, 4, 5, 6),
+                    cost=3, power=0.15, target="SELF", target_side="ALLY", order=3, cleanse_count=(1, 2, 3, 4, 5, 6),
                     formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)+기술 효율 고정",
                     description="자신을 회복하고 설정된 수만큼 가장 오래된 해제 가능 환경 스택을 제거합니다. 회복량만큼 주목도를 얻습니다.",
                     tier6_name="불굴",
@@ -367,7 +370,7 @@ SKILL_BOOKS: dict[str, dict] = {
             {
                 "root": _skill(
                     "정화", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_purification",
-                    cost=2, power=0.15, powers={"cleanse_count": (1, 2, 3, 4, 5, 6)},
+                    cost=2, power=0.15, cleanse_count=(1, 2, 3, 4, 5, 6),
                     target="1", target_side="ALLY", order=2,
                     formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정",
                     description="지정한 아군의 체력을 회복시키고 기술 등급만큼 약화 스택을 제거합니다.",
@@ -452,9 +455,9 @@ def build_skill_node_specs(book: str) -> list[dict]:
             description = f"{description}\n[6단계 추가 효과] {skill['tier6_effect']}" if description else f"[6단계 추가 효과] {skill['tier6_effect']}"
         # 1단계·6단계는 실제 기획 데이터, 2~5단계는 근거 데이터가 없어 항상 임시값이다.
         placeholder = skill["placeholder"] or tier not in (1, 6)
-        environment_stack_remove = skill["environment_stack_remove"]
-        if isinstance(environment_stack_remove, tuple):
-            environment_stack_remove = environment_stack_remove[tier - 1]
+        cleanse_count = skill["cleanse_count"]
+        if isinstance(cleanse_count, tuple):
+            cleanse_count = cleanse_count[tier - 1]
         # 위력도 환경 스택 제거 수처럼 단계별 값을 튜플로 적을 수 있다.
         powers = {
             key: (value[tier - 1] if isinstance(value, tuple) else value)
@@ -472,7 +475,7 @@ def build_skill_node_specs(book: str) -> list[dict]:
             "target": skill["target"],
             "target_side": skill["target_side"],
             "activation_order": skill["order"],
-            "environment_stack_remove": environment_stack_remove,
+            "cleanse_count": cleanse_count,
             "formula": skill["formula"],
             "description": description,
             "is_placeholder": placeholder,

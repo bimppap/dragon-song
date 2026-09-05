@@ -115,7 +115,7 @@ class CounterSkillTest(unittest.TestCase):
             )]),
         )
 
-        cast_event = "↩️ 실험 요정 B의 반격 I → 실험 요정 A (피해 감소 +11%) · 실험 요정 B 반격 태세"
+        cast_event = "↩️ 실험 요정 B의 반격 I → 실험 요정 A (피해 감소 +11%) · 실험 요정 B 반격 태세 · MP -3 [7/10]"
         self.assertIn(cast_event, ally_result.log[-1]["events"])
         self.assertEqual(
             ally_result.log[-1]["calculations"][cast_event],

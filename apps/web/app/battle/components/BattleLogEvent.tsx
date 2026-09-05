@@ -19,6 +19,8 @@ function numberKind(event: string, start: number, end: number): NumberKind {
   if (/^\s*스택/.test(suffix)) return "stack";
   if (/^\s*(?:흡수|보호막)/.test(suffix)) return "shield";
   if (/^\s*주목도/.test(suffix)) return "attn";
+  // "주목도 3 이전 / 7 획득"처럼 이름표가 앞에 오는 주목도 이동량
+  if (/^\s*(?:이전|획득)/.test(suffix)) return "attn";
 
   const insideStatus = event.lastIndexOf("[", start) > event.lastIndexOf("]", start);
   if (insideStatus) return "health";
@@ -97,7 +99,7 @@ function isCalculatedResultNumber(
   if (kind === "damage" && /(?:^|\s)피해\s$/.test(event.slice(0, start))) return true;
   if (kind === "damage") return /^\s*(?:피해|반격 피해|지속 피해)/.test(suffix);
   if (kind === "healing") return /^\s*(?:치유|회복)/.test(suffix);
-  if (kind === "attn") return /^\s*주목도/.test(suffix);
+  if (kind === "attn") return /^\s*(?:주목도|이전|획득)/.test(suffix);
   if (kind === "regen") return true;
   return false;
 }

@@ -1610,6 +1610,8 @@ export interface BattleStatusEffect {
   stack_source?: string;
   affinity: "buff" | "debuff";
   effect_type: string;
+  /** 이 효과를 건 캐릭터 이름(에너미에게 쌓인 약화를 누가 걸었는지 구분한다) */
+  source_name?: string | null;
   skill_name?: string | null;
   var_name?: string | null;
   stackable?: boolean;
@@ -1873,7 +1875,10 @@ export interface SkillNode {
   target: string | null;
   target_side: SkillTargetSide | null;
   activation_order: number | null;
-  environment_stack_remove: number | null;
+  /** 약화 해제 수: 모루는 환경 스택을, 정화는 약화 효과를 이 개수만큼 해제한다. */
+  cleanse_count: number | null;
+  /** 이 기술이 약화 해제 수를 갖는지(모루·정화만 true). */
+  has_cleanse_count: boolean;
   formula: string | null;
   description: string | null;
   is_placeholder: boolean;
@@ -1919,7 +1924,7 @@ export async function updateSkillNode(
     target?: string;
     target_side?: SkillTargetSide;
     activation_order?: number;
-    environment_stack_remove?: number;
+    cleanse_count?: number;
   },
 ): Promise<SkillNode> {
   const node = await request<SkillNode>(`/skills/${nodeId}`, {

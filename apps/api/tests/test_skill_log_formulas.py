@@ -72,7 +72,7 @@ class SkillLogFormulaTest(unittest.TestCase):
             target_enemy_id=1,
         ))
 
-        event = "🔮 실험 요정 D의 저주 → 오버그로스 피해 증폭 -5%"
+        event = "🔮 실험 요정 D의 저주 → 오버그로스 피해 증폭 -5% · MP -1 [9/10]"
         self.assertIn(event, result.log[-1]["events"])
         self.assertEqual(
             result.log[-1]["calculations"][event],
