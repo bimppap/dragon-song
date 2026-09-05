@@ -34,12 +34,18 @@ export interface BattleDraftPatch {
   patch: Record<string, unknown>;
 }
 
+export interface BattleDraftSnapshot {
+  character?: Record<string, Record<string, unknown>>;
+  enemy?: Record<string, Record<string, unknown>>;
+}
+
 export type BattleWsMessage =
   | { type: "battle_update"; session: BattleSession }
   | { type: "battle_deleted"; session_id: number }
   | { type: "draft_preview"; phase: BattlePhase; draft: BattleDraftPreview }
   | ({ type: "editing_state" } & BattleEditingState)
-  | ({ type: "draft_patch" } & BattleDraftPatch);
+  | ({ type: "draft_patch" } & BattleDraftPatch)
+  | { type: "draft_snapshot"; draft: BattleDraftSnapshot };
 
 /**
  * 전투 세션 하나에 대한 WebSocket 연결을 관리한다. 외부 상태관리 라이브러리 없이

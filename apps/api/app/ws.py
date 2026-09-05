@@ -36,6 +36,7 @@ class BattleConnectionManager:
     def __init__(self) -> None:
         self._rooms: dict[int, set[WebSocket]] = {}
         self._staff_rooms: dict[int, set[WebSocket]] = {}
+        self._drafts: dict[int, dict[str, dict[int, dict]]] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
@@ -46,6 +47,26 @@ class BattleConnectionManager:
         self._rooms.setdefault(session_id, set()).add(websocket)
         if is_staff:
             self._staff_rooms.setdefault(session_id, set()).add(websocket)
+            draft = self.draft_snapshot(session_id)
+            if draft:
+                await websocket.send_json({"type": "draft_snapshot", "draft": draft})
+
+    def apply_draft_patch(self, session_id: int, draft_type: str, entity_id: int, patch: dict) -> None:
+        session_drafts = self._drafts.setdefault(session_id, {})
+        drafts_by_type = session_drafts.setdefault(draft_type, {})
+        drafts_by_type.setdefault(entity_id, {}).update(patch)
+
+    def draft_snapshot(self, session_id: int) -> dict[str, dict[str, dict]]:
+        session_drafts = self._drafts.get(session_id)
+        if not session_drafts:
+            return {}
+        return {
+            draft_type: {str(entity_id): dict(patch) for entity_id, patch in drafts.items()}
+            for draft_type, drafts in session_drafts.items()
+        }
+
+    def clear_drafts(self, session_id: int) -> None:
+        self._drafts.pop(session_id, None)
 
     def disconnect(self, session_id: int, websocket: WebSocket) -> None:
         room = self._rooms.get(session_id)
@@ -97,11 +118,13 @@ manager = BattleConnectionManager()
 
 
 def broadcast_battle_update(session_id: int, session) -> None:
+    manager.clear_drafts(session_id)
     payload = BattleSessionRead.model_validate(session).model_dump(mode="json")
     manager.schedule_broadcast(session_id, {"type": "battle_update", "session": payload})
 
 
 def broadcast_battle_deleted(session_id: int) -> None:
+    manager.clear_drafts(session_id)
     manager.schedule_broadcast(session_id, {"type": "battle_deleted", "session_id": session_id})
 
 
@@ -140,6 +163,7 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
             return
         if not set(patch).issubset(DRAFT_PATCH_FIELDS[draft_type]):
             return
+        manager.apply_draft_patch(session_id, draft_type, entity_id, patch)
         await manager.broadcast(
             session_id,
             {

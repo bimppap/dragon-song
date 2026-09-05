@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 from app import ws
 from app.ws import BattleConnectionManager
@@ -18,6 +18,17 @@ class FakeWebSocket:
         await self.release.wait()
         if self.fail:
             raise RuntimeError("disconnected")
+
+
+class SnapshotWebSocket:
+    def __init__(self):
+        self.messages: list[dict] = []
+
+    async def accept(self) -> None:
+        pass
+
+    async def send_json(self, message: dict) -> None:
+        self.messages.append(message)
 
 
 class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
@@ -60,7 +71,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_draft_patch_is_shared_only_with_staff(self):
         original_manager = ws.manager
-        mock_manager = SimpleNamespace(broadcast=AsyncMock())
+        mock_manager = SimpleNamespace(apply_draft_patch=Mock(), broadcast=AsyncMock())
         ws.manager = mock_manager
         try:
             await ws.handle_ws_message(
@@ -90,10 +101,11 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
             },
             staff_only=True,
         )
+        mock_manager.apply_draft_patch.assert_called_once_with(1, "character", 12, {"target_enemy_id": 3})
 
     async def test_draft_patch_drops_unknown_fields(self):
         original_manager = ws.manager
-        mock_manager = SimpleNamespace(broadcast=AsyncMock())
+        mock_manager = SimpleNamespace(apply_draft_patch=Mock(), broadcast=AsyncMock())
         ws.manager = mock_manager
         try:
             await ws.handle_ws_message(
@@ -112,6 +124,27 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
             ws.manager = original_manager
 
         mock_manager.broadcast.assert_not_awaited()
+        mock_manager.apply_draft_patch.assert_not_called()
+
+    async def test_staff_connection_receives_saved_draft_snapshot(self):
+        manager = BattleConnectionManager()
+        manager.apply_draft_patch(1, "character", 12, {"target_enemy_id": 3})
+        websocket = SnapshotWebSocket()
+
+        await manager.connect(1, websocket, is_staff=True)
+
+        self.assertEqual(websocket.messages, [{
+            "type": "draft_snapshot",
+            "draft": {"character": {"12": {"target_enemy_id": 3}}},
+        }])
+
+    def test_clear_drafts_removes_saved_snapshot(self):
+        manager = BattleConnectionManager()
+        manager.apply_draft_patch(1, "enemy", 2, {"skill_index": 0})
+
+        manager.clear_drafts(1)
+
+        self.assertEqual(manager.draft_snapshot(1), {})
 
 
 if __name__ == "__main__":

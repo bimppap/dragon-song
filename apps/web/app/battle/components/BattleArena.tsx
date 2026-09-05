@@ -651,6 +651,29 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           return { ...previous, [msg.entity_id]: { ...draft, ...(msg.patch as Partial<TelegraphDraft>) } };
         });
       }
+    } else if (msg.type === "draft_snapshot") {
+      setCharDrafts((previous) => {
+        let next = previous;
+        for (const [id, patch] of Object.entries(msg.draft.character ?? {})) {
+          const entityId = Number(id);
+          const draft = next[entityId];
+          if (!draft) continue;
+          if (next === previous) next = { ...previous };
+          next[entityId] = { ...draft, ...(patch as Partial<CharDraft>) };
+        }
+        return next;
+      });
+      setTelegraphDrafts((previous) => {
+        let next = previous;
+        for (const [id, patch] of Object.entries(msg.draft.enemy ?? {})) {
+          const entityId = Number(id);
+          const draft = next[entityId];
+          if (!draft) continue;
+          if (next === previous) next = { ...previous };
+          next[entityId] = { ...draft, ...(patch as Partial<TelegraphDraft>) };
+        }
+        return next;
+      });
     }
   });
 
@@ -863,7 +886,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         draft[characterId] = {
           kind: charDraft.kind,
           skill_node_id: charDraft.skill_node_id,
-          skill_name: skill?.default_name ?? null,
+          skill_name: skill?.display_name ?? null,
           skill_image_url: skill?.image_url ?? null,
           target_character_id: charDraft.target_character_id,
           protect_target_character_id: charDraft.protect_target_character_id,
