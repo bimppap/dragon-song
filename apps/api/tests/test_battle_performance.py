@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import crud
 from app.db import Base
-from app.models import KST, BattleSession
+from app.models import KST, BattleSession, Character, CharacterSkillUnlock, SkillNode
 
 
 class BattlePerformanceTest(unittest.TestCase):
@@ -15,8 +15,10 @@ class BattlePerformanceTest(unittest.TestCase):
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
+        crud.invalidate_active_battle_skills_cache()
 
     def tearDown(self):
+        crud.invalidate_active_battle_skills_cache()
         self.db.close()
         self.engine.dispose()
 
@@ -76,6 +78,44 @@ class BattlePerformanceTest(unittest.TestCase):
         reward_indexes = {index["name"] for index in inspector.get_indexes("rewards")}
         self.assertIn("ix_battle_sessions_mode_status_id", battle_indexes)
         self.assertIn("ix_rewards_type_source_id", reward_indexes)
+
+    def test_active_battle_skills_are_batched_and_cached(self):
+        character = Character(name="cache fairy")
+        self.db.add(character)
+        self.db.commit()
+        crud.get_skill_nodes(self.db, "용맹의 서")
+        node = (
+            self.db.query(SkillNode)
+            .filter(SkillNode.book == "용맹의 서", SkillNode.tier == 1)
+            .first()
+        )
+        self.assertIsNotNone(node)
+        self.db.add(CharacterSkillUnlock(
+            character_id=character.id,
+            node_id=node.id,
+            custom_name="캐시 기술",
+            custom_image_url="https://example.com/cached.webp",
+        ))
+        self.db.commit()
+        crud.invalidate_active_battle_skills_cache()
+
+        statements: list[str] = []
+
+        def record_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+            statements.append(statement.lower())
+
+        event.listen(self.engine, "before_cursor_execute", record_statement)
+        try:
+            first = crud._get_cached_active_battle_skills_by_character(self.db, [character.id])
+            first[character.id][node.id]["display_name"] = "mutated"
+            statements.clear()
+            second = crud._get_cached_active_battle_skills_by_character(self.db, [character.id])
+        finally:
+            event.remove(self.engine, "before_cursor_execute", record_statement)
+
+        self.assertEqual(statements, [])
+        self.assertEqual(second[character.id][node.id]["display_name"], "캐시 기술")
+        self.assertEqual(second[character.id][node.id]["image_url"], "https://example.com/cached.webp")
 
 
 if __name__ == "__main__":

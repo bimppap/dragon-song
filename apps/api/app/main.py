@@ -34,6 +34,7 @@ from app.schemas import (
     AttendanceRewardPayResult,
     AttendanceStreakEntry,
     AutoAttendanceResult,
+    BattleActiveSkillsRead,
     BattleAllyTurnRequest,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
@@ -1210,6 +1211,16 @@ def get_live_battle(
     return session
 
 
+@app.get("/battles/{session_id}/active-skills", response_model=BattleActiveSkillsRead)
+def get_battle_active_skills(
+    session_id: int,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자/스텝 전투 조작 화면용 참가자별 활성 기술 배치 조회."""
+    return crud.get_battle_active_skills(db, session_id)
+
+
 @app.get("/battles/{session_id}", response_model=BattleSessionRead)
 def get_battle(session_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     return crud.get_battle_session(db, session_id, member)
@@ -1413,6 +1424,7 @@ async def upload_skill_image(
     # 브라우저/CDN이 예전 이미지를 계속 캐시해 보여주는 문제를 막는다(캐릭터 이미지 업로드와 동일 패턴).
     node.image_url = f"{result['public_url']}?v={int(time.time())}"
     db.commit()
+    crud.invalidate_active_battle_skills_cache()
     db.refresh(node)
     return crud._to_skill_node_read(node)
 

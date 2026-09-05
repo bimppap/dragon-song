@@ -981,6 +981,30 @@ class BattleSessionRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class BattleActiveSkillRead(BaseModel):
+    id: int
+    book: str
+    tier: int
+    default_name: str
+    display_name: str
+    image_url: str | None = None
+    trigger_type: SkillTriggerType | None = None
+    category: SkillCategory | None = None
+    stackable: bool | None = None
+    cost: float | None = None
+    power: float | None = None
+    powers: dict[str, float] = Field(default_factory=dict)
+    target: str | None = None
+    target_side: SkillTargetSide | None = None
+    activation_order: int | None = None
+    cleanse_count: int | None = None
+    description: str | None = None
+
+
+class BattleActiveSkillsRead(BaseModel):
+    skills_by_character: dict[int, list[BattleActiveSkillRead]] = Field(default_factory=dict)
+
+
 class BattleSessionSummary(BaseModel):
     id: int
     mode: BattleMode

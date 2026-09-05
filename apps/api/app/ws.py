@@ -6,6 +6,8 @@ from app.auth import is_admin_role
 from app.models import Member
 from app.schemas import BattleSessionRead
 
+SEND_TIMEOUT_SECONDS = 3.0
+
 
 class BattleConnectionManager:
     """세션별 WebSocket 커넥션을 메모리에 보관하고 브로드캐스트한다.
@@ -45,14 +47,17 @@ class BattleConnectionManager:
         room = self._rooms.get(session_id)
         if not room:
             return
-        dead: list[WebSocket] = []
-        for ws in room:
-            if ws is exclude:
-                continue
+        recipients = tuple(ws for ws in room if ws is not exclude)
+
+        async def send(ws: WebSocket) -> WebSocket | None:
             try:
-                await ws.send_json(message)
+                await asyncio.wait_for(ws.send_json(message), timeout=SEND_TIMEOUT_SECONDS)
+                return None
             except Exception:
-                dead.append(ws)
+                return ws
+
+        # 한 사용자의 느린 연결이 나머지 전체 전송을 순차적으로 막지 않게 한다.
+        dead = [ws for ws in await asyncio.gather(*(send(ws) for ws in recipients)) if ws is not None]
         for ws in dead:
             self.disconnect(session_id, ws)
 

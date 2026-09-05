@@ -17,8 +17,8 @@ import {
 import { cn } from "@/lib/utils";
 import {
   fetchBattle,
+  fetchBattleActiveSkills,
   fetchCharacterDetail,
-  fetchCharacterSkillTree,
   fetchCharacters,
   fetchEnemies,
   fetchEnvironments,
@@ -35,8 +35,7 @@ import {
   type BattleParticipant,
   type BattleSession,
   type BattleStatusEffect,
-  type CharacterSkillNode,
-  type CharacterSkillTree,
+  type BattleActiveSkill,
   type EnemySkill,
   type CharacterActionKind,
   type CharacterOwnedItem,
@@ -44,7 +43,6 @@ import {
   type Enemy,
   type EnemyActionKind,
   type Environment,
-  type SkillBook,
 } from "@/lib/api";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import AlertBanner from "@/components/common/AlertBanner";
@@ -317,7 +315,6 @@ const PHASE_LABEL: Record<BattleSession["phase"], string> = {
   enemy: "에너미 턴",
 };
 
-const BATTLE_SKILL_BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 const SELF_TARGET_SKILL_NAMES = new Set(["모루", "불굴"]);
 const SINGLE_ENEMY_SKILL_NAMES = new Set(["강타", "격류", "위해"]);
 const MULTI_ENEMY_SKILL_NAMES = new Set(["분쇄", "파괴"]);
@@ -331,25 +328,13 @@ const SELF_EXCLUDED_SKILL_NAMES = new Set(["충전"]);
 
 type BattleSkillTargetMode = "enemy-single" | "enemy-multi" | "ally-single" | "ally-multi" | "self" | "none";
 
-function pickBattleSkillsFromTrees(trees: CharacterSkillTree[]): CharacterSkillNode[] {
-  return trees.flatMap((tree) => {
-    const unlocked = tree.nodes
-      .filter((node) => node.is_public && node.unlocked && node.tier > 0)
-      .toSorted((a, b) => {
-        if (a.tier !== b.tier) return b.tier - a.tier;
-        return (b.unlocked_at ?? "").localeCompare(a.unlocked_at ?? "");
-      });
-    return unlocked[0] ? [unlocked[0]] : [];
-  });
-}
-
 /** 기술 대상은 SELF 또는 1 이상의 정수만 허용한다. 그 외 값은 대상 수를 알 수 없으므로 null이다. */
 function skillTargetCount(target: string | null): number | null {
   const text = (target ?? "").trim();
   return /^\d+$/.test(text) ? Math.max(1, Number(text)) : null;
 }
 
-function getBattleSkillTargetMode(skill: CharacterSkillNode): BattleSkillTargetMode {
+function getBattleSkillTargetMode(skill: BattleActiveSkill): BattleSkillTargetMode {
   if (SELF_TARGET_SKILL_NAMES.has(skill.default_name) || skill.target === "SELF") return "self";
   const configuredCount = skillTargetCount(skill.target);
   const multi = configuredCount != null && configuredCount > 1;
@@ -374,19 +359,19 @@ function getBattleSkillTargetMode(skill: CharacterSkillNode): BattleSkillTargetM
 }
 
 /** 서버(_skill_target_count)와 같이 기술에 적힌 기술 대상만 인원으로 쓴다. */
-function getBattleSkillTargetCount(skill: CharacterSkillNode): number {
+function getBattleSkillTargetCount(skill: BattleActiveSkill): number {
   return skillTargetCount(skill.target) ?? 1;
 }
 
-function firstBattleSkillId(skills: CharacterSkillNode[]) {
+function firstBattleSkillId(skills: BattleActiveSkill[]) {
   return skills[0]?.id ?? null;
 }
 
-function battleSkillCost(skill: CharacterSkillNode, p: BattleParticipant): number {
+function battleSkillCost(skill: BattleActiveSkill, p: BattleParticipant): number {
   return Math.max(0, Math.floor((skill.cost ?? 0) + p.skill_cost));
 }
 
-function affordableBattleSkills(skills: CharacterSkillNode[], p: BattleParticipant): CharacterSkillNode[] {
+function affordableBattleSkills(skills: BattleActiveSkill[], p: BattleParticipant): BattleActiveSkill[] {
   return skills.filter((skill) => p.mp >= battleSkillCost(skill, p));
 }
 
@@ -590,7 +575,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [bulkActionKind, setBulkActionKind] = useState<CharacterActionKind>("attack");
   const [telegraphDrafts, setTelegraphDrafts] = useState<Record<number, TelegraphDraft>>({});
   const [itemsByCharacter, setItemsByCharacter] = useState<Record<number, CharacterOwnedItem[]>>({});
-  const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, CharacterSkillNode[]>>({});
+  const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, BattleActiveSkill[]>>({});
   const [chapterEnvironments, setChapterEnvironments] = useState<Environment[]>([]);
   const [loadedEnvironmentChapter, setLoadedEnvironmentChapter] = useState<string | null>(null);
   const [participantSort, setParticipantSort] = useState<ParticipantSort>("attention");
@@ -605,7 +590,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [joiningEnemy, setJoiningEnemy] = useState(false);
 
   // controlled 모드(러너 관전 화면)에서는 부모가 이미 소켓을 갖고 있으므로 여기서는 연결하지 않는다.
-  const { send: sendBattleWs } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
+  const { connected: battleSocketConnected, send: sendBattleWs } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
     if (msg.type === "battle_update") {
       setSession(msg.session);
       setOwnDraftPreview(null);
@@ -646,7 +631,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   // 관전(readOnly) 화면은 아무도 행동을 제출하지 않으므로, 라운드 진행 상황을 놓치지 않도록 주기적으로 다시 불러온다.
   // (부모가 세션을 공급하는 controlled 모드에서는 부모가 이미 폴링하므로 중복 폴링을 하지 않는다.)
   useEffect(() => {
-    if (!readOnly || controlled || session?.status !== "in_progress") return;
+    if (!readOnly || controlled || battleSocketConnected || session?.status !== "in_progress") return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     async function poll() {
@@ -669,38 +654,35 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [readOnly, sessionId, controlled, session?.status]);
+  }, [readOnly, sessionId, controlled, battleSocketConnected, session?.status]);
+
+  const activeSkillParticipantKey = session?.participants
+    .map((participant) => participant.character_id)
+    .join(",") ?? "";
+  const activeSkillSessionId = session?.id ?? null;
+  const activeSkillStatus = session?.status;
 
   useEffect(() => {
-    if (readOnly || !session || session.status !== "in_progress") return;
-    const missingIds = session.participants
-      .map((participant) => participant.character_id)
-      .filter((characterId) => skillsByCharacter[characterId] == null);
-    if (missingIds.length === 0) return;
-
+    if (readOnly || activeSkillSessionId == null || activeSkillStatus !== "in_progress") return;
+    const sessionId = activeSkillSessionId;
     let cancelled = false;
 
     async function loadSkills() {
-      const loaded = await Promise.all(missingIds.map(async (characterId) => {
-        try {
-          const trees = await Promise.all(
-            BATTLE_SKILL_BOOKS.map((book) => fetchCharacterSkillTree(characterId, book)),
-          );
-          return [characterId, pickBattleSkillsFromTrees(trees)] as const;
-        } catch {
-          return [characterId, []] as const;
-        }
-      }));
-      if (cancelled) return;
-      setSkillsByCharacter((prev) => ({
-        ...prev,
-        ...Object.fromEntries(loaded),
-      }));
+      try {
+        const participantIds = activeSkillParticipantKey
+          .split(",")
+          .filter(Boolean)
+          .map(Number);
+        const loaded = await fetchBattleActiveSkills(sessionId, participantIds);
+        if (!cancelled) setSkillsByCharacter(loaded.skills_by_character);
+      } catch {
+        if (!cancelled) setSkillsByCharacter({});
+      }
     }
 
     void loadSkills();
     return () => { cancelled = true; };
-  }, [readOnly, session, skillsByCharacter]);
+  }, [readOnly, activeSkillSessionId, activeSkillStatus, activeSkillParticipantKey]);
 
   useEffect(() => {
     function syncCharDraftsWithSkills() {

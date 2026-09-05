@@ -23,7 +23,7 @@ export default function RunnerBattleOverview() {
   const [draftPreview, setDraftPreview] = useState<BattleDraftPreview | null>(null);
   const liveVersionRef = useRef<Pick<BattleSession, "id" | "updated_at"> | null>(null);
 
-  useBattleSocket(liveSession?.id ?? null, (msg) => {
+  const { connected: battleSocketConnected } = useBattleSocket(liveSession?.id ?? null, (msg) => {
     if (msg.type === "battle_update") {
       setLiveSession(msg.session);
       liveVersionRef.current = { id: msg.session.id, updated_at: msg.session.updated_at };
@@ -63,6 +63,8 @@ export default function RunnerBattleOverview() {
 
   // 관리자가 실전 전투를 시작했는지 주기적으로 확인해, 있으면 관전 화면으로 전환한다.
   useEffect(() => {
+    // 소켓이 살아 있는 동안에는 같은 전투 상태를 REST로 중복 확인하지 않는다.
+    if (battleSocketConnected) return;
     let cancelled = false;
     let polling = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -109,7 +111,7 @@ export default function RunnerBattleOverview() {
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [battleSocketConnected]);
 
   if (liveSession != null) {
     return (

@@ -165,6 +165,7 @@ const SHOP_STATUS_CACHE_TTL_MS = 15_000;
 const ENEMY_ENVIRONMENT_CACHE_TTL_MS = 60_000;
 const SKILL_NODE_CACHE_TTL_MS = 5 * 60_000;
 const CHARACTER_SKILL_CACHE_TTL_MS = 60_000;
+const BATTLE_ACTIVE_SKILLS_CACHE_TTL_MS = 60_000;
 
 /** 파일 업로드 전용: FormData 본문 + 인증 헤더 재시도를 공유한다(캐릭터/아이템/챕터/기술 이미지 업로드에서 재사용). */
 async function uploadFile<T>(path: string, file: File, fieldName = "file", errorMessage = "업로드 실패"): Promise<T> {
@@ -802,7 +803,7 @@ export async function updateCharacter(characterId: number, data: CharacterCreate
     method: "PUT",
     body: JSON.stringify(data),
   }, "캐릭터 수정 실패");
-  invalidateApiCache("characters:", "auth:", "skills:character:");
+  invalidateApiCache("characters:", "auth:", "skills:character:", "battles:active-skills:");
   return character;
 }
 
@@ -1810,10 +1811,12 @@ export async function terminateBattle(sessionId: number): Promise<BattleSession>
 }
 
 export async function joinBattle(sessionId: number, characterId: number): Promise<BattleSession> {
-  return request<BattleSession>(`/battles/${sessionId}/join`, {
+  const battle = await request<BattleSession>(`/battles/${sessionId}/join`, {
     method: "POST",
     body: JSON.stringify({ character_id: characterId }),
   }, "난입 실패");
+  invalidateApiCache(`battles:active-skills:${sessionId}:`);
+  return battle;
 }
 
 export async function joinBattleEnemy(sessionId: number, enemyId: number): Promise<BattleSession> {
@@ -1906,6 +1909,44 @@ export interface CharacterSkillTree {
   nodes: CharacterSkillNode[];
 }
 
+/** 전투 조작에 필요한 활성 기술만 담은 경량 응답. */
+export interface BattleActiveSkill {
+  id: number;
+  book: SkillBook;
+  tier: number;
+  default_name: string;
+  display_name: string;
+  image_url: string | null;
+  trigger_type: SkillTriggerType | null;
+  category: SkillCategory | null;
+  stackable: boolean | null;
+  cost: number | null;
+  power: number | null;
+  powers: Record<string, number>;
+  target: string | null;
+  target_side: SkillTargetSide | null;
+  activation_order: number | null;
+  cleanse_count: number | null;
+  description: string | null;
+}
+
+export interface BattleActiveSkills {
+  skills_by_character: Record<number, BattleActiveSkill[]>;
+}
+
+export async function fetchBattleActiveSkills(
+  sessionId: number,
+  participantIds: number[],
+): Promise<BattleActiveSkills> {
+  const participantKey = [...participantIds].sort((a, b) => a - b).join(",");
+  return cachedRequest<BattleActiveSkills>(
+    `battles:active-skills:${sessionId}:${participantKey}`,
+    `/battles/${sessionId}/active-skills`,
+    BATTLE_ACTIVE_SKILLS_CACHE_TTL_MS,
+    "전투 활성 기술 조회 실패",
+  );
+}
+
 export async function fetchSkillNodes(book: SkillBook): Promise<SkillNode[]> {
   return cachedRequest<SkillNode[]>(
     `skills:nodes:${book}`,
@@ -1937,6 +1978,7 @@ export async function updateSkillNode(
     body: JSON.stringify(data),
   }, "기술 수정 실패");
   invalidateApiCache("skills:");
+  invalidateApiCache("battles:active-skills:");
   return node;
 }
 
@@ -1946,12 +1988,14 @@ export async function updateSkillVisibility(maxPublicTier: number): Promise<Skil
     body: JSON.stringify({ max_public_tier: maxPublicTier }),
   }, "기술 공개 단계 저장 실패");
   invalidateApiCache("skills:");
+  invalidateApiCache("battles:active-skills:");
   return nodes;
 }
 
 export async function uploadSkillImage(nodeId: number, file: File): Promise<SkillNode> {
   const node = await uploadFile<SkillNode>(`/skills/${nodeId}/image`, file, "file", "기술 이미지 업로드 실패");
   invalidateApiCache("skills:");
+  invalidateApiCache("battles:active-skills:");
   return node;
 }
 
@@ -1969,6 +2013,7 @@ export async function unlockCharacterSkill(characterId: number, nodeId: number):
     method: "POST",
   }, "기술 강화 실패");
   invalidateApiCache(`skills:character:${characterId}:`, "characters:");
+  invalidateApiCache("battles:active-skills:");
   return tree;
 }
 
@@ -1982,6 +2027,7 @@ export async function renameCharacterSkill(
     body: JSON.stringify({ custom_name: customName }),
   }, "기술 이름 설정 실패");
   invalidateApiCache(`skills:character:${characterId}:`, "characters:");
+  invalidateApiCache("battles:active-skills:");
   return tree;
 }
 
@@ -1997,6 +2043,7 @@ export async function uploadCharacterSkillImage(
     "기술 이미지 설정 실패",
   );
   invalidateApiCache(`skills:character:${characterId}:`, "characters:");
+  invalidateApiCache("battles:active-skills:");
   return tree;
 }
 

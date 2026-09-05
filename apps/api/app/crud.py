@@ -1,6 +1,9 @@
+import copy
 import math
 import random
 import re
+import threading
+import time
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -583,6 +586,7 @@ def _assign_character_stats(character: Character, data: CharacterCreate) -> None
 def _replace_character_skills_unrestricted(db: Session, character: Character, skill_node_ids: list[int]) -> None:
     """선행 기술/계열/SP 제한 없이 기술 목록을 통째로 교체한다(관리자가 만든 캐릭터 전용)."""
     db.query(CharacterSkillUnlock).filter(CharacterSkillUnlock.character_id == character.id).delete()
+    invalidate_active_battle_skills_cache([character.id])
     if not skill_node_ids:
         return
     node_ids = sorted(set(skill_node_ids))
@@ -696,6 +700,7 @@ def delete_character(db: Session, character_id: int) -> str | None:
     db.query(Reward).filter(Reward.character_id == character_id).delete()
     db.query(CharacterItemState).filter(CharacterItemState.character_id == character_id).delete()
     db.query(CharacterSkillUnlock).filter(CharacterSkillUnlock.character_id == character_id).delete()
+    invalidate_active_battle_skills_cache([character_id])
     db.query(Purchase).filter(Purchase.character_id == character_id).delete()
     db.query(ItemUsage).filter(ItemUsage.character_id == character_id).delete()
     db.query(ChallengeProgress).filter(ChallengeProgress.character_id == character_id).delete()
@@ -4339,13 +4344,18 @@ def _apply_item_effects_to_snapshot(db: Session, p: dict, effects: list[dict], s
     return notes, deltas
 
 
-def _get_active_battle_skills_by_character(db: Session, character_ids: list[int]) -> dict[int, dict[int, dict]]:
+def _query_active_battle_skills_by_character(db: Session, character_ids: list[int]) -> dict[int, dict[int, dict]]:
     if not character_ids:
         return {}
 
     for book in SKILL_BOOK_ORDER:
         _seed_skill_tree_if_empty(db, book)
 
+    skill_levels = dict(
+        db.query(Character.id, Character.skill_lv)
+        .filter(Character.id.in_(character_ids))
+        .all()
+    )
     rows = (
         db.query(CharacterSkillUnlock, SkillNode)
         .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
@@ -4377,7 +4387,12 @@ def _get_active_battle_skills_by_character(db: Session, character_ids: list[int]
             "book": node.book,
             "tier": node.tier,
             "default_name": _resolved_skill_node_name(node),
-            "display_name": _skill_display_name(node, skill_lv=0, custom_name=unlock.custom_name),
+            "display_name": _skill_display_name(
+                node,
+                skill_lv=skill_levels.get(character_id, 0),
+                custom_name=unlock.custom_name,
+            ),
+            "image_url": unlock.custom_image_url or node.image_url,
             "trigger_type": _resolved_skill_node_value(node, "trigger_type"),
             "category": _resolved_skill_node_value(node, "category"),
             "stackable": _resolved_skill_node_value(node, "stackable"),
@@ -4393,6 +4408,71 @@ def _get_active_battle_skills_by_character(db: Session, character_ids: list[int]
             "var_name": _resolved_skill_node_value(node, "var_name"),
         }
     return by_character
+
+
+# 관리자 전투 화면은 참가자마다 4개 기술 트리를 따로 읽지 않고, 이 배치 조회 결과를
+# 짧게 공유한다. 전투 계산은 아래 캐시를 거치지 않아 기술 수정값을 즉시 반영한다.
+_ACTIVE_BATTLE_SKILLS_CACHE_TTL_SECONDS = 60.0
+_active_battle_skills_cache: dict[tuple[int, ...], tuple[float, dict[int, dict[int, dict]]]] = {}
+_active_battle_skills_cache_lock = threading.RLock()
+
+
+def invalidate_active_battle_skills_cache(character_ids: list[int] | None = None) -> None:
+    with _active_battle_skills_cache_lock:
+        if character_ids is None:
+            _active_battle_skills_cache.clear()
+            return
+        changed = set(character_ids)
+        for key in list(_active_battle_skills_cache):
+            if changed.intersection(key):
+                _active_battle_skills_cache.pop(key, None)
+
+
+def _get_cached_active_battle_skills_by_character(
+    db: Session,
+    character_ids: list[int],
+) -> dict[int, dict[int, dict]]:
+    key = tuple(sorted(set(character_ids)))
+    if not key:
+        return {}
+    now = time.monotonic()
+    # 잠금 안에서 최초 조회까지 끝내 동시에 열린 관리자 화면이 같은 DB 조회를
+    # 중복 실행하는 캐시 스탬피드도 막는다.
+    with _active_battle_skills_cache_lock:
+        for cached_key, (expires_at, _cached_value) in list(_active_battle_skills_cache.items()):
+            if now >= expires_at:
+                _active_battle_skills_cache.pop(cached_key, None)
+        cached = _active_battle_skills_cache.get(key)
+        if cached is not None and now < cached[0]:
+            return copy.deepcopy(cached[1])
+        result = _query_active_battle_skills_by_character(db, list(key))
+        _active_battle_skills_cache[key] = (
+            time.monotonic() + _ACTIVE_BATTLE_SKILLS_CACHE_TTL_SECONDS,
+            copy.deepcopy(result),
+        )
+        return result
+
+
+def get_battle_active_skills(db: Session, session_id: int) -> dict:
+    participants = db.query(BattleSession.participants).filter(BattleSession.id == session_id).scalar()
+    if participants is None:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    character_ids = [
+        int(participant["character_id"])
+        for participant in (participants or [])
+        if participant.get("character_id") is not None
+    ]
+    by_character = _get_cached_active_battle_skills_by_character(db, character_ids)
+    book_order = {book: index for index, book in enumerate(SKILL_BOOK_ORDER)}
+    return {
+        "skills_by_character": {
+            character_id: sorted(
+                skills.values(),
+                key=lambda skill: (book_order.get(skill["book"], len(book_order)), skill["id"]),
+            )
+            for character_id, skills in by_character.items()
+        }
+    }
 
 
 def _empty_battle_log_metrics() -> dict[str, int]:
@@ -5104,7 +5184,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
     actions_by_char = {a.character_id: a for a in data.character_actions}
     skill_book_order = {book: index for index, book in enumerate(SKILL_BOOK_ORDER)}
-    battle_skills_by_character = _get_active_battle_skills_by_character(
+    battle_skills_by_character = _query_active_battle_skills_by_character(
         db,
         [p["character_id"] for p in participants],
     )
@@ -6724,6 +6804,7 @@ def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> Skill
         node.powers = {key: float(value) for key, value in data.powers.items() if key != "power"}
     _normalize_duplicate_skill_node_names(db, book=node.book)
     db.commit()
+    invalidate_active_battle_skills_cache()
     db.refresh(node)
     return _to_skill_node_read(node)
 
@@ -6740,6 +6821,7 @@ def update_skill_visibility(db: Session, data: SkillVisibilityUpdate) -> list[Sk
         node.is_public = node.tier <= data.max_public_tier
     _normalize_duplicate_skill_node_names(db)
     db.commit()
+    invalidate_active_battle_skills_cache()
     return [_to_skill_node_read(node) for node in nodes]
 
 
@@ -6931,6 +7013,7 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
         applied_effects=applied_effects,
     ))
     db.commit()
+    invalidate_active_battle_skills_cache([character.id])
 
     return get_character_skill_tree(db, character.id, node.book)
 
@@ -6954,6 +7037,7 @@ def _reset_character_skills(db: Session, character: Character) -> None:
         _apply_item_effects(character, unlock.applied_effects or [], sign=-1)
         character.sp += unlock.sp_spent
         db.delete(unlock)
+    invalidate_active_battle_skills_cache([character.id])
 
 
 def _get_character_skill_unlock_or_404(db: Session, character_id: int, node_id: int) -> tuple[SkillNode, CharacterSkillUnlock]:
@@ -6976,6 +7060,7 @@ def rename_character_skill(db: Session, character_id: int, node_id: int, custom_
     node, unlock = _get_character_skill_unlock_or_404(db, character.id, node_id)
     unlock.custom_name = custom_name.strip() or None
     db.commit()
+    invalidate_active_battle_skills_cache([character.id])
     return get_character_skill_tree(db, character.id, node.book)
 
 
@@ -6984,6 +7069,7 @@ def set_character_skill_image(db: Session, character_id: int, node_id: int, imag
     node, unlock = _get_character_skill_unlock_or_404(db, character.id, node_id)
     unlock.custom_image_url = image_url
     db.commit()
+    invalidate_active_battle_skills_cache([character.id])
     return get_character_skill_tree(db, character.id, node.book)
 
 
