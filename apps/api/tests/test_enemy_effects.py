@@ -199,6 +199,92 @@ class EnemyEffectsTest(unittest.TestCase):
         self.assertEqual(battle.participants[0]["env_stacks"][str(env.id)], 3)
         self.assertEqual([p["hp"] for p in battle.participants], [hp_after_telegraph, 100, 100])
 
+    def test_downed_character_loses_attention_and_all_environment_stacks(self):
+        environment = crud.create_environment(
+            self.db,
+            EnvironmentCreate(chapter="1장", name="독", stacks_per_round=0),
+        )
+        attack = EnemySkill(skill_type="지정 공격", name="강타", target_count=1, damage_percent=100)
+        battle = self.battle([attack])
+        target_id = self.party[0]["character_id"]
+        participants = [dict(participant) for participant in battle.participants]
+        participants[0].update(
+            attn=37,
+            env_stacks={str(environment.id): 3},
+            env_stack_order=[str(environment.id)] * 3,
+        )
+        crud._add_combat_stat_stack(
+            participants[0],
+            source="test:stack",
+            name="약화",
+            stat="atk",
+            amount=20,
+            percent=True,
+            stackable=True,
+        )
+        battle.participants = participants
+        battle.enemies = [{**battle.enemies[0], "attack": 100}]
+        self.db.commit()
+
+        self.telegraph(battle, 0, [target_id])
+        result = self.enemy_turn(battle)
+        target = next(p for p in result.participants if p["character_id"] == target_id)
+
+        self.assertTrue(target["downed"])
+        self.assertEqual(target["attn"], 0)
+        self.assertEqual(target["env_stacks"], {})
+        self.assertEqual(target["env_stack_order"], [])
+        self.assertEqual(target["status_effects"], [])
+        self.assertEqual(target["atk"], 100)
+
+    def test_environment_damage_does_not_reapply_stacks_after_downing(self):
+        environment = crud.create_environment(
+            self.db,
+            EnvironmentCreate(chapter="1장", name="맹독", stacks_per_round=2, damage_per_stack=100),
+        )
+        battle = self.battle()
+        participants = [dict(participant) for participant in battle.participants]
+        participants[0].update(
+            attn=19,
+            env_stacks={str(environment.id): 1},
+            env_stack_order=[str(environment.id)],
+        )
+        battle.participants = participants
+        self.db.commit()
+
+        result = self.telegraph(battle)
+        target = result.participants[0]
+
+        self.assertTrue(target["downed"])
+        self.assertEqual(target["attn"], 0)
+        self.assertEqual(target["env_stacks"], {})
+        self.assertEqual(target["env_stack_order"], [])
+
+    def test_telegraph_ongoing_damage_persists_into_ally_turn(self):
+        battle = self.battle()
+        battle.enemies = [{
+            **battle.enemies[0],
+            "status_effects": [{
+                "effect_type": "ongoing_damage",
+                "affinity": "debuff",
+                "trigger_phase": "telegraph",
+                "damage": 125,
+                "source_character_id": self.party[0]["character_id"],
+                "source_name": "A",
+                "skill_name": "위해",
+                "var_name": "ab_harm",
+                "stackable": True,
+            }],
+        }]
+        self.db.commit()
+
+        telegraph = self.telegraph(battle)
+        self.assertEqual(telegraph.enemies[0]["hp"], 875)
+        self.assertIn("[875/1000]", telegraph.log[-1]["events"][0])
+
+        ally_turn = crud.resolve_battle_ally_turn(self.db, battle.id, BattleAllyTurnRequest())
+        self.assertEqual(ally_turn.enemies[0]["hp"], 875)
+
     def test_snapshot_is_not_mutated_and_guard_blocks(self):
         original = copy.deepcopy(self.party[0])
         original["status_effects"] = [{"effect_type": "purification_guard", "stacks": 1}]

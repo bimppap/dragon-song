@@ -3476,6 +3476,14 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
     current = getattr(node, field)
     if field == "default_name" and _skill_node_is_unsynced(node, spec):
         return current if current not in (None, "") else spec.get("default_name")
+    if field == "cleanse_count" and current in (None, 0):
+        # 정화의 해제 수는 cleanse_count 컬럼으로 옮기기 전에 powers JSON에 저장됐다.
+        # 당시 관리 화면이 별도의 환경 스택 제거 수(기본 0)도 함께 저장했기 때문에,
+        # 컬럼 이름을 바꾼 기존 DB에서는 그 0이 정화의 실제 단계값을 가릴 수 있다.
+        # 새 관리 화면에서 저장하면 legacy 키가 제거되므로 이후에는 명시적인 0도 그대로 존중한다.
+        legacy_cleanse_count = (node.powers or {}).get("cleanse_count")
+        if legacy_cleanse_count is not None:
+            return legacy_cleanse_count
     if current is None or current == "":
         return spec.get(field)
     return current
@@ -3695,6 +3703,25 @@ def _ensure_combatant_snapshot_defaults(p: dict) -> None:
     p.setdefault("env_stacks", {})
     p.setdefault("env_stack_order", [])
     _ensure_status_effects(p)
+
+
+def _mark_combatant_downed(target: dict) -> bool:
+    """HP가 소진된 참가자를 기절시키고 전투 중 누적값과 상태 효과를 초기화한다."""
+    if target["hp"] > 0:
+        return False
+    newly_downed = not bool(target.get("downed"))
+    for effect in _ensure_status_effects(target):
+        if effect.get("effect_type") != "stat_modifier":
+            continue
+        stat = effect.get("stat")
+        if isinstance(stat, str):
+            target[stat] = target.get(stat, 0) - effect.get("applied_delta", 0)
+    target["downed"] = True
+    target["attn"] = 0
+    target["env_stacks"] = {}
+    target["env_stack_order"] = []
+    target["status_effects"] = []
+    return newly_downed
 
 
 def _legacy_join_reward_was_counted(session: BattleSession, participant: dict) -> bool:
@@ -3985,8 +4012,7 @@ def _apply_minion_phase(participants: list[dict], enemies: list[dict], summons: 
                     damage = max(0, _floor_amount(raw * (1 - target.get("dmg_r", 0))))
                     damage, absorbed = _apply_hit(target, damage)
                     events.append(f"💥 하수인 {name} 폭발 → {target['name']} {damage} 피해 [{target['hp']}/{target['max_hp']}]")
-                    if target["hp"] <= 0:
-                        target["downed"] = True
+                    _mark_combatant_downed(target)
         minion["last_trigger_round"] = round_no
         if kind == "explosion":
             minion["hp"] = 0
@@ -4999,6 +5025,8 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         damage_events: list[str] = []
         newly_downed_names: list[str] = []
         for p in affected:
+            if not _combatant_targetable(p, round_no):
+                continue
             current_stacks = max(0, int(p["env_stacks"].get(str(env.id), 0)))
             dmg = current_stacks * env.damage_per_stack
             if dmg > 0:
@@ -5009,16 +5037,16 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 calculations[damage_event] = (
                     f"환경 데미지 {_formula_number(env.damage_per_stack)} × 보유 스택수 {current_stacks}"
                 )
-                if p["hp"] == 0 and not p["downed"]:
-                    p["downed"] = True
+                if _mark_combatant_downed(p):
                     newly_downed_names.append(p["name"])
-            _apply_environment_stack_delta(
-                p,
-                environment_id=env.id,
-                stack_delta=env.stacks_per_round,
-                stackable=env.stackable,
-                max_stacks=env.max_stacks,
-            )
+            if _combatant_active(p):
+                _apply_environment_stack_delta(
+                    p,
+                    environment_id=env.id,
+                    stack_delta=env.stacks_per_round,
+                    stackable=env.stackable,
+                    max_stacks=env.max_stacks,
+                )
         if damage_events:
             events.append(f"🌫️ 환경 · {env.name}")
             events.extend(damage_events)
@@ -5137,6 +5165,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     session.pending_enemy_actions = pending_actions
     session.phase = "ally"
     session.participants = participants
+    session.enemies = enemies
     session.summons = [summon for summon in summons if summon["hp"] > 0]
     session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
 
@@ -6391,8 +6420,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · {recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
                 )
                 calculations[events[-1]] = damage_formula
-                if recipient["hp"] == 0 and not recipient["downed"]:
-                    recipient["downed"] = True
+                if _mark_combatant_downed(recipient):
                     newly_downed_names.append(recipient["name"])
                 for counter in counter_results:
                     events.append(
@@ -6430,8 +6458,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 f"{recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
             )
             calculations[events[-1]] = damage_formula
-            if recipient["hp"] == 0 and not recipient["downed"]:
-                recipient["downed"] = True
+            if _mark_combatant_downed(recipient):
                 events.append(f"💫 {recipient['name']} 기절")
             for counter in counter_results:
                 events.append(
