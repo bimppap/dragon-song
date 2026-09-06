@@ -1940,6 +1940,18 @@ export interface BattleActiveSkills {
   skills_by_character: Record<number, BattleActiveSkill[]>;
 }
 
+export interface BattleAvailableItems {
+  items_by_character: Record<number, CharacterOwnedItem[]>;
+}
+
+export async function fetchBattleAvailableItems(sessionId: number): Promise<BattleAvailableItems> {
+  return request<BattleAvailableItems>(
+    `/battles/${sessionId}/available-items`,
+    undefined,
+    "전투 아이템 조회 실패",
+  );
+}
+
 export async function fetchBattleActiveSkills(
   sessionId: number,
   participantIds: number[],

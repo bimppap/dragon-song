@@ -1005,6 +1005,10 @@ class BattleActiveSkillsRead(BaseModel):
     skills_by_character: dict[int, list[BattleActiveSkillRead]] = Field(default_factory=dict)
 
 
+class BattleAvailableItemsRead(BaseModel):
+    items_by_character: dict[int, list[CharacterOwnedItemRead]] = Field(default_factory=dict)
+
+
 class BattleSessionSummary(BaseModel):
     id: int
     mode: BattleMode

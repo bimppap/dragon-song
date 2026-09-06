@@ -35,6 +35,7 @@ from app.schemas import (
     AutoAttendanceCharacterResult,
     AutoAttendanceResult,
     BattleAllyTurnRequest,
+    BattleAvailableItemsRead,
     CharacterActionInput,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
@@ -4499,6 +4500,78 @@ def get_battle_active_skills(db: Session, session_id: int) -> dict:
             for character_id, skills in by_character.items()
         }
     }
+
+
+def get_battle_available_items(db: Session, session_id: int) -> BattleAvailableItemsRead:
+    """전투 참가자 전원의 사용 가능한 소비 아이템을 배치 조회한다."""
+    participants = db.query(BattleSession.participants).filter(BattleSession.id == session_id).scalar()
+    if participants is None:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+
+    character_ids = sorted({
+        int(participant["character_id"])
+        for participant in (participants or [])
+        if participant.get("character_id") is not None
+    })
+    items_by_character: dict[int, list[CharacterOwnedItemRead]] = {
+        character_id: [] for character_id in character_ids
+    }
+    if not character_ids:
+        return BattleAvailableItemsRead(items_by_character=items_by_character)
+
+    owned_rows = (
+        db.query(
+            Purchase.character_id,
+            Purchase.item_id,
+            func.coalesce(func.sum(Purchase.quantity), 0).label("quantity"),
+        )
+        .join(Item, Purchase.item_id == Item.id)
+        .filter(Purchase.character_id.in_(character_ids), Item.item_type == "consumable")
+        .group_by(Purchase.character_id, Purchase.item_id)
+        .all()
+    )
+    item_ids = sorted({row.item_id for row in owned_rows})
+    if not item_ids:
+        return BattleAvailableItemsRead(items_by_character=items_by_character)
+
+    items = {
+        item.id: item
+        for item in db.query(Item).filter(Item.id.in_(item_ids)).all()
+    }
+    states = {
+        (state.character_id, state.item_id): state
+        for state in db.query(CharacterItemState).filter(
+            CharacterItemState.character_id.in_(character_ids),
+            CharacterItemState.item_id.in_(item_ids),
+        ).all()
+    }
+
+    for row in owned_rows:
+        item = items.get(row.item_id)
+        if item is None:
+            continue
+        state = states.get((row.character_id, row.item_id))
+        used_quantity = state.used_quantity if state is not None else 0
+        if row.quantity <= used_quantity:
+            continue
+        if any(effect.get("stat") == "challenge_acquisition" for effect in (item.effects or [])):
+            continue
+        items_by_character[row.character_id].append(CharacterOwnedItemRead(
+            item_id=item.id,
+            item_name=item.name,
+            item_description=(item.description_after_purchase if item.special_merchant else item.description_user),
+            item_image_url=(item.image_after_purchase_url if item.special_merchant else item.image_url),
+            item_type=item.item_type,
+            effects=item.effects or [],
+            quantity=int(row.quantity),
+            used_quantity=used_quantity,
+            equipped=state.equipped if state is not None else False,
+            battle_only=item.battle_only,
+        ))
+
+    for available_items in items_by_character.values():
+        available_items.sort(key=lambda item: (item.item_name, item.item_id))
+    return BattleAvailableItemsRead(items_by_character=items_by_character)
 
 
 def _empty_battle_log_metrics() -> dict[str, int]:

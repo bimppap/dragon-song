@@ -7,7 +7,16 @@ from sqlalchemy.orm import Session
 
 from app import crud
 from app.db import Base
-from app.models import KST, BattleSession, Character, CharacterSkillUnlock, SkillNode
+from app.models import (
+    KST,
+    BattleSession,
+    Character,
+    CharacterItemState,
+    CharacterSkillUnlock,
+    Item,
+    Purchase,
+    SkillNode,
+)
 
 
 class BattlePerformanceTest(unittest.TestCase):
@@ -116,6 +125,67 @@ class BattlePerformanceTest(unittest.TestCase):
         self.assertEqual(statements, [])
         self.assertEqual(second[character.id][node.id]["display_name"], "캐시 기술")
         self.assertEqual(second[character.id][node.id]["image_url"], "https://example.com/cached.webp")
+
+    def test_battle_available_items_are_loaded_in_bounded_queries(self):
+        first = Character(name="아이템 사용자 A")
+        second = Character(name="아이템 사용자 B")
+        usable = Item(name="회복약", description_user="회복", item_type="consumable", effects=[{"stat": "hp", "delta": 10}])
+        exhausted = Item(name="빈 물약", description_user="소진", item_type="consumable", effects=[])
+        challenge = Item(
+            name="도전과제 증표",
+            description_user="전투 사용 불가",
+            item_type="consumable",
+            effects=[{"stat": "challenge_acquisition", "delta": 1, "chapter": "chapter"}],
+        )
+        accessory = Item(name="반지", description_user="장신구", item_type="accessory", effects=[])
+        self.db.add_all([first, second, usable, exhausted, challenge, accessory])
+        self.db.flush()
+        self.db.add_all([
+            Purchase(character_id=first.id, item_id=usable.id, quantity=2),
+            Purchase(character_id=second.id, item_id=usable.id, quantity=1),
+            Purchase(character_id=first.id, item_id=exhausted.id, quantity=1),
+            Purchase(character_id=first.id, item_id=challenge.id, quantity=1),
+            Purchase(character_id=first.id, item_id=accessory.id, quantity=1),
+            CharacterItemState(character_id=first.id, item_id=usable.id, used_quantity=1),
+            CharacterItemState(character_id=first.id, item_id=exhausted.id, used_quantity=1),
+        ])
+        battle = BattleSession(
+            mode="real",
+            chapter="chapter",
+            status="in_progress",
+            participants=[{"character_id": first.id}, {"character_id": second.id}],
+            enemies=[],
+            summons=[],
+            log=[],
+        )
+        self.db.add(battle)
+        self.db.commit()
+        battle_id = battle.id
+        first_id = first.id
+        second_id = second.id
+
+        statements: list[str] = []
+
+        def record_statement(_conn, _cursor, statement, _parameters, _context, _executemany):
+            if statement.lstrip().lower().startswith("select"):
+                statements.append(statement.lower())
+
+        event.listen(self.engine, "before_cursor_execute", record_statement)
+        try:
+            result = crud.get_battle_available_items(self.db, battle_id)
+        finally:
+            event.remove(self.engine, "before_cursor_execute", record_statement)
+
+        self.assertEqual(len(statements), 4)
+        self.assertEqual(set(result.items_by_character), {first_id, second_id})
+        self.assertEqual(
+            [(item.item_name, item.quantity, item.used_quantity) for item in result.items_by_character[first_id]],
+            [("회복약", 2, 1)],
+        )
+        self.assertEqual(
+            [(item.item_name, item.quantity, item.used_quantity) for item in result.items_by_character[second_id]],
+            [("회복약", 1, 0)],
+        )
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ import { cn } from "@/lib/utils";
 import {
   fetchBattle,
   fetchBattleActiveSkills,
-  fetchCharacterDetail,
+  fetchBattleAvailableItems,
   fetchCharacters,
   fetchEnemies,
   fetchEnvironments,
@@ -599,6 +599,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [bulkActionKind, setBulkActionKind] = useState<CharacterActionKind>("attack");
   const [telegraphDrafts, setTelegraphDrafts] = useState<Record<number, TelegraphDraft>>({});
   const [itemsByCharacter, setItemsByCharacter] = useState<Record<number, CharacterOwnedItem[]>>({});
+  const itemsLoadPromiseRef = useRef<Promise<void> | null>(null);
+  const itemsLoadedRef = useRef(false);
+  const itemsLoadVersionRef = useRef(0);
   const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, BattleActiveSkill[]>>({});
   const [chapterEnvironments, setChapterEnvironments] = useState<Environment[]>([]);
   const [loadedEnvironmentChapter, setLoadedEnvironmentChapter] = useState<string | null>(null);
@@ -617,6 +620,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const { connected: battleSocketConnected, send: sendBattleWs, clientId: battleClientId } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
     if (msg.type === "battle_update") {
       setSession(msg.session);
+      invalidateAvailableItems();
       setOwnDraftPreview(null);
       setRemoteEditing({});
       setLocalEditing({});
@@ -973,23 +977,38 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     patchTelegraph(enemyId, { target_character_ids });
   }
 
-  async function ensureItemsLoaded(characterId: number) {
-    if (itemsByCharacter[characterId]) return;
-    try {
-      const detail = await fetchCharacterDetail(characterId);
-      setItemsByCharacter((prev) => ({
-        ...prev,
-        [characterId]: detail.owned_items.filter((i) => i.item_type === "consumable" && i.quantity > i.used_quantity && !i.effects.some((effect) => effect.stat === "challenge_acquisition")),
-      }));
-    } catch {
-      setItemsByCharacter((prev) => ({ ...prev, [characterId]: [] }));
-    }
+  function invalidateAvailableItems() {
+    itemsLoadVersionRef.current += 1;
+    itemsLoadedRef.current = false;
+    itemsLoadPromiseRef.current = null;
+    setItemsByCharacter({});
+  }
+
+  async function ensureItemsLoaded() {
+    if (!session || itemsLoadedRef.current) return;
+    if (itemsLoadPromiseRef.current) return itemsLoadPromiseRef.current;
+
+    const loadVersion = itemsLoadVersionRef.current;
+    const load = fetchBattleAvailableItems(session.id)
+      .then((result) => {
+        if (itemsLoadVersionRef.current !== loadVersion) return;
+        setItemsByCharacter(result.items_by_character);
+        itemsLoadedRef.current = true;
+      })
+      .catch(() => {
+        if (itemsLoadVersionRef.current !== loadVersion) return;
+        setItemsByCharacter({});
+      })
+      .finally(() => {
+        if (itemsLoadVersionRef.current === loadVersion) itemsLoadPromiseRef.current = null;
+      });
+    itemsLoadPromiseRef.current = load;
+    return load;
   }
 
   function applyBulkCharacterAction() {
     if (!session) return;
     const hasDowned = session.participants.some((p) => p.downed);
-    const characterIds: number[] = [];
     setCharDrafts((prev) => Object.fromEntries(
       Object.entries(prev).map(([characterId, draft]) => {
         const numericCharacterId = Number(characterId);
@@ -998,7 +1017,6 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) return [characterId, draft];
         const affordableSkills = affordableBattleSkills(battleSkills, p);
         if (bulkActionKind === "skill" && affordableSkills.length === 0) return [characterId, draft];
-        if (bulkActionKind === "item") characterIds.push(numericCharacterId);
         return [characterId, {
           ...draft,
           kind: bulkActionKind,
@@ -1011,7 +1029,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       }),
     ));
     if (bulkActionKind === "item") {
-      void Promise.all(characterIds.map((characterId) => ensureItemsLoaded(characterId)));
+      void ensureItemsLoaded();
     }
   }
 
@@ -1061,6 +1079,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       setSubmitting(true);
       const updated = await submitBattleAllyTurn(session.id, characterActions);
       setSession(updated);
+      invalidateAvailableItems();
       resetCharDrafts(updated);
       resetTelegraphDrafts(updated);
     } catch (e) {
@@ -1099,6 +1118,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       setUndoing(true);
       const updated = await undoLastBattleTurn(session.id);
       setSession(updated);
+      invalidateAvailableItems();
       resetCharDrafts(updated);
       resetTelegraphDrafts(updated);
     } catch (e) {
@@ -1157,6 +1177,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       setJoining(true);
       const updated = await joinBattle(session.id, Number(joinCharacterId));
       setSession(updated);
+      invalidateAvailableItems();
       resetCharDrafts(updated);
       resetTelegraphDrafts(updated);
       setJoinOpen(false);
@@ -1776,7 +1797,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       nextPatch.target_character_id = p.character_id;
                     }
                     patchChar(p.character_id, nextPatch);
-                    if (kind === "item") void ensureItemsLoaded(p.character_id);
+                    if (kind === "item") void ensureItemsLoaded();
                   }}
                 >
                   <SelectTrigger className={cn("h-auto min-h-8 w-full text-[11px] [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:text-left", editingClassName(actionInputId, "action"))}>
@@ -2007,7 +2028,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                 ? "전투가 조기 종료되었습니다."
                 : "전투 패배... 모든 캐릭터가 기절/퇴각했습니다."}
           </div>
-          <BattleRewardCard session={rewardCardSession} />
+          {isAdmin ? <BattleRewardCard session={rewardCardSession} /> : null}
         </div>
       ) : canAct ? (
         <div className="flex flex-wrap items-center gap-2">

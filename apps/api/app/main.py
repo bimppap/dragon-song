@@ -35,6 +35,7 @@ from app.schemas import (
     AttendanceStreakEntry,
     AutoAttendanceResult,
     BattleActiveSkillsRead,
+    BattleAvailableItemsRead,
     BattleAllyTurnRequest,
     BattleEnemyJoinRequest,
     BattleJoinRequest,
@@ -1219,6 +1220,16 @@ def get_battle_active_skills(
 ):
     """관리자/스텝 전투 조작 화면용 참가자별 활성 기술 배치 조회."""
     return crud.get_battle_active_skills(db, session_id)
+
+
+@app.get("/battles/{session_id}/available-items", response_model=BattleAvailableItemsRead)
+def get_battle_available_items(
+    session_id: int,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """관리자/스텝 전투 조작 화면용 참가자별 사용 가능 소비 아이템 조회."""
+    return crud.get_battle_available_items(db, session_id)
 
 
 @app.get("/battles/{session_id}", response_model=BattleSessionRead)
