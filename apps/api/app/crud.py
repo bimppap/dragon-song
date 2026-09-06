@@ -5180,6 +5180,29 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     # 하나뿐이면 문자열 그대로.
     calculations: dict[str, str | list[str]] = {}
 
+    # MP 소모는 그 행동이 남긴 첫 로그 줄 끝에 "· MP -n [현재/최대]"로 덧붙인다.
+    pending_mp_note: dict[str, object] = {}
+
+    def _note_mp_spent(actor: dict, spent: int) -> None:
+        if spent > 0:
+            pending_mp_note.update({
+                "index": len(events),
+                "text": f" · MP -{spent} [{actor['mp']}/{actor['max_mp']}]",
+            })
+
+    def _flush_mp_note() -> None:
+        if not pending_mp_note:
+            return
+        index = int(pending_mp_note["index"])
+        text = str(pending_mp_note["text"])
+        pending_mp_note.clear()
+        if index >= len(events):
+            return
+        previous = events[index]
+        events[index] = previous + text
+        if previous in calculations:
+            calculations[events[index]] = calculations.pop(previous)
+
     by_char_id = {p["character_id"]: p for p in participants}
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
     actions_by_char = {a.character_id: a for a in data.character_actions}
@@ -5254,6 +5277,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         else:
             events.append(f"🛡️ {p['name']} 방어 태세 · +{attn_gain} 주목도")
         calculations[events[-1]] = attn_formula
+        _flush_mp_note()
 
     def _ordered_targetable_enemies(preferred_enemy_id: int | None) -> list[dict]:
         ordered = [enemy for enemy in enemies if _enemy_targetable(enemy, round_no)]
@@ -5378,29 +5402,6 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         resolved = dict(selected)
         resolved["display_name"] = _battle_skill_name(resolved)
         return resolved
-
-    # MP 소모는 그 행동이 남긴 첫 로그 줄 끝에 "· MP -n [현재/최대]"로 덧붙인다.
-    pending_mp_note: dict[str, object] = {}
-
-    def _note_mp_spent(actor: dict, spent: int) -> None:
-        if spent > 0:
-            pending_mp_note.update({
-                "index": len(events),
-                "text": f" · MP -{spent} [{actor['mp']}/{actor['max_mp']}]",
-            })
-
-    def _flush_mp_note() -> None:
-        if not pending_mp_note:
-            return
-        index = int(pending_mp_note["index"])
-        text = str(pending_mp_note["text"])
-        pending_mp_note.clear()
-        if index >= len(events):
-            return
-        previous = events[index]
-        events[index] = previous + text
-        if previous in calculations:
-            calculations[events[index]] = calculations.pop(previous)
 
     def _spend_skill_cost(actor: dict, skill: dict | None) -> None:
         skill_cost = _battle_skill_cost(actor, skill) if skill is not None else max(0, int(actor["skill_cost"]))
