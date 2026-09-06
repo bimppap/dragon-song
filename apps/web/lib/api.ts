@@ -33,7 +33,10 @@ async function tryRefreshAccessToken(): Promise<boolean> {
           body: JSON.stringify({ refresh_token: refreshToken }),
         });
         if (!res.ok) {
-          notifySessionExpired();
+          // refresh token이 실제로 거부된 경우에만 로그아웃한다.
+          // 서버 장애(5xx)나 일시적인 네트워크 오류까지 세션 만료로 처리하면
+          // 유효한 로그인 정보가 지워져 새로고침 뒤 로그인 화면으로 튕길 수 있다.
+          if (res.status === 401) notifySessionExpired();
           return false;
         }
         const data = await res.json();
@@ -64,9 +67,12 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
   };
 
   let res = await attempt();
-  // refresh token이 없거나 재발급이 실패하면 tryRefreshAccessToken 내부에서 notifySessionExpired()가 처리한다.
+  // refresh token이 없거나 서버가 refresh token을 거부하면 내부에서 세션 만료를 알린다.
+  // 네트워크/서버 장애로 재발급에 실패한 경우에는 로컬 로그인 정보를 유지한다.
   if (res.status === 401 && (await tryRefreshAccessToken())) {
     res = await attempt();
+    // 재발급한 액세스 토큰도 거부되면 더 이상 유지할 수 없는 세션이다.
+    if (res.status === 401) notifySessionExpired();
   }
   return res;
 }
