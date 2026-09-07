@@ -349,6 +349,9 @@ class ItemUsage(Base):
     selected_mission_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     selected_mission_name: Mapped[str | None] = mapped_column(String, nullable=True)
     granted_experience: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    # 기술·능력치 초기화 효과로 되돌려받은 SP/AP(사용 이력 표시용).
+    refunded_sp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    refunded_ap: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)

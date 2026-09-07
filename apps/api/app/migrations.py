@@ -387,6 +387,8 @@ def ensure_schema(engine: Engine) -> None:
             ("selected_mission_id", "INTEGER"),
             ("selected_mission_name", "VARCHAR"),
             ("granted_experience", "INTEGER NOT NULL DEFAULT 0"),
+            ("refunded_sp", "INTEGER NOT NULL DEFAULT 0"),
+            ("refunded_ap", "INTEGER NOT NULL DEFAULT 0"),
         ):
             if name not in usage_columns:
                 statements.append(f"ALTER TABLE item_usages ADD COLUMN {name} {definition}")

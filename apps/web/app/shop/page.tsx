@@ -13,6 +13,7 @@ import {
   fetchShopStatus,
   bulkPurchase,
   consumeItem,
+  SELECTION_REQUIRED_EFFECT_STATS,
   equipItem,
   sendAdminGift,
   updateShopStatus,
@@ -119,7 +120,8 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
       );
       // 구매 직후 바로 장착/사용할지 아이템별로 확인
       for (const { item } of cart) {
-        if (item.effects.some((effect) => effect.stat === "mission_exp_recollection" || effect.stat === "challenge_acquisition")) continue;
+        // 선택 창이 필요한 아이템은 여기서 곧바로 쓸 수 없다. 캐릭터 정보 페이지에서 사용한다.
+        if (item.effects.some((effect) => SELECTION_REQUIRED_EFFECT_STATS.has(effect.stat))) continue;
         if (item.item_type !== "consumable") {
           if (await confirm({ title: "아이템 장착", description: `'${item.name}'을(를) 지금 장착하시겠습니까?` })) {
             try { await equipItem(characterId, item.id); }

@@ -1,9 +1,10 @@
 from datetime import date, datetime, time
-from typing import Literal
+from typing import Literal, get_args
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 EnemySkillType = Literal["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"]
 Faction = Literal["공격", "수비", "치유"]
+FACTIONS = get_args(Faction)
 # 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다.
 SkillBook = Literal["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"]
 SkillTriggerType = Literal["즉발형", "지속형", "혼합형"]
@@ -29,7 +30,11 @@ ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
 GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wisdom")
 
 # 특수 효과: 캐릭터 능력치가 아니라 별도 동작을 트리거한다(값 무시).
-# "ap_reset": 소모 시 기술을 전부 기본으로 되돌리고 소모한 SP를 환급한다.
+# "ap_reset": ("기술 변경") 소모 시 기술을 전부 기본(루트 노드만 남은 상태)으로 되돌리고 소모한 SP를 환급한다.
+# "stat_reset": ("능력치 변경") 용기/인내/자애/지혜를 전부 0등급으로 되돌리고, 그동안 투자한 AP를 환급한다.
+#   가입 시 무료로 받았던 2포인트분도 AP로 함께 환급된다.
+# "full_reset": ("역할, 기술, 능력치 변경") ap_reset과 stat_reset을 동시에 적용하고,
+#   사용 시 선택한 역할(공격/수비/치유)로 바꾼다. 선택값은 사용 요청의 chosen_faction으로 받는다.
 # "hp_heal_p": 최대 체력 대비 퍼센트만큼 현재 체력을 회복한다(_apply_item_effects에서 특수 처리).
 # "grade_choice_1"/"grade_choice_2": 사용 시 용기/인내/자애/지혜 중 1개/2개(중복 불가)를 선택해 각각 1등급 올린다
 #   (가능성의 메달 / 잠재성의 메달). 선택값은 사용 요청의 chosen_stats로 받는다.
@@ -39,9 +44,11 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 #   (질문권=날짜 지정형, 선물 상자=자유 형식). 사용 시 DeliveryRequest 행이 생성되고, 관리자가
 #   상점 관리 "배달" 탭에서 완료 처리하기 전까지 구매/사용 이력에 "대기"로 표시된다.
 ITEM_EFFECT_SPECIAL_STATS = {
-    "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
+    "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform", "mission_exp_recollection", "challenge_acquisition",
 }
+# 사용 시 기술/능력치를 초기화하고 SP·AP를 환급하는 효과. 사용 이력에 환급량이 남는다.
+ITEM_EFFECT_RESET_STATS = {"ap_reset", "stat_reset", "full_reset"}
 ItemEffectStat = Literal[
     "lv", "rank", "exp", "gold", "cp", "ap", "sp",
     "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
@@ -53,7 +60,7 @@ ItemEffectStat = Literal[
     "skill_lv", "skill_eff_true", "skill_eff_fixed",
     "skill_cost", "skill_target",
     "start_sh", "revive_hp", "act_time",
-    "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
+    "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform",
     "mission_exp_recollection", "challenge_acquisition",
 ]
@@ -419,10 +426,13 @@ class ItemCreate(BaseModel):
             if self.battle_only:
                 raise ValueError("동반자와 장신구는 전투용 소모품으로 설정할 수 없습니다.")
             if any(e.stat in (
-                "ap_reset", "grade_choice_1", "grade_choice_2", "hp_heal_p",
+                "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "hp_heal_p",
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
+        # 초기화 효과는 전투 스냅샷이 아니라 캐릭터 원본을 직접 바꾸므로 전투 중 사용을 막는다.
+        if self.battle_only and any(e.stat in ITEM_EFFECT_RESET_STATS for e in self.effects):
+            raise ValueError("기술·능력치 초기화 효과는 전투 전용으로 설정할 수 없습니다.")
         if any(e.stat == "challenge_acquisition" for e in self.effects):
             if self.battle_only:
                 raise ValueError("도전과제 획득 아이템은 전투 전용으로 설정할 수 없습니다.")
@@ -509,6 +519,8 @@ class BulkPurchaseRequest(BaseModel):
 class UseItemRequest(BaseModel):
     """가능성/잠재성의 메달처럼 사용 시점에 선택이 필요한 아이템을 위한 선택값. 그 외 아이템은 무시된다."""
     chosen_stats: list[str] = Field(default_factory=list)
+    # "full_reset" 아이템(역할, 기술, 능력치 변경) 사용 시 새로 고른 역할.
+    chosen_faction: Faction | None = None
     mission_id: int | None = Field(default=None, gt=0)
     challenge_id: int | None = Field(default=None, gt=0)
     # "delivery_date_slot" 아이템(질문권) 사용 시: 요청 날짜와 지문(텍스트).
@@ -577,6 +589,9 @@ class ItemHistoryEntry(BaseModel):
     created_at: datetime
     # kind="use"이고 배달형 아이템(질문권/선물 상자)일 때만 채워진다. 관리자가 완료 처리하기 전까지 "pending".
     delivery_status: Literal["pending", "completed"] | None = None
+    # 기술·능력치 초기화 아이템을 사용해 되돌려받은 SP/AP. 그 외에는 0.
+    refunded_sp: int = 0
+    refunded_ap: int = 0
 
     model_config = {"from_attributes": True}
 

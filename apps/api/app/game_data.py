@@ -110,6 +110,21 @@ def get_stat_upgrade_ap_cost(current_grade: int, amount: int) -> int:
     return sum(STAT_GRADE_AP_COST[grade] for grade in range(current_grade + 1, target_grade + 1))
 
 
+def get_stat_grade_refund_ap(current_grade: int) -> int:
+    """0등급에서 current_grade까지 올리는 데 들어간 총 AP(= 초기화 시 환급할 AP).
+
+    가입 시 무료로 투자한 2포인트도 같은 단가로 환산해 함께 환급된다.
+    AP로 도달할 수 없는 7~9등급(장신구·특성 전용 구간)은 AP를 낸 적이 없으므로 환급 대상에서 제외한다.
+    """
+    capped = max(0, min(current_grade, MAX_AP_STAT_GRADE))
+    return sum(STAT_GRADE_AP_COST[grade] for grade in range(1, capped + 1))
+
+
+def get_faction_base_dmg_r(faction: str) -> float:
+    """역할별 "피해 감소" 시작값. 수비만 50%에서, 나머지 역할은 30%에서 출발한다."""
+    return 0.5 if faction == "수비" else 0.3
+
+
 def calculate_stat_grade_totals(
     stat_courage: int,
     stat_endurance: int,
@@ -124,7 +139,7 @@ def calculate_stat_grade_totals(
     """
     totals = dict(STAT_GRADE_BASE)
     if faction is not None:
-        totals["dmg_r"] = 0.5 if faction == "수비" else 0.3
+        totals["dmg_r"] = get_faction_base_dmg_r(faction)
     tracks = (
         (stat_courage, COURAGE_GRADE_BONUS),
         (stat_endurance, ENDURANCE_GRADE_BONUS),

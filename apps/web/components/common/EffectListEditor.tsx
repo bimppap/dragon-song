@@ -22,7 +22,8 @@ interface Props {
 }
 
 const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
-  "ap_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
+  "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
+  "mission_exp_recollection", "challenge_acquisition",
   "delivery_date_slot", "delivery_freeform",
 ]);
 

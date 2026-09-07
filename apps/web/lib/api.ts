@@ -320,7 +320,7 @@ export type ItemEffectStat =
   | "skill_lv" | "skill_eff_true" | "skill_eff_fixed"
   | "skill_cost" | "skill_target"
   | "start_sh" | "revive_hp" | "act_time"
-  | "ap_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs"
+  | "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs"
   | "mission_exp_recollection"
   | "challenge_acquisition"
   | "delivery_date_slot" | "delivery_freeform";
@@ -365,7 +365,9 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "start_sh", label: "시작 보호막" },
   { value: "revive_hp", label: "부활 후 체력" },
   { value: "act_time", label: "행동횟수" },
-  { value: "ap_reset", label: "AP 초기화(기술 리셋)" },
+  { value: "ap_reset", label: "기술 변경(기술 초기화·SP 환급)" },
+  { value: "stat_reset", label: "능력치 변경(능력치 초기화·AP 환급)" },
+  { value: "full_reset", label: "역할, 기술, 능력치 변경(기술·능력치 초기화)" },
   { value: "grade_choice_1", label: "능력치 1개 선택 +1" },
   { value: "grade_choice_2", label: "능력치 2개 선택 +1" },
   { value: "cleanse_debuffs", label: "전투 중 약화 전부 해제" },
@@ -380,6 +382,12 @@ export const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
   ITEM_EFFECT_STAT_OPTIONS.map((option) => [option.value, option.label]),
 );
 
+/** 사용 시점에 선택 창이 필요해, 값 없이 그냥 사용할 수 없는 효과 스탯. */
+export const SELECTION_REQUIRED_EFFECT_STATS = new Set<ItemEffectStat>([
+  "mission_exp_recollection", "challenge_acquisition", "full_reset",
+  "grade_choice_1", "grade_choice_2", "delivery_date_slot", "delivery_freeform",
+]);
+
 /** 값 자체가 비율(예: 0.1 = 10%)로 다뤄지는 효과 스탯. */
 export const PERCENT_EFFECT_STATS = new Set<ItemEffectStat>([
   "hp_max_p", "hp_heal_p", "hp_regen_fixed",
@@ -392,7 +400,8 @@ export function formatEffect(effect: ItemEffect): string {
   const label = EFFECT_STAT_LABELS[effect.stat] ?? effect.stat;
   if (effect.stat === "mission_exp_recollection" || effect.stat === "challenge_acquisition") return effect.chapter ? `${label} (${effect.chapter})` : label;
   if (
-    effect.stat === "ap_reset" || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2"
+    effect.stat === "ap_reset" || effect.stat === "stat_reset" || effect.stat === "full_reset"
+    || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2"
     || effect.stat === "cleanse_debuffs" || effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform"
   ) return label;
   const sign = effect.delta >= 0 ? "+" : "";
@@ -493,6 +502,9 @@ export interface ItemHistoryEntry {
   created_at: string;
   /** kind="use"이고 배달형 아이템(질문권/선물 상자)일 때만 채워진다. 관리자가 완료 처리하기 전까지 "pending". */
   delivery_status?: "pending" | "completed" | null;
+  /** 기술·능력치 초기화 아이템을 사용해 되돌려받은 SP/AP. 그 외에는 0. */
+  refunded_sp?: number;
+  refunded_ap?: number;
 }
 
 export interface Character {
@@ -612,7 +624,7 @@ export interface CharacterDetail extends Character {
 
 export type RewardGrant =
   | { type: "item"; item_id: number; quantity: number }
-  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition">; amount: number };
+  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition">; amount: number };
 
 export type ChallengeRewardItemGrant = RewardGrant;
 
@@ -944,26 +956,33 @@ export interface DeliveryPayload {
   letter?: string | null;
 }
 
+/** 사용 시점에 선택이 필요한 아이템(메달·회고록·배달·역할 변경 등)의 선택값. */
+export interface UseItemSelection {
+  chosenStats?: string[];
+  chosenFaction?: Faction;
+  delivery?: DeliveryPayload;
+  missionId?: number;
+  challengeId?: number;
+}
+
 // "use"로 시작하면 React Hook으로 오인되어 rules-of-hooks 린트 오탐이 발생하므로 consumeItem으로 명명한다.
 export async function consumeItem(
   characterId: number,
   itemId: number,
-  chosenStats?: string[],
-  delivery?: DeliveryPayload,
-  missionId?: number,
-  challengeId?: number,
+  selection: UseItemSelection = {},
 ): Promise<CharacterDetail> {
   const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/use`, {
     method: "POST",
     body: JSON.stringify({
-      chosen_stats: chosenStats ?? [],
-      mission_id: missionId ?? null,
-      challenge_id: challengeId ?? null,
-      delivery_date: delivery?.date ?? null,
-      delivery_note: delivery?.note ?? null,
-      delivery_image_url: delivery?.image_url ?? null,
-      delivery_letter: delivery?.letter ?? null,
-      delivery_recipient_id: delivery?.recipient_id ?? null,
+      chosen_stats: selection.chosenStats ?? [],
+      chosen_faction: selection.chosenFaction ?? null,
+      mission_id: selection.missionId ?? null,
+      challenge_id: selection.challengeId ?? null,
+      delivery_date: selection.delivery?.date ?? null,
+      delivery_note: selection.delivery?.note ?? null,
+      delivery_image_url: selection.delivery?.image_url ?? null,
+      delivery_letter: selection.delivery?.letter ?? null,
+      delivery_recipient_id: selection.delivery?.recipient_id ?? null,
     }),
   }, "아이템 사용 실패");
   invalidateApiCache("characters:", "items:", "skills:character:", "challenges:");

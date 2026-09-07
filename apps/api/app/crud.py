@@ -15,7 +15,9 @@ from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_re
 from app.game_data import (
     build_skill_node_specs,
     calculate_stat_grade_totals,
+    get_faction_base_dmg_r,
     get_level_grade_stats,
+    get_stat_grade_refund_ap,
     get_stat_upgrade_ap_cost,
     skill_has_cleanse_count,
     skill_power_slots,
@@ -23,6 +25,7 @@ from app.game_data import (
 from app.models import KST, now_kst
 from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
+    FACTIONS,
     GRADE_STAT_FIELDS,
     ITEM_EFFECT_SPECIAL_STATS,
     ITEM_EFFECT_STAT_TYPES,
@@ -1219,6 +1222,7 @@ def use_item(
     character_id: int,
     item_id: int,
     chosen_stats: list[str] | None = None,
+    chosen_faction: str | None = None,
     delivery_date: date | None = None,
     delivery_note: str | None = None,
     delivery_image_url: str | None = None,
@@ -1257,6 +1261,10 @@ def use_item(
     elif "delivery_freeform" in special_stats:
         delivery_payload = _validate_delivery_freeform(db, delivery_recipient_id, delivery_image_url, delivery_letter)
 
+    # 역할 변경은 효과 적용 전에 검증해, 잘못된 선택이 아이템만 소모시키지 않게 한다.
+    if "full_reset" in special_stats and chosen_faction not in FACTIONS:
+        raise HTTPException(status_code=400, detail="바꿀 역할(공격/수비/치유)을 선택해 주세요.")
+
     selected_challenge = None
     if "challenge_acquisition" in special_stats:
         selected_challenge = next((challenge for challenge in _eligible_acquisition_challenges(db, character_id, item) if challenge.id == challenge_id), None)
@@ -1278,9 +1286,17 @@ def use_item(
         _apply_growth_from_exp(db, character)
 
     _apply_item_effects(character, item.effects or [], sign=1)
-    # 특수 효과: 기술 리셋(소모한 SP 환급). 능력치 효과와 별개로 처리한다.
-    if "ap_reset" in special_stats:
-        _reset_character_skills(db, character)
+    # 특수 효과: 기술 변경(기술 초기화 + 소모한 SP 환급). 능력치 효과와 별개로 처리한다.
+    refunded_sp = 0
+    if special_stats & {"ap_reset", "full_reset"}:
+        refunded_sp = _reset_character_skills(db, character)
+    # 특수 효과: 능력치 변경(용기/인내/자애/지혜 0등급화 + 투자한 AP 환급).
+    refunded_ap = 0
+    if special_stats & {"stat_reset", "full_reset"}:
+        refunded_ap = _reset_character_stats(character)
+    # 특수 효과: 역할 변경. 능력치 초기화 뒤에 적용해야 역할별 피해 감소 기본값이 남는다.
+    if "full_reset" in special_stats:
+        _change_character_faction(character, chosen_faction)
     # 특수 효과: 능력치 등급 선택 강화 (가능성의 메달=1개, 잠재성의 메달=2개).
     if "grade_choice_1" in special_stats:
         _apply_grade_choice(character, chosen_stats or [], 1)
@@ -1294,6 +1310,8 @@ def use_item(
         selected_mission_id=selected_mission.id if selected_mission else None,
         selected_mission_name=selected_mission.name if selected_mission else None,
         granted_experience=_recollection_experience(selected_mission) if selected_mission else 0,
+        refunded_sp=refunded_sp,
+        refunded_ap=refunded_ap,
     )
     db.add(usage)
     if delivery_payload is not None:
@@ -1919,6 +1937,8 @@ def get_item_history(db: Session, character_id: int) -> list[ItemHistoryEntry]:
             quantity=row.ItemUsage.quantity,
             created_at=row.ItemUsage.created_at,
             delivery_status=row.delivery_status,
+            refunded_sp=row.ItemUsage.refunded_sp,
+            refunded_ap=row.ItemUsage.refunded_ap,
         )
         for row in usage_rows
     ]
@@ -7126,11 +7146,11 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
     return get_character_skill_tree(db, character.id, node.book)
 
 
-def _reset_character_skills(db: Session, character: Character) -> None:
+def _reset_character_skills(db: Session, character: Character) -> int:
     """기술을 기본(tier 0)으로 되돌리고, 강화 효과를 되돌리며, 소모한 SP를 전부 환급한다.
 
     효과는 해금 당시 스냅샷(applied_effects)으로 되돌려, 이후 관리자가 노드 효과를
-    바꾸더라도 정확히 원복한다. db.commit()은 호출자가 담당한다.
+    바꾸더라도 정확히 원복한다. 환급한 SP 총량을 반환하며, db.commit()은 호출자가 담당한다.
     """
     unlocks = (
         db.query(CharacterSkillUnlock)
@@ -7141,11 +7161,59 @@ def _reset_character_skills(db: Session, character: Character) -> None:
         )
         .all()
     )
+    refunded_sp = 0
     for unlock in unlocks:
         _apply_item_effects(character, unlock.applied_effects or [], sign=-1)
         character.sp += unlock.sp_spent
+        refunded_sp += unlock.sp_spent
         db.delete(unlock)
     invalidate_active_battle_skills_cache([character.id])
+    return refunded_sp
+
+
+def _change_character_faction(character: Character, faction: str) -> None:
+    """역할을 바꾸고, 역할별로 다른 "피해 감소" 기본값(수비 50%, 그 외 30%)의 차이만 반영한다.
+
+    기존 역할에서 받은 기본값을 빼고 새 역할의 기본값을 더하므로, 기술·장신구로 붙은
+    피해 감소 보너스는 그대로 남는다.
+    """
+    before = get_faction_base_dmg_r(character.faction) if character.faction else 0.0
+    character.dmg_r = round(character.dmg_r + get_faction_base_dmg_r(faction) - before, 6)
+    character.faction = faction
+
+
+def _reset_character_stats(character: Character) -> int:
+    """용기/인내/자애/지혜를 전부 0등급으로 되돌리고, 투자했던 AP를 전부 환급한다.
+
+    가입 시 무료로 받았던 2포인트분도 같은 단가로 환산해 AP로 돌려준다.
+    등급에서 파생되는 스탯(공격력·최대 체력 등)은 upgrade_character_stat_with_ap()와
+    같은 방식으로 감소분만 되돌린다. 환급한 AP 총량을 반환한다.
+    """
+    refunded_ap = sum(get_stat_grade_refund_ap(getattr(character, stat)) for stat in GRADE_STAT_FIELDS)
+
+    before = calculate_stat_grade_totals(
+        character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
+    )
+    for stat in GRADE_STAT_FIELDS:
+        setattr(character, stat, 0)
+    after = calculate_stat_grade_totals(
+        character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
+    )
+    for key, attr in _GRADE_TOTAL_TO_ATTR.items():
+        delta = after[key] - before[key]
+        if not delta:
+            continue
+        setattr(character, attr, getattr(character, attr) + delta)
+        # 최대 체력/마나가 바뀌면 현재 체력/마나도 같은 만큼 함께 움직인다.
+        if attr == "hp_max":
+            character.hp = max(0, character.hp + delta)
+            if not character.over_heal:
+                character.hp = min(character.hp, character.hp_max)
+        elif attr == "mp_max":
+            character.mp = max(0, min(character.mp + delta, character.mp_max))
+
+    character.ap += refunded_ap
+    return refunded_ap
 
 
 def _get_character_skill_unlock_or_404(db: Session, character_id: int, node_id: int) -> tuple[SkillNode, CharacterSkillUnlock]:

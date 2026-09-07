@@ -685,6 +685,7 @@ def use_item(
         character_id,
         item_id,
         data.chosen_stats if data else None,
+        chosen_faction=data.chosen_faction if data else None,
         delivery_date=data.delivery_date if data else None,
         delivery_note=data.delivery_note if data else None,
         delivery_image_url=data.delivery_image_url if data else None,

@@ -51,7 +51,8 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant, UseItemSelection } from "@/lib/api";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import DatePicker from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
 
@@ -365,6 +366,49 @@ function GradeChoiceSelector({
   );
 }
 
+function FactionChoiceSelector({
+  currentFaction,
+  onChange,
+}: {
+  currentFaction: Faction | null;
+  onChange: (faction: Faction) => void;
+}) {
+  const [selected, setSelected] = useState<Faction | null>(null);
+
+  return (
+    <div className="mt-3 flex flex-col gap-3">
+      <p className="text-sm text-muted">
+        바꿀 역할을 선택하세요. 기술과 능력치가 초기화되고, 사용한 SP와 AP를 모두 돌려받습니다.
+      </p>
+      <RadioGroup
+        value={selected ?? ""}
+        onValueChange={(value) => {
+          setSelected(value as Faction);
+          onChange(value as Faction);
+        }}
+        className="grid grid-cols-3 gap-2"
+      >
+        {(Object.keys(FACTION_POSITION_IMAGE) as Faction[]).map((faction) => (
+          <label
+            key={faction}
+            className={cn(
+              "flex cursor-pointer flex-col items-center gap-1 rounded-xl border border-transparent px-3 py-3 text-center transition-colors",
+              selected === faction && "border-gold bg-gold/10",
+            )}
+          >
+            <Image src={FACTION_POSITION_IMAGE[faction]} alt={faction} width={40} height={40} />
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value={faction} />
+              <span className="font-semibold text-ivory">{faction}</span>
+            </div>
+            {faction === currentFaction && <span className="text-xs text-muted">현재 역할</span>}
+          </label>
+        ))}
+      </RadioGroup>
+    </div>
+  );
+}
+
 function DeliveryDateSlotForm({
   takenDates,
   onChange,
@@ -482,6 +526,7 @@ function DeliveryFreeformForm({
 function OwnedItemTile({
   item,
   characterId,
+  currentFaction,
   loading,
   readOnly = false,
   onUse,
@@ -490,9 +535,10 @@ function OwnedItemTile({
 }: {
   item: CharacterOwnedItem;
   characterId: number;
+  currentFaction: Faction | null;
   loading: boolean;
   readOnly?: boolean;
-  onUse: (chosenStats?: string[], delivery?: DeliveryPayload, missionId?: number, challengeId?: number) => void;
+  onUse: (selection?: UseItemSelection) => void;
   onEquip: () => void;
   onUnequip: () => void;
 }) {
@@ -504,6 +550,7 @@ function OwnedItemTile({
   const gradeChoiceEffect = item.effects.find(
     (effect) => effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2",
   );
+  const isFullReset = item.effects.some((effect) => effect.stat === "full_reset");
   const deliveryStat = item.effects.find(
     (effect) => effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform",
   )?.stat;
@@ -564,7 +611,7 @@ function OwnedItemTile({
                 });
                 if (!ok) return;
                 if (selected.current === undefined) { toast("도전과제를 선택해 주세요.", "error"); return; }
-                onUse(undefined, undefined, undefined, selected.current);
+                onUse({ challengeId: selected.current });
               } catch (error) { toast(error instanceof Error ? error.message : "획득 가능한 도전과제 조회 실패", "error"); }
               return;
             }
@@ -586,8 +633,26 @@ function OwnedItemTile({
                 });
                 if (!ok) return;
                 if (selected.current === undefined) { toast("임무를 선택해 주세요.", "error"); return; }
-                onUse(undefined, undefined, selected.current);
+                onUse({ missionId: selected.current });
               } catch (error) { toast(error instanceof Error ? error.message : "회고할 임무 조회 실패", "error"); }
+              return;
+            }
+            if (isFullReset) {
+              const chosenRef: { current: Faction | null } = { current: null };
+              const ok = await confirm({
+                title: "역할, 기술, 능력치 변경",
+                description: `'${item.item_name}'을(를) 사용하시겠습니까?`,
+                confirmText: "사용하기",
+                content: (
+                  <FactionChoiceSelector
+                    currentFaction={currentFaction}
+                    onChange={(faction) => { chosenRef.current = faction; }}
+                  />
+                ),
+              });
+              if (!ok) return;
+              if (chosenRef.current === null) { toast("바꿀 역할을 선택해 주세요.", "error"); return; }
+              onUse({ chosenFaction: chosenRef.current });
               return;
             }
             if (gradeChoiceEffect) {
@@ -603,7 +668,7 @@ function OwnedItemTile({
                   />
                 ),
               });
-              if (ok) onUse(chosenRef.current);
+              if (ok) onUse({ chosenStats: chosenRef.current });
               return;
             }
             if (deliveryStat === "delivery_date_slot") {
@@ -624,7 +689,7 @@ function OwnedItemTile({
                 toast("날짜와 지문을 모두 입력해 주세요.", "error");
                 return;
               }
-              onUse(undefined, payloadRef.current);
+              onUse({ delivery: payloadRef.current });
               return;
             }
             if (deliveryStat === "delivery_freeform") {
@@ -653,7 +718,7 @@ function OwnedItemTile({
                 toast("이미지 또는 편지 중 최소 하나는 입력해 주세요.", "error");
                 return;
               }
-              onUse(undefined, payloadRef.current);
+              onUse({ delivery: payloadRef.current });
               return;
             }
             if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse();
@@ -747,6 +812,11 @@ function RewardHistoryRow({ reward }: { reward: Reward }) {
 
 function ItemHistoryRow({ entry }: { entry: ItemHistoryEntry }) {
   const isUse = entry.kind === "use";
+  // 기술/능력치 초기화 아이템은 되돌려받은 SP·AP를 이력에 함께 남긴다.
+  const refunds = [
+    { label: "SP", amount: entry.refunded_sp ?? 0 },
+    { label: "AP", amount: entry.refunded_ap ?? 0 },
+  ].filter((refund) => refund.amount > 0);
   return (
     <div className="flex items-center justify-between rounded-2xl border border-line px-4 py-4">
       <div className="flex items-center gap-3">
@@ -767,6 +837,11 @@ function ItemHistoryRow({ entry }: { entry: ItemHistoryEntry }) {
           <p className="text-sm text-muted">
             {new Date(entry.created_at).toLocaleString("ko-KR")}
           </p>
+          {refunds.length > 0 && (
+            <p className="text-sm text-emerald-400">
+              {refunds.map((refund) => `${refund.label} +${refund.amount.toLocaleString()}`).join(" · ")} 환급
+            </p>
+          )}
         </div>
       </div>
       {entry.delivery_status === "pending" ? (
@@ -904,16 +979,13 @@ export default function CharacterInfo({
 
   async function handleItemAction(
     itemId: number,
-    action: (characterId: number, itemId: number, chosenStats?: string[], delivery?: DeliveryPayload, missionId?: number, challengeId?: number) => Promise<CharacterDetail>,
-    chosenStats?: string[],
-    delivery?: DeliveryPayload,
-    missionId?: number,
-    challengeId?: number,
+    action: (characterId: number, itemId: number, selection?: UseItemSelection) => Promise<CharacterDetail>,
+    selection?: UseItemSelection,
   ) {
     if (selectedDetail == null) return;
     setItemActionLoadingId(itemId);
     try {
-      const nextDetail = await action(selectedDetail.id, itemId, chosenStats, delivery, missionId, challengeId);
+      const nextDetail = await action(selectedDetail.id, itemId, selection);
       setDetail(nextDetail);
     } catch (error) {
       toast(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.", "error");
@@ -1271,7 +1343,8 @@ export default function CharacterInfo({
                       characterId={selectedDetail.id}
                       readOnly={readOnly}
                       loading={itemActionLoadingId === item.item_id}
-                      onUse={(chosenStats, delivery, missionId, challengeId) => handleItemAction(item.item_id, consumeItem, chosenStats, delivery, missionId, challengeId)}
+                      currentFaction={selectedDetail.faction}
+                      onUse={(selection) => handleItemAction(item.item_id, consumeItem, selection)}
                       onEquip={() => handleItemAction(item.item_id, equipItem)}
                       onUnequip={() => handleItemAction(item.item_id, unequipItem)}
                     />
