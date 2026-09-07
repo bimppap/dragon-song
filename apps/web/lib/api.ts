@@ -1674,6 +1674,13 @@ export interface BattlePendingEnemyAction {
   target_character_ids: number[];
 }
 
+/** 전투 응답에 함께 실려 오는 챕터 환경의 표시용 정보(이름표 해석 전용). */
+export interface BattleSessionEnvironment {
+  id: number;
+  name: string;
+  color: string;
+}
+
 export interface BattleSession {
   id: number;
   mode: BattleMode;
@@ -1686,6 +1693,8 @@ export interface BattleSession {
   summons: BattleSummonState[];
   participants: BattleParticipant[];
   log: BattleLogRound[];
+  /** 이 전투 챕터에 등록된 환경의 표시용 정보. 러너는 /environments를 부를 수 없어 세션 응답으로 받는다. */
+  environments: BattleSessionEnvironment[];
   created_at: string;
   updated_at: string;
 }

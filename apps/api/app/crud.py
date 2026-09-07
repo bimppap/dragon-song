@@ -4660,6 +4660,10 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
         summons=session.summons,
         participants=participants,
         log=_battle_log_with_metrics(session.log),
+        environments=[
+            {"id": env.id, "name": env.name, "color": env.color}
+            for env in sorted(environments.values(), key=lambda env: env.id)
+        ],
         created_at=session.created_at,
         updated_at=session.updated_at,
     )

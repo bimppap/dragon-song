@@ -21,7 +21,6 @@ import {
   fetchBattleAvailableItems,
   fetchCharacters,
   fetchEnemies,
-  fetchEnvironments,
   joinBattle,
   joinBattleEnemy,
   submitBattleAllyTurn,
@@ -42,7 +41,7 @@ import {
   type Character,
   type Enemy,
   type EnemyActionKind,
-  type Environment,
+  type BattleSessionEnvironment,
 } from "@/lib/api";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import AlertBanner from "@/components/common/AlertBanner";
@@ -498,7 +497,7 @@ function describePendingAction(
   enemy: BattleEnemyState,
   pending: BattleSession["pending_enemy_actions"][number] | undefined,
   participantsById: Map<number, BattleParticipant>,
-  environmentsById: Map<number, Environment>,
+  environmentsById: Map<number, BattleSessionEnvironment>,
 ): string | null {
   if (!pending) return null;
   if (pending.kind === "none" || pending.skill_index == null) return "예고: 무반응";
@@ -678,8 +677,6 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const itemsLoadedRef = useRef(false);
   const itemsLoadVersionRef = useRef(0);
   const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, BattleActiveSkill[]>>({});
-  const [chapterEnvironments, setChapterEnvironments] = useState<Environment[]>([]);
-  const [loadedEnvironmentChapter, setLoadedEnvironmentChapter] = useState<string | null>(null);
   const [participantSort, setParticipantSort] = useState<ParticipantSort>("attention");
 
   const [joinOpen, setJoinOpen] = useState(false);
@@ -984,23 +981,6 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     }, 300);
     return () => clearTimeout(timer);
   }, [charDrafts, readOnly, controlled, session, skillsByCharacter, itemsByCharacter, sendBattleWs]);
-
-  useEffect(() => {
-    if (!session?.chapter) return;
-    let cancelled = false;
-    const chapter = session.chapter;
-    fetchEnvironments(chapter)
-      .then((environments) => {
-        if (!cancelled) {
-          setChapterEnvironments(environments);
-          setLoadedEnvironmentChapter(chapter);
-        }
-      })
-      .catch((e) => {
-        if (!cancelled) toast(e instanceof Error ? e.message : "환경 정보를 불러오지 못했습니다.", "error");
-      });
-    return () => { cancelled = true; };
-  }, [session?.chapter, toast]);
 
   function resetCharDrafts(data: BattleSession) {
     const next: Record<number, CharDraft> = {};
@@ -1403,11 +1383,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     [session?.pending_enemy_actions],
   );
   const environmentsById = useMemo(
-    () => new Map(
-      (loadedEnvironmentChapter === session?.chapter ? chapterEnvironments : [])
-        .map((environment) => [environment.id, environment]),
-    ),
-    [chapterEnvironments, loadedEnvironmentChapter, session?.chapter],
+    () => new Map((session?.environments ?? []).map((environment) => [environment.id, environment])),
+    [session?.environments],
   );
   const enemyTitle = useMemo(
     () => (session?.enemies ?? []).map((enemy) => enemy.name).join(", "),

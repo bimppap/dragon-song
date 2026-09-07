@@ -975,6 +975,9 @@ class BattleSessionRead(BaseModel):
     summons: list = Field(default_factory=list)
     participants: list = Field(default_factory=list)
     log: list = Field(default_factory=list)
+    # 이 챕터 환경의 표시용 정보({id, name, color})만 담는다. 러너는 /environments를 못 부르므로
+    # 에너미 예고·하수인 카드가 환경 이름을 세션 응답만으로 해석할 수 있어야 한다.
+    environments: list = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
