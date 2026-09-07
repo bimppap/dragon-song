@@ -52,6 +52,11 @@ async function tryRefreshAccessToken(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/** 로그인한 상태로 보낸 요청이 재발급 후에도 401일 때 화면에 보여줄 문구.
+ *  서버 원문("유효하지 않은 토큰입니다.", "인증이 필요합니다.")은 권한이 없다는 뜻으로 읽혀
+ *  러너가 자기 화면을 볼 수 없는 것으로 오해하기 쉬우므로, 다시 시도하면 된다는 사실을 드러낸다. */
+export const SESSION_ERROR_MESSAGE = "로그인 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.";
+
 /** 인증 헤더를 붙여 fetch하고, 401이면 액세스 토큰을 한 번 재발급받아 재시도한다. */
 async function authorizedFetch(path: string, init?: RequestInit): Promise<Response> {
   const attempt = () => {
@@ -66,6 +71,7 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
     });
   };
 
+  const hadToken = getToken() != null;
   let res = await attempt();
   // refresh token이 없거나 서버가 refresh token을 거부하면 내부에서 세션 만료를 알린다.
   // 네트워크/서버 장애로 재발급에 실패한 경우에는 로컬 로그인 정보를 유지한다.
@@ -74,6 +80,9 @@ async function authorizedFetch(path: string, init?: RequestInit): Promise<Respon
     // 재발급한 액세스 토큰도 거부되면 더 이상 유지할 수 없는 세션이다.
     if (res.status === 401) notifySessionExpired();
   }
+  // 토큰을 들고 보낸 요청이 끝내 401이면 권한 문제가 아니라 세션 문제다.
+  // (토큰 없이 보내는 로그인/회원가입의 401은 서버 문구를 그대로 보여줘야 하므로 건드리지 않는다.)
+  if (res.status === 401 && hadToken) throw new Error(SESSION_ERROR_MESSAGE);
   return res;
 }
 

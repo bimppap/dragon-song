@@ -13,6 +13,9 @@ import BattleArena from "./BattleArena";
 // 진행 상황 갱신은 WebSocket이 담당하고, 폴링은 연결 실패 시를 대비한 폴백으로만 남긴다.
 const LIVE_BATTLE_POLL_MIN_MS = 15000;
 const LIVE_BATTLE_POLL_JITTER_MS = 5000;
+// 챕터/에너미 조회가 실패했을 때 재시도 횟수와 간격(지수 백오프, 상한 8초).
+const CHAPTER_LOAD_MAX_RETRIES = 4;
+const CHAPTER_LOAD_RETRY_MAX_MS = 8000;
 
 export default function RunnerBattleOverview() {
   const { toast } = useToast();
@@ -42,9 +45,11 @@ export default function RunnerBattleOverview() {
 
   useEffect(() => {
     let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let failures = 0;
 
     async function load() {
-      setLoading(true);
+      setLoading(true); // 재시도 중에도 오류 대신 로딩 상태를 유지한다.
       try {
         const [activeChapter, visibleEnemies] = await Promise.all([
           fetchActiveChapter(),
@@ -53,15 +58,26 @@ export default function RunnerBattleOverview() {
         if (cancelled) return;
         setChapter(activeChapter);
         setEnemies(visibleEnemies);
+        setLoading(false);
       } catch (e) {
-        if (!cancelled) toast(e instanceof Error ? e.message : "전투 정보를 불러오지 못했습니다.", "error");
-      } finally {
-        if (!cancelled) setLoading(false);
+        if (cancelled) return;
+        // 서버가 깨어나는 중이거나 액세스 토큰 재발급이 잠시 실패한 경우가 대부분이라,
+        // 곧바로 오류를 띄우지 않고 몇 차례 다시 시도한다. 그 동안에는 로딩 상태를 유지한다.
+        failures += 1;
+        if (failures > CHAPTER_LOAD_MAX_RETRIES) {
+          setLoading(false);
+          toast(e instanceof Error ? e.message : "전투 정보를 불러오지 못했습니다.", "error");
+          return;
+        }
+        timer = setTimeout(() => void load(), Math.min(1000 * 2 ** failures, CHAPTER_LOAD_RETRY_MAX_MS));
       }
     }
 
-    load();
-    return () => { cancelled = true; };
+    void load();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+    };
   }, [toast]);
 
   // 관리자가 실전 전투를 시작했는지 주기적으로 확인해, 있으면 관전 화면으로 전환한다.
