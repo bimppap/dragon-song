@@ -49,7 +49,7 @@ import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
-import { useBattleSocket, type BattleDraftPreview, type BattleEditingState } from "@/lib/useBattleSocket";
+import { useBattleSocket, type BattleDraftPreview, type BattleDraftPreviewEntry, type BattleEditingState } from "@/lib/useBattleSocket";
 import { isAdminRole, useAuth } from "@/lib/auth";
 import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
@@ -369,6 +369,81 @@ function getBattleSkillTargetMode(skill: BattleActiveSkill): BattleSkillTargetMo
 /** 서버(_skill_target_count)와 같이 기술에 적힌 기술 대상만 인원으로 쓴다. */
 function getBattleSkillTargetCount(skill: BattleActiveSkill): number {
   return skillTargetCount(skill.target) ?? 1;
+}
+
+/**
+ * 초안의 행동 대상을 러너 화면에 그대로 보여줄 이름 목록으로 바꾼다.
+ * 서버(crud.py)의 대상 결정 규칙과 같은 순서를 따라야 미리보기와 실제 결과가 어긋나지 않는다.
+ * 아직 대상이 정해지지 않았으면 빈 배열을 돌려주고, 표시 여부는 호출부가 정한다.
+ */
+function draftTargetNames(
+  actor: BattleParticipant,
+  draft: CharDraft,
+  skill: BattleActiveSkill | null,
+  session: BattleSession,
+): string[] {
+  const allyName = (characterId: number): string | null => {
+    if (characterId === actor.character_id) return "본인";
+    return session.participants.find((p) => p.character_id === characterId)?.name ?? null;
+  };
+  const nameForKey = (key: string): string | null => {
+    const [kind, rawId] = key.split(":");
+    const id = Number(rawId);
+    if (kind === "enemy") return session.enemies.find((enemy) => enemy.enemy_id === id)?.name ?? null;
+    if (kind === "summon") {
+      const summon = session.summons.find((candidate) => candidate.id === id);
+      return summon ? `${summon.name} (하수인)` : null;
+    }
+    return allyName(id);
+  };
+  const notNull = (name: string | null): name is string => name !== null;
+
+  switch (draft.kind) {
+    case "attack": {
+      // 일반 공격은 살아 있는 하수인이 있으면 지정한 에너미보다 하수인을 먼저 때린다.
+      const summon = session.summons.find((candidate) => candidate.hp > 0);
+      if (summon) return [`${summon.name} (하수인)`];
+      const targetable = session.enemies.filter((enemy) => isEnemyTargetable(enemy, session.round));
+      // 때릴 수 있는 에너미가 하나뿐이면 대상이 자명하므로 표기하지 않는다.
+      if (targetable.length < 2) return [];
+      const chosen = targetable.find((enemy) => enemy.enemy_id === draft.target_enemy_id) ?? targetable[0];
+      return chosen ? [chosen.name] : [];
+    }
+    case "skill": {
+      const keys = draft.skill_target_keys ?? [];
+      if (keys.length > 0) return keys.map(nameForKey).filter(notNull);
+      const mode = skill ? getBattleSkillTargetMode(skill) : null;
+      return mode === "self" || mode === "none" ? ["본인"] : [];
+    }
+    case "heal":
+    case "rescue":
+      return draft.target_character_id != null ? [allyName(draft.target_character_id)].filter(notNull) : [];
+    case "defend":
+      return draft.protect_target_character_id != null
+        ? [allyName(draft.protect_target_character_id)].filter(notNull)
+        : [];
+    default:
+      return [];
+  }
+}
+
+/** 러너 미리보기 배지의 행동 이름. 기술/소비는 무엇을 쓰는지까지 함께 보여준다. */
+function previewActionLabel(preview: BattleDraftPreviewEntry): string {
+  if (preview.kind === "skill") return `기술(${preview.skill_name ?? "기술"})`;
+  if (preview.kind === "item") return `소비(${preview.item_name ?? "아이템"})`;
+  return CHAR_ACTION_LABEL[preview.kind];
+}
+
+/** 행동 이름 뒤에 붙일 대상 표기. 대상 개념이 없는 행동에는 아무것도 붙이지 않는다. */
+function previewTargetSuffix(preview: BattleDraftPreviewEntry): string {
+  const names = preview.target_names ?? [];
+  if (preview.kind === "defend") {
+    // 본인 방어는 대상이 자명하므로 남을 지켜줄 때만 표기한다.
+    return names.length > 0 && names[0] !== "본인" ? ` → ${names[0]} 보호` : "";
+  }
+  if (names.length > 0) return ` → ${names.join(", ")}`;
+  // 기술은 대상을 고르기 전에도 대상 칸이 있다는 것 자체를 보여준다.
+  return preview.kind === "skill" ? " → 대상 미정" : "";
 }
 
 function firstBattleSkillId(skills: BattleActiveSkill[]) {
@@ -884,22 +959,31 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       const draft: BattleDraftPreview = {};
       for (const [characterIdKey, charDraft] of Object.entries(charDrafts)) {
         const characterId = Number(characterIdKey);
+        const actor = session.participants.find((p) => p.character_id === characterId);
+        if (!actor) continue;
         const skill = charDraft.kind === "skill" && charDraft.skill_node_id != null
           ? (skillsByCharacter[characterId] ?? []).find((s) => s.id === charDraft.skill_node_id) ?? null
+          : null;
+        const item = charDraft.kind === "item" && charDraft.item_id != null
+          ? (itemsByCharacter[characterId] ?? []).find((i) => i.item_id === charDraft.item_id) ?? null
           : null;
         draft[characterId] = {
           kind: charDraft.kind,
           skill_node_id: charDraft.skill_node_id,
           skill_name: skill?.display_name ?? null,
           skill_image_url: skill?.image_url ?? null,
+          item_id: charDraft.item_id,
+          item_name: item?.item_name ?? null,
+          item_image_url: item?.item_image_url ?? null,
           target_character_id: charDraft.target_character_id,
           protect_target_character_id: charDraft.protect_target_character_id,
+          target_names: draftTargetNames(actor, charDraft, skill, session),
         };
       }
       sendBattleWs({ type: "draft_update", phase: session.phase, draft });
     }, 300);
     return () => clearTimeout(timer);
-  }, [charDrafts, readOnly, controlled, session, skillsByCharacter, sendBattleWs]);
+  }, [charDrafts, readOnly, controlled, session, skillsByCharacter, itemsByCharacter, sendBattleWs]);
 
   useEffect(() => {
     if (!session?.chapter) return;
@@ -1616,6 +1700,11 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const items = itemsByCharacter[p.character_id] ?? [];
           const showActionUi = canAct && phase === "ally" && active && draft;
           const actionPreview = readOnly && phase === "ally" && active ? draftPreview?.[p.character_id] : undefined;
+          const previewIcon = actionPreview?.kind === "skill"
+            ? { name: actionPreview.skill_name ?? "기술", imageUrl: actionPreview.skill_image_url }
+            : actionPreview?.kind === "item" && actionPreview.item_id != null
+              ? { name: actionPreview.item_name ?? "아이템", imageUrl: actionPreview.item_image_url }
+              : null;
           const kindOptions = allowedKinds(p, hasDowned, battleSkills.length > 0);
           const selectedSkill = draft?.skill_node_id != null
             ? affordableSkills.find((skill) => skill.id === draft.skill_node_id) ?? affordableSkills[0] ?? null
@@ -1858,14 +1947,14 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         sizes="64px"
                       />
                     </div>
-                    {actionPreview?.kind === "skill" && (
+                    {previewIcon && (
                       <div
                         className="skill-icon-glow aspect-square w-full overflow-hidden border border-line bg-surface"
-                        title={actionPreview.skill_name ?? "기술 사용"}
+                        title={previewIcon.name}
                       >
                         <CharacterAvatar
-                          src={actionPreview.skill_image_url}
-                          alt={actionPreview.skill_name ?? "기술"}
+                          src={previewIcon.imageUrl}
+                          alt={previewIcon.name}
                           className="aspect-square w-full rounded-none"
                           iconSize={16}
                           sizes="64px"
@@ -1906,23 +1995,10 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         className="flex items-center gap-1.5 rounded-full border border-dashed border-line/70 bg-surface/60 px-2 py-1 text-[11px] text-muted"
                         title="아직 확정되지 않은 행동입니다"
                       >
-                        {actionPreview.kind === "skill" ? (
-                          <span className="whitespace-normal break-words">기술({actionPreview.skill_name ?? "기술"})</span>
-                        ) : actionPreview.kind === "defend"
-                          && actionPreview.protect_target_character_id != null
-                          && actionPreview.protect_target_character_id !== p.character_id ? (
-                          <span className="truncate">
-                            {CHAR_ACTION_LABEL[actionPreview.kind]} → {participantsById.get(actionPreview.protect_target_character_id)?.name ?? ""} 보호
-                          </span>
-                        ) : actionPreview.kind === "heal" && actionPreview.target_character_id != null ? (
-                          <span className="truncate">
-                            {CHAR_ACTION_LABEL[actionPreview.kind]} → {actionPreview.target_character_id === p.character_id
-                              ? "본인"
-                              : participantsById.get(actionPreview.target_character_id)?.name ?? ""}
-                          </span>
-                        ) : (
-                          <span>{CHAR_ACTION_LABEL[actionPreview.kind]}</span>
-                        )}
+                        <span className="whitespace-normal break-words">
+                          {previewActionLabel(actionPreview)}
+                          {previewTargetSuffix(actionPreview)}
+                        </span>
                       </div>
                     )}
 

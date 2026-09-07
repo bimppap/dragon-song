@@ -3424,6 +3424,9 @@ BATTLE_ITEM_EFFECT_LABELS: dict[str, str] = {
     "attn": "주목도", "presence": "존재감(%)", "sh": "보호막",
     "skill_lv": "기술 등급", "skill_eff_true": "기술 효율(고정)", "skill_eff_fixed": "기술 효율(비례, %)",
     "skill_cost": "기술 비용",
+    # 에너미 지속 디버프/하수인 약화가 고를 수 있는 능력치(EnemySkill.valid_combat_stat)는 전부 여기에 있어야
+    # 로그에 raw 키(hp_regen_true 등)가 그대로 새어 나가지 않는다.
+    "hp_regen_true": "체력 재생력(고정)", "hp_regen_fixed": "체력 재생력(비례, %)", "mp_regen": "마나 재생력",
 }
 
 SKILL_LEVEL_SUFFIX_VAR_NAMES = {
