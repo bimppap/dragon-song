@@ -48,7 +48,7 @@ import AlertBanner from "@/components/common/AlertBanner";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
-import { useBattleSocket, type BattleDraftPreview, type BattleDraftPreviewEntry, type BattleEditingState } from "@/lib/useBattleSocket";
+import { useBattleSocket, type BattleDraftPreview, type BattleDraftPreviewEntry, type BattleDraftSnapshot, type BattleEditingState } from "@/lib/useBattleSocket";
 import { isAdminRole, useAuth } from "@/lib/auth";
 import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
@@ -127,7 +127,7 @@ type ParticipantSort = "attention" | "name" | "hp";
 const PARTICIPANT_SORTS: { value: ParticipantSort; label: string }[] = [
   { value: "attention", label: "주목도 순" },
   { value: "name", label: "이름순" },
-  { value: "hp", label: "현재 체력순" },
+  { value: "hp", label: "체력 비율순" },
 ];
 
 /** 주목도는 관리자/스텝 전용 정보라, 러너에게 보여줄 로그에서는 "· +20 주목도"류 구간을 잘라낸다. */
@@ -658,6 +658,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const { toast } = useToast();
   const controlled = externalSession !== undefined;
   const [internalSession, setSession] = useState<BattleSession | null>(null);
+  const sessionRef = useRef<BattleSession | null>(null);
+  const [socketVersion, setSocketVersion] = useState<string | null>(null);
   const session = externalSession !== undefined ? externalSession : internalSession;
   const [ownDraftPreview, setOwnDraftPreview] = useState<BattleDraftPreview | null>(null);
   const [remoteEditing, setRemoteEditing] = useState<Record<string, RemoteEditingState>>({});
@@ -691,15 +693,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   // controlled 모드(러너 관전 화면)에서는 부모가 이미 소켓을 갖고 있으므로 여기서는 연결하지 않는다.
   const { connected: battleSocketConnected, send: sendBattleWs, clientId: battleClientId } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
     if (msg.type === "battle_update") {
-      setSession(msg.session);
-      invalidateAvailableItems();
-      setOwnDraftPreview(null);
-      setRemoteEditing({});
-      setLocalEditing({});
-      for (const timer of Object.values(editingCloseTimersRef.current)) clearTimeout(timer);
-      editingCloseTimersRef.current = {};
+      if (!applyBattleSession(msg.session, msg.draft)) return;
+      setSocketVersion(msg.session.updated_at);
+      setOwnDraftPreview(msg.preview);
     } else if (msg.type === "battle_deleted") {
       onExit();
+    } else if (msg.version !== sessionRef.current?.updated_at) {
+      return;
     } else if (msg.type === "draft_preview") {
       setOwnDraftPreview(msg.draft);
     } else if (msg.type === "editing_state" && msg.editor_client_id !== battleClientId) {
@@ -713,7 +713,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         }
         return { ...previous, [key]: { ...msg, updatedAt: Date.now() } };
       });
-    } else if (msg.type === "draft_patch" && msg.editor_client_id !== battleClientId) {
+    } else if (msg.type === "draft_patch") {
       if (msg.draft_type === "character") {
         setCharDrafts((previous) => {
           const draft = previous[msg.entity_id];
@@ -727,29 +727,6 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           return { ...previous, [msg.entity_id]: { ...draft, ...(msg.patch as Partial<TelegraphDraft>) } };
         });
       }
-    } else if (msg.type === "draft_snapshot") {
-      setCharDrafts((previous) => {
-        let next = previous;
-        for (const [id, patch] of Object.entries(msg.draft.character ?? {})) {
-          const entityId = Number(id);
-          const draft = next[entityId];
-          if (!draft) continue;
-          if (next === previous) next = { ...previous };
-          next[entityId] = { ...draft, ...(patch as Partial<CharDraft>) };
-        }
-        return next;
-      });
-      setTelegraphDrafts((previous) => {
-        let next = previous;
-        for (const [id, patch] of Object.entries(msg.draft.enemy ?? {})) {
-          const entityId = Number(id);
-          const draft = next[entityId];
-          if (!draft) continue;
-          if (next === previous) next = { ...previous };
-          next[entityId] = { ...draft, ...(patch as Partial<TelegraphDraft>) };
-        }
-        return next;
-      });
     }
   });
 
@@ -767,8 +744,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   }, [remoteEditing]);
 
   const syncDraftsFromBattle = useEffectEvent((data: BattleSession) => {
-    resetCharDrafts(data);
-    resetTelegraphDrafts(data);
+    applyBattleSession(data);
   });
 
   function updateEditingState(inputId: string, field: BattleEditingState["field"], active: boolean) {
@@ -787,7 +763,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           delete next[key];
           return next;
         });
-        sendBattleWs({ type: "editing_state", input_id: inputId, field, active: false });
+        sendBattleWs({ type: "editing_state", version: session?.updated_at, input_id: inputId, field, active: false });
         delete editingCloseTimersRef.current[key];
       }, EDITING_INDICATOR_GRACE_MS);
       return;
@@ -795,7 +771,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     setLocalEditing((previous) => {
       return { ...previous, [key]: { input_id: inputId, field } };
     });
-    sendBattleWs({ type: "editing_state", input_id: inputId, field, active: true });
+    sendBattleWs({ type: "editing_state", version: session?.updated_at, input_id: inputId, field, active: true });
   }
 
   useEffect(() => () => {
@@ -807,11 +783,11 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     if (inputs.length === 0 || !isAdmin || controlled) return;
     const timer = setInterval(() => {
       for (const input of inputs) {
-        sendBattleWs({ type: "editing_state", ...input, active: true });
+        sendBattleWs({ type: "editing_state", version: session?.updated_at, ...input, active: true });
       }
     }, EDITING_STATE_HEARTBEAT_MS);
     return () => clearInterval(timer);
-  }, [localEditing, isAdmin, controlled, sendBattleWs]);
+  }, [localEditing, isAdmin, controlled, sendBattleWs, session?.updated_at]);
 
   useEffect(() => {
     if (controlled) return; // 부모가 세션을 직접 공급하는 모드에서는 자체 조회를 하지 않는다.
@@ -822,7 +798,6 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         setLoading(true);
         const data = await fetchBattle(sessionId);
         if (cancelled) return;
-        setSession(data);
         syncDraftsFromBattle(data);
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "전투 조회 실패", "error");
@@ -849,7 +824,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       }
       try {
         const data = await fetchBattle(sessionId);
-        if (!cancelled) setSession(data);
+        if (!cancelled) syncDraftsFromBattle(data);
       } catch {
         // 폴링 실패는 조용히 무시하고 다음 주기에 다시 시도한다.
       } finally {
@@ -951,7 +926,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
   // 관리자가 아군 턴 행동 초안을 편집할 때마다, 확정 전 미리보기로 러너에게 실시간 중계한다.
   useEffect(() => {
-    if (readOnly || controlled || !session || session.phase !== "ally") return;
+    if (readOnly || controlled || !session || session.phase !== "ally"
+      || !battleSocketConnected || socketVersion !== session.updated_at) return;
     const timer = setTimeout(() => {
       const draft: BattleDraftPreview = {};
       for (const [characterIdKey, charDraft] of Object.entries(charDrafts)) {
@@ -964,6 +940,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         const item = charDraft.kind === "item" && charDraft.item_id != null
           ? (itemsByCharacter[characterId] ?? []).find((i) => i.item_id === charDraft.item_id) ?? null
           : null;
+        // 기술/아이템 조회가 끝나기 전의 빈 정보로 다른 운영자의 미리보기를 덮지 않는다.
+        if (charDraft.kind === "skill" && !skill) continue;
+        if (charDraft.kind === "item" && charDraft.item_id != null && !item) continue;
         draft[characterId] = {
           kind: charDraft.kind,
           skill_node_id: charDraft.skill_node_id,
@@ -977,12 +956,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           target_names: draftTargetNames(actor, charDraft, skill, session),
         };
       }
-      sendBattleWs({ type: "draft_update", phase: session.phase, draft });
+      sendBattleWs({ type: "draft_update", version: session.updated_at, draft, sources: charDrafts });
     }, 300);
     return () => clearTimeout(timer);
-  }, [charDrafts, readOnly, controlled, session, skillsByCharacter, itemsByCharacter, sendBattleWs]);
+  }, [charDrafts, readOnly, controlled, session, skillsByCharacter, itemsByCharacter, sendBattleWs, battleSocketConnected, socketVersion]);
 
-  function resetCharDrafts(data: BattleSession) {
+  function resetCharDrafts(data: BattleSession, patches: BattleDraftSnapshot["character"] = {}) {
     const next: Record<number, CharDraft> = {};
     for (const p of data.participants) {
       if (!isTargetable(p, data.round)) continue;
@@ -994,12 +973,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         target_character_id: p.character_id,
         protect_target_character_id: p.character_id,
         item_id: null,
+        ...(patches[p.character_id] as Partial<CharDraft>),
       };
     }
     setCharDrafts(next);
   }
 
-  function resetTelegraphDrafts(data: BattleSession) {
+  function resetTelegraphDrafts(data: BattleSession, patches: BattleDraftSnapshot["enemy"] = {}) {
     const next: Record<number, TelegraphDraft> = {};
     const candidates = data.participants.filter((participant) => isTargetable(participant, data.round));
     for (const enemy of data.enemies) {
@@ -1012,21 +992,45 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           target_character_ids: autoTargetsForEnemySkill(enemy.skills[firstAttackIndex], candidates),
         }
         : { kind: "none", skill_index: null, target_character_ids: [] };
+      Object.assign(next[enemy.enemy_id], patches[enemy.enemy_id]);
     }
     setTelegraphDrafts(next);
+  }
+
+  // REST 응답과 소켓 갱신 모두 같은 경로를 거친다. 같은 응답을 두 번 받아도
+  // 이미 편집하기 시작한 새 턴의 초안을 다시 초기화하지 않는다.
+  function applyBattleSession(data: BattleSession, snapshot?: BattleDraftSnapshot): boolean {
+    const previous = sessionRef.current;
+    if (previous?.id === data.id && previous.updated_at > data.updated_at) return false;
+    const changed = previous?.id !== data.id || previous.updated_at !== data.updated_at;
+    if (changed) {
+      sessionRef.current = data;
+      setSession(data);
+      invalidateAvailableItems();
+      setOwnDraftPreview(null);
+      setRemoteEditing({});
+      setLocalEditing({});
+      for (const timer of Object.values(editingCloseTimersRef.current)) clearTimeout(timer);
+      editingCloseTimersRef.current = {};
+    }
+    if (changed || snapshot !== undefined) {
+      resetCharDrafts(data, snapshot?.character);
+      resetTelegraphDrafts(data, snapshot?.enemy);
+    }
+    return true;
   }
 
   function patchChar(characterId: number, patch: Partial<CharDraft>) {
     setCharDrafts((prev) => ({ ...prev, [characterId]: { ...prev[characterId], ...patch } }));
     if (isAdmin && !controlled) {
-      sendBattleWs({ type: "draft_patch", draft_type: "character", entity_id: characterId, patch });
+      sendBattleWs({ type: "draft_patch", version: session?.updated_at, draft_type: "character", entity_id: characterId, patch });
     }
   }
 
   function patchTelegraph(enemyId: number, patch: Partial<TelegraphDraft>) {
     setTelegraphDrafts((prev) => ({ ...prev, [enemyId]: { ...prev[enemyId], ...patch } }));
     if (isAdmin && !controlled) {
-      sendBattleWs({ type: "draft_patch", draft_type: "enemy", entity_id: enemyId, patch });
+      sendBattleWs({ type: "draft_patch", version: session?.updated_at, draft_type: "enemy", entity_id: enemyId, patch });
     }
   }
 
@@ -1070,28 +1074,31 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     return load;
   }
 
+  const hasItemDraft = Object.values(charDrafts).some((draft) => draft.kind === "item");
+  const loadDraftItems = useEffectEvent(() => { void ensureItemsLoaded(); });
+  useEffect(() => {
+    if (!readOnly && hasItemDraft) loadDraftItems();
+  }, [readOnly, hasItemDraft, session?.updated_at]);
+
   function applyBulkCharacterAction() {
     if (!session) return;
     const hasDowned = session.participants.some((p) => p.downed);
-    setCharDrafts((prev) => Object.fromEntries(
-      Object.entries(prev).map(([characterId, draft]) => {
-        const numericCharacterId = Number(characterId);
-        const p = participantsById.get(numericCharacterId);
-        const battleSkills = skillsByCharacter[numericCharacterId] ?? [];
-        if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) return [characterId, draft];
-        const affordableSkills = affordableBattleSkills(battleSkills, p);
-        if (bulkActionKind === "skill" && affordableSkills.length === 0) return [characterId, draft];
-        return [characterId, {
-          ...draft,
-          kind: bulkActionKind,
-          skill_target_keys: bulkActionKind === "skill" ? [] : undefined,
-          skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(affordableSkills) : draft.skill_node_id,
-          target_character_id: bulkActionKind === "skill" ? numericCharacterId : draft.target_character_id,
-          protect_target_character_id: bulkActionKind === "defend" ? numericCharacterId : draft.protect_target_character_id,
-          item_id: bulkActionKind === "item" ? draft.item_id : null,
-        }];
-      }),
-    ));
+    for (const [characterId, draft] of Object.entries(charDrafts)) {
+      const numericCharacterId = Number(characterId);
+      const p = participantsById.get(numericCharacterId);
+      const battleSkills = skillsByCharacter[numericCharacterId] ?? [];
+      if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) continue;
+      const affordableSkills = affordableBattleSkills(battleSkills, p);
+      if (bulkActionKind === "skill" && affordableSkills.length === 0) continue;
+      patchChar(numericCharacterId, {
+        kind: bulkActionKind,
+        skill_target_keys: [],
+        skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(affordableSkills) : draft.skill_node_id,
+        target_character_id: bulkActionKind === "skill" ? numericCharacterId : draft.target_character_id,
+        protect_target_character_id: bulkActionKind === "defend" ? numericCharacterId : draft.protect_target_character_id,
+        item_id: bulkActionKind === "item" ? draft.item_id : null,
+      });
+    }
     if (bulkActionKind === "item") {
       void ensureItemsLoaded();
     }
@@ -1108,9 +1115,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     try {
       setSubmitting(true);
       const updated = await submitBattleTelegraph(session.id, enemyActions);
-      setSession(updated);
-      resetCharDrafts(updated);
-      resetTelegraphDrafts(updated);
+      applyBattleSession(updated);
     } catch (e) {
       toast(e instanceof Error ? e.message : "적의 행동 암시 진행 실패", "error");
     } finally {
@@ -1142,10 +1147,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     try {
       setSubmitting(true);
       const updated = await submitBattleAllyTurn(session.id, characterActions);
-      setSession(updated);
-      invalidateAvailableItems();
-      resetCharDrafts(updated);
-      resetTelegraphDrafts(updated);
+      applyBattleSession(updated);
     } catch (e) {
       toast(e instanceof Error ? e.message : "아군 턴 진행 실패", "error");
     } finally {
@@ -1158,9 +1160,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     try {
       setSubmitting(true);
       const updated = await submitBattleEnemyTurn(session.id);
-      setSession(updated);
-      resetCharDrafts(updated);
-      resetTelegraphDrafts(updated);
+      applyBattleSession(updated);
     } catch (e) {
       toast(e instanceof Error ? e.message : "에너미 턴 진행 실패", "error");
     } finally {
@@ -1181,10 +1181,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     try {
       setUndoing(true);
       const updated = await undoLastBattleTurn(session.id);
-      setSession(updated);
-      invalidateAvailableItems();
-      resetCharDrafts(updated);
-      resetTelegraphDrafts(updated);
+      applyBattleSession(updated);
     } catch (e) {
       toast(e instanceof Error ? e.message : "턴 되돌리기 실패", "error");
     } finally {
@@ -1204,7 +1201,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     try {
       setTerminating(true);
       const updated = await terminateBattle(session.id);
-      setSession(updated);
+      applyBattleSession(updated);
       toast("전투가 조기 종료되었습니다.", "success");
     } catch (e) {
       toast(e instanceof Error ? e.message : "전투 종료 실패", "error");
@@ -1240,10 +1237,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     try {
       setJoining(true);
       const updated = await joinBattle(session.id, Number(joinCharacterId));
-      setSession(updated);
-      invalidateAvailableItems();
-      resetCharDrafts(updated);
-      resetTelegraphDrafts(updated);
+      applyBattleSession(updated);
       setJoinOpen(false);
       setJoinCharacterId(null);
     } catch (e) {
@@ -1270,9 +1264,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     try {
       setJoiningEnemy(true);
       const updated = await joinBattleEnemy(session.id, Number(joinEnemyId));
-      setSession(updated);
-      resetCharDrafts(updated);
-      resetTelegraphDrafts(updated);
+      applyBattleSession(updated);
       setEnemyJoinOpen(false);
       setJoinEnemyId(null);
     } catch (e) {
@@ -1333,7 +1325,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     const participants = session?.participants ?? [];
     return participants.toSorted((a, b) => {
       if (effectiveParticipantSort === "attention") return b.attn - a.attn || a.name.localeCompare(b.name, "ko");
-      if (effectiveParticipantSort === "hp") return a.hp - b.hp || a.name.localeCompare(b.name, "ko");
+      if (effectiveParticipantSort === "hp") return a.hp / Math.max(1, a.max_hp) - b.hp / Math.max(1, b.max_hp) || a.name.localeCompare(b.name, "ko");
       return a.name.localeCompare(b.name, "ko");
     });
   }, [session?.participants, effectiveParticipantSort]);

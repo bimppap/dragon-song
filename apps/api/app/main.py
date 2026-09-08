@@ -1247,15 +1247,15 @@ async def battle_ws(websocket: WebSocket, session_id: int, token: str | None = Q
 
     db = SessionLocal()
     try:
-        crud.get_battle_session(db, session_id, member)
+        session = BattleSessionRead.model_validate(crud.get_battle_session(db, session_id, member)).model_dump(mode="json")
     except HTTPException:
         await websocket.close(code=4403)
         return
     finally:
         db.close()
 
-    await manager.connect(session_id, websocket, is_staff=is_admin_role(member.role))
     try:
+        await manager.connect(session_id, websocket, is_staff=is_admin_role(member.role), session=session)
         while True:
             raw = await websocket.receive_json()
             await handle_ws_message(session_id, member, websocket, raw)

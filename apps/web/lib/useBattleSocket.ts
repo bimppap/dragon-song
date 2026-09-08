@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { getToken } from "@/lib/token";
-import type { BattlePhase, BattleSession, CharacterActionKind } from "@/lib/api";
+import type { BattleSession, CharacterActionKind } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -49,12 +49,11 @@ export interface BattleDraftSnapshot {
 }
 
 export type BattleWsMessage =
-  | { type: "battle_update"; session: BattleSession }
+  | { type: "battle_update"; session: BattleSession; draft?: BattleDraftSnapshot; preview: BattleDraftPreview | null }
   | { type: "battle_deleted"; session_id: number }
-  | { type: "draft_preview"; phase: BattlePhase; draft: BattleDraftPreview }
-  | ({ type: "editing_state" } & BattleEditingState)
-  | ({ type: "draft_patch" } & BattleDraftPatch)
-  | { type: "draft_snapshot"; draft: BattleDraftSnapshot };
+  | { type: "draft_preview"; version: string; draft: BattleDraftPreview }
+  | ({ type: "editing_state"; version: string } & BattleEditingState)
+  | ({ type: "draft_patch"; version: string } & BattleDraftPatch);
 
 /**
  * 전투 세션 하나에 대한 WebSocket 연결을 관리한다. 외부 상태관리 라이브러리 없이
@@ -62,7 +61,7 @@ export type BattleWsMessage =
  * 연결이 끊긴 동안에는 각 화면의 기존 폴링이 폴백 역할을 한다.
  */
 export function useBattleSocket(sessionId: number | null, onMessage: (msg: BattleWsMessage) => void) {
-  const [connected, setConnected] = useState(false);
+  const [connectedSessionId, setConnectedSessionId] = useState<number | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const [clientId] = useState(() => (
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -84,10 +83,12 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
       const ws = new WebSocket(`${base}/ws/battles/${sessionId}?token=${encodeURIComponent(token)}`);
       wsRef.current = ws;
       ws.onopen = () => {
+        if (cancelled || wsRef.current !== ws) return;
         attemptRef.current = 0;
-        setConnected(true);
+        setConnectedSessionId(sessionId);
       };
       ws.onmessage = (event) => {
+        if (cancelled || wsRef.current !== ws) return;
         try {
           handleMessage(JSON.parse(event.data));
         } catch {
@@ -95,8 +96,8 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
         }
       };
       ws.onclose = () => {
-        setConnected(false);
-        if (cancelled) return;
+        if (cancelled || wsRef.current !== ws) return;
+        setConnectedSessionId(null);
         const delay = Math.min(1000 * 2 ** attemptRef.current, 15000) + Math.random() * 500;
         attemptRef.current += 1;
         timer = setTimeout(connect, delay);
@@ -122,5 +123,5 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
     }
   }, [clientId]);
 
-  return { connected, send, clientId };
+  return { connected: sessionId != null && connectedSessionId === sessionId, send, clientId };
 }

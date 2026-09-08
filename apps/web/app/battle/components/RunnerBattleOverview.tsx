@@ -25,14 +25,17 @@ export default function RunnerBattleOverview() {
 
   const { connected: battleSocketConnected } = useBattleSocket(liveSession?.id ?? null, (msg) => {
     if (msg.type === "battle_update") {
+      const previous = liveVersionRef.current;
+      if (previous?.id === msg.session.id && previous.updated_at > msg.session.updated_at) return;
       setLiveSession(msg.session);
       liveVersionRef.current = { id: msg.session.id, updated_at: msg.session.updated_at };
-      setDraftPreview(null); // 턴이 확정되면 이전 미리보기는 더 이상 유효하지 않다.
+      setDraftPreview(msg.preview);
     } else if (msg.type === "battle_deleted") {
       setLiveSession(null);
       liveVersionRef.current = null;
       setDraftPreview(null);
     } else if (msg.type === "draft_preview") {
+      if (msg.version !== liveVersionRef.current?.updated_at) return;
       setDraftPreview(msg.draft);
     }
   });
@@ -86,6 +89,9 @@ export default function RunnerBattleOverview() {
       try {
         const live = await fetchLiveBattle(liveVersionRef.current ?? undefined);
         if (!cancelled && live !== undefined) {
+          const previous = liveVersionRef.current;
+          if (live && previous?.id === live.id && previous.updated_at > live.updated_at) return;
+          if (previous?.id !== live?.id || previous?.updated_at !== live?.updated_at) setDraftPreview(null);
           setLiveSession(live);
           liveVersionRef.current = live ? { id: live.id, updated_at: live.updated_at } : null;
         }

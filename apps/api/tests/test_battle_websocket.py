@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock
+from unittest.mock import AsyncMock, Mock, patch
 
 from app import ws
 from app.ws import BattleConnectionManager
@@ -29,6 +29,10 @@ class SnapshotWebSocket:
 
     async def send_json(self, message: dict) -> None:
         self.messages.append(message)
+
+
+def battle_session(version="2026-09-08T12:00:00+09:00", **changes):
+    return {"id": 1, "updated_at": version, "status": "in_progress", "phase": "ally", **changes}
 
 
 class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
@@ -71,7 +75,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_draft_patch_is_shared_only_with_staff(self):
         original_manager = ws.manager
-        mock_manager = SimpleNamespace(apply_draft_patch=Mock(), broadcast=AsyncMock())
+        mock_manager = SimpleNamespace(accepts_draft=Mock(return_value=True), apply_draft_patch=Mock(), broadcast=AsyncMock())
         ws.manager = mock_manager
         try:
             await ws.handle_ws_message(
@@ -80,6 +84,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(),
                 {
                     "type": "draft_patch",
+                    "version": battle_session()["updated_at"],
                     "client_id": "browser-tab-a",
                     "draft_type": "character",
                     "entity_id": 12,
@@ -93,6 +98,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
             1,
             {
                 "type": "draft_patch",
+                "version": battle_session()["updated_at"],
                 "editor_id": 7,
                 "editor_client_id": "browser-tab-a",
                 "draft_type": "character",
@@ -105,7 +111,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_draft_patch_drops_unknown_fields(self):
         original_manager = ws.manager
-        mock_manager = SimpleNamespace(apply_draft_patch=Mock(), broadcast=AsyncMock())
+        mock_manager = SimpleNamespace(accepts_draft=Mock(return_value=True), apply_draft_patch=Mock(), broadcast=AsyncMock())
         ws.manager = mock_manager
         try:
             await ws.handle_ws_message(
@@ -114,6 +120,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
                 SimpleNamespace(),
                 {
                     "type": "draft_patch",
+                    "version": battle_session()["updated_at"],
                     "client_id": "browser-tab-a",
                     "draft_type": "enemy",
                     "entity_id": 2,
@@ -128,13 +135,17 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_staff_connection_receives_saved_draft_snapshot(self):
         manager = BattleConnectionManager()
+        session = battle_session()
+        manager.remember_session(1, session)
         manager.apply_draft_patch(1, "character", 12, {"target_enemy_id": 3})
         websocket = SnapshotWebSocket()
 
-        await manager.connect(1, websocket, is_staff=True)
+        await manager.connect(1, websocket, is_staff=True, session=session)
 
         self.assertEqual(websocket.messages, [{
-            "type": "draft_snapshot",
+            "type": "battle_update",
+            "session": session,
+            "preview": None,
             "draft": {"character": {"12": {"target_enemy_id": 3}}},
         }])
 
@@ -144,6 +155,114 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
 
         manager.clear_drafts(1)
 
+        self.assertEqual(manager.draft_snapshot(1), {})
+
+
+    async def test_runner_reconnect_receives_preview_without_another_edit(self):
+        manager = BattleConnectionManager()
+        session = battle_session()
+        manager.remember_session(1, session)
+        manager.apply_draft_patch(1, "character", 12, {"kind": "heal", "target_character_id": 13})
+        preview = {"12": {"kind": "heal", "target_names": ["ally"]}}
+        manager.apply_preview(1, preview, {"12": {"kind": "heal", "target_character_id": 13}})
+        first = SnapshotWebSocket()
+        await manager.connect(1, first, is_staff=False, session=session)
+        manager.disconnect(1, first)
+        reconnected = SnapshotWebSocket()
+
+        await manager.connect(1, reconnected, is_staff=False, session=session)
+
+        self.assertEqual(first.messages, reconnected.messages)
+        self.assertEqual(reconnected.messages, [{"type": "battle_update", "session": session, "preview": preview}])
+        self.assertNotIn("draft", reconnected.messages[0])
+
+    async def test_turn_update_clears_drafts_for_every_operator_and_runner(self):
+        manager = BattleConnectionManager()
+        old = battle_session()
+        operators = [SnapshotWebSocket(), SnapshotWebSocket()]
+        runner = SnapshotWebSocket()
+        for operator in operators:
+            await manager.connect(1, operator, is_staff=True, session=old)
+        await manager.connect(1, runner, is_staff=False, session=old)
+        manager.apply_draft_patch(1, "character", 12, {"kind": "heal"})
+        manager.apply_preview(1, {"12": {"kind": "heal"}}, {"12": {"kind": "heal"}})
+        updated = battle_session("2026-09-08T12:01:00+09:00", phase="enemy")
+
+        await manager.publish_session_message(1, {"type": "battle_update", "session": updated})
+
+        for operator in operators:
+            self.assertEqual(len(operator.messages), 2)
+            self.assertEqual(operator.messages[-1], {
+                "type": "battle_update", "session": updated, "preview": None, "draft": {},
+            })
+        self.assertEqual(runner.messages[-1], {"type": "battle_update", "session": updated, "preview": None})
+        self.assertEqual(manager.draft_snapshot(1), {})
+
+    async def test_late_messages_from_previous_turn_are_ignored(self):
+        manager = BattleConnectionManager()
+        manager.remember_session(1, battle_session("2026-09-08T12:01:00+09:00"))
+        manager.broadcast = AsyncMock()
+        with patch.object(ws, "manager", manager):
+            for message in [
+                {"type": "draft_patch", "client_id": "old-tab", "draft_type": "character", "entity_id": 12, "patch": {"kind": "heal"}},
+                {"type": "draft_update", "draft": {"12": {"kind": "heal"}}, "sources": {"12": {"kind": "heal"}}},
+            ]:
+                await ws.handle_ws_message(1, SimpleNamespace(id=7, role="STAFF"), SnapshotWebSocket(), {
+                    **message, "version": battle_session()["updated_at"],
+                })
+        manager.broadcast.assert_not_awaited()
+        self.assertEqual(manager.draft_snapshot(1), {})
+        self.assertIsNone(manager.session_message(1)["preview"])
+
+    async def test_stale_operator_preview_cannot_replace_latest_action_or_target(self):
+        manager = BattleConnectionManager()
+        session = battle_session()
+        manager.remember_session(1, session)
+        manager.apply_draft_patch(1, "character", 12, {"kind": "heal", "target_character_id": 13})
+        current = {"12": {"kind": "heal", "target_names": ["new target"]}}
+        manager.apply_preview(1, current, {"12": {"kind": "heal", "target_character_id": 13}})
+        manager.broadcast = AsyncMock()
+        with patch.object(ws, "manager", manager):
+            for source in [{"kind": "attack"}, {"kind": "heal", "target_character_id": 12}]:
+                await ws.handle_ws_message(1, SimpleNamespace(id=7, role="ADMIN"), SnapshotWebSocket(), {
+                    "type": "draft_update", "version": session["updated_at"],
+                    "draft": {"12": {"kind": "attack", "target_names": ["old target"]}},
+                    "sources": {"12": source},
+                })
+        manager.broadcast.assert_not_awaited()
+        self.assertEqual(manager.session_message(1)["preview"], current)
+
+    async def test_same_version_reconnect_and_delayed_update_preserve_new_edits(self):
+        manager = BattleConnectionManager()
+        session = battle_session("2026-09-08T12:01:00+09:00")
+        manager.remember_session(1, session)
+        manager.apply_draft_patch(1, "character", 12, {"kind": "none"})
+        manager.apply_preview(1, {"12": {"kind": "none"}}, {"12": {"kind": "none"}})
+        operator = SnapshotWebSocket()
+        await manager.connect(1, operator, is_staff=True, session=battle_session())
+        await manager.publish_session_message(1, {"type": "battle_update", "session": session})
+        self.assertEqual(operator.messages[0], operator.messages[1])
+        self.assertEqual(operator.messages[0]["session"], session)
+        self.assertEqual(operator.messages[0]["draft"]["character"]["12"]["kind"], "none")
+        self.assertEqual(operator.messages[0]["preview"]["12"]["kind"], "none")
+
+    def test_preview_merges_characters_and_skips_identical_broadcasts(self):
+        manager = BattleConnectionManager()
+        manager.remember_session(1, battle_session())
+        first = {"12": {"kind": "attack"}}
+        second = {"13": {"kind": "heal"}}
+        manager.apply_preview(1, first, first)
+        self.assertEqual(manager.apply_preview(1, second, second), {**first, **second})
+        self.assertIsNone(manager.apply_preview(1, second, second))
+
+    async def test_deleted_battle_removes_all_cached_state(self):
+        manager = BattleConnectionManager()
+        manager.remember_session(1, battle_session())
+        manager.apply_draft_patch(1, "character", 12, {"kind": "none"})
+        manager.apply_preview(1, {"12": {"kind": "none"}}, {"12": {"kind": "none"}})
+        await manager.publish_session_message(1, {"type": "battle_deleted", "session_id": 1})
+        self.assertEqual(manager._sessions, {})
+        self.assertEqual(manager._previews, {})
         self.assertEqual(manager.draft_snapshot(1), {})
 
 

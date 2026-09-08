@@ -37,19 +37,62 @@ class BattleConnectionManager:
         self._rooms: dict[int, set[WebSocket]] = {}
         self._staff_rooms: dict[int, set[WebSocket]] = {}
         self._drafts: dict[int, dict[str, dict[int, dict]]] = {}
+        self._sessions: dict[int, dict] = {}
+        self._previews: dict[int, dict] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
 
-    async def connect(self, session_id: int, websocket: WebSocket, *, is_staff: bool) -> None:
+    async def connect(self, session_id: int, websocket: WebSocket, *, is_staff: bool, session: dict) -> None:
         await websocket.accept()
+        self.remember_session(session_id, session)
         self._rooms.setdefault(session_id, set()).add(websocket)
         if is_staff:
             self._staff_rooms.setdefault(session_id, set()).add(websocket)
-            draft = self.draft_snapshot(session_id)
-            if draft:
-                await websocket.send_json({"type": "draft_snapshot", "draft": draft})
+        # 세션과 초안을 한 메시지로 복원해 접속/새로고침 중 기본 행동이 끼어들지 않게 한다.
+        await websocket.send_json(self.session_message(session_id, is_staff=is_staff))
+
+    def remember_session(self, session_id: int, session: dict) -> bool:
+        previous = self._sessions.get(session_id)
+        if previous and previous["updated_at"] >= session["updated_at"]:
+            return False
+        self.clear_drafts(session_id)
+        self._sessions[session_id] = session
+        return True
+
+    def session_message(self, session_id: int, *, is_staff: bool = False) -> dict:
+        message = {
+            "type": "battle_update",
+            "session": self._sessions[session_id],
+            "preview": self._previews.get(session_id),
+        }
+        if is_staff:
+            message["draft"] = self.draft_snapshot(session_id)
+        return message
+
+    def accepts_draft(self, session_id: int, version: str | None) -> bool:
+        session = self._sessions.get(session_id)
+        return bool(session and session["status"] == "in_progress" and session["updated_at"] == version)
+
+    def apply_preview(self, session_id: int, draft: dict, sources: dict) -> dict | None:
+        saved = self._drafts.get(session_id, {}).get("character", {})
+        previous = self._previews.get(session_id, {})
+        next_preview = dict(previous)
+        for character_id, entry in draft.items():
+            source = sources.get(character_id)
+            if not isinstance(character_id, str) or not character_id.isdecimal():
+                continue
+            if not isinstance(entry, dict) or not isinstance(source, dict):
+                continue
+            # 늦게 도착한 다른 운영자의 전체 미리보기가 최신 행동/대상을 덮어쓰지 못한다.
+            if any(source.get(key) != value for key, value in saved.get(int(character_id), {}).items()):
+                continue
+            next_preview[character_id] = entry
+        if next_preview == previous:
+            return None
+        self._previews[session_id] = next_preview
+        return next_preview
 
     def apply_draft_patch(self, session_id: int, draft_type: str, entity_id: int, patch: dict) -> None:
         session_drafts = self._drafts.setdefault(session_id, {})
@@ -67,6 +110,7 @@ class BattleConnectionManager:
 
     def clear_drafts(self, session_id: int) -> None:
         self._drafts.pop(session_id, None)
+        self._previews.pop(session_id, None)
 
     def disconnect(self, session_id: int, websocket: WebSocket) -> None:
         room = self._rooms.get(session_id)
@@ -80,6 +124,8 @@ class BattleConnectionManager:
                 self._staff_rooms.pop(session_id, None)
         if not room:
             self._rooms.pop(session_id, None)
+            if self._sessions.get(session_id, {}).get("status") != "in_progress":
+                self._sessions.pop(session_id, None)
 
     async def broadcast(
         self,
@@ -88,11 +134,13 @@ class BattleConnectionManager:
         *,
         exclude: WebSocket | None = None,
         staff_only: bool = False,
+        runners_only: bool = False,
     ) -> None:
         room = (self._staff_rooms if staff_only else self._rooms).get(session_id)
         if not room:
             return
-        recipients = tuple(ws for ws in room if ws is not exclude)
+        staff = self._staff_rooms.get(session_id, set())
+        recipients = tuple(ws for ws in room if ws is not exclude and not (runners_only and ws in staff))
 
         async def send(ws: WebSocket) -> WebSocket | None:
             try:
@@ -111,41 +159,64 @@ class BattleConnectionManager:
         비동기 브로드캐스트를 메인 이벤트루프에 안전하게 스케줄한다."""
         if self._loop is None:
             return
-        asyncio.run_coroutine_threadsafe(self.broadcast(session_id, message), self._loop)
+        asyncio.run_coroutine_threadsafe(self.publish_session_message(session_id, message), self._loop)
+
+    async def publish_session_message(self, session_id: int, message: dict) -> None:
+        # REST 스레드에서 직접 캐시를 지우지 않고, 초안 수신과 같은 이벤트루프에서 갱신한다.
+        if message["type"] == "battle_update":
+            self.remember_session(session_id, message["session"])
+            await asyncio.gather(
+                self.broadcast(session_id, self.session_message(session_id), runners_only=True),
+                self.broadcast(session_id, self.session_message(session_id, is_staff=True), staff_only=True),
+            )
+            if session_id not in self._rooms and message["session"]["status"] != "in_progress":
+                self._sessions.pop(session_id, None)
+        else:
+            self.clear_drafts(session_id)
+            self._sessions.pop(session_id, None)
+            await self.broadcast(session_id, message)
 
 
 manager = BattleConnectionManager()
 
 
 def broadcast_battle_update(session_id: int, session) -> None:
-    manager.clear_drafts(session_id)
     payload = BattleSessionRead.model_validate(session).model_dump(mode="json")
     manager.schedule_broadcast(session_id, {"type": "battle_update", "session": payload})
 
 
 def broadcast_battle_deleted(session_id: int) -> None:
-    manager.clear_drafts(session_id)
     manager.schedule_broadcast(session_id, {"type": "battle_deleted", "session_id": session_id})
 
 
 async def handle_ws_message(session_id: int, member: Member, websocket: WebSocket, raw: dict) -> None:
     """확정 전 초안(draft) 편집을 같은 세션 접속자에게 그대로 중계한다.
 
-    서버에는 저장하지 않는다 - 확정된 상태는 REST 제출 시 broadcast_battle_update로
-    별도 전달되므로, 여기서는 미확정 미리보기만 중계한다.
+    초안과 미리보기는 메모리에 보관해 재접속 시 복원한다. 확정 상태가 바뀌면 함께 지운다.
     발신자(관리자)도 제외하지 않고 함께 받는다 - 모의전은 러너 화면이 없어 관리자가
     "관리자 조작"/"러너 화면" 탭을 같은 커넥션으로 토글하며 미리보는데, 이때 자기 자신에게
     온 echo가 없으면 미리보기가 절대 반영되지 않는다.
     """
-    if not is_admin_role(member.role):
+    if not isinstance(raw, dict) or not is_admin_role(member.role):
+        return
+    version = raw.get("version")
+    if not manager.accepts_draft(session_id, version):
         return
     if raw.get("type") == "draft_update":
+        if manager._sessions[session_id]["phase"] != "ally":
+            return
+        draft, sources = raw.get("draft"), raw.get("sources")
+        if not isinstance(draft, dict) or not isinstance(sources, dict):
+            return
+        preview = manager.apply_preview(session_id, draft, sources)
+        if preview is None:
+            return
         await manager.broadcast(
             session_id,
             {
                 "type": "draft_preview",
-                "phase": raw.get("phase"),
-                "draft": raw.get("draft"),
+                "version": version,
+                "draft": preview,
             },
         )
         return
@@ -168,6 +239,7 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
             session_id,
             {
                 "type": "draft_patch",
+                "version": version,
                 "editor_id": member.id,
                 "editor_client_id": client_id,
                 "draft_type": draft_type,
@@ -194,6 +266,7 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
         session_id,
         {
             "type": "editing_state",
+            "version": version,
             "editor_id": member.id,
             "editor_client_id": client_id,
             "input_id": input_id,
