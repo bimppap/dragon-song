@@ -1286,9 +1286,11 @@ export default function CharacterInfo({
                   )}
                 </div>
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
+                {/* key는 목록용이 아니라 캐릭터가 바뀔 때 내부 상태를 버리고 다시 마운트하려는 것이다.
+                    형제끼리 값이 같으면 안 되므로 컴포넌트 이름을 앞에 붙여 구분한다. */}
                 <div className="flex items-start gap-2">
-                  <CharacterOwnedSkills key={selectedDetail.id} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
-                  <CharacterEquipmentSlots key={selectedDetail.id} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
+                  <CharacterOwnedSkills key={`skills:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
+                  <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
                 </div>
               </div>
 
