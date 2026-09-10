@@ -558,6 +558,9 @@ class SettlementRequest(Base):
     links: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # type="log"일 때 로그에서 교류한 상대 캐릭터 id 목록. 같은 챕터에서 처음 기입되는 캐릭터마다 1CP가 추가된다.
     target_character_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # 기입 시점의 교류 대상 이름 스냅샷({"40": "파에트"}). 대상 캐릭터가 나중에 삭제돼도 과거 정산 기록에
+    # 이름이 그대로 남도록 보관한다. 살아 있는 캐릭터는 characters 테이블의 현재 이름이 우선한다.
+    target_character_names: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     # 요청 생성 시점의 진행 중 챕터 이름(target_character_ids의 "챕터 내 최초 기입" 판정 기준). 진행 중 챕터가 없으면 None.
     chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(

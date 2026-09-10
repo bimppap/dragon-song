@@ -445,6 +445,19 @@ def ensure_schema(engine: Engine) -> None:
             )
         if "chapter" not in settlement_columns:
             statements.append("ALTER TABLE settlement_requests ADD COLUMN chapter VARCHAR")
+        if "target_character_names" not in settlement_columns:
+            statements.append(
+                "ALTER TABLE settlement_requests ADD COLUMN target_character_names JSON NOT NULL DEFAULT '{}'"
+            )
+            # 기존 로그 정산 행에 현재 캐릭터 이름을 스냅샷으로 채워 둔다.
+            statements.append(
+                "UPDATE settlement_requests s SET target_character_names = COALESCE(("
+                "  SELECT jsonb_object_agg(c.id::text, c.name)"
+                "  FROM characters c"
+                "  WHERE c.id IN (SELECT jsonb_array_elements_text(s.target_character_ids::jsonb)::int)"
+                "), '{}'::jsonb)::json "
+                "WHERE jsonb_array_length(s.target_character_ids::jsonb) > 0"
+            )
 
     if "challenges" in table_names:
         if "purchase_image_url" not in {col["name"] for col in inspector.get_columns("challenges")}:

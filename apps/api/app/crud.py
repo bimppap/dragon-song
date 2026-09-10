@@ -2582,11 +2582,17 @@ def _to_settlement_read(
         target_characters = {
             c.id: c for c in db.query(Character).filter(Character.id.in_(target_ids)).all()
         }
-    targets = [
-        SettlementTargetRead(id=cid, name=c.name, image_url=c.image_url)
-        for cid in target_ids
-        if (c := (target_characters or {}).get(cid)) is not None
-    ]
+    name_snapshot = req.target_character_names or {}
+    targets = []
+    for cid in target_ids:
+        c = (target_characters or {}).get(cid)
+        if c is not None:
+            targets.append(SettlementTargetRead(id=cid, name=c.name, image_url=c.image_url))
+            continue
+        # 대상 캐릭터가 삭제된 경우: 기입 시점 이름 스냅샷으로 과거 기록을 보존한다.
+        snapshot_name = name_snapshot.get(str(cid))
+        if snapshot_name:
+            targets.append(SettlementTargetRead(id=cid, name=snapshot_name, image_url=None))
     return SettlementRead(
         id=req.id,
         character_id=req.character_id,
@@ -2668,6 +2674,11 @@ def create_settlement_request(db: Session, member: Member, data: SettlementCreat
         chapter_name = active_chapter.name if active_chapter else None
         target_character_ids = _validate_settlement_targets(db, character_id, data.target_character_ids)
 
+    target_character_names = {
+        str(c.id): c.name
+        for c in db.query(Character).filter(Character.id.in_(target_character_ids)).all()
+    } if target_character_ids else {}
+
     db.add(SettlementRequest(
         character_id=character_id,
         type=data.type,
@@ -2675,6 +2686,7 @@ def create_settlement_request(db: Session, member: Member, data: SettlementCreat
         total_comments=data.total_comments,
         links=data.links,
         target_character_ids=target_character_ids,
+        target_character_names=target_character_names,
         chapter=chapter_name,
     ))
     db.commit()
