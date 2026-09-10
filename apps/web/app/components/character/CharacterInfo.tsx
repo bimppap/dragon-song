@@ -588,6 +588,36 @@ function DeliveryFreeformForm({
   );
 }
 
+/** 모든 캐릭터가 지니는 소속 증표. 상점에서 사고파는 아이템이 아니라 화면에만 두는 항목이라
+ *  구매 기록도 없고, 사용·장착 버튼이 없으며 전투 중 사용 가능한 아이템 목록에도 오르지 않는다. */
+const GROUP_BADGE = {
+  name: "조사단 증표",
+  description: "당신이 대수림 동부 조사단의 일원임을 증명하는 증표이다",
+  imageUrl: "/group_badge.png",
+};
+
+function GroupBadgeTile() {
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <InfoTooltip
+        side="top"
+        content={
+          <div className="max-w-56 text-left">
+            <div className="font-semibold">{GROUP_BADGE.name}</div>
+            <div className="mt-1 text-muted">{GROUP_BADGE.description}</div>
+          </div>
+        }
+      >
+        <div className="relative flex size-14 shrink-0 cursor-default">
+          <div className="relative flex size-full items-center justify-center overflow-hidden rounded-2xl bg-gold/10 text-gold">
+            <Image src={GROUP_BADGE.imageUrl} alt={GROUP_BADGE.name} fill sizes="56px" unoptimized className="object-cover" />
+          </div>
+        </div>
+      </InfoTooltip>
+    </div>
+  );
+}
+
 function OwnedItemTile({
   item,
   characterId,
@@ -1451,27 +1481,22 @@ export default function CharacterInfo({
               </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              {selectedDetail.owned_items.length > 0 ? (
-                <div className="flex flex-wrap gap-4">
-                  {selectedDetail.owned_items.map((item) => (
-                    <OwnedItemTile
-                      key={item.item_id}
-                      item={item}
-                      characterId={selectedDetail.id}
-                      readOnly={readOnly}
-                      loading={itemActionLoadingId === item.item_id}
-                      currentFaction={selectedDetail.faction}
-                      onUse={(selection) => handleItemAction(item.item_id, consumeItem, selection)}
-                      onEquip={(selection) => handleItemAction(item.item_id, equipItem, selection)}
-                      onUnequip={() => handleItemAction(item.item_id, unequipItem)}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState className="rounded-2xl">
-                  보유 중인 아이템이 없습니다.
-                </EmptyState>
-              )}
+              <div className="flex flex-wrap gap-4">
+                <GroupBadgeTile />
+                {selectedDetail.owned_items.map((item) => (
+                  <OwnedItemTile
+                    key={item.item_id}
+                    item={item}
+                    characterId={selectedDetail.id}
+                    readOnly={readOnly}
+                    loading={itemActionLoadingId === item.item_id}
+                    currentFaction={selectedDetail.faction}
+                    onUse={(selection) => handleItemAction(item.item_id, consumeItem, selection)}
+                    onEquip={(selection) => handleItemAction(item.item_id, equipItem, selection)}
+                    onUnequip={() => handleItemAction(item.item_id, unequipItem)}
+                  />
+                ))}
+              </div>
             </CardContent>
           </Card>
 
