@@ -6,6 +6,7 @@ import { Gem, PawPrint, X } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { Button } from "@/components/ui/button";
 import { equipItem, unequipItem, formatEffect, ITEM_TYPE_LABELS, type CharacterDetail, type CharacterOwnedItem } from "@/lib/api";
+import { GRADE_CHOICE_STAT_OPTIONS } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type SlotType = "companion" | "accessory";
@@ -33,6 +34,8 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
   readOnly?: boolean;
 }) {
   const titleId = useId();
+  const [choiceItem, setChoiceItem] = useState<CharacterOwnedItem | null>(null);
+  const [chosenStats, setChosenStats] = useState<string[]>([]);
   const [selectedType, setSelectedType] = useState<SlotType | null>(null);
   const [portalContainer, setPortalContainer] = useState<HTMLDialogElement | null>(null);
   const [pending, setPending] = useState(false);
@@ -50,13 +53,20 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
     else dialog.current?.close();
   }, [selectedType]);
 
-  async function select(item: CharacterOwnedItem) {
+  async function select(item: CharacterOwnedItem, selected?: string[]) {
+    if (!item.equipped && selected === undefined && item.effects.some((effect) => effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2")) {
+      setChoiceItem(item);
+      setChosenStats([]);
+      return;
+    }
+    setChoiceItem(null);
     setPending(true);
     setError(null);
     try {
-      const next = await (item.equipped ? unequipItem : equipItem)(character.id, item.item_id);
+      const next = await (item.equipped ? unequipItem : equipItem)(character.id, item.item_id, { chosenStats: selected ?? [] });
       onUpdated(next);
       setSelectedType(null);
+      setChoiceItem(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "장착 변경 실패");
     } finally {
@@ -73,7 +83,7 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
       return <InfoTooltip key={type} content={equipped ? <ItemDetails item={equipped} /> : `${ITEM_TYPE_LABELS[type]} 선택`}>
         <button type="button" aria-label={readOnly ? `${ITEM_TYPE_LABELS[type]}: ${equipped?.item_name}` : `${ITEM_TYPE_LABELS[type]} 선택${equipped ? `: ${equipped.item_name}` : ""}`}
           aria-haspopup={readOnly ? undefined : "dialog"}
-          onClick={readOnly ? undefined : () => { setError(null); setSelectedType(type); }}
+          onClick={readOnly ? undefined : () => { setError(null); setChoiceItem(null); setSelectedType(type); }}
           className={cn("flex w-10 shrink-0 flex-col items-center gap-1 text-center", readOnly ? "cursor-default" : "cursor-pointer")}>
           <span className={cn("relative flex size-9 items-center justify-center border-2 bg-gold/10 text-gold", equipped ? "border-gold" : "border-line")}>
             <ItemIcon item={equipped} type={type} />
@@ -99,6 +109,11 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
           </button>
         </InfoTooltip>)}
       </div>
+      {choiceItem && <div className="space-y-2">
+        <p className="text-xs">{choiceItem.item_name}: 능력치를 {choiceItem.effects.some((e) => e.stat === "grade_choice_2") ? 2 : 1}개 선택하세요.</p>
+        <div className="flex flex-wrap gap-3">{GRADE_CHOICE_STAT_OPTIONS.map((option) => <label key={option.value} className="text-xs"><input type="checkbox" checked={chosenStats.includes(option.value)} onChange={(event) => setChosenStats((prev) => event.target.checked ? [...prev, option.value] : prev.filter((stat) => stat !== option.value))} />{option.label}</label>)}</div>
+        <Button type="button" disabled={pending || chosenStats.length !== (choiceItem.effects.some((e) => e.stat === "grade_choice_2") ? 2 : 1)} onClick={() => select(choiceItem, chosenStats)}>선택한 능력치로 장착</Button>
+      </div>}
       {pending && <p role="status" className="text-xs text-muted">장착 변경 중...</p>}
       {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
     </dialog>

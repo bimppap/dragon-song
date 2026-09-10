@@ -14,6 +14,10 @@ def ensure_schema(engine: Engine) -> None:
         return
 
     statements: list[str] = []
+    if "character_item_states" in table_names:
+        state_columns = {col["name"] for col in inspector.get_columns("character_item_states")}
+        if "chosen_stats" not in state_columns:
+            statements.append("ALTER TABLE character_item_states ADD COLUMN chosen_stats JSON NOT NULL DEFAULT '[]'")
 
     character_columns = {col["name"] for col in inspector.get_columns("characters")}
 

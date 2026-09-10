@@ -18,6 +18,7 @@ interface Props {
   onChange: (effects: ItemEffect[]) => void;
   /** ap_reset 등 아이템 전용 특수 효과 노출 여부. */
   allowSpecialStats?: boolean;
+  allowGradeChoice?: boolean;
   chapters?: Chapter[];
 }
 
@@ -28,10 +29,10 @@ const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
 ]);
 
 /** 아이템·기술 등에서 공용으로 쓰는 효과 목록 편집 UI. */
-export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, chapters = [] }: Props) {
+export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, allowGradeChoice = false, chapters = [] }: Props) {
   const options = allowSpecialStats
     ? ITEM_EFFECT_STAT_OPTIONS
-    : ITEM_EFFECT_STAT_OPTIONS.filter((option) => !SPECIAL_STATS.has(option.value));
+    : ITEM_EFFECT_STAT_OPTIONS.filter((option) => !SPECIAL_STATS.has(option.value) || (allowGradeChoice && (option.value === "grade_choice_1" || option.value === "grade_choice_2")));
 
   function handleAdd() {
     onChange([...effects, { stat: options[0].value, delta: 0 }]);

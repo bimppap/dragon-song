@@ -232,6 +232,7 @@ class CharacterItemState(Base):
     character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
     item_id: Mapped[int] = mapped_column(Integer, ForeignKey("items.id"), nullable=False, index=True)
     used_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    chosen_stats: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     equipped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

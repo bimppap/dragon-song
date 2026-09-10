@@ -1042,9 +1042,10 @@ export async function completeDeliveryRequest(requestId: number): Promise<Delive
   }, "완료 처리 실패");
 }
 
-export async function equipItem(characterId: number, itemId: number): Promise<CharacterDetail> {
+export async function equipItem(characterId: number, itemId: number, selection: UseItemSelection = {}): Promise<CharacterDetail> {
   const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/equip`, {
     method: "POST",
+    body: JSON.stringify({ chosen_stats: selection.chosenStats ?? [] }),
   }, "아이템 장착 실패");
   invalidateApiCache("characters:");
   return detail;

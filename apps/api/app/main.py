@@ -769,11 +769,12 @@ async def upload_delivery_image(
 def equip_item(
     character_id: int,
     item_id: int,
+    data: UseItemRequest | None = None,
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
     _require_own_character_or_admin(db, member, character_id)
-    detail = crud.equip_item(db, character_id, item_id)
+    detail = crud.equip_item(db, character_id, item_id, data.chosen_stats if data else None)
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail

@@ -431,10 +431,15 @@ class ItemCreate(BaseModel):
             if self.battle_only:
                 raise ValueError("동반자와 장신구는 전투용 소모품으로 설정할 수 없습니다.")
             if any(e.stat in (
-                "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "hp_heal_p",
+                "ap_reset", "stat_reset", "full_reset", "hp_heal_p",
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
+        grade_choices = [e for e in self.effects if e.stat in ("grade_choice_1", "grade_choice_2")]
+        if len(grade_choices) > 1:
+            raise ValueError("능력치 선택 효과는 하나만 설정할 수 있습니다.")
+        if grade_choices and self.item_type == "companion":
+            raise ValueError("능력치 선택 효과는 소모품 또는 장신구에 설정할 수 있습니다.")
         # 초기화 효과는 전투 스냅샷이 아니라 캐릭터 원본을 직접 바꾸므로 전투 중 사용을 막는다.
         if self.battle_only and any(e.stat in ITEM_EFFECT_RESET_STATS for e in self.effects):
             raise ValueError("기술·능력치 초기화 효과는 전투 전용으로 설정할 수 없습니다.")

@@ -1075,6 +1075,9 @@ def delete_item(db: Session, item_id: int) -> list[str]:
         )
         for character in equipped_characters:
             _apply_item_effects(character, item.effects or [], sign=-1)
+            state = _get_or_create_item_state(db, character.id, item_id)
+            if state.chosen_stats:
+                _apply_grade_choice(character, state.chosen_stats, len(state.chosen_stats), sign=-1)
     db.query(CharacterItemState).filter(CharacterItemState.item_id == item_id).delete()
     db.query(Purchase).filter(Purchase.item_id == item_id).delete()
     db.query(ItemUsage).filter(ItemUsage.item_id == item_id).delete()
@@ -1124,7 +1127,7 @@ _GRADE_TOTAL_TO_ATTR = {
 }
 
 
-def _apply_grade_choice(character: Character, chosen_stats: list[str], required_count: int) -> None:
+def _apply_grade_choice(character: Character, chosen_stats: list[str], required_count: int, sign: int = 1) -> None:
     """가능성/잠재성의 메달: 선택한 능력치의 등급을 1씩 올리고, 그로 인한 파생 스탯 증가분만 더한다
     (스킬/다른 아이템으로 이미 붙어 있는 보너스는 건드리지 않는다)."""
     if len(chosen_stats) != required_count or len(set(chosen_stats)) != required_count:
@@ -1136,7 +1139,7 @@ def _apply_grade_choice(character: Character, chosen_stats: list[str], required_
         character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
     )
     for stat in chosen_stats:
-        setattr(character, stat, getattr(character, stat) + 1)
+        setattr(character, stat, getattr(character, stat) + sign)
     after = calculate_stat_grade_totals(
         character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
     )
@@ -1401,7 +1404,7 @@ def complete_delivery_request(db: Session, request_id: int) -> DeliveryRequestRe
     )
 
 
-def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailRead:
+def equip_item(db: Session, character_id: int, item_id: int, chosen_stats: list[str] | None = None) -> CharacterDetailRead:
     character = db.query(Character).filter(Character.id == character_id).with_for_update().populate_existing().first()
     if character is None:
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
@@ -1419,6 +1422,12 @@ def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailR
     if state.equipped:
         raise HTTPException(status_code=400, detail="이미 장착 중인 아이템입니다.")
 
+    choices = [e for e in item.effects or [] if e["stat"] in ("grade_choice_1", "grade_choice_2")]
+    selected = chosen_stats or []
+    required_count = (1 if choices[0]["stat"] == "grade_choice_1" else 2) if choices else 0
+    if len(selected) != required_count or len(set(selected)) != required_count or any(s not in GRADE_STAT_FIELDS for s in selected):
+        raise HTTPException(status_code=400, detail=f"용기/인내/자애/지혜 중 능력치를 {required_count}개, 중복 없이 선택해 주세요.")
+
     if item.item_type in ("companion", "accessory"):
         previous = (
             db.query(CharacterItemState, Item)
@@ -1429,9 +1438,15 @@ def equip_item(db: Session, character_id: int, item_id: int) -> CharacterDetailR
         )
         for previous_state, previous_item in previous:
             _apply_item_effects(character, previous_item.effects or [], sign=-1)
+            if previous_state.chosen_stats:
+                _apply_grade_choice(character, previous_state.chosen_stats, len(previous_state.chosen_stats), sign=-1)
+            previous_state.chosen_stats = []
             previous_state.equipped = False
 
     _apply_item_effects(character, item.effects or [], sign=1)
+    if selected:
+        _apply_grade_choice(character, selected, required_count)
+    state.chosen_stats = selected
     state.equipped = True
     db.commit()
     return get_character_detail(db, character_id)
@@ -1450,6 +1465,9 @@ def unequip_item(db: Session, character_id: int, item_id: int) -> CharacterDetai
         raise HTTPException(status_code=400, detail="장착 중인 아이템이 아닙니다.")
 
     _apply_item_effects(character, item.effects or [], sign=-1)
+    if state.chosen_stats:
+        _apply_grade_choice(character, state.chosen_stats, len(state.chosen_stats), sign=-1)
+    state.chosen_stats = []
     state.equipped = False
     db.commit()
     return get_character_detail(db, character_id)

@@ -534,7 +534,7 @@ function OwnedItemTile({
   loading: boolean;
   readOnly?: boolean;
   onUse: (selection?: UseItemSelection) => void;
-  onEquip: () => void;
+  onEquip: (selection?: UseItemSelection) => void;
   onUnequip: () => void;
 }) {
   const { confirm } = useDialog();
@@ -730,7 +730,13 @@ function OwnedItemTile({
         <Button
           size="sm"
           variant="outline"
-          onClick={async () => { if (await confirm({ title: "아이템 장착", description: `'${item.item_name}'을(를) 장착하시겠습니까?` })) onEquip(); }}
+          onClick={async () => {
+            const chosen: { current: string[] } = { current: [] };
+            const requiredCount = gradeChoiceEffect?.stat === "grade_choice_2" ? 2 : 1;
+            if (await confirm({ title: "아이템 장착", description: `'${item.item_name}'을(를) 장착하시겠습니까?`,
+              content: gradeChoiceEffect ? <GradeChoiceSelector requiredCount={requiredCount} onChange={(stats) => { chosen.current = stats; }} /> : undefined,
+            })) onEquip({ chosenStats: chosen.current });
+          }}
           disabled={loading || item.quantity <= 0}
         >
           장착
@@ -1340,7 +1346,7 @@ export default function CharacterInfo({
                       loading={itemActionLoadingId === item.item_id}
                       currentFaction={selectedDetail.faction}
                       onUse={(selection) => handleItemAction(item.item_id, consumeItem, selection)}
-                      onEquip={() => handleItemAction(item.item_id, equipItem)}
+                      onEquip={(selection) => handleItemAction(item.item_id, equipItem, selection)}
                       onUnequip={() => handleItemAction(item.item_id, unequipItem)}
                     />
                   ))}
