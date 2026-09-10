@@ -504,6 +504,7 @@ class Enemy(Base):
     hp_per_defender: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     hp_per_healer: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     attack: Mapped[int] = mapped_column(Integer, nullable=False)
+    action_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     skills: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -641,6 +642,8 @@ class BattleSession(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     mode: Mapped[str] = mapped_column(String, nullable=False)  # "practice" | "real"
+    pair_battle: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    pairs: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     status: Mapped[str] = mapped_column(
         String, nullable=False, default="in_progress", server_default=text("'in_progress'")

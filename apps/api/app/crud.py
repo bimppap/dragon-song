@@ -45,6 +45,7 @@ from app.schemas import (
     BattleRewardEntry,
     BattleRewardPreview,
     BattleSessionRead,
+    BattlePairsRequest,
     BattleSessionSummary,
     BattleStartRequest,
     BattleTelegraphRequest,
@@ -3295,6 +3296,7 @@ def _to_enemy_read(enemy: Enemy) -> EnemyRead:
         hp_per_defender=enemy.hp_per_defender,
         hp_per_healer=enemy.hp_per_healer,
         attack=enemy.attack,
+        action_count=enemy.action_count,
         skills=_enemy_skill_models(enemy.skills),
         created_at=enemy.created_at,
     )
@@ -3330,6 +3332,7 @@ def create_enemy(db: Session, data: EnemyCreate) -> EnemyRead:
         hp_per_defender=data.hp_per_defender,
         hp_per_healer=data.hp_per_healer,
         attack=data.attack,
+        action_count=data.action_count,
         skills=[s.model_dump() for s in data.skills],
     )
     db.add(enemy)
@@ -3350,6 +3353,7 @@ def update_enemy(db: Session, enemy_id: int, data: EnemyCreate) -> EnemyRead:
     enemy.hp_per_defender = data.hp_per_defender
     enemy.hp_per_healer = data.hp_per_healer
     enemy.attack = data.attack
+    enemy.action_count = data.action_count
     enemy.skills = [s.model_dump() for s in data.skills]
 
     db.commit()
@@ -3645,6 +3649,9 @@ def _snapshot_combatant(character: Character) -> dict:
         "def": character.def_, "def_p": character.def_p, "def_eff": character.def_eff, "dmg_r": character.dmg_r,
         "heal_eff": character.heal_eff, "skill_target": max(1, character.skill_target or 1),
         "over_heal": bool(character.over_heal),
+        "hp_max_p": character.hp_max_p, "rank": character.rank,
+        "sh": character.sh, "start_sh": character.start_sh,
+        "revive_hp": character.revive_hp, "act_time": character.act_time,
         # 주목도(attn)는 캐릭터 고정 스탯이 아니라 전투 중 행동으로 쌓이는 값이다. 전투/난입 시작 시 0에서 출발한다.
         "attn": 0, "presence": character.presence, "lv": character.lv,
         "hp": min(character.hp, max_hp) if character.hp > 0 else max_hp,
@@ -3668,6 +3675,79 @@ def _snapshot_combatant(character: Character) -> dict:
         # 지속형/혼합형 기술에서 남긴 버프·디버프. [{"effect_type", "skill_name", ...}, ...]
         "status_effects": [],
     }
+
+
+# 정체성/아이템 소유권/전투 중 누적 상태를 제외한 교환 대상 능력치.
+_PAIR_STAT_FIELDS = (
+    "faction", "stat_courage", "stat_endurance", "stat_charity", "stat_wisdom",
+    "atk", "atk_p", "dmg_p", "skill_lv", "skill_eff_true", "skill_eff_fixed", "skill_cost",
+    "def", "def_p", "def_eff", "dmg_r", "heal_eff", "skill_target", "over_heal",
+    "presence", "lv", "rank", "hp", "max_hp", "hp_max_p", "mp", "max_mp", "shield",
+    "hp_regen_true", "hp_regen_fixed", "mp_regen", "sh", "start_sh", "revive_hp", "act_time",
+)
+_PAIR_PRIVATE_FIELDS = {"_pair_original_stats", "_pair_base_stats"}
+
+
+def _rescale_battle_pool(value: int, old_max: int, new_max: int, *, health: bool = False, overheal: bool = False) -> int:
+    """잔여 비율을 정수로 환산한다. 살아 있는 캐릭터는 반올림 때문에 기절하지 않는다."""
+    if value <= 0 or old_max <= 0 or new_max <= 0:
+        return 0
+    scaled = (value * new_max) // old_max
+    if health:
+        scaled = max(1, scaled)
+    return scaled if overheal else min(new_max, scaled)
+
+
+def _apply_battle_pair_stats(participants: list[dict], pairs: list[list[int]], *, initial: bool = False) -> list[dict]:
+    """항상 상대의 원래 전투 능력치를 빌린다. 재매칭으로 HP/MP나 상태가 초기화되지 않는다."""
+    result = copy.deepcopy(participants)
+    by_id = {p["character_id"]: p for p in result}
+    for p in result:
+        if "_pair_original_stats" not in p:
+            p["_pair_original_stats"] = {key: copy.deepcopy(p[key]) for key in _PAIR_STAT_FIELDS if key in p}
+            p["_pair_base_stats"] = copy.deepcopy(p["_pair_original_stats"])
+    for pair in pairs:
+        for character_id in pair:
+            source_id = next((other for other in pair if other != character_id), character_id)
+            p, source = by_id[character_id], by_id[source_id]
+            if p.get("pair_source_character_id") == source_id:
+                continue
+            profile = source["_pair_original_stats"]
+            if initial:
+                p.update(copy.deepcopy(profile))
+            else:
+                old_hp, old_max_hp, old_mp, old_max_mp = p["hp"], p["max_hp"], p["mp"], p["max_mp"]
+                previous_base = p["_pair_base_stats"]
+                for key, value in profile.items():
+                    if key in ("hp", "mp", "shield"):
+                        continue
+                    # 아이템/상태 효과가 이미 더한 수치는 본인에게 남긴다.
+                    previous = previous_base.get(key, value)
+                    if type(value) in (int, float) and type(previous) in (int, float):
+                        modifiers = [effect for effect in p.get("status_effects", [])
+                                     if effect.get("effect_type") == "stat_modifier" and effect.get("stat") == key]
+                        next_value = value + (p.get(key, previous) - previous) - sum(effect.get("applied_delta", 0) for effect in modifiers)
+                        for effect in modifiers:
+                            delta = effect.get("applied_delta", 0)
+                            # 더 낮은 능력치로 갈아탈 때 약화 때문에 음수가 되거나,
+                            # 이후 해제 시 적용량보다 많은 수치가 복구되지 않게 한다.
+                            if delta < 0 and next_value >= 0:
+                                delta = max(-next_value, delta)
+                            effect["applied_delta"] = delta
+                            next_value += delta
+                        p[key] = next_value
+                    elif isinstance(value, bool) and p.get(key) != previous:
+                        continue
+                    else:
+                        p[key] = value
+                p["max_hp"] = max(1, p["max_hp"])
+                p["max_mp"] = max(0, p["max_mp"])
+                p["hp"] = _rescale_battle_pool(old_hp, old_max_hp, p["max_hp"], health=True, overheal=p["over_heal"])
+                p["mp"] = _rescale_battle_pool(old_mp, old_max_mp, p["max_mp"])
+            p["pair_source_character_id"] = source_id
+            p["pair_source_name"] = source["name"]
+            p["_pair_base_stats"] = copy.deepcopy(profile)
+    return result
 
 
 # ── 라운드 처리 공용 헬퍼 ──
@@ -4346,6 +4426,7 @@ def _snapshot_enemy(enemy: Enemy, party: list[Character]) -> dict:
         "attack": enemy.attack,
         "hp": hp,
         "max_hp": hp,
+        "action_count": enemy.action_count,
         "skills": _normalized_enemy_skill_payloads(enemy.skills),
         "joined_round": 0,
         "status_effects": [],
@@ -4503,16 +4584,21 @@ def _get_cached_active_battle_skills_by_character(
         return result
 
 
+def _battle_skills_by_participant(db: Session, participants: list[dict], *, cached: bool = False) -> dict[int, dict[int, dict]]:
+    sources = {
+        p["character_id"]: p.get("pair_source_character_id", p["character_id"])
+        for p in participants
+    }
+    query = _get_cached_active_battle_skills_by_character if cached else _query_active_battle_skills_by_character
+    by_source = query(db, list(set(sources.values())))
+    return {character_id: by_source.get(source_id, {}) for character_id, source_id in sources.items()}
+
+
 def get_battle_active_skills(db: Session, session_id: int) -> dict:
     participants = db.query(BattleSession.participants).filter(BattleSession.id == session_id).scalar()
     if participants is None:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
-    character_ids = [
-        int(participant["character_id"])
-        for participant in (participants or [])
-        if participant.get("character_id") is not None
-    ]
-    by_character = _get_cached_active_battle_skills_by_character(db, character_ids)
+    by_character = _battle_skills_by_participant(db, participants, cached=True)
     book_order = {book: index for index, book in enumerate(SKILL_BOOK_ORDER)}
     return {
         "skills_by_character": {
@@ -4663,7 +4749,7 @@ def _battle_log_with_metrics(log: list | None) -> list[dict]:
 def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessionRead:
     environments = {str(env.id): env for env in db.query(Environment).filter(Environment.chapter == session.chapter).all()} if session.chapter else {}
     enemies = _normalized_battle_enemies(session.enemies)
-    participants = [{**participant, "environment_stacks": [
+    participants = [{**{key: value for key, value in participant.items() if key not in _PAIR_PRIVATE_FIELDS}, "environment_stacks": [
         {"id": int(env_id), "name": environments[env_id].name if env_id in environments else "환경",
          "color": environments[env_id].color if env_id in environments else "#e879f9", "count": count}
         for env_id, count in participant.get("env_stacks", {}).items() if count > 0
@@ -4671,6 +4757,8 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
     return BattleSessionRead(
         id=session.id,
         mode=session.mode,
+        pair_battle=session.pair_battle,
+        pairs=session.pairs,
         chapter=session.chapter,
         status=session.status,
         round=session.round,
@@ -4692,6 +4780,8 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
 _BATTLE_PUBLIC_COLUMNS = (
     BattleSession.id,
     BattleSession.mode,
+    BattleSession.pair_battle,
+    BattleSession.pairs,
     BattleSession.chapter,
     BattleSession.status,
     BattleSession.round,
@@ -4821,6 +4911,51 @@ def _remember_item_usage(state: dict, usage: ItemUsage) -> dict:
     return {**state, "item_usages": item_usages}
 
 
+def _validate_battle_pairs(pairs: list[list[int]], character_ids: list[int]) -> list[list[int]]:
+    flattened = [character_id for pair in pairs for character_id in pair]
+    if (
+        any(len(pair) not in (1, 2) for pair in pairs)
+        or sum(len(pair) == 1 for pair in pairs) > 1
+        or len(flattened) != len(set(flattened))
+        or set(flattened) != set(character_ids)
+    ):
+        raise HTTPException(status_code=400, detail="모든 참가자를 중복 없이 2인 1조로 편성해 주세요. 홀수 인원일 때만 1명이 대기할 수 있습니다.")
+    return [list(pair) for pair in pairs]
+
+
+def _reconcile_battle_pairs(pairs: list[list[int]], character_ids: list[int]) -> list[list[int]]:
+    """난입/되돌리기 시 완성된 페어를 보존하고 남은 인원만 연결한다."""
+    remaining = set(character_ids)
+    complete, waiting = [], []
+    for pair in pairs:
+        kept = []
+        for character_id in pair:
+            if character_id in remaining:
+                kept.append(character_id)
+                remaining.remove(character_id)
+        if len(kept) == 2:
+            complete.append(kept)
+        else:
+            waiting.extend(kept)
+    added = [character_id for character_id in character_ids if character_id in remaining]
+    random.shuffle(added)
+    waiting.extend(added)
+    return complete + [waiting[index:index + 2] for index in range(0, len(waiting), 2)]
+
+
+def update_battle_pairs(db: Session, session_id: int, data: BattlePairsRequest) -> BattleSessionRead:
+    session = _get_battle_for_update(db, session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    if session.status != "in_progress":
+        raise HTTPException(status_code=400, detail="이미 종료된 전투입니다.")
+    if not session.pair_battle:
+        raise HTTPException(status_code=400, detail="페어 전투에서만 매칭을 변경할 수 있습니다.")
+    session.pairs = _validate_battle_pairs(data.pairs, [p["character_id"] for p in session.participants])
+    session.participants = _apply_battle_pair_stats(session.participants, session.pairs)
+    return _commit_battle_session(db, session)
+
+
 def start_battle(db: Session, member: Member, data: BattleStartRequest) -> BattleSessionRead:
     characters = db.query(Character).filter(Character.id.in_(data.character_ids)).all()
     if len(characters) != len(set(data.character_ids)):
@@ -4828,19 +4963,33 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
     enemies_db = db.query(Enemy).filter(Enemy.id.in_(data.enemy_ids)).all()
     if len(enemies_db) != len(set(data.enemy_ids)):
         raise HTTPException(status_code=400, detail="존재하지 않는 에너미가 포함되어 있습니다.")
+    pairs = []
+    if data.pair_battle:
+        pairs = (
+            _validate_battle_pairs(data.pairs, data.character_ids)
+            if data.pairs is not None
+            else _reconcile_battle_pairs([], list(dict.fromkeys(data.character_ids)))
+        )
+    elif data.pairs:
+        raise HTTPException(status_code=400, detail="페어 전투를 선택해 주세요.")
     rollback_state = _new_battle_rollback_state()
     if data.mode == "real":
         for character in characters:
             rollback_state = _remember_battle_character_state(rollback_state, character)
 
+    participants = [_snapshot_combatant(c) for c in characters]
+    if data.pair_battle:
+        participants = _apply_battle_pair_stats(participants, pairs, initial=True)
     session = BattleSession(
         mode=data.mode,
+        pair_battle=data.pair_battle,
+        pairs=pairs,
         chapter=enemies_db[0].chapter,
         status="in_progress",
         round=1,
         enemies=[_snapshot_enemy(e, characters) for e in enemies_db],
         summons=[],
-        participants=[_snapshot_combatant(c) for c in characters],
+        participants=participants,
         log=[],
         rollback_state=rollback_state,
         created_by=member.id,
@@ -4984,6 +5133,9 @@ def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> Battle
     snapshot["joined_round"] = session.round
     participants.append(snapshot)
     session.participants = participants
+    if session.pair_battle:
+        session.pairs = _reconcile_battle_pairs(session.pairs, [p["character_id"] for p in participants])
+        session.participants = _apply_battle_pair_stats(participants, session.pairs)
     if session.mode == "real":
         rollback_state = _get_battle_rollback_state(session)
         if rollback_state.get("version") == 1:
@@ -5017,7 +5169,7 @@ def join_battle_enemy(db: Session, session_id: int, data: BattleEnemyJoinRequest
 
 
 def _finalize_real_battle(db: Session, participants: list[dict]) -> None:
-    """실전 전투 종료: 최종 hp를 반영하고 마나는 100% 회복한다(그 외 스탯은 그대로 유지)."""
+    """실전 종료: 페어는 잔여 HP 비율을 본래 최대 HP로 환산한다. MP는 기존대로 전부 회복한다."""
     character_ids = [p["character_id"] for p in participants]
     characters_by_id = {
         c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
@@ -5026,7 +5178,10 @@ def _finalize_real_battle(db: Session, participants: list[dict]) -> None:
         character = characters_by_id.get(p["character_id"])
         if character is None:
             continue
-        character.hp = max(0, min(p["hp"], character.hp_max))
+        if p.get("pair_source_character_id") is not None:
+            character.hp = _rescale_battle_pool(p["hp"], p["max_hp"], character.hp_max, health=True)
+        else:
+            character.hp = max(0, min(p["hp"], character.hp_max))
         character.mp = character.mp_max
 
 
@@ -5048,6 +5203,31 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         _ensure_combatant_snapshot_defaults(p)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
+
+    # 배열 순서가 실행 순서다. 같은 에너미의 여러 행동을 ID로 덮어쓰거나 정렬하지 않는다.
+    actions_by_enemy: dict[int, list] = {}
+    active_enemies = {enemy["enemy_id"]: enemy for enemy in enemies if _enemy_targetable(enemy, round_no)}
+    for action in data.enemy_actions:
+        enemy = active_enemies.get(action.enemy_id)
+        if enemy is None:
+            raise HTTPException(status_code=400, detail="현재 행동할 수 없는 에너미가 포함되어 있습니다.")
+        actions_by_enemy.setdefault(action.enemy_id, []).append(action)
+        if action.kind == "none":
+            if enemy.get("action_count") is not None and enemy["skills"]:
+                raise HTTPException(status_code=400, detail=f"{enemy['name']}: 각 행동에 사용할 스킬을 선택해 주세요.")
+            continue
+        index = action.skill_index
+        if index is None or not 0 <= index < len(enemy["skills"]):
+            raise HTTPException(status_code=400, detail=f"{enemy['name']}: 사용할 스킬을 다시 선택해 주세요.")
+        is_summon = enemy["skills"][index]["skill_type"] == "소환"
+        if (action.kind == "summon") != is_summon:
+            raise HTTPException(status_code=400, detail="선택한 스킬과 행동 유형이 일치하지 않습니다.")
+    for enemy_id, enemy in active_enemies.items():
+        expected = enemy.get("action_count", 1)
+        actual = len(actions_by_enemy.get(enemy_id, []))
+        # 이전 버전에서 이미 시작한 전투는 생략된 1회 행동을 그대로 허용한다.
+        if actual > expected or ("action_count" in enemy and actual != expected):
+            raise HTTPException(status_code=400, detail=f"{enemy['name']}: 행동횟수에 맞춰 스킬 {expected}개를 순서대로 선택해 주세요.")
 
     # 실전은 "이전 턴 다시 진행하기"를 위해 이 턴의 행동이 반영되기 전 상태를 남겨둔다.
     if session.mode == "real":
@@ -5168,10 +5348,15 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     events.append("📣 적의 행동 암시!")
     pending_actions: list[dict] = []
     next_summon_id = max([s["id"] for s in summons], default=0)
+    action_numbers: dict[int, int] = {}
     for action in data.enemy_actions:
         enemy = enemies_by_id.get(action.enemy_id)
         if not enemy or not _enemy_targetable(enemy, round_no):
             continue
+
+        action_numbers[action.enemy_id] = action_numbers.get(action.enemy_id, 0) + 1
+        if enemy.get("action_count", 1) > 1:
+            events.append(f"{enemy['name']} · {action_numbers[action.enemy_id]}번째 행동 / {enemy['action_count']}회")
 
         skill = None
         if action.skill_index is not None and 0 <= action.skill_index < len(enemy["skills"]):
@@ -5336,10 +5521,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     enemies_by_id = {e["enemy_id"]: e for e in enemies}
     actions_by_char = {a.character_id: a for a in data.character_actions}
     skill_book_order = {book: index for index, book in enumerate(SKILL_BOOK_ORDER)}
-    battle_skills_by_character = _query_active_battle_skills_by_character(
-        db,
-        [p["character_id"] for p in participants],
-    )
+    battle_skills_by_character = _battle_skills_by_participant(db, participants)
 
     living = [p for p in participants if _combatant_active(p)]
     actable = [p for p in living if not _just_joined(p, round_no)]
@@ -5513,6 +5695,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
     def _selected_skill(actor: dict, action: CharacterActionInput) -> dict | None:
         available = battle_skills_by_character.get(actor["character_id"], {})
+        if actor.get("pair_source_character_id") is not None and (
+            not available or (action.skill_node_id is not None and action.skill_node_id not in available)
+        ):
+            raise HTTPException(status_code=400, detail=f"{actor['name']}: 현재 페어로 사용할 수 있는 기술을 다시 선택해 주세요.")
         if not available:
             return None
         selected = available.get(action.skill_node_id) if action.skill_node_id is not None else None
@@ -6440,10 +6626,16 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     # 하수인는 행동 암시 턴에 이미 소환되므로, 이번 라운드에 소환된 하수인도 곧바로 공격한다.
     attacking_summons = [s for s in summons if s["hp"] > 0 and s.get("action_type", "attack") == "attack"]
 
+    action_numbers: dict[int, int] = {}
     for enemy_action in session.pending_enemy_actions:
         enemy = enemies_by_id.get(enemy_action.get("enemy_id"))
         if not enemy or enemy["hp"] <= 0:
             continue
+
+        enemy_id = enemy["enemy_id"]
+        action_numbers[enemy_id] = action_numbers.get(enemy_id, 0) + 1
+        if enemy.get("action_count", 1) > 1:
+            events.append(f"{enemy['name']} · {action_numbers[enemy_id]}번째 행동 / {enemy['action_count']}회")
 
         skill_index = enemy_action.get("skill_index")
         skill = None
@@ -6537,7 +6729,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             if all(value["hp"] <= 0 for value in enemies):
                 break
         elif enemy_action.get("kind") == "summon":
-            pass  # 하수인는 행동 암시 턴에 이미 소환되었고, 이번 라운드 공격은 아래 하수인 행동에서 처리된다.
+            events.append(f"👹 {enemy['name']}의 {skill['name'] if skill else '소환'} · 암시 턴에 소환 완료")
         else:
             events.append(f"💤 {enemy['name']} 무반응")
 
@@ -6634,6 +6826,9 @@ def undo_last_turn(db: Session, session_id: int) -> BattleSessionRead:
     target_phase = snapshot.get("phase", "telegraph")
     target_round = snapshot["round"]
     session.participants = snapshot["participants"]
+    if session.pair_battle:
+        session.pairs = _reconcile_battle_pairs(session.pairs, [p["character_id"] for p in session.participants])
+        session.participants = _apply_battle_pair_stats(session.participants, session.pairs)
     session.enemies = snapshot["enemies"]
     session.summons = snapshot["summons"]
     session.pending_enemy_actions = snapshot.get("pending_enemy_actions", [])

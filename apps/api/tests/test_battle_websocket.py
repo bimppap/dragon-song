@@ -36,6 +36,30 @@ def battle_session(version="2026-09-08T12:00:00+09:00", **changes):
 
 
 class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
+    async def test_ordered_enemy_actions_sync_and_restore_for_staff(self):
+        manager = BattleConnectionManager()
+        session = battle_session(phase="telegraph", enemies=[{"enemy_id": 3, "action_count": 2}])
+        manager.remember_session(1, session)
+        staff = SnapshotWebSocket()
+        await manager.connect(1, staff, is_staff=True, session=session)
+        actions = [
+            {"kind": "attack", "skill_index": 2, "target_character_ids": [12]},
+            {"kind": "summon", "skill_index": 0, "target_character_ids": []},
+        ]
+        message = {"type": "draft_patch", "version": session["updated_at"], "client_id": "tab-a",
+                   "draft_type": "enemy", "entity_id": 3, "patch": {"actions": actions}}
+        with patch.object(ws, "manager", manager):
+            await ws.handle_ws_message(1, SimpleNamespace(id=7, role="ADMIN"), staff, message)
+            self.assertEqual(staff.messages[-1]["patch"]["actions"], actions)
+            reconnected = SnapshotWebSocket()
+            await manager.connect(1, reconnected, is_staff=True, session=session)
+            self.assertEqual(reconnected.messages[-1]["draft"]["enemy"]["3"]["actions"], actions)
+            for invalid in [actions[:1], [*actions, actions[0]], [None, actions[0]], [{**actions[0], "target_character_ids": "bad"}, actions[1]]]:
+                before = len(staff.messages)
+                await ws.handle_ws_message(1, SimpleNamespace(id=7, role="ADMIN"), staff, {**message, "patch": {"actions": invalid}})
+                self.assertEqual(len(staff.messages), before)
+            self.assertEqual(manager.session_message(1, is_staff=True)["draft"]["enemy"]["3"]["actions"], actions)
+
     async def test_broadcasts_in_parallel_and_removes_dead_connections(self):
         manager = BattleConnectionManager()
         started: list[FakeWebSocket] = []

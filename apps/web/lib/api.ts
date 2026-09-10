@@ -1476,6 +1476,7 @@ export interface EnemySkill {
 }
 
 export interface Enemy {
+  action_count: number;
   id: number;
   name: string;
   chapter: string | null;
@@ -1490,6 +1491,7 @@ export interface Enemy {
 }
 
 export interface EnemyCreate {
+  action_count: number;
   name: string;
   chapter: string | null;
   base_hp: number;
@@ -1615,6 +1617,7 @@ export type CharacterActionKind = "attack" | "skill" | "defend" | "heal" | "resc
 export type EnemyActionKind = "attack" | "summon" | "none";
 
 export interface BattleEnemyState {
+  action_count?: number;
   status_effects?: BattleStatusEffect[];
   enemy_id: number;
   name: string;
@@ -1651,6 +1654,8 @@ export interface BattleStatusEffect {
 }
 
 export interface BattleParticipant {
+  pair_source_character_id?: number;
+  pair_source_name?: string;
   environment_stacks?: { id: number; name: string; color: string; count: number }[];
   character_id: number;
   name: string;
@@ -1703,6 +1708,8 @@ export interface BattleSessionEnvironment {
 export interface BattleSession {
   id: number;
   mode: BattleMode;
+  pair_battle: boolean;
+  pairs: number[][];
   chapter: string | null;
   status: BattleStatus;
   round: number;
@@ -1751,6 +1758,8 @@ export interface BattleStartRequest {
   mode: BattleMode;
   enemy_ids: number[];
   character_ids: number[];
+  pair_battle?: boolean;
+  pairs?: number[][];
 }
 
 export interface BattleCharacterActionInput {
@@ -1783,6 +1792,11 @@ export async function fetchBattle(sessionId: number): Promise<BattleSession> {
   return request<BattleSession>(`/battles/${sessionId}`, undefined, "전투 조회 실패");
 }
 
+/** 전투 결과가 반영되면 내 정보 화면의 이전 HP 캐시를 버린다. */
+export function invalidateBattleCharacterCache() {
+  invalidateApiCache("characters:");
+}
+
 /** 러너 관전용. 마지막 버전을 전달하면 변경이 없을 때 본문 없는 304를 받아 대용량 전투 로그 전송을 피한다. */
 export async function fetchLiveBattle(
   known?: Pick<BattleSession, "id" | "updated_at">,
@@ -1807,6 +1821,13 @@ export async function createBattle(data: BattleStartRequest): Promise<BattleSess
     method: "POST",
     body: JSON.stringify(data),
   }, "전투 시작 실패");
+}
+
+export async function updateBattlePairs(sessionId: number, pairs: number[][]): Promise<BattleSession> {
+  return request<BattleSession>(`/battles/${sessionId}/pairs`, {
+    method: "PUT",
+    body: JSON.stringify({ pairs }),
+  }, "페어 변경 실패");
 }
 
 /** 1턴: 적의 행동 암시. */
@@ -1983,10 +2004,11 @@ export async function fetchBattleAvailableItems(sessionId: number): Promise<Batt
 export async function fetchBattleActiveSkills(
   sessionId: number,
   participantIds: number[],
+  sourceKey = "",
 ): Promise<BattleActiveSkills> {
   const participantKey = [...participantIds].sort((a, b) => a - b).join(",");
   return cachedRequest<BattleActiveSkills>(
-    `battles:active-skills:${sessionId}:${participantKey}`,
+    `battles:active-skills:${sessionId}:${participantKey}:${sourceKey}`,
     `/battles/${sessionId}/active-skills`,
     BATTLE_ACTIVE_SKILLS_CACHE_TTL_MS,
     "전투 활성 기술 조회 실패",

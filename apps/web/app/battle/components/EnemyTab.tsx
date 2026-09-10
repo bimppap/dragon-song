@@ -105,6 +105,7 @@ type SkillFormEntry = {
 };
 
 type EnemyFormState = {
+  action_count: string;
   name: string;
   chapter: string;
   base_hp: string;
@@ -133,6 +134,7 @@ const EMPTY_SKILL: SkillFormEntry = {
 };
 
 const DEFAULT_FORM: EnemyFormState = {
+  action_count: "1",
   name: "",
   chapter: "",
   base_hp: "0",
@@ -168,6 +170,7 @@ function toPayload(form: EnemyFormState): EnemyCreate {
     };
   });
   return {
+    action_count: Number(form.action_count),
     name: form.name.trim(),
     chapter: form.chapter.trim() || null,
     base_hp: parsePositiveInt(form.base_hp),
@@ -181,6 +184,7 @@ function toPayload(form: EnemyFormState): EnemyCreate {
 
 function enemyToForm(enemy: Enemy): EnemyFormState {
   return {
+    action_count: String(enemy.action_count ?? 1),
     name: enemy.name,
     chapter: enemy.chapter ?? "",
     base_hp: String(enemy.base_hp),
@@ -521,6 +525,10 @@ export default function EnemyTab() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!form.name.trim()) return;
+    if (!/^\d+$/.test(form.action_count) || !Number.isSafeInteger(Number(form.action_count)) || Number(form.action_count) < 1) {
+      toast("행동횟수는 1 이상의 정수로 입력해 주세요.", "error");
+      return;
+    }
     if (form.skills.length === 0) { toast("스킬을 하나 이상 추가해주세요.", "error"); return; }
     if (form.skills.some((skill) => skill.skill_type === "환경" && !skill.environment_id)) {
       toast("환경 스킬에 사용할 환경을 선택해 주세요.", "error");
@@ -637,6 +645,7 @@ export default function EnemyTab() {
                   <div className="flex items-center gap-3 text-xs text-muted">
                     <span>HP {enemy.base_hp.toLocaleString()}</span>
                     <span>공격 {enemy.attack.toLocaleString()}</span>
+                    <span>행동 {enemy.action_count ?? 1}회</span>
                     <Button
                       type="button"
                       variant="ghost"
@@ -946,7 +955,7 @@ export default function EnemyTab() {
           )}
 
           <div className="rounded-xl border border-line bg-inset px-4 py-4 flex flex-col gap-3">
-            <p className="text-xs font-semibold tracking-widest text-muted uppercase">체력 / 공격력</p>
+            <p className="text-xs font-semibold tracking-widest text-muted uppercase">체력 / 공격력 / 행동횟수</p>
             <div className="grid grid-cols-2 gap-3">
               <div className="flex flex-col gap-1.5">
                 <label className="text-xs font-semibold text-ivory/85">기본 체력</label>
@@ -956,6 +965,12 @@ export default function EnemyTab() {
                 <label className="text-xs font-semibold text-ivory/85">공격력</label>
                 <Input type="number" min={0} value={form.attack} onChange={(e) => setField("attack", e.target.value)} placeholder="0" />
               </div>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <label htmlFor="enemy-action-count" className="text-xs font-semibold text-ivory/85">행동횟수</label>
+              <Input id="enemy-action-count" type="number" min={1} step={1} required value={form.action_count}
+                onChange={(e) => setField("action_count", e.target.value)} aria-describedby="enemy-action-count-help" />
+              <p id="enemy-action-count-help" className="text-xs text-muted">1 이상의 정수. 암시 턴에 이 횟수만큼 스킬을 실행 순서대로 선택합니다.</p>
             </div>
             <p className="text-xs font-semibold text-muted">인원당 증가 체력</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">

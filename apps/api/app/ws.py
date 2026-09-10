@@ -20,7 +20,7 @@ DRAFT_PATCH_FIELDS: dict[str, frozenset[str]] = {
         "protect_target_character_id",
         "item_id",
     }),
-    "enemy": frozenset({"kind", "skill_index", "target_character_ids"}),
+    "enemy": frozenset({"kind", "skill_index", "target_character_ids", "actions"}),
 }
 
 
@@ -57,7 +57,14 @@ class BattleConnectionManager:
         previous = self._sessions.get(session_id)
         if previous and previous["updated_at"] >= session["updated_at"]:
             return False
-        self.clear_drafts(session_id)
+        # 페어 편성만 바뀌었을 때는 입력 중인 행동과 러너 미리보기를 보존한다.
+        formation_fields = {"pair_battle", "pairs", "created_at", "updated_at"}
+        same_combat_state = previous is not None and (
+            {key: value for key, value in previous.items() if key not in formation_fields}
+            == {key: value for key, value in session.items() if key not in formation_fields}
+        )
+        if not same_combat_state:
+            self.clear_drafts(session_id)
         self._sessions[session_id] = session
         return True
 
@@ -234,6 +241,21 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
             return
         if not set(patch).issubset(DRAFT_PATCH_FIELDS[draft_type]):
             return
+        if draft_type == "enemy" and "actions" in patch:
+            enemy = next((enemy for enemy in manager._sessions[session_id].get("enemies", []) if enemy["enemy_id"] == entity_id), None)
+            actions = patch["actions"]
+            if enemy is None or not isinstance(actions, list) or len(actions) != enemy.get("action_count", 1):
+                return
+            for action in actions:
+                if not isinstance(action, dict) or set(action) != {"kind", "skill_index", "target_character_ids"}:
+                    return
+                if action["kind"] not in ("attack", "summon", "none"):
+                    return
+                if action["skill_index"] is not None and type(action["skill_index"]) is not int:
+                    return
+                targets = action["target_character_ids"]
+                if not isinstance(targets, list) or any(type(target) is not int for target in targets):
+                    return
         manager.apply_draft_patch(session_id, draft_type, entity_id, patch)
         await manager.broadcast(
             session_id,

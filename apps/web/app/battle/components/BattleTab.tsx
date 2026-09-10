@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { Ambulance, CalendarClock, Eye, Flag, Heart, History, Image as ImageIcon, ListOrdered, PlayCircle, RotateCcw, Shield, Sparkles, Swords, Trash2, Zap } from "lucide-react";
+import { Ambulance, CalendarClock, Eye, Flag, Heart, History, Image as ImageIcon, Link2, ListOrdered, PlayCircle, RotateCcw, Shield, Shuffle, Sparkles, Swords, Trash2, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,6 +29,8 @@ import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
 import BattleArena from "./BattleArena";
+import BattlePairGrid from "./BattlePairGrid";
+import { randomizeBattlePairs, reconcileBattlePairs, swapBattlePairMembers } from "@/lib/battlePairs";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
@@ -162,6 +164,8 @@ export default function BattleTab() {
 
   const [selectedEnemyIds, setSelectedEnemyIds] = useState<Set<number>>(new Set());
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<Set<number>>(new Set());
+  const [pairBattle, setPairBattle] = useState(false);
+  const [pairs, setPairs] = useState<number[][]>([]);
   const [active, setActive] = useState<ActiveBattle | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
@@ -269,13 +273,21 @@ export default function BattleTab() {
     [characters, selectedCharacterIds],
   );
 
+  const selectedCharacters = characters.filter((character) => selectedCharacterIds.has(character.id));
+
+  function selectCharacters(ids: Set<number>) {
+    setSelectedCharacterIds(ids);
+    if (pairBattle) {
+      const randomizedIds = randomizeBattlePairs([...ids]).flat();
+      setPairs((previous) => reconcileBattlePairs(previous, randomizedIds));
+    }
+  }
+
   function toggleCharacter(id: number) {
-    setSelectedCharacterIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    const next = new Set(selectedCharacterIds);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    selectCharacters(next);
   }
 
   function toggleEnemy(id: number) {
@@ -295,6 +307,8 @@ export default function BattleTab() {
         mode,
         enemy_ids: [...selectedEnemyIds],
         character_ids: [...selectedCharacterIds],
+        pair_battle: pairBattle,
+        pairs: pairBattle ? pairs : undefined,
       });
       setActive({ sessionId: session.id, mode, readOnly: false, runnerPreview: false });
     } catch (e) {
@@ -344,6 +358,8 @@ export default function BattleTab() {
             setActive(null);
             setSelectedEnemyIds(new Set());
             setSelectedCharacterIds(new Set());
+            setPairBattle(false);
+            setPairs([]);
             setReloadKey((k) => k + 1);
           }}
         />
@@ -537,7 +553,7 @@ export default function BattleTab() {
                 size="sm"
                 className="shrink-0"
                 disabled={characters.length === 0}
-                onClick={() => setSelectedCharacterIds(
+                onClick={() => selectCharacters(
                   selectedCharacterIds.size === characters.length
                     ? new Set()
                     : new Set(characters.map((c) => c.id)),
@@ -546,8 +562,29 @@ export default function BattleTab() {
                 {selectedCharacterIds.size === characters.length ? "전체 해제" : "전원 선택"}
               </Button>
             </CardHeader>
-            <CardContent>
-              <div className="grid max-w-3xl grid-cols-6 gap-3">
+            <CardContent className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-inset/40 p-3">
+                <div className="space-y-1">
+                  <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ivory">
+                    <Checkbox
+                      checked={pairBattle}
+                      onCheckedChange={(checked) => {
+                        const enabled = checked === true;
+                        setPairBattle(enabled);
+                        setPairs(enabled ? randomizeBattlePairs([...selectedCharacterIds]) : []);
+                      }}
+                    />
+                    <Link2 size={16} className="text-gold" />
+                    페어 전투
+                  </label>
+                  <p className="text-xs text-muted">선택한 캐릭터를 무작위로 2인 1조에 배정합니다. 홀수 인원일 때는 1명이 페어 대기로 남습니다.</p>
+                  {pairBattle && <p className="text-xs text-gold">이 전투에서 서로의 포지션·능력치·기술을 사용합니다. 아이템은 본인 것을 사용하며, 실전 종료 시 잔여 HP 비율을 본래 최대 HP에 적용합니다.</p>}
+                </div>
+                {pairBattle && <Button type="button" variant="outline" size="sm" disabled={selectedCharacterIds.size < 2} onClick={() => setPairs(randomizeBattlePairs([...selectedCharacterIds]))}>
+                  <Shuffle size={14} /> 다시 랜덤 매칭
+                </Button>}
+              </div>
+              <div className="grid max-w-3xl grid-cols-3 gap-3 sm:grid-cols-6">
                 {characters.map((c) => {
                   const checked = selectedCharacterIds.has(c.id);
                   return (
@@ -592,6 +629,29 @@ export default function BattleTab() {
                   );
                 })}
               </div>
+              {pairBattle && (
+                <div className="space-y-3">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-ivory"><Link2 size={15} className="text-gold" />페어 편성 · {Math.floor(selectedCharacters.length / 2)}조</p>
+                  {selectedCharacters.length === 0 ? <p className="text-xs text-muted">캐릭터를 선택하면 페어가 배정됩니다.</p> : (
+                    <BattlePairGrid
+                      characters={selectedCharacters}
+                      pairs={pairs}
+                      compact
+                      onSwap={(source, target) => setPairs((previous) => swapBattlePairMembers(previous, source, target))}
+                    >
+                      {selectedCharacters.map((character) => (
+                        <div key={character.id} className="overflow-hidden rounded-xl border border-line bg-surface">
+                          <div className="relative">
+                            <CharacterAvatar src={character.image_url} alt={character.name} className="aspect-square w-full rounded-none" sizes="160px" />
+                            <CharacterFactionIcon faction={character.faction} />
+                          </div>
+                          <p className="truncate px-2 py-2 text-center text-sm font-semibold text-ivory" title={character.name}>{character.name}</p>
+                        </div>
+                      ))}
+                    </BattlePairGrid>
+                  )}
+                </div>
+              )}
             </CardContent>
           </Card>
 

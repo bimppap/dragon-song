@@ -41,6 +41,7 @@ from app.schemas import (
     BattleJoinRequest,
     BattleRewardPreview,
     BattleSessionRead,
+    BattlePairsRequest,
     BattleSessionSummary,
     BattleStartRequest,
     BattleTelegraphRequest,
@@ -1355,6 +1356,18 @@ def join_battle(
 ):
     """관리자가 전투 중간에 캐릭터를 난입시킨다. 난입한 캐릭터는 해당 라운드에 공격/치유 대상이 되지 않는다."""
     updated = crud.join_battle(db, session_id, data)
+    broadcast_battle_update(session_id, updated)
+    return updated
+
+
+@app.put("/battles/{session_id}/pairs", response_model=BattleSessionRead)
+def update_battle_pairs(
+    session_id: int,
+    data: BattlePairsRequest,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    updated = crud.update_battle_pairs(db, session_id, data)
     broadcast_battle_update(session_id, updated)
     return updated
 

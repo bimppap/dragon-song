@@ -859,6 +859,7 @@ class EnemySkill(BaseModel):
 
 
 class EnemyCreate(BaseModel):
+    action_count: int = Field(default=1, ge=1, strict=True)
     name: str
     chapter: str | None = None
     base_hp: int = Field(ge=0)
@@ -870,6 +871,7 @@ class EnemyCreate(BaseModel):
 
 
 class EnemyRead(BaseModel):
+    action_count: int = 1
     id: int
     name: str
     chapter: str | None
@@ -941,6 +943,12 @@ class BattleStartRequest(BaseModel):
     mode: BattleMode
     enemy_ids: list[int] = Field(min_length=1)
     character_ids: list[int] = Field(min_length=1)
+    pair_battle: bool = False
+    pairs: list[list[int]] | None = None
+
+
+class BattlePairsRequest(BaseModel):
+    pairs: list[list[int]]
 
 
 class CharacterActionInput(BaseModel):
@@ -981,6 +989,8 @@ class BattleEnemyJoinRequest(BaseModel):
 class BattleSessionRead(BaseModel):
     id: int
     mode: BattleMode
+    pair_battle: bool = False
+    pairs: list[list[int]] = Field(default_factory=list)
     chapter: str | None
     status: BattleStatus
     round: int

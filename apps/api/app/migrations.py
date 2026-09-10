@@ -349,11 +349,17 @@ def ensure_schema(engine: Engine) -> None:
 
     if "enemies" in table_names:
         enemy_columns = {col["name"] for col in inspector.get_columns("enemies")}
+        if "action_count" not in enemy_columns:
+            statements.append("ALTER TABLE enemies ADD COLUMN action_count INTEGER NOT NULL DEFAULT 1")
         if "image_url" not in enemy_columns:
             statements.append("ALTER TABLE enemies ADD COLUMN image_url VARCHAR")
 
     if "battle_sessions" in table_names:
         battle_columns = {col["name"] for col in inspector.get_columns("battle_sessions")}
+        if "pair_battle" not in battle_columns:
+            statements.append("ALTER TABLE battle_sessions ADD COLUMN pair_battle BOOLEAN NOT NULL DEFAULT false")
+        if "pairs" not in battle_columns:
+            statements.append("ALTER TABLE battle_sessions ADD COLUMN pairs JSON NOT NULL DEFAULT '[]'")
         if "round_snapshots" not in battle_columns:
             statements.append("ALTER TABLE battle_sessions ADD COLUMN round_snapshots JSON NOT NULL DEFAULT '[]'")
         if "phase" not in battle_columns:

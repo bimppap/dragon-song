@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { ArrowLeft, Ban, Check, Eye, Files, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
+import { ArrowLeft, Ban, Check, Eye, Files, Heart, HeartPulse, Link2, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -30,6 +30,8 @@ import {
   submitBattleTelegraph,
   terminateBattle,
   undoLastBattleTurn,
+  updateBattlePairs,
+  invalidateBattleCharacterCache,
   type BattleCharacterActionInput,
   type BattleEnemyActionInput,
   type BattleEnemyState,
@@ -55,6 +57,8 @@ import { isAdminRole, useAuth } from "@/lib/auth";
 import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
+import BattlePairGrid from "./BattlePairGrid";
+import { sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
 
 function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect[] {
   const result: BattleStatusEffect[] = [];
@@ -72,6 +76,7 @@ function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
+const EMPTY_BATTLE_SKILLS: Record<number, BattleActiveSkill[]> = {};
 const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
 
 interface Props {
@@ -100,10 +105,14 @@ interface CharDraft {
   item_id: number | null;
 }
 
-interface TelegraphDraft {
+interface TelegraphActionDraft {
   kind: EnemyActionKind;
   skill_index: number | null;
   target_character_ids: number[];
+}
+
+interface TelegraphDraft {
+  actions: TelegraphActionDraft[];
 }
 
 interface RemoteEditingState extends BattleEditingState {
@@ -688,6 +697,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [submitting, setSubmitting] = useState(false);
   const [undoing, setUndoing] = useState(false);
   const [terminating, setTerminating] = useState(false);
+  const [savingPairs, setSavingPairs] = useState(false);
+  const savingPairsRef = useRef(false);
 
   const [charDrafts, setCharDrafts] = useState<Record<number, CharDraft>>({});
   const [bulkActionKind, setBulkActionKind] = useState<CharacterActionKind>("attack");
@@ -696,7 +707,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const itemsLoadPromiseRef = useRef<Promise<void> | null>(null);
   const itemsLoadedRef = useRef(false);
   const itemsLoadVersionRef = useRef(0);
-  const [skillsByCharacter, setSkillsByCharacter] = useState<Record<number, BattleActiveSkill[]>>({});
+  const activeSkillSourceKey = session?.participants
+    .map((p) => `${p.character_id}:${p.pair_source_character_id ?? p.character_id}`).join(",") ?? "";
+  const activeSkillLoadoutKey = `${sessionId}:${activeSkillSourceKey}`;
+  const [loadedSkills, setLoadedSkills] = useState<{ key: string; skills: Record<number, BattleActiveSkill[]> } | null>(null);
+  const skillsByCharacter = loadedSkills?.key === activeSkillLoadoutKey ? loadedSkills.skills : EMPTY_BATTLE_SKILLS;
+  const skillsReady = readOnly || loadedSkills?.key === activeSkillLoadoutKey;
   const [participantSort, setParticipantSort] = useState<ParticipantSort>("attention");
 
   const [joinOpen, setJoinOpen] = useState(false);
@@ -863,6 +879,10 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const activeSkillStatus = session?.status;
 
   useEffect(() => {
+    if (session?.mode === "real" && session.status !== "in_progress") invalidateBattleCharacterCache();
+  }, [session?.id, session?.mode, session?.status]);
+
+  useEffect(() => {
     if (readOnly || activeSkillSessionId == null || activeSkillStatus !== "in_progress") return;
     const sessionId = activeSkillSessionId;
     let cancelled = false;
@@ -873,16 +893,16 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           .split(",")
           .filter(Boolean)
           .map(Number);
-        const loaded = await fetchBattleActiveSkills(sessionId, participantIds);
-        if (!cancelled) setSkillsByCharacter(loaded.skills_by_character);
+        const loaded = await fetchBattleActiveSkills(sessionId, participantIds, activeSkillSourceKey);
+        if (!cancelled) setLoadedSkills({ key: activeSkillLoadoutKey, skills: loaded.skills_by_character });
       } catch {
-        if (!cancelled) setSkillsByCharacter({});
+        if (!cancelled) setLoadedSkills({ key: activeSkillLoadoutKey, skills: {} });
       }
     }
 
     void loadSkills();
     return () => { cancelled = true; };
-  }, [readOnly, activeSkillSessionId, activeSkillStatus, activeSkillParticipantKey]);
+  }, [readOnly, activeSkillSessionId, activeSkillStatus, activeSkillParticipantKey, activeSkillSourceKey, activeSkillLoadoutKey]);
 
   useEffect(() => {
     function syncCharDraftsWithSkills() {
@@ -999,18 +1019,21 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
   function resetTelegraphDrafts(data: BattleSession, patches: BattleDraftSnapshot["enemy"] = {}) {
     const next: Record<number, TelegraphDraft> = {};
-    const candidates = data.participants.filter((participant) => isTargetable(participant, data.round));
     for (const enemy of data.enemies) {
       if (enemy.hp <= 0 || enemy.joined_round === data.round) continue;
-      const firstAttackIndex = enemy.skills.findIndex((s) => s.skill_type !== "소환");
-      next[enemy.enemy_id] = firstAttackIndex >= 0
-        ? {
-          kind: "attack",
-          skill_index: firstAttackIndex,
-          target_character_ids: autoTargetsForEnemySkill(enemy.skills[firstAttackIndex], candidates),
-        }
-        : { kind: "none", skill_index: null, target_character_ids: [] };
-      Object.assign(next[enemy.enemy_id], patches[enemy.enemy_id]);
+      const saved = patches[enemy.enemy_id] as Partial<TelegraphDraft & TelegraphActionDraft> | undefined;
+      const count = enemy.action_count ?? 1;
+      next[enemy.enemy_id] = {
+        actions: Array.from({ length: count }, (_, index) => {
+          const restored = saved?.actions?.[index] ?? (index === 0 && saved?.kind ? saved : undefined);
+          return {
+            kind: "none",
+            skill_index: null,
+            target_character_ids: [],
+            ...restored,
+          };
+        }),
+      };
     }
     setTelegraphDrafts(next);
   }
@@ -1021,9 +1044,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     const previous = sessionRef.current;
     if (previous?.id === data.id && previous.updated_at > data.updated_at) return false;
     const changed = previous?.id !== data.id || previous.updated_at !== data.updated_at;
+    const formationOnly = changed && previous != null && sameBattleCombatState(previous, data);
     if (changed) {
       sessionRef.current = data;
       setSession(data);
+    }
+    if (changed && !formationOnly) {
       invalidateAvailableItems();
       setOwnDraftPreview(null);
       setRemoteEditing({});
@@ -1031,7 +1057,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       for (const timer of Object.values(editingCloseTimersRef.current)) clearTimeout(timer);
       editingCloseTimersRef.current = {};
     }
-    if (changed || snapshot !== undefined) {
+    if ((changed && !formationOnly) || snapshot !== undefined) {
       resetCharDrafts(data, snapshot?.character);
       resetTelegraphDrafts(data, snapshot?.enemy);
     }
@@ -1052,15 +1078,27 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     }
   }
 
-  function toggleTelegraphTarget(enemyId: number, characterId: number, maxCount: number) {
+  function patchTelegraphAction(enemyId: number, index: number, patch: Partial<TelegraphActionDraft>) {
     const draft = telegraphDrafts[enemyId];
+    if (!draft) return;
+    patchTelegraph(enemyId, { actions: draft.actions.map((action, i) => i === index ? { ...action, ...patch } : action) });
+  }
+
+  function moveTelegraphAction(enemyId: number, index: number, offset: number) {
+    const actions = [...telegraphDrafts[enemyId].actions];
+    [actions[index], actions[index + offset]] = [actions[index + offset], actions[index]];
+    patchTelegraph(enemyId, { actions });
+  }
+
+  function toggleTelegraphTarget(enemyId: number, actionIndex: number, characterId: number, maxCount: number) {
+    const draft = telegraphDrafts[enemyId]?.actions[actionIndex];
     if (!draft) return;
     const exists = draft.target_character_ids.includes(characterId);
     if (!exists && draft.target_character_ids.length >= maxCount) return;
     const target_character_ids = exists
       ? draft.target_character_ids.filter((id) => id !== characterId)
       : [...draft.target_character_ids, characterId];
-    patchTelegraph(enemyId, { target_character_ids });
+    patchTelegraphAction(enemyId, actionIndex, { target_character_ids });
   }
 
   function invalidateAvailableItems() {
@@ -1124,12 +1162,22 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
   async function handleSubmitTelegraph() {
     if (!session) return;
-    const enemyActions: BattleEnemyActionInput[] = Object.entries(telegraphDrafts).map(([id, draft]) => ({
-      enemy_id: Number(id),
-      kind: draft.kind,
-      skill_index: draft.skill_index ?? undefined,
-      target_character_ids: draft.target_character_ids,
-    }));
+    const actingEnemies = session.enemies.filter((enemy) => isEnemyTargetable(enemy, session.round));
+    for (const enemy of actingEnemies) {
+      const actions = telegraphDrafts[enemy.enemy_id]?.actions ?? [];
+      if (actions.length !== (enemy.action_count ?? 1) || (enemy.skills.length > 0 && actions.some((action) => action.skill_index == null))) {
+        toast(`${enemy.name}: 행동횟수에 맞춰 스킬 ${enemy.action_count ?? 1}개를 순서대로 선택해 주세요.`, "error");
+        return;
+      }
+    }
+    const enemyActions: BattleEnemyActionInput[] = actingEnemies.flatMap((enemy) =>
+      telegraphDrafts[enemy.enemy_id].actions.map((draft) => ({
+        enemy_id: enemy.enemy_id,
+        kind: draft.kind,
+        skill_index: draft.skill_index ?? undefined,
+        target_character_ids: draft.target_character_ids,
+      })),
+    );
     try {
       setSubmitting(true);
       const updated = await submitBattleTelegraph(session.id, enemyActions);
@@ -1142,7 +1190,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   }
 
   async function handleSubmitAllyTurn() {
-    if (!session) return;
+    if (!session || !skillsReady || savingPairs) return;
     const characterActions: BattleCharacterActionInput[] = Object.entries(charDrafts).map(([id, draft]) => {
       const characterId = Number(id);
       // 기술 대상이 SELF인 기술은 대상을 고르지 않고 시전자 본인으로 자동 지정한다.
@@ -1262,6 +1310,25 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       toast(e instanceof Error ? e.message : "난입 실패", "error");
     } finally {
       setJoining(false);
+    }
+  }
+
+  async function handlePairSwap(sourceId: number, targetId: number) {
+    const current = sessionRef.current;
+    if (!current?.pair_battle || current.status !== "in_progress" || readOnly || savingPairsRef.current) return;
+    const next = swapBattlePairMembers(current.pairs, sourceId, targetId);
+    if (next === current.pairs) return;
+    savingPairsRef.current = true;
+    setSavingPairs(true);
+    try {
+      const updated = await updateBattlePairs(current.id, next);
+      applyBattleSession(updated);
+      toast("페어 매칭을 변경했습니다.", "success");
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "페어 변경 실패", "error");
+    } finally {
+      savingPairsRef.current = false;
+      setSavingPairs(false);
     }
   }
 
@@ -1389,10 +1456,15 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     () => (session?.enemies ?? []).filter((enemy) => isEnemyTargetable(enemy, session?.round ?? 0)),
     [session?.enemies, session?.round],
   );
-  const pendingActionsByEnemy = useMemo(
-    () => new Map((session?.pending_enemy_actions ?? []).map((action) => [action.enemy_id, action])),
-    [session?.pending_enemy_actions],
-  );
+  const pendingActionsByEnemy = useMemo(() => {
+    const grouped = new Map<number, BattleSession["pending_enemy_actions"]>();
+    for (const action of session?.pending_enemy_actions ?? []) {
+      const actions = grouped.get(action.enemy_id) ?? [];
+      actions.push(action);
+      grouped.set(action.enemy_id, actions);
+    }
+    return grouped;
+  }, [session?.pending_enemy_actions]);
   const environmentsById = useMemo(
     () => new Map((session?.environments ?? []).map((environment) => [environment.id, environment])),
     [session?.environments],
@@ -1437,6 +1509,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             {enemyTitle} 전투
           </h2>
           <Badge>{session.mode === "real" ? "실전" : "모의전"}</Badge>
+          {session.pair_battle && <Badge variant="outline"><Link2 size={12} className="mr-1" />페어 전투</Badge>}
           <Badge variant="outline">라운드 {session.round}</Badge>
           {inProgress && <Badge variant="secondary">{PHASE_LABEL[phase]}</Badge>}
         </div>
@@ -1507,16 +1580,10 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         {session.enemies.map((enemy) => {
           const dead = enemy.hp <= 0;
           const justJoined = enemy.joined_round === session.round;
-          const draft = telegraphDrafts[enemy.enemy_id];
+          const enemyDraft = telegraphDrafts[enemy.enemy_id];
           const attackSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type !== "소환");
           const summonSkills = enemy.skills.map((s, i) => ({ ...s, index: i })).filter((s) => s.skill_type === "소환");
-          const selectedSkill = draft?.skill_index != null ? enemy.skills[draft.skill_index] : null;
-          const needsManualTargets = draft?.kind === "attack" && selectedSkill && (selectedSkill.manual_target_count || !isEnemySkillAoe(selectedSkill));
-          const targetCount = selectedSkill?.manual_target_count ? targetableParticipants.length : selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
-          const actionInputId = `enemy:${enemy.enemy_id}:action`;
-          const pendingLabel = !dead && phase !== "telegraph"
-            ? describePendingAction(enemy, pendingActionsByEnemy.get(enemy.enemy_id), participantsById, environmentsById)
-            : null;
+          const pendingActions = !dead && phase !== "telegraph" ? pendingActionsByEnemy.get(enemy.enemy_id) ?? [] : [];
           return (
             <div
               key={enemy.enemy_id}
@@ -1527,89 +1594,106 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                 <span className="font-semibold text-ivory">{enemy.name}</span>
                 {dead && <Badge variant="secondary">격파</Badge>}
                 {!dead && justJoined && <Badge variant="outline">참가 · 다음 라운드부터 행동</Badge>}
-                <span className="font-num text-xs text-muted">공격력 {enemy.attack}</span>
+                <span className="font-num text-xs text-muted">공격력 {enemy.attack} · 행동 {enemy.action_count ?? 1}회</span>
               </div>
               <HpBar hp={enemy.hp} max={enemy.max_hp} color="bg-red-500" />
               {(enemy.status_effects?.length ?? 0) > 0 && (
                 <StackBars items={statusEffectBarItems(enemy.status_effects ?? [])} className="mt-2" />
               )}
 
-              {canAct && !dead && phase === "telegraph" && draft && (
-                <div className="mt-3 space-y-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-semibold text-muted">행동</span>
-                    <Select
-                      value={draft.kind === "none" ? "none" : `${draft.kind}:${draft.skill_index}`}
-                      onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
-                      onValueChange={(v) => {
-                        if (v === "none") { patchTelegraph(enemy.enemy_id, { kind: "none", skill_index: null, target_character_ids: [] }); return; }
-                        const [kind, idx] = v.split(":");
-                        patchTelegraph(enemy.enemy_id, {
-                          kind: kind as EnemyActionKind,
-                          skill_index: Number(idx),
-                          target_character_ids: autoTargetsForEnemySkill(enemy.skills[Number(idx)], targetableParticipants),
-                        });
-                      }}
-                    >
-                      <SelectTrigger className={cn("h-8 w-72 text-xs", editingClassName(actionInputId, "action"))}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value="none">무반응</SelectItem>
-                          {attackSkills.map((s) => (
-                            <SelectItem key={s.index} value={`attack:${s.index}`}>
-                              {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : `${s.target_count}인 · ${s.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {s.skill_type === "지속 디버프"
-                                ? "지속 디버프"
-                                : s.skill_type === "환경"
-                                  ? `${s.environment_id != null ? environmentsById.get(s.environment_id)?.name ?? `환경 #${s.environment_id}` : "환경"} +${s.environment_stack_count ?? 1}스택`
-                                  : `${s.damage_percent}%`})
-                            </SelectItem>
-                          ))}
-                          {summonSkills.map((s) => (
-                            <SelectItem key={s.index} value={`summon:${s.index}`}>
-                              소환 · {s.name} ({s.summon_name} x{s.summon_count ?? 1})
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </div>
+              {canAct && !dead && phase === "telegraph" && enemyDraft && (
+                <div className="mt-3 flex flex-col gap-3">
+                  <p className="text-xs text-muted">위에서 아래로 실행합니다. 소환은 암시 턴에 먼저 처리됩니다.</p>
+                  {enemyDraft.actions.map((draft, actionIndex) => {
+                    const selectedSkill = draft.skill_index != null ? enemy.skills[draft.skill_index] : null;
+                    const needsManualTargets = draft.kind === "attack" && selectedSkill && (selectedSkill.manual_target_count || !isEnemySkillAoe(selectedSkill));
+                    const targetCount = selectedSkill?.manual_target_count ? targetableParticipants.length : selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
+                    const actionInputId = `enemy:${enemy.enemy_id}:action:${actionIndex}`;
+                    return (
+                      <div key={actionIndex} className="flex flex-col gap-2 rounded-lg border border-line p-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-semibold text-muted">{actionIndex + 1}번째 행동</span>
+                          <Select
+                            value={draft.kind === "none" ? (enemy.skills.length === 0 ? "none" : "") : `${draft.kind}:${draft.skill_index}`}
+                            onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
+                            onValueChange={(v) => {
+                              if (v === "none") { patchTelegraphAction(enemy.enemy_id, actionIndex, { kind: "none", skill_index: null, target_character_ids: [] }); return; }
+                              const [kind, idx] = v.split(":");
+                              patchTelegraphAction(enemy.enemy_id, actionIndex, {
+                                kind: kind as EnemyActionKind,
+                                skill_index: Number(idx),
+                                target_character_ids: autoTargetsForEnemySkill(enemy.skills[Number(idx)], targetableParticipants),
+                              });
+                            }}
+                          >
+                            <SelectTrigger aria-label={`${enemy.name} ${actionIndex + 1}번째 스킬`} className={cn("h-8 w-full sm:w-72 text-xs", editingClassName(actionInputId, "action"))}>
+                              <SelectValue placeholder="사용할 스킬 선택" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectGroup>
+                                {enemy.skills.length === 0 && <SelectItem value="none">무반응</SelectItem>}
+                                {attackSkills.map((s) => (
+                                  <SelectItem key={s.index} value={`attack:${s.index}`}>
+                                    {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : `${s.target_count}인 · ${s.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {s.skill_type === "지속 디버프"
+                                      ? "지속 디버프"
+                                      : s.skill_type === "환경"
+                                        ? `${s.environment_id != null ? environmentsById.get(s.environment_id)?.name ?? `환경 #${s.environment_id}` : "환경"} +${s.environment_stack_count ?? 1}스택`
+                                        : `${s.damage_percent}%`})
+                                  </SelectItem>
+                                ))}
+                                {summonSkills.map((s) => (
+                                  <SelectItem key={s.index} value={`summon:${s.index}`}>
+                                    소환 · {s.name} ({s.summon_name} x{s.summon_count ?? 1})
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                          {enemyDraft.actions.length > 1 && (
+                            <div className="flex gap-1">
+                              <Button size="sm" variant="outline" disabled={actionIndex === 0} aria-label={`${enemy.name} ${actionIndex + 1}번째 행동 앞으로`} onClick={() => moveTelegraphAction(enemy.enemy_id, actionIndex, -1)}>앞으로</Button>
+                              <Button size="sm" variant="outline" disabled={actionIndex === enemyDraft.actions.length - 1} aria-label={`${enemy.name} ${actionIndex + 1}번째 행동 뒤로`} onClick={() => moveTelegraphAction(enemy.enemy_id, actionIndex, 1)}>뒤로</Button>
+                            </div>
+                          )}
+                        </div>
 
-                  {needsManualTargets && (
-                    <div className="rounded-lg border border-line bg-inset/60 p-2">
-                      <p className="mb-1.5 text-[11px] text-muted">
-                        {selectedSkill?.manual_target_count
-                          ? `대상 수동 지정 · ${draft.target_character_ids.length}명 선택 (매 라운드 인원 변경 가능)`
-                          : `${selectedSkill?.skill_type === "환경" ? "환경 부여" : selectedSkill?.skill_type === "지속 디버프" ? "약화" : "공격"} 대상 선택 (${draft.target_character_ids.length}/${targetCount}명)`}
-                      </p>
-                      <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-                        {targetableParticipants.map((p) => {
-                          const checked = draft.target_character_ids.includes(p.character_id);
-                          const disabled = !checked && draft.target_character_ids.length >= targetCount;
-                          return (
-                            <label key={p.character_id} className={cn("flex items-center gap-1.5 text-xs text-ivory/85", disabled && "opacity-40")}>
-                              <Checkbox
-                                checked={checked}
-                                disabled={disabled}
-                                onCheckedChange={() => toggleTelegraphTarget(enemy.enemy_id, p.character_id, targetCount)}
-                              />
-                              {p.name}
-                            </label>
-                          );
-                        })}
+                        {needsManualTargets && (
+                          <div className="rounded-lg border border-line bg-inset/60 p-2">
+                            <p className="mb-1.5 text-[11px] text-muted">
+                              {selectedSkill?.manual_target_count
+                                ? `대상 수동 지정 · ${draft.target_character_ids.length}명 선택 (매 라운드 인원 변경 가능)`
+                                : `${selectedSkill?.skill_type === "환경" ? "환경 부여" : selectedSkill?.skill_type === "지속 디버프" ? "약화" : "공격"} 대상 선택 (${draft.target_character_ids.length}/${targetCount}명)`}
+                            </p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                              {targetableParticipants.map((p) => {
+                                const checked = draft.target_character_ids.includes(p.character_id);
+                                const disabled = !checked && draft.target_character_ids.length >= targetCount;
+                                return (
+                                  <label key={p.character_id} className={cn("flex items-center gap-1.5 text-xs text-ivory/85", disabled && "opacity-40")}>
+                                    <Checkbox
+                                      checked={checked}
+                                      disabled={disabled}
+                                      onCheckedChange={() => toggleTelegraphTarget(enemy.enemy_id, actionIndex, p.character_id, targetCount)}
+                                    />
+                                    {p.name}
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </div>
-                  )}
+                    );
+                  })}
                 </div>
               )}
 
-              {pendingLabel && (
-                <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-300">
+              {pendingActions.map((action, index) => (
+                <div key={index} className="mt-2 flex items-center gap-1.5 text-xs text-amber-300">
                   <Megaphone size={12} className="shrink-0" />
-                  {pendingLabel}
+                  <span>{index + 1}번째 · {describePendingAction(enemy, action, participantsById, environmentsById)}</span>
                 </div>
-              )}
+              ))}
             </div>
           );
         })}
@@ -1658,7 +1742,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         </div>
       )}
 
-      {isAdmin && (
+      {isAdmin && !session.pair_battle && (
         <div className="flex items-center justify-end gap-2">
           <span className="text-xs font-semibold text-muted">캐릭터 정렬</span>
           <div className="flex rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
@@ -1679,7 +1763,19 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       )}
 
       {/* 캐릭터 그리드 */}
-      <div className="grid grid-cols-1 justify-items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {session.pair_battle && (
+        <p className="text-xs leading-relaxed text-muted">
+          페어 상대의 포지션·능력치·기술을 사용하며 아이템은 본인 보유분을 사용합니다.
+          페어 변경 시 현재 HP·MP 비율을 유지하고 행동을 다시 선택합니다.
+          실전 종료 시 남은 HP 비율을 본래 최대 HP에 적용하며 MP는 전부 회복합니다.
+        </p>
+      )}
+      <BattlePairGrid
+        characters={sortedParticipants.map((participant) => ({ id: participant.character_id, name: participant.name }))}
+        pairs={session.pair_battle ? session.pairs : null}
+        onSwap={canAct && session.pair_battle ? handlePairSwap : undefined}
+        disabled={savingPairs}
+      >
         {sortedParticipants.map((p) => {
           const draft = charDrafts[p.character_id];
           const active = isActive(p);
@@ -1913,7 +2009,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             <div
               key={p.character_id}
               className={cn(
-                "w-full max-w-[21rem] rounded-2xl border p-2.5 transition-colors duration-200",
+                "w-full rounded-2xl border p-2.5 transition-colors duration-200",
+                !session.pair_battle && "max-w-[21rem]",
                 !active
                   ? "border-line bg-primary-light/10 opacity-60"
                   : showActionUi
@@ -1962,6 +2059,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         </span>
                       )}
                     </p>
+                    {p.pair_source_character_id != null && p.pair_source_character_id !== p.character_id && (
+                      <p className="flex items-center gap-1 text-[11px] text-gold" title={`${p.pair_source_name}의 포지션·능력치·기술 적용 중 · 아이템은 ${p.name} 본인 보유분 사용`}>
+                        <Link2 size={11} className="shrink-0" />
+                        <span className="truncate">{p.pair_source_name}의 능력치·기술</span>
+                      </p>
+                    )}
                     <div className="space-y-1.5">
                       <ResourceBar
                         icon={Heart}
@@ -2071,7 +2174,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             </div>
           );
         })}
-      </div>
+      </BattlePairGrid>
 
       {/* 진행 / 결과 */}
       {!inProgress ? (
@@ -2104,9 +2207,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             </Button>
           )}
           {phase === "ally" && (
-            <Button onClick={handleSubmitAllyTurn} disabled={submitting || undoing || terminating}>
+            <Button onClick={handleSubmitAllyTurn} disabled={submitting || undoing || terminating || savingPairs || !skillsReady}>
               <Sparkles size={15} />
-              {submitting ? "진행 중..." : `라운드 ${session.round} · 아군 턴 진행`}
+              {submitting ? "진행 중..." : !skillsReady ? "기술을 불러오는 중..." : `라운드 ${session.round} · 아군 턴 진행`}
             </Button>
           )}
           {phase === "enemy" && (
