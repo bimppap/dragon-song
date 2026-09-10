@@ -56,13 +56,13 @@ export default function BattlePairGrid({ characters, pairs, children, compact = 
       <p className="sr-only" aria-live="polite">{announcement}</p>
       <div className={cn("grid gap-4", compact ? "sm:grid-cols-2 xl:grid-cols-3" : "xl:grid-cols-2")}>
         {groups.map((pair, pairIndex) => (
-          <section key={pairIndex} aria-label={pair.length === 2 ? `페어 ${pairIndex + 1}` : "페어 대기"} className="min-w-0 rounded-2xl border border-gold/30 bg-gold/5 p-3">
-            <p className="mb-2 text-xs font-semibold text-gold">{pair.length === 2 ? `페어 ${pairIndex + 1}` : "페어 대기"}</p>
+          <section key={pairIndex} aria-label={pair.length === 2 ? `페어 ${pairIndex + 1}` : "페어 대기"} className="min-w-0">
             <div className="overflow-x-auto pb-1">
-              <div className={cn("relative grid grid-cols-2 items-start gap-8", !compact && "min-w-[30rem]")}>
-                <div className="pointer-events-none absolute left-1/2 top-10 flex -translate-x-1/2 items-center justify-center text-gold" aria-label={pair.length === 2 ? "페어 연결" : "연결 대기"}>
-                  <Link2 size={20} className={cn(pair.length === 1 && "opacity-30")} />
-                </div>
+              <div className={cn("relative grid grid-cols-2 items-stretch gap-4", !compact && "min-w-[30rem]")}>
+                {pair.length === 2 && <div className="pointer-events-none absolute inset-y-0 left-1/2 z-10 w-4 -translate-x-1/2" aria-label="페어 연결">
+                  <svg className="absolute inset-0 h-full w-full text-gold/60" preserveAspectRatio="none" viewBox="0 0 16 100" aria-hidden="true"><path d="M0 25 L16 75 M16 25 L0 75" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" /></svg>
+                  <span className="absolute left-1/2 top-1/2 flex size-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-inset text-gold"><Link2 size={18} /></span>
+                </div>}
                 {pair.map((id) => {
                   const character = charactersById.get(id)!;
                   const canReceive = editable && activeId !== null && activeGroup !== pairIndex;
