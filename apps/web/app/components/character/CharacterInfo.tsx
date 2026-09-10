@@ -50,17 +50,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { FACTION_POSITION_IMAGE } from "@/lib/faction";
 import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant, UseItemSelection } from "@/lib/api";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import DatePicker from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
-
-const FACTION_POSITION_IMAGE: Record<Faction, string> = {
-  공격: "/position/position_1.png",
-  수비: "/position/position_2.png",
-  치유: "/position/position_3.png",
-};
 
 interface Props {
   characters: Character[];

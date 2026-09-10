@@ -1,6 +1,7 @@
 "use client";
 
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { ArrowLeft, Ban, Check, Eye, Files, Heart, HeartPulse, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -15,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { FACTION_POSITION_IMAGE, factionRank } from "@/lib/faction";
 import {
   fetchBattle,
   fetchBattleActiveSkills,
@@ -122,13 +124,29 @@ function isActive(p: BattleParticipant): boolean {
   return !p.downed && !p.retreated;
 }
 
-type ParticipantSort = "attention" | "name" | "hp";
+type ParticipantSort = "attention" | "name" | "hp" | "position";
 
 const PARTICIPANT_SORTS: { value: ParticipantSort; label: string }[] = [
   { value: "attention", label: "주목도 순" },
   { value: "name", label: "이름순" },
   { value: "hp", label: "체력 비율순" },
+  { value: "position", label: "포지션 순" },
 ];
+
+/** 이름 옆에 붙는 포지션(공격/수비/치유) 아이콘. */
+function ParticipantFactionIcon({ faction }: { faction: BattleParticipant["faction"] }) {
+  if (!faction) return null;
+  return (
+    <Image
+      src={FACTION_POSITION_IMAGE[faction]}
+      alt={faction}
+      title={faction}
+      width={18}
+      height={18}
+      className="shrink-0 [image-rendering:pixelated]"
+    />
+  );
+}
 
 /** 주목도는 관리자/스텝 전용 정보라, 러너에게 보여줄 로그에서는 "· +20 주목도"류 구간을 잘라낸다. */
 const ATTN_LOG_SUFFIX_PATTERN = /\s*·\s*(?:\+?\d[\d,]*\s*주목도|주목도\s*\d[\d,]*\s*이전\s*\/\s*\d[\d,]*\s*획득)\s*$/;
@@ -1326,6 +1344,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     return participants.toSorted((a, b) => {
       if (effectiveParticipantSort === "attention") return b.attn - a.attn || a.name.localeCompare(b.name, "ko");
       if (effectiveParticipantSort === "hp") return a.hp / Math.max(1, a.max_hp) - b.hp / Math.max(1, b.max_hp) || a.name.localeCompare(b.name, "ko");
+      if (effectiveParticipantSort === "position") return factionRank(a.faction) - factionRank(b.faction) || a.name.localeCompare(b.name, "ko");
       return a.name.localeCompare(b.name, "ko");
     });
   }, [session?.participants, effectiveParticipantSort]);
@@ -1934,6 +1953,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
                   <div className="min-w-0 flex-1 space-y-2.5">
                     <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ivory">
+                      <ParticipantFactionIcon faction={p.faction} />
                       <span className="truncate">{p.name}</span>
                       {!readOnly && (
                         <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-normal text-gold" title="주목도 (관리자 전용)">

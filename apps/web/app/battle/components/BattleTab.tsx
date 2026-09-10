@@ -27,6 +27,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
+import { FACTION_POSITION_IMAGE } from "@/lib/faction";
 import BattleArena from "./BattleArena";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -120,12 +121,6 @@ function getEnemyFinalStats(enemy: Enemy, partyCounts: PartyCounts) {
 function getCharacterNameFontSize(name: string): number {
   return Math.min(14, 132 / Math.max(1, Array.from(name).length));
 }
-
-const FACTION_POSITION_IMAGE: Record<string, string> = {
-  공격: "/position/position_1.png",
-  수비: "/position/position_2.png",
-  치유: "/position/position_3.png",
-};
 
 function CharacterFactionIcon({ faction }: { faction: Character["faction"] }) {
   if (!faction) return null;
