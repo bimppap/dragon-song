@@ -583,6 +583,10 @@ export interface CharacterFlagsUpdate {
   warning_count: number;
 }
 
+/** 챕터와 무관하게 언제든 달성할 수 있는 도전과제의 챕터 이름
+ *  (app/game_data.py의 ALWAYS_CHALLENGE_CHAPTER와 동일). */
+export const ALWAYS_CHALLENGE_CHAPTER = "상시";
+
 /** 캐릭터가 도달할 수 있는 최대 레벨(app/game_data.py의 MAX_CHARACTER_LEVEL과 동일). */
 export const MAX_CHARACTER_LEVEL = 11;
 

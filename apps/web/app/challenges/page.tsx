@@ -37,6 +37,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   createChallenge,
   deleteChallenge,
+  ALWAYS_CHALLENGE_CHAPTER,
   fetchChallengeProgress,
   fetchChapters,
   fetchChallenges,
@@ -581,6 +582,7 @@ export function ChallengeAdmin() {
                     <SelectContent>
                       <SelectGroup>
                         <SelectItem value={ALL_CHAPTERS}>전체 챕터</SelectItem>
+                        <SelectItem value={ALWAYS_CHALLENGE_CHAPTER}>{ALWAYS_CHALLENGE_CHAPTER}</SelectItem>
                         {chapterList.map((c) => (
                           <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                         ))}
@@ -698,12 +700,17 @@ export function ChallengeAdmin() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
+                        {/* 챕터와 무관하게 언제든 달성할 수 있는 도전과제. */}
+                        <SelectItem value={ALWAYS_CHALLENGE_CHAPTER}>{ALWAYS_CHALLENGE_CHAPTER}</SelectItem>
                         {chapterList.map((c) => (
                           <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
                         ))}
                       </SelectGroup>
                     </SelectContent>
                   </Select>
+                  {form.chapter === ALWAYS_CHALLENGE_CHAPTER && (
+                    <p className="text-xs text-muted">챕터와 상관없이 언제든 달성할 수 있는 과제로 등록됩니다.</p>
+                  )}
                 </div>
 
                 <div className="flex flex-col gap-2">

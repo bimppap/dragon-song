@@ -14,6 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, load_only
 from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, is_admin_role, verify_password
 from app.game_data import (
+    ALWAYS_CHALLENGE_CHAPTER,
     MAX_CHARACTER_LEVEL,
     build_skill_node_specs,
     calculate_stat_grade_totals,
@@ -3365,7 +3366,16 @@ def get_chapters(db: Session, *, admin: bool = True) -> list[ChapterRead]:
     return [_to_chapter_read(chapter, today=today, admin=admin) for chapter in chapters]
 
 
+def _reject_reserved_chapter_name(name: str) -> None:
+    if name == ALWAYS_CHALLENGE_CHAPTER:
+        raise HTTPException(
+            status_code=400,
+            detail=f'"{ALWAYS_CHALLENGE_CHAPTER}"는 상시 도전과제 전용 이름이라 챕터 이름으로 쓸 수 없습니다.',
+        )
+
+
 def create_chapter(db: Session, data: ChapterCreate) -> ChapterRead:
+    _reject_reserved_chapter_name(data.name.strip())
     chapter = Chapter(
         name=data.name.strip(),
         start_date=data.start_date,
@@ -3387,6 +3397,7 @@ def update_chapter(db: Session, chapter_id: int, data: ChapterCreate) -> Chapter
     chapter = db.get(Chapter, chapter_id)
     if not chapter:
         raise HTTPException(status_code=404, detail="챕터를 찾을 수 없습니다.")
+    _reject_reserved_chapter_name(data.name.strip())
     chapter.name = data.name.strip()
     chapter.start_date = data.start_date
     chapter.end_date = data.end_date

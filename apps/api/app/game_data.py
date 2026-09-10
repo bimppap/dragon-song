@@ -11,6 +11,10 @@ LEVEL_GRADE_STATS = [
 ]
 
 
+# 챕터와 무관하게 언제든 달성할 수 있는 도전과제가 쓰는 챕터 이름. Challenge.chapter는 FK가 아니라
+# 자유 문자열이라, 별도 컬럼을 두는 대신 이 예약어 하나로 "상시" 여부를 나타낸다.
+ALWAYS_CHALLENGE_CHAPTER = "상시"
+
 # 캐릭터가 도달할 수 있는 최대 레벨. 레벨은 AP만 지급하는 선형 값이라 표가 따로 없고,
 # 레벨로 인덱싱하는 LEVEL_GRADE_STATS는 5를 넘으면 clamp되어 이후 레벨은 모두 같은 조건이다.
 MAX_CHARACTER_LEVEL = 11
