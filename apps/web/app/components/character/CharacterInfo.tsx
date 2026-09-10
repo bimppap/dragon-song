@@ -660,6 +660,9 @@ function OwnedItemTile({
             {item.item_description && (
               <div className="mt-1 text-muted">{item.item_description}</div>
             )}
+            {item.battle_only && (
+              <div className="mt-1 text-gold">전투 중에만 사용할 수 있는 아이템입니다.</div>
+            )}
           </div>
         }
       >
@@ -683,7 +686,7 @@ function OwnedItemTile({
           )}
         </div>
       </InfoTooltip>
-      {readOnly ? null : isConsumable ? (
+      {readOnly || item.battle_only ? null : isConsumable ? (
         <Button
           size="sm"
           variant="outline"
@@ -818,9 +821,9 @@ function OwnedItemTile({
             }
             if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse();
           }}
-          disabled={loading || remainingUses <= 0 || item.battle_only}
+          disabled={loading || remainingUses <= 0}
         >
-          {item.battle_only ? "전투 중 사용" : "사용"}
+          사용
         </Button>
       ) : item.equipped ? (
         <Button size="sm" variant="secondary" onClick={onUnequip} disabled={loading}>
