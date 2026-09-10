@@ -200,6 +200,8 @@ class Item(Base):
     sale_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     # 전투 중(아이템 사용 행동)에만 사용할 수 있다. 캐릭터 페이지의 보유 아이템 "사용" 버튼은 비활성화된다.
     battle_only: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # 관리자가 드래그로 지정한 노출 순서. 오름차순으로 정렬하며, 동률이면 id 순.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

@@ -927,6 +927,15 @@ export async function uploadItemImage(itemId: number, file: File, variant: "befo
   return item;
 }
 
+/** 관리자가 드래그로 정한 아이템 노출 순서를 저장한다. 전체 아이템 id를 순서대로 보내야 한다. */
+export async function reorderItems(itemIds: number[]): Promise<void> {
+  await request("/items/order", {
+    method: "PUT",
+    body: JSON.stringify({ item_ids: itemIds }),
+  }, "아이템 순서 변경 실패");
+  invalidateApiCache("items:");
+}
+
 export async function deleteItem(itemId: number): Promise<void> {
   await request(`/items/${itemId}`, { method: "DELETE" }, "아이템 삭제 실패");
   invalidateApiCache("items:", "characters:");

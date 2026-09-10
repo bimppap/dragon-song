@@ -2,15 +2,16 @@
 
 import { ITEM_TYPE_LABELS } from "@/lib/api";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AgGridReact } from "ag-grid-react";
-import type { ColDef, ICellRendererParams } from "ag-grid-community";
+import type { ColDef, GridApi, GridReadyEvent, ICellRendererParams, RowDragEndEvent } from "ag-grid-community";
 import { AllCommunityModule, ModuleRegistry } from "ag-grid-community";
-import { Ban, Package, Settings2, ShoppingCart } from "lucide-react";
-import { fetchItems, formatEffect } from "@/lib/api";
+import { Ban, GripVertical, Package, Settings2, ShoppingCart } from "lucide-react";
+import { fetchItems, formatEffect, reorderItems } from "@/lib/api";
 import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { useDialog } from "@/components/common/DialogProvider";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -22,6 +23,9 @@ interface Props {
   showAvailability?: boolean;
   showEffects?: boolean;
   onEditItem?: (item: Item) => void;
+  /** 행을 드래그해 노출 순서를 바꾼다. 켜는 동안은 정렬·필터를 잠근다(둘 중 하나라도 걸리면
+   *  ag-grid가 드래그 핸들을 비활성화하고, 화면 순서와 저장할 순서도 어긋나기 때문). */
+  reorderable?: boolean;
 }
 
 function StockBadge({ value }: { value: number | null }) {
@@ -60,9 +64,12 @@ export default function ItemGrid({
   showAvailability = false,
   showEffects = false,
   onEditItem,
+  reorderable = false,
 }: Props) {
+  const { alert } = useDialog();
   const cartIds = cartItemIds ?? new Set<number>();
   const [items, setItems] = useState<Item[]>([]);
+  const gridApiRef = useRef<GridApi<Item> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +92,30 @@ export default function ItemGrid({
     };
   }, [characterId, refreshKey]);
 
+  // 정렬이나 필터가 걸려 있으면 ag-grid가 드래그 핸들을 아무 안내 없이 비활성화한다. 컬럼에서
+  // 정렬·필터 UI를 없애도 이미 걸려 있던 상태는 남으므로, 순서 편집에 들어갈 때 직접 해제한다.
+  useEffect(() => {
+    if (!reorderable) return;
+    gridApiRef.current?.setFilterModel(null);
+    gridApiRef.current?.applyColumnState({ defaultState: { sort: null } });
+  }, [reorderable]);
+
+  /** ag-grid가 이미 옮겨 놓은 행 순서를 그대로 서버에 저장한다. 실패하면 원래 순서로 되돌린다. */
+  async function handleRowDragEnd(event: RowDragEndEvent<Item>) {
+    const reordered: Item[] = [];
+    event.api.forEachNodeAfterFilterAndSort((node) => {
+      if (node.data) reordered.push(node.data);
+    });
+    const previous = items;
+    setItems(reordered);
+    try {
+      await reorderItems(reordered.map((item) => item.id));
+    } catch (e) {
+      setItems(previous);
+      await alert(e instanceof Error ? e.message : "아이템 순서 변경 실패");
+    }
+  }
+
   const textColDef: ColDef<Item> = {
     wrapText: true,
     autoHeight: true,
@@ -96,10 +127,32 @@ export default function ItemGrid({
     },
   };
 
+  // 순서 편집 중에는 정렬·필터를 한곳에서 잠근다. 컬럼별로 끄는 설정은 그대로 우선한다.
   const defaultColDef: ColDef<Item> = {
     wrapHeaderText: true,
     autoHeaderHeight: true,
+    sortable: !reorderable,
+    filter: !reorderable,
   };
+
+  const dragColDef: ColDef<Item>[] = reorderable ? [
+    {
+      headerName: "",
+      width: 44,
+      minWidth: 44,
+      rowDrag: true,
+      sortable: false,
+      filter: false,
+      suppressMovable: true,
+      cellClass: "cursor-grab active:cursor-grabbing",
+      // 손잡이 아이콘은 앱의 다른 순서 변경 UI(BattlePairGrid)와 같은 GripVertical을 쓴다.
+      cellRenderer: () => (
+        <div className="flex h-full items-center justify-center text-muted">
+          <GripVertical size={14} />
+        </div>
+      ),
+    },
+  ] : [];
 
   const availabilityColDef: ColDef<Item>[] = showAvailability ? [
     {
@@ -188,6 +241,7 @@ export default function ItemGrid({
   ] : [];
 
   const colDefs: ColDef<Item>[] = [
+    ...dragColDef,
     {
       headerName: "",
       width: 52,
@@ -209,7 +263,6 @@ export default function ItemGrid({
       field: "name",
       minWidth: 180,
       flex: 1.2,
-      filter: true,
       ...textColDef,
     },
     {
@@ -217,7 +270,6 @@ export default function ItemGrid({
       field: "description_user",
       minWidth: 260,
       flex: 2.4,
-      filter: true,
       ...textColDef,
     },
     ...effectsColDef,
@@ -244,6 +296,7 @@ export default function ItemGrid({
     {
       headerName: "남은 구매 수",
       width: 130,
+      filter: false,
       cellRenderer: (p: ICellRendererParams<Item>) => (
         <StockBadge value={calcStock(p.data!)} />
       ),
@@ -283,6 +336,10 @@ export default function ItemGrid({
         columnDefs={colDefs}
         defaultColDef={defaultColDef}
         rowHeight={46}
+        getRowId={(p) => String(p.data.id)}
+        onGridReady={(event: GridReadyEvent<Item>) => { gridApiRef.current = event.api; }}
+        rowDragManaged={reorderable}
+        onRowDragEnd={handleRowDragEnd}
       />
     </div>
   );

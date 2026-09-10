@@ -65,6 +65,7 @@ from app.schemas import (
     HealerCandidateRead,
     ItemCreate,
     ItemNameRead,
+    ItemOrderUpdate,
     ItemRead,
     ItemWithStock,
     BulkPurchaseRequest,
@@ -424,6 +425,21 @@ async def check_naver_session(
 @app.post("/items", response_model=ItemRead)
 def create_item(data: ItemCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.create_item(db, data)
+
+
+@app.put("/items/order")
+def reorder_items(
+    data: ItemOrderUpdate,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """아이템 노출 순서를 저장한다.
+
+    전체 아이템을 빠짐없이 담은 목록만 받으므로, 아이템을 전부 보여주는 관리 화면에서만 호출할 수 있다
+    (필터·페이지네이션이 걸린 부분 목록으로 부르면 400). `/items/{item_id}`보다 먼저 선언해야 경로가 가려지지 않는다.
+    """
+    crud.reorder_items(db, data.item_ids)
+    return {"updated": True}
 
 
 @app.put("/items/{item_id}", response_model=ItemRead)

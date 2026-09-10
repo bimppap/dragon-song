@@ -108,6 +108,10 @@ from app.schemas import (
 
 SHOP_STATE_ID = 1
 
+# 아이템을 나열하는 모든 화면이 따르는 표시 순서. 관리자가 드래그로 정한 순서가 유일한 기준이고,
+# 아직 순서를 받지 못한 아이템만 id로 갈린다. 새 목록을 추가할 때도 이 기준을 그대로 쓴다.
+ITEM_DISPLAY_ORDER = (Item.sort_order, Item.id)
+
 
 def _enemy_skill_models(raw_skills: list[dict] | None) -> list[EnemySkill]:
     return [EnemySkill(**skill) for skill in (raw_skills or [])]
@@ -677,7 +681,7 @@ def get_character_card_details(db: Session, *, admin: bool = False) -> list[Char
     equipment = db.query(CharacterItemState, Item).join(Item, CharacterItemState.item_id == Item.id).filter(
         CharacterItemState.character_id.in_(by_id), CharacterItemState.equipped.is_(True),
         Item.item_type.in_(["companion", "accessory"]),
-    ).order_by(Item.id).all()
+    ).order_by(*ITEM_DISPLAY_ORDER).all()
     for state, item in equipment:
         result[state.character_id].equipment.append(CharacterCardItemRead(
             item_id=item.id, item_type=item.item_type, name=item.name,
@@ -731,8 +735,9 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         )
         .join(Item, Purchase.item_id == Item.id)
         .filter(Purchase.character_id == character.id)
-        .group_by(Purchase.item_id, Item.name, Item.description_user)
-        .order_by(Item.name.asc())
+        # Item.id(기본키)까지 묶어야 PostgreSQL이 sort_order를 함수 종속으로 인정해 ORDER BY를 허용한다.
+        .group_by(Purchase.item_id, Item.id, Item.name, Item.description_user)
+        .order_by(*ITEM_DISPLAY_ORDER)
         .all()
     )
     owned_item_ids = [row.item_id for row in owned_item_rows]
@@ -1001,6 +1006,8 @@ def create_item(db: Session, data: ItemCreate) -> Item:
     _validate_item_acquisition_chapter(db, data)
     item = Item(
         name=data.name,
+        # 새 아이템은 관리자가 순서를 정하기 전까지 목록 맨 뒤에 붙는다.
+        sort_order=(db.query(func.max(Item.sort_order)).scalar() or 0) + 1,
     )
     _apply_item_data(item, data)
     db.add(item)
@@ -1027,6 +1034,24 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
     db.commit()
     db.refresh(item)
     return item
+
+
+def reorder_items(db: Session, item_ids: list[int]) -> None:
+    """관리자가 드래그로 정한 순서대로 sort_order를 1부터 다시 매긴다.
+
+    부분 목록으로 순서를 덮어쓰면 빠진 아이템의 자리가 어긋나므로, 전체 아이템을 빠짐없이
+    한 번씩 담은 목록만 받는다(다른 관리자가 그 사이 아이템을 추가/삭제한 경우 400).
+    """
+    if len(set(item_ids)) != len(item_ids):
+        raise HTTPException(status_code=400, detail="아이템 순서 목록에 중복이 있습니다.")
+
+    items_by_id = {item.id: item for item in db.query(Item).all()}
+    if set(item_ids) != items_by_id.keys():
+        raise HTTPException(status_code=400, detail="아이템 목록이 변경되었습니다. 새로고침 후 다시 시도해 주세요.")
+
+    for order, item_id in enumerate(item_ids, start=1):
+        items_by_id[item_id].sort_order = order
+    db.commit()
 
 
 def delete_item(db: Session, item_id: int) -> list[str]:
@@ -1623,12 +1648,12 @@ def _challenge_acquisition_remaining(db: Session, character_id: int, item: Item,
 
 def get_item_names(db: Session) -> list[ItemNameRead]:
     """모든 아이템의 id/이름만 반환한다. 상점에 아직 공개되지 않은 아이템도 보상 표기에는 이름이 필요하다."""
-    rows = db.query(Item.id, Item.name).order_by(Item.id).all()
+    rows = db.query(Item.id, Item.name).order_by(*ITEM_DISPLAY_ORDER).all()
     return [ItemNameRead(id=row.id, name=row.name) for row in rows]
 
 
 def get_items_with_stock(db: Session, character_id: int | None = None, *, admin: bool = False) -> list[ItemWithStock]:
-    items = db.query(Item).all()
+    items = db.query(Item).order_by(*ITEM_DISPLAY_ORDER).all()
     chapters_by_name = _chapters_by_name(db)
     active_chapter = _active_chapter(chapters_by_name)
     rewarded_mission_ids = _rewarded_mission_ids(db, character_id) if character_id is not None else set()
@@ -4692,7 +4717,7 @@ def get_battle_available_items(db: Session, session_id: int) -> BattleAvailableI
         ))
 
     for available_items in items_by_character.values():
-        available_items.sort(key=lambda item: (item.item_name, item.item_id))
+        available_items.sort(key=lambda owned: (items[owned.item_id].sort_order, owned.item_id))
     return BattleAvailableItemsRead(items_by_character=items_by_character)
 
 

@@ -492,6 +492,11 @@ class ItemWithStock(ItemRead):
     eligible_missions: list[RecollectionMissionRead] = Field(default_factory=list)
 
 
+class ItemOrderUpdate(BaseModel):
+    """관리자가 드래그로 정한 아이템 노출 순서. 전체 아이템 id를 순서대로 담는다."""
+    item_ids: list[int]
+
+
 class ItemNameRead(BaseModel):
     """보상 표기 등에서 쓰는 아이템 이름 목록. 상점 미공개 아이템도 이름만 노출한다."""
     id: int

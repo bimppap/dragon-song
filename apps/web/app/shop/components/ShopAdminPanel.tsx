@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ClipboardList, Plus, Settings2, Truck } from "lucide-react";
+import { ArrowUpDown, ClipboardList, Check, Plus, Settings2, Truck } from "lucide-react";
 import TabBar from "@/components/common/TabBar";
 import Modal from "@/components/common/Modal";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,7 @@ export default function ShopAdminPanel() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);
+  const [reordering, setReordering] = useState(false);
 
   function openAddModal() {
     setEditingItem(null);
@@ -41,12 +42,28 @@ export default function ShopAdminPanel() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TabBar tabs={TABS} active={tab} onChange={setTab} />
         {tab === "manage" && (
-          <Button onClick={openAddModal} className="gap-2">
-            <Plus size={15} />
-            아이템 추가
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={reordering ? "default" : "outline"}
+              onClick={() => setReordering((on) => !on)}
+              className="gap-2"
+            >
+              {reordering ? <Check size={15} /> : <ArrowUpDown size={15} />}
+              {reordering ? "순서 편집 완료" : "순서 편집"}
+            </Button>
+            <Button onClick={openAddModal} disabled={reordering} className="gap-2">
+              <Plus size={15} />
+              아이템 추가
+            </Button>
+          </div>
         )}
       </div>
+
+      {tab === "manage" && reordering && (
+        <p className="text-xs text-muted">
+          왼쪽 손잡이를 잡고 행을 위아래로 끌어 상점에 보일 순서를 정하세요. 놓는 즉시 저장됩니다.
+        </p>
+      )}
 
       {tab === "manage" && (
         <ItemGrid
@@ -54,6 +71,7 @@ export default function ShopAdminPanel() {
           showAvailability
           showEffects
           onEditItem={openEditModal}
+          reorderable={reordering}
         />
       )}
       {tab === "purchases" && <PurchaseGrid refreshKey={refreshKey} />}
