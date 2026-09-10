@@ -697,7 +697,7 @@ export default function EnemyTab() {
                         </span>
                       ) : (
                         <span className="text-muted">
-                          {skill.manual_target_count ? "타겟 수동 지정" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} -${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
+                          {skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} -${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
                         </span>
                       )}
                         </>;
@@ -1006,6 +1006,7 @@ export default function EnemyTab() {
             {form.skills.map((skill, idx) => {
               const isSummon = skill.skill_type === "소환";
               const isEnvironment = skill.skill_type === "환경";
+              const isAoe = skill.skill_type === "광역 공격";
               const availableEnvironments = environmentCatalog.filter((environment) => environment.chapter === form.chapter);
               return (
                 <div key={idx} className="rounded-xl border border-line bg-surface px-4 py-4 flex flex-col gap-3">
@@ -1063,20 +1064,26 @@ export default function EnemyTab() {
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-semibold text-ivory/85">타겟 인원</label>
                         <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.manual_target_count} onChange={(event) => updateSkill(idx, "manual_target_count", event.target.checked)} />수동 지정 (매 라운드 선택)</label>
-                        <Input
-                          type="number" min={0} className="h-8 text-xs"
-                          disabled={skill.manual_target_count}
-                          value={skill.target_count}
-                          onChange={(e) => updateSkill(idx, "target_count", e.target.value)}
-                          placeholder="0"
-                        />
+                        {isAoe ? (
+                          !skill.manual_target_count && <p className="flex h-8 items-center text-xs text-muted">아군 전원 대상</p>
+                        ) : (
+                          <Input
+                            type="number" min={0} className="h-8 text-xs"
+                            disabled={skill.manual_target_count}
+                            value={skill.target_count}
+                            onChange={(e) => updateSkill(idx, "target_count", e.target.value)}
+                            placeholder="0"
+                          />
+                        )}
                       </div>
-                      <SettingSelect
-                        label="자동 대상 선정"
-                        value={skill.auto_target_mode}
-                        options={[["attention", "주목도 순"], ["random", "무작위"]]}
-                        onChange={(value) => updateSkill(idx, "auto_target_mode", value as SkillFormEntry["auto_target_mode"])}
-                      />
+                      {!isAoe && (
+                        <SettingSelect
+                          label="자동 대상 선정"
+                          value={skill.auto_target_mode}
+                          options={[["attention", "주목도 순"], ["random", "무작위"]]}
+                          onChange={(value) => updateSkill(idx, "auto_target_mode", value as SkillFormEntry["auto_target_mode"])}
+                        />
+                      )}
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-semibold text-ivory/85">{isEnvironment ? "부여 스택 수" : "피해량 (%)"}</label>
                         <Input

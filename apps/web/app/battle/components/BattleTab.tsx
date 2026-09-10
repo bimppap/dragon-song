@@ -526,7 +526,7 @@ export default function BattleTab() {
                                         ? `${skill.environment_id != null ? environmentsById.get(skill.environment_id)?.name ?? `환경 #${skill.environment_id}` : "환경"} · ${numberFormatter.format(skill.environment_stack_count ?? 1)}스택 부여 · ${skill.manual_target_count ? "수동 지정" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`}`
                                         : skill.skill_type === "지속 디버프"
                                           ? `${skill.manual_target_count ? "수동 지정" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} · 지속 디버프`
-                                          : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"} · 피해 ${numberFormatter.format(skill.damage_percent)}%`}
+                                          : `${skill.manual_target_count ? "수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} · 피해 ${numberFormatter.format(skill.damage_percent)}%`}
                                   </p>
                                 </div>
                               ))}
