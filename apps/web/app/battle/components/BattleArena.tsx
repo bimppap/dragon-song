@@ -2040,6 +2040,25 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             ...extraControls,
           ];
 
+          // 표시할 배지를 먼저 모은다. 바깥 조건을 따로 적어 두면 안쪽 조건과 어긋나기 쉽고,
+          // 그때 빈 컨테이너가 남아 space-y 간격만큼 카드가 혼자 높아진다.
+          const statusBadges = [
+            p.downed && <Badge key="downed" variant="destructive" className="text-[10px]">기절</Badge>,
+            p.retreated && <Badge key="retreated" variant="secondary" className="text-[10px]">퇴각</Badge>,
+            active && p.defending && phase === "enemy" && (
+              <Badge key="defending" variant="outline" className="text-[10px]">
+                <HeartPulse size={10} className="mr-0.5" />
+                방어 중
+                {p.protect_target != null && p.protect_target !== p.character_id
+                  ? ` · ${participantsById.get(p.protect_target)?.name ?? ""} 보호`
+                  : ""}
+              </Badge>
+            ),
+            active && p.joined_round === session.round && (
+              <Badge key="joined" variant="outline" className="text-[10px]">난입 · 이번 라운드 행동 불가</Badge>
+            ),
+          ].filter(Boolean);
+
           return (
             <div
               key={p.character_id}
@@ -2130,23 +2149,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       color: stack.color,
                     }))} />
 
-                    {(p.downed || p.retreated || p.defending || (active && p.joined_round === session.round)) && (
-                      <div className="flex flex-wrap gap-2">
-                        {p.downed && <Badge variant="destructive" className="text-[10px]">기절</Badge>}
-                        {p.retreated && <Badge variant="secondary" className="text-[10px]">퇴각</Badge>}
-                        {active && p.defending && phase === "enemy" && (
-                          <Badge variant="outline" className="text-[10px]">
-                            <HeartPulse size={10} className="mr-0.5" />
-                            방어 중
-                            {p.protect_target != null && p.protect_target !== p.character_id
-                              ? ` · ${participantsById.get(p.protect_target)?.name ?? ""} 보호`
-                              : ""}
-                          </Badge>
-                        )}
-                        {active && p.joined_round === session.round && (
-                          <Badge variant="outline" className="text-[10px]">난입 · 이번 라운드 행동 불가</Badge>
-                        )}
-                      </div>
+                    {statusBadges.length > 0 && (
+                      <div className="flex flex-wrap gap-2">{statusBadges}</div>
                     )}
 
                     {p.status_effects != null && p.status_effects.length > 0 && (
