@@ -259,6 +259,10 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN applied_effects JSON NOT NULL DEFAULT '[]'")
         if "custom_image_url" not in unlock_columns:
             statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN custom_image_url VARCHAR")
+        if "custom_description" not in unlock_columns:
+            statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN custom_description VARCHAR")
+        if "custom_description_color" not in unlock_columns:
+            statements.append("ALTER TABLE character_skill_unlocks ADD COLUMN custom_description_color VARCHAR")
 
     # AP/SP 분리: 원래 AP 하나가 (1) 레벨업 성장 지급 (2) "기술 서적" 아이템 사용, 두 출처를
     # 구분 없이 기술트리 강화에도 함께 쓰이고 있었다. 이제 AP는 능력치(용기/인내/자애/지혜) 전용,

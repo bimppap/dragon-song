@@ -1952,6 +1952,10 @@ export interface CharacterSkillNode extends SkillNode {
   unlocked: boolean;
   custom_name: string | null;
   custom_image_url: string | null;
+  /** 러너가 직접 쓴 기술 설명. 원본 description을 대체하지 않고 툴팁에 덧붙는다. */
+  custom_description: string | null;
+  /** 설명에서 작은따옴표로 감싼 구간에 입힐 색(#RRGGBB). null이면 서 기본 색. */
+  custom_description_color: string | null;
   display_name: string;
   unlocked_at: string | null;
 }
@@ -2085,15 +2089,23 @@ export async function unlockCharacterSkill(characterId: number, nodeId: number):
   return tree;
 }
 
-export async function renameCharacterSkill(
+/** 습득한 기술의 커스터마이즈 값. 보내지 않은 필드는 그대로 두고, 빈 문자열은 초기화한다. */
+export interface SkillCustomization {
+  custom_name?: string;
+  custom_description?: string;
+  custom_description_color?: string;
+}
+
+/** 이미지는 multipart라 uploadCharacterSkillImage로 따로 보낸다. */
+export async function customizeCharacterSkill(
   characterId: number,
   nodeId: number,
-  customName: string,
+  customization: SkillCustomization,
 ): Promise<CharacterSkillTree> {
-  const tree = await request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/name`, {
+  const tree = await request<CharacterSkillTree>(`/characters/${characterId}/skills/${nodeId}/customization`, {
     method: "PUT",
-    body: JSON.stringify({ custom_name: customName }),
-  }, "기술 이름 설정 실패");
+    body: JSON.stringify(customization),
+  }, "기술 커스터마이즈 실패");
   invalidateApiCache(`skills:character:${characterId}:`, "characters:");
   invalidateApiCache("battles:active-skills:");
   return tree;

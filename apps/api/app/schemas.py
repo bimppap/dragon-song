@@ -12,6 +12,11 @@ SkillCategory = Literal["피해", "복합", "강화", "약화", "회복"]
 SkillTargetSide = Literal["ALLY", "ENEMY"]
 MemberRole = Literal["RUNNER", "ADMIN", "STAFF"]
 
+# 환경·기술 강조색 등 UI 색상 입력에 공통으로 쓰는 형식.
+HEX_COLOR_PATTERN = r"^#[0-9a-fA-F]{6}$"
+# 빈 문자열이면 "지정하지 않음"(기본색 사용)을 뜻하는 자리.
+OPTIONAL_HEX_COLOR_PATTERN = r"^(#[0-9a-fA-F]{6})?$"
+
 # 아이템 효과가 적용될 수 있는 캐릭터 능력치와 값의 정수/실수 여부.
 # "def"는 Character 모델의 예약어 회피용 컬럼명(def_)에 대응한다.
 ITEM_EFFECT_STAT_TYPES: dict[str, type] = {
@@ -895,7 +900,7 @@ class EnemyRead(BaseModel):
 class EnvironmentCreate(BaseModel):
     chapter: str
     name: str
-    color: str = Field(default="#e879f9", pattern=r"^#[0-9a-fA-F]{6}$")
+    color: str = Field(default="#e879f9", pattern=HEX_COLOR_PATTERN)
     stackable: bool = True
     max_stacks: int = Field(default=0, ge=0)
     dispellable: bool = False
@@ -917,7 +922,7 @@ class EnvironmentRead(BaseModel):
     id: int
     chapter: str
     name: str
-    color: str = Field(default="#e879f9", pattern=r"^#[0-9a-fA-F]{6}$")
+    color: str = Field(default="#e879f9", pattern=HEX_COLOR_PATTERN)
     stackable: bool = True
     max_stacks: int
     dispellable: bool = False
@@ -1271,6 +1276,8 @@ class CharacterSkillNodeRead(SkillNodeRead):
     unlocked: bool
     custom_name: str | None
     custom_image_url: str | None = None
+    custom_description: str | None = None
+    custom_description_color: str | None = None
     display_name: str
     unlocked_at: datetime | None = None
 
@@ -1298,5 +1305,13 @@ class CharacterSkillTreeRead(BaseModel):
     nodes: list[CharacterSkillNodeRead]
 
 
-class SkillNameUpdate(BaseModel):
-    custom_name: str = Field(default="", max_length=50)
+class SkillCustomizationUpdate(BaseModel):
+    """습득한 기술의 이름·설명 커스터마이즈. 보내지 않은 필드는 그대로 두고, 빈 문자열은 초기화한다.
+
+    이미지는 multipart라 별도 경로(/image)를 쓴다.
+    """
+
+    custom_name: str | None = Field(default=None, max_length=50)
+    custom_description: str | None = Field(default=None, max_length=300)
+    # 설명에서 작은따옴표로 감싼 구간을 칠할 단일 색. 빈 값이면 서(book) 기본 색으로 되돌린다.
+    custom_description_color: str | None = Field(default=None, pattern=OPTIONAL_HEX_COLOR_PATTERN)

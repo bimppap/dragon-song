@@ -88,7 +88,7 @@ from app.schemas import (
     SettlementPayRequest,
     SettlementRead,
     SignupRequest,
-    SkillNameUpdate,
+    SkillCustomizationUpdate,
     SkillNodeRead,
     SkillNodeUpdate,
     SkillVisibilityUpdate,
@@ -1476,16 +1476,19 @@ def unlock_character_skill(
     return crud.unlock_character_skill_node(db, character_id, node_id)
 
 
-@app.put("/characters/{character_id}/skills/{node_id}/name", response_model=CharacterSkillTreeRead)
-def rename_character_skill(
+@app.put("/characters/{character_id}/skills/{node_id}/customization", response_model=CharacterSkillTreeRead)
+def customize_character_skill(
     character_id: int,
     node_id: int,
-    data: SkillNameUpdate,
+    data: SkillCustomizationUpdate,
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
+    """러너가 습득한 기술의 이름·설명·강조 색을 한 번에 반영한다. 보내지 않은 필드는 그대로 둔다."""
     _require_own_character_or_admin(db, member, character_id)
-    return crud.rename_character_skill(db, character_id, node_id, data.custom_name)
+    return crud.update_character_skill_customization(
+        db, character_id, node_id, data.model_dump(exclude_unset=True),
+    )
 
 
 @app.post("/characters/{character_id}/skills/{node_id}/image", response_model=CharacterSkillTreeRead)

@@ -4,6 +4,7 @@ import random
 import re
 import threading
 import time
+from collections.abc import Mapping
 from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -7197,6 +7198,8 @@ def _to_character_skill_node_read(node: SkillNode, unlock: CharacterSkillUnlock 
         unlocked=unlocked,
         custom_name=unlock.custom_name if unlock and is_public else None,
         custom_image_url=unlock.custom_image_url if unlock and is_public else None,
+        custom_description=unlock.custom_description if unlock and is_public else None,
+        custom_description_color=unlock.custom_description_color if unlock and is_public else None,
         display_name=_skill_display_name(
             node,
             skill_lv=character.skill_lv,
@@ -7426,22 +7429,24 @@ def _get_character_skill_unlock_or_404(db: Session, character_id: int, node_id: 
     return node, unlock
 
 
-def rename_character_skill(db: Session, character_id: int, node_id: int, custom_name: str) -> CharacterSkillTreeRead:
+def update_character_skill_customization(
+    db: Session, character_id: int, node_id: int, fields: Mapping[str, str | None],
+) -> CharacterSkillTreeRead:
+    """습득한 기술의 커스터마이즈 필드를 갱신한다. 빈 값으로 온 필드는 초기화(기본값으로 되돌림)한다.
+
+    호출자가 보낸 필드만 담긴 매핑을 받으므로, 이름만 바꾸는 경우에도 설명·색은 건드리지 않는다.
+    """
     character = _get_character_or_404(db, character_id)
     node, unlock = _get_character_skill_unlock_or_404(db, character.id, node_id)
-    unlock.custom_name = custom_name.strip() or None
+    for name, value in fields.items():
+        setattr(unlock, name, (value or "").strip() or None)
     db.commit()
     invalidate_active_battle_skills_cache([character.id])
     return get_character_skill_tree(db, character.id, node.book)
 
 
 def set_character_skill_image(db: Session, character_id: int, node_id: int, image_url: str) -> CharacterSkillTreeRead:
-    character = _get_character_or_404(db, character_id)
-    node, unlock = _get_character_skill_unlock_or_404(db, character.id, node_id)
-    unlock.custom_image_url = image_url
-    db.commit()
-    invalidate_active_battle_skills_cache([character.id])
-    return get_character_skill_tree(db, character.id, node.book)
+    return update_character_skill_customization(db, character_id, node_id, {"custom_image_url": image_url})
 
 
 def get_character_skill_unlock_image(db: Session, character_id: int, node_id: int) -> str | None:

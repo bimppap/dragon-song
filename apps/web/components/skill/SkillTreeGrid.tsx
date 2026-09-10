@@ -97,6 +97,25 @@ function HighlightedDescription({ text, className }: { text: string; className: 
 }
 
 /**
+ * 커스텀 기술 설명에서 작은따옴표로 감싼 구간을 강조한다. 따옴표 자체는 서식 기호라 표시하지 않는다.
+ * color를 지정하지 않으면 서(book) 기본 강조색을 쓴다. 임의의 색은 클래스로 표현할 수 없어 style로 넣는다.
+ */
+export function QuotedDescription({ text, color, accent }: { text: string; color?: string | null; accent: BookAccent }) {
+  // 캡처 그룹이 있는 split이라 홀수 인덱스가 따옴표 안쪽 텍스트다.
+  return text.split(/'([^']+)'/g).map((part, index) => (
+    index % 2 === 0 ? part : (
+      <span
+        key={index}
+        className={cn("font-semibold", color ? undefined : accent.text)}
+        style={color ? { color } : undefined}
+      >
+        {part}
+      </span>
+    )
+  ));
+}
+
+/**
  * 기술 정보 툴팁. 명칭·발동 타입·분류·중첩 가능·기술 대상 진영/수·발동 순서·기술 비용·기술 설명은 러너에게도 보여주고,
  * 관리자에게는 기술 위력과 환경 스택 제거 수를 추가로 보여준다.
  */
@@ -106,7 +125,12 @@ export function SkillTooltipContent({
   footer,
   accent = DEFAULT_ACCENT,
 }: {
-  node: SkillNode & { display_name?: string; custom_name?: string | null };
+  node: SkillNode & {
+    display_name?: string;
+    custom_name?: string | null;
+    custom_description?: string | null;
+    custom_description_color?: string | null;
+  };
   variant: "runner" | "admin";
   footer?: ReactNode;
   accent?: BookAccent;
@@ -156,6 +180,11 @@ export function SkillTooltipContent({
       {node.description && (
         <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-muted">
           <HighlightedDescription text={node.description} className={accent.text} />
+        </p>
+      )}
+      {node.custom_description && (
+        <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-ivory/85">
+          <QuotedDescription text={node.custom_description} color={node.custom_description_color} accent={accent} />
         </p>
       )}
       {footer ? <div className="mt-2">{footer}</div> : null}

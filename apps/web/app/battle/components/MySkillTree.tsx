@@ -6,13 +6,14 @@ import { Image as ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
+import { Textarea } from "@/components/ui/textarea";
+import SkillTreeGrid, { QuotedDescription } from "@/components/skill/SkillTreeGrid";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import Modal from "@/components/common/Modal";
 import {
   fetchCharacterSkillTree,
   formatEffect,
-  renameCharacterSkill,
+  customizeCharacterSkill,
   unlockCharacterSkill,
   uploadCharacterSkillImage,
   type CharacterSkillNode,
@@ -41,6 +42,9 @@ export default function MySkillTree({ characterId }: Props) {
   const [customName, setCustomName] = useState("");
   const [customImageFile, setCustomImageFile] = useState<File | null>(null);
   const [customImagePreview, setCustomImagePreview] = useState<string | null>(null);
+  const [customDescription, setCustomDescription] = useState("");
+  // "" 이면 색을 따로 저장하지 않고 서(book) 기본 강조색을 쓴다.
+  const [customDescriptionColor, setCustomDescriptionColor] = useState("");
   const [savingCustomize, setSavingCustomize] = useState(false);
 
   useEffect(() => {
@@ -91,6 +95,8 @@ export default function MySkillTree({ characterId }: Props) {
     setCustomName(node.custom_name ?? node.default_name);
     setCustomImageFile(null);
     setCustomImagePreview(node.image_url);
+    setCustomDescription(node.custom_description ?? "");
+    setCustomDescriptionColor(node.custom_description_color ?? "");
   }
 
   function closeCustomize() {
@@ -108,15 +114,18 @@ export default function MySkillTree({ characterId }: Props) {
     const { book, node } = customizing;
     setSavingCustomize(true);
     try {
-      let tree: CharacterSkillTree | null = null;
       const trimmedName = customName.trim();
-      if (trimmedName !== (node.custom_name ?? node.default_name)) {
-        tree = await renameCharacterSkill(characterId, node.id, trimmedName);
-      }
+      let tree = await customizeCharacterSkill(characterId, node.id, {
+        // 기본 이름 그대로면 커스터마이즈하지 않은 것으로 되돌린다.
+        custom_name: trimmedName === node.default_name ? "" : trimmedName,
+        custom_description: customDescription.trim(),
+        custom_description_color: customDescriptionColor,
+      });
+      // 이미지는 multipart라 경로가 따로다. 응답이 최신 트리이므로 이걸로 덮어쓴다.
       if (customImageFile) {
         tree = await uploadCharacterSkillImage(characterId, node.id, customImageFile);
       }
-      if (tree) applyTreeUpdate(book, tree);
+      applyTreeUpdate(book, tree);
       closeCustomize();
     } catch (e) {
       toast(e instanceof Error ? e.message : "기술 커스터마이즈에 실패했습니다.", "error");
@@ -174,7 +183,7 @@ export default function MySkillTree({ characterId }: Props) {
           <p className="text-sm text-muted">
             캐릭터의 역할과 무관하게 용맹·불굴·헌신·탐구 중 하나의 서를 선택할 수 있습니다.
             첫 기술을 습득하면 해당 서만 표시됩니다. 1단계의 세 계열과 2단계의 두 세부 경로에서 각각 하나를 선택하며,
-            선택하지 않은 경로는 설명만 확인할 수 있습니다. 습득한 기술을 누르면 이름과 이미지를 바꿀 수
+            선택하지 않은 경로는 설명만 확인할 수 있습니다. 습득한 기술을 누르면 이름·이미지·설명을 바꿀 수
             있습니다(루트 노드는 제외).
           </p>
         </div>
@@ -246,6 +255,57 @@ export default function MySkillTree({ characterId }: Props) {
                   <p className="text-xs text-muted">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
                 </div>
               </div>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide" htmlFor="skill-custom-description">
+                기술 설명
+              </label>
+              <Textarea
+                id="skill-custom-description"
+                value={customDescription}
+                maxLength={300}
+                onChange={(e) => setCustomDescription(e.target.value)}
+                placeholder="예) 붉은 '검기'가 흐른다"
+              />
+              <p className="text-xs text-muted">
+                작은따옴표로 감싼 부분은 아래 강조 색으로 표시됩니다(따옴표는 보이지 않습니다). 원래 기술 설명은
+                그대로 두고 툴팁에 함께 보입니다. {customDescription.length}/300자
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-semibold text-muted uppercase tracking-wide">강조 색</label>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="color"
+                  aria-label="강조 색"
+                  value={customDescriptionColor || BOOK_ACCENT[customizing.book].line}
+                  onChange={(e) => setCustomDescriptionColor(e.target.value)}
+                  className="size-9 cursor-pointer rounded-lg border border-line bg-surface p-1"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setCustomDescriptionColor("")}
+                  disabled={customDescriptionColor === ""}
+                >
+                  기본 색으로
+                </Button>
+                {customDescriptionColor === "" && (
+                  <span className="text-xs text-muted">{customizing.book} 기본 색을 쓰는 중</span>
+                )}
+              </div>
+              {customDescription.trim() && (
+                <p className="mt-1 whitespace-pre-line rounded-lg border border-line bg-inset px-3 py-2 text-sm text-ivory/85">
+                  <QuotedDescription
+                    text={customDescription}
+                    color={customDescriptionColor}
+                    accent={BOOK_ACCENT[customizing.book]}
+                  />
+                </p>
+              )}
             </div>
 
             <Button type="button" className="w-full" onClick={handleSaveCustomize} disabled={savingCustomize}>
