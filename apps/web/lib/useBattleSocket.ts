@@ -12,6 +12,8 @@ export interface BattleDraftPreviewEntry {
   skill_node_id: number | null;
   skill_name: string | null;
   skill_image_url: string | null;
+  /** 러너 화면은 기술 목록을 받지 않아 노드 id로 설명을 찾을 수 없다. 이름·이미지와 같이 실어 보낸다. */
+  skill_description: string | null;
   item_id: number | null;
   item_name: string | null;
   item_image_url: string | null;

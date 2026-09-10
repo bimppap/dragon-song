@@ -455,7 +455,7 @@ function draftTargetNames(
 
 /** 러너 미리보기 배지의 행동 이름. 기술/소비는 무엇을 쓰는지까지 함께 보여준다. */
 function previewActionLabel(preview: BattleDraftPreviewEntry): string {
-  if (preview.kind === "skill") return `기술(${preview.skill_name ?? "기술"})`;
+  if (preview.kind === "skill") return preview.skill_name ?? "기술";
   if (preview.kind === "item") return `소비(${preview.item_name ?? "아이템"})`;
   return CHAR_ACTION_LABEL[preview.kind];
 }
@@ -1013,6 +1013,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           skill_node_id: charDraft.skill_node_id,
           skill_name: skill?.display_name ?? null,
           skill_image_url: skill?.image_url ?? null,
+          skill_description: skill?.description ?? null,
           item_id: charDraft.item_id,
           item_name: item?.item_name ?? null,
           item_image_url: item?.item_image_url ?? null,
@@ -1641,7 +1642,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="text-xs font-semibold text-muted">{actionIndex + 1}번째 행동</span>
                           <Select
-                            value={draft.kind === "none" ? (enemy.skills.length === 0 ? "none" : "") : `${draft.kind}:${draft.skill_index}`}
+                            value={draft.kind === "none" ? "none" : `${draft.kind}:${draft.skill_index}`}
                             onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
                             onValueChange={(v) => {
                               if (v === "none") { patchTelegraphAction(enemy.enemy_id, actionIndex, { kind: "none", skill_index: null, target_character_ids: [] }); return; }
@@ -1658,7 +1659,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                             </SelectTrigger>
                             <SelectContent>
                               <SelectGroup>
-                                {enemy.skills.length === 0 && <SelectItem value="none">무반응</SelectItem>}
+                                <SelectItem value="none">무반응</SelectItem>
                                 {attackSkills.map((s) => (
                                   <SelectItem key={s.index} value={`attack:${s.index}`}>
                                     {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : `${s.target_count}인 · ${s.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {s.skill_type === "지속 디버프"
@@ -1812,9 +1813,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const showActionUi = canAct && phase === "ally" && active && draft;
           const actionPreview = readOnly && phase === "ally" && active ? draftPreview?.[p.character_id] : undefined;
           const previewIcon = actionPreview?.kind === "skill"
-            ? { name: actionPreview.skill_name ?? "기술", imageUrl: actionPreview.skill_image_url }
+            ? {
+                name: actionPreview.skill_name ?? "기술",
+                imageUrl: actionPreview.skill_image_url,
+                description: actionPreview.skill_description,
+              }
             : actionPreview?.kind === "item" && actionPreview.item_id != null
-              ? { name: actionPreview.item_name ?? "아이템", imageUrl: actionPreview.item_image_url }
+              ? { name: actionPreview.item_name ?? "아이템", imageUrl: actionPreview.item_image_url, description: null }
               : null;
           const kindOptions = allowedKinds(p, hasDowned, battleSkills.length > 0);
           const selectedSkill = draft?.skill_node_id != null
@@ -2087,18 +2092,27 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       />
                     </div>
                     {previewIcon && (
-                      <div
-                        className="skill-icon-glow aspect-square w-full overflow-hidden border border-line bg-surface"
-                        title={previewIcon.name}
+                      <InfoTooltip
+                        side="top"
+                        content={
+                          <div className="max-w-56 text-left">
+                            <div className="font-semibold">{previewIcon.name}</div>
+                            {previewIcon.description && (
+                              <div className="mt-1 whitespace-pre-line text-muted">{previewIcon.description}</div>
+                            )}
+                          </div>
+                        }
                       >
-                        <CharacterAvatar
-                          src={previewIcon.imageUrl}
-                          alt={previewIcon.name}
-                          className="aspect-square w-full rounded-none"
-                          iconSize={16}
-                          sizes="64px"
-                        />
-                      </div>
+                        <div className="skill-icon-glow aspect-square w-full cursor-help overflow-hidden border border-line bg-surface">
+                          <CharacterAvatar
+                            src={previewIcon.imageUrl}
+                            alt={previewIcon.name}
+                            className="aspect-square w-full rounded-none"
+                            iconSize={16}
+                            sizes="64px"
+                          />
+                        </div>
+                      </InfoTooltip>
                     )}
                   </div>
 
