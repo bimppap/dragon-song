@@ -1,7 +1,7 @@
 "use client";
 
 import { type ReactNode, useId, useState } from "react";
-import { GripVertical, Link2 } from "lucide-react";
+import { ArrowLeftRight, GripVertical } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { reconcileBattlePairs } from "@/lib/battlePairs";
@@ -60,8 +60,7 @@ export default function BattlePairGrid({ characters, pairs, children, compact = 
             <div className="overflow-x-auto pb-1">
               <div className={cn("relative grid grid-cols-2 items-stretch gap-4", !compact && "min-w-[30rem]")}>
                 {pair.length === 2 && <div className="pointer-events-none absolute inset-y-0 left-1/2 z-10 w-4 -translate-x-1/2" aria-label="페어 연결">
-                  <svg className="absolute inset-0 h-full w-full text-gold/60" preserveAspectRatio="none" viewBox="0 0 16 100" aria-hidden="true"><path d="M0 25 L16 75 M16 25 L0 75" fill="none" stroke="currentColor" strokeWidth="1" vectorEffect="non-scaling-stroke" /></svg>
-                  <span className="absolute left-1/2 top-1/2 flex size-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-inset text-gold"><Link2 size={18} /></span>
+                  <span className="absolute left-1/2 top-1/2 flex size-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-inset text-gold"><ArrowLeftRight size={18} /></span>
                 </div>}
                 {pair.map((id) => {
                   const character = charactersById.get(id)!;

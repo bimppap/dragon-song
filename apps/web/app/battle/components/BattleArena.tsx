@@ -464,8 +464,7 @@ function previewActionLabel(preview: BattleDraftPreviewEntry): string {
 function previewTargetSuffix(preview: BattleDraftPreviewEntry): string {
   const names = preview.target_names ?? [];
   if (preview.kind === "defend") {
-    // 본인 방어는 대상이 자명하므로 남을 지켜줄 때만 표기한다.
-    return names.length > 0 && names[0] !== "본인" ? ` → ${names[0]} 보호` : "";
+    return names.length > 0 ? ` → ${names[0]} 보호` : "";
   }
   if (names.length > 0) return ` → ${names.join(", ")}`;
   // 기술은 대상을 고르기 전에도 대상 칸이 있다는 것 자체를 보여준다.
@@ -558,6 +557,26 @@ interface TargetOption {
   disabled?: boolean;
 }
 
+/** 갈무리(고정폭 픽셀 글꼴)에서 한글은 한 칸, 영문·숫자·기호는 반 칸을 차지한다.
+ *  글자 수가 아니라 실제 차지하는 폭으로 재야 "라 카드리 오즈벡 (MP 부족)"처럼 한글과
+ *  괄호가 섞인 이름의 길이를 맞게 판단한다. */
+function labelWidthEm(label: string): number {
+  let em = 0;
+  for (const char of label) em += /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF\u4E00-\u9FFF]/.test(char) ? 1 : 0.5;
+  return em;
+}
+
+/** 대상 이름이 길수록 글자를 줄인다. 카드가 좁아 긴 이름은 그대로 두면 넘치는데, 이름은
+ *  누구를 고른 건지 알려주는 정보라 잘라내는 대신 줄여서 전부 보여준다. 그래도 넘칠 만큼
+ *  긴 이름은 마지막 수단으로 줄바꿈된다(break-words). */
+function targetLabelSizeClass(label: string): string {
+  const em = labelWidthEm(label);
+  if (em <= 7) return "text-[11px]";
+  if (em <= 9) return "text-[10px]";
+  if (em <= 11) return "text-[9px]";
+  return "text-[8px]";
+}
+
 function SkillTargetPicker({ values, options, onChange, count, editingClassName, onOpenChange }: {
   values: string[]; options: TargetOption[]; onChange: (keys: string[]) => void; count: number;
   editingClassName?: string; onOpenChange?: (open: boolean) => void;
@@ -569,11 +588,15 @@ function SkillTargetPicker({ values, options, onChange, count, editingClassName,
     setOpen(nextOpen);
     onOpenChange?.(nextOpen);
   }
+  const selectedLabel = values.length
+    ? options.filter((option) => values.includes(option.key)).map((option) => option.label).join(", ")
+    : "";
   return <>
-    <Button variant="outline" className={cn("h-auto min-h-8 w-full whitespace-normal text-[11px]", editingClassName)} onClick={() => {
+    <Button variant="outline" className={cn("h-auto min-h-8 w-full whitespace-normal break-words px-2 py-1 text-left leading-tight",
+      selectedLabel ? targetLabelSizeClass(selectedLabel) : "text-[11px]", editingClassName)} onClick={() => {
       setSelection(values.filter((key) => options.some((option) => option.key === key)).slice(0, required));
       setPickerOpen(true);
-    }}>{values.length ? options.filter((option) => values.includes(option.key)).map((option) => option.label).join(", ") : "기술 대상 선택"}</Button>
+    }}>{selectedLabel || "대상 선택"}</Button>
     {open && <div className="fixed inset-0 z-110 flex items-center justify-center bg-black/50 p-4" onClick={() => setPickerOpen(false)}>
       <div role="dialog" aria-modal="true" aria-label="기술 적용 대상 선택" className="max-h-[85vh] w-full max-w-3xl overflow-y-auto rounded-xl border border-line bg-surface p-4" onClick={(event) => event.stopPropagation()}>
         <p className="mb-3 text-sm font-semibold">기술 적용 인원: {count}명 · 선택 {selection.length}/{required}명</p>
@@ -626,11 +649,15 @@ function TargetPickerButton({
       <button
         type="button"
         onClick={() => setPickerOpen(true)}
-        className={cn("flex h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-line bg-surface px-2.5 text-[11px] text-ivory transition focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent", editingClassName)}
+        className={cn(
+          "flex h-auto min-h-8 w-full items-center justify-between gap-1.5 rounded-lg border border-line bg-surface px-2.5 py-1 text-ivory transition focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent",
+          typeof selected?.label === "string" ? targetLabelSizeClass(selected.label) : "text-[11px]",
+          editingClassName,
+        )}
       >
-        <span className={cn("flex min-w-0 items-center gap-1.5 truncate", !selected && "text-muted")}>
+        <span className={cn("flex min-w-0 items-center gap-1.5", !selected && "text-muted")}>
           {selected?.icon}
-          <span className="truncate">{selected ? selected.label : placeholder}</span>
+          <span className="min-w-0 break-words text-left leading-tight">{selected ? selected.label : placeholder}</span>
         </span>
       </button>
 
@@ -1797,6 +1824,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             ? getBattleSkillTargetMode(selectedSkill)
             : null;
           const actionInputId = `character:${p.character_id}:action`;
+          // 선택된 행동 문구를 미리 만들어 대상 버튼과 같은 기준으로 글자 크기를 정한다.
+          const selectedActionLabel = draft
+            ? draft.kind === "skill" && selectedSkill
+              ? selectedSkill.display_name
+              : CHAR_ACTION_LABEL[draft.kind]
+            : "";
           const targetInputId = `character:${p.character_id}:target`;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
@@ -1816,7 +1849,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               icon: Sparkles,
               control: (
                 <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
-                  {p.name} (본인) 자동 지정
+                  본인 자동 지정
                 </div>
               ),
             });
@@ -1826,7 +1859,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             const options: TargetOption[] = selectedSkillTargetMode?.startsWith("enemy")
               ? targetableEnemies.map((enemy) => ({ key: `enemy:${enemy.enemy_id}`, label: enemy.name }))
               : selectedSkillTargetMode === "none"
-                ? [{ key: `ally:${p.character_id}`, label: `${p.name} (본인)` }]
+                ? [{ key: `ally:${p.character_id}`, label: "본인" }]
                 : (
                   selectedSkill.category === "강화" || ACTIVE_ALLY_SKILL_NAMES.has(selectedSkill.default_name)
                     ? targetableParticipants
@@ -1866,7 +1899,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               control: (
                 <TargetPickerButton
                   title="치유 대상 선택"
-                  placeholder="치유 대상 선택"
+                  placeholder="대상 선택"
                   value={draft.target_character_id != null ? String(draft.target_character_id) : null}
                   editingClassName={editingClassName(targetInputId, "target")}
                   onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
@@ -1885,7 +1918,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               control: (
                 <TargetPickerButton
                   title="구조 대상 선택"
-                  placeholder="구조 대상 선택"
+                  placeholder="대상 선택"
                   value={draft.target_character_id != null ? String(draft.target_character_id) : null}
                   editingClassName={editingClassName(targetInputId, "target")}
                   onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
@@ -1929,7 +1962,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               control: (
                 <TargetPickerButton
                   title="보호 대상 선택"
-                  placeholder="보호 대상"
+                  placeholder="대상 선택"
                   value={draft.protect_target_character_id != null ? String(draft.protect_target_character_id) : String(p.character_id)}
                   editingClassName={editingClassName(targetInputId, "target")}
                   onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
@@ -1939,7 +1972,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     const disabled = !isSelf && p.mp < 1;
                     return {
                       key: String(target.character_id),
-                      label: isSelf ? `${target.name} (본인)` : disabled ? `${target.name} (MP 부족)` : target.name,
+                      label: isSelf ? "본인" : disabled ? `${target.name} (MP 부족)` : target.name,
                       disabled,
                     };
                   })}
@@ -1973,7 +2006,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     if (kind === "item") void ensureItemsLoaded();
                   }}
                 >
-                  <SelectTrigger className={cn("h-auto min-h-8 w-full text-[11px] [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:text-left", editingClassName(actionInputId, "action"))}>
+                  <SelectTrigger className={cn("h-auto min-h-8 w-full [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:text-left",
+                    selectedActionLabel ? targetLabelSizeClass(selectedActionLabel) : "text-[11px]",
+                    editingClassName(actionInputId, "action"))}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="max-w-[calc(100vw-2rem)]">
@@ -1981,7 +2016,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       {kindOptions.map((kind) => {
                         if (kind === "skill" && affordableSkills.length > 0) return affordableSkills.map((skill) => (
                           <SelectItem key={`skill:${skill.id}`} value={`skill:${skill.id}`} className="whitespace-normal break-words">
-                            기술({skill.display_name})
+                            {skill.display_name}
                           </SelectItem>
                         ));
                         const skillUnavailable = kind === "skill" && affordableSkills.length === 0;
@@ -2059,12 +2094,6 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         </span>
                       )}
                     </p>
-                    {p.pair_source_character_id != null && p.pair_source_character_id !== p.character_id && (
-                      <p className="flex items-center gap-1 text-[11px] text-gold" title={`${p.pair_source_name}의 포지션·능력치·기술 적용 중 · 아이템은 ${p.name} 본인 보유분 사용`}>
-                        <Link2 size={11} className="shrink-0" />
-                        <span className="truncate">{p.pair_source_name}의 능력치·기술</span>
-                      </p>
-                    )}
                     <div className="space-y-1.5">
                       <ResourceBar
                         icon={Heart}
@@ -2149,11 +2178,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                   <div
                     className={cn(
                       "grid w-full gap-2",
-                      actionControls.length >= 3
+                      actionControls.length >= 3 || actionControls.length === 2
                         ? "grid-cols-2 items-start"
-                        : actionControls.length === 2
-                          ? "grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] items-start"
-                          : "grid-cols-1",
+                        : "grid-cols-1",
                     )}
                   >
                     {actionControls.map(({ key, icon: Icon, control }, index) => (
