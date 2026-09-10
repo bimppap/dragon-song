@@ -2133,6 +2133,43 @@ export async function unlockCharacterSkill(characterId: number, nodeId: number):
 }
 
 /** 습득한 기술의 커스터마이즈 값. 보내지 않은 필드는 그대로 두고, 빈 문자열은 초기화한다. */
+/** 복제(ab_clone)로 저장해 둔 다른 캐릭터의 기술 한 칸. */
+export interface ClonedSkill {
+  slot_index: number;
+  source_character_id: number;
+  source_character_name: string;
+  source_node_id: number;
+  book: SkillBook;
+  display_name: string;
+  image_url: string | null;
+}
+
+export interface ClonedSkills {
+  /** 복제 기술 depth만큼 늘어나는 저장 칸 수. 복제를 배우지 않았으면 0. */
+  slot_count: number;
+  slots: ClonedSkill[];
+}
+
+export async function fetchClonedSkills(characterId: number): Promise<ClonedSkills> {
+  return request<ClonedSkills>(
+    `/characters/${characterId}/cloned-skills`,
+    undefined,
+    "복제 기술 조회 실패",
+  );
+}
+
+export async function saveClonedSkills(
+  characterId: number,
+  slots: { slot_index: number; source_character_id: number; source_node_id: number }[],
+): Promise<ClonedSkills> {
+  const result = await request<ClonedSkills>(`/characters/${characterId}/cloned-skills`, {
+    method: "PUT",
+    body: JSON.stringify({ slots }),
+  }, "복제 기술 저장 실패");
+  invalidateApiCache("battles:active-skills:");
+  return result;
+}
+
 export interface SkillCustomization {
   custom_name?: string;
   custom_description?: string;

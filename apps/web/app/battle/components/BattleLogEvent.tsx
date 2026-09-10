@@ -11,6 +11,7 @@ type NumberKind = "damage" | "healing" | "resource" | "shield" | "stack" | "heal
 
 function numberKind(event: string, start: number, end: number): NumberKind {
   const suffix = event.slice(end, Math.min(event.length, end + 8));
+  if (/^\s*체력 소모/.test(suffix)) return "damage";
   if (event.startsWith("♻️") && /^\s*(?:HP|MP)/i.test(suffix)) return "regen";
   if (/^\s*(?:피해|반격 피해)/.test(suffix)) return "damage";
   if (/^\s*(?:치유|회복)/.test(suffix)) return "healing";
@@ -93,8 +94,13 @@ function isCalculatedResultNumber(
   kind: NumberKind,
 ): boolean {
   const suffix = event.slice(end, Math.min(event.length, end + 10));
+  if (/체력 재생력\(고정\)\s*$/.test(event.slice(0, start))) return true;
+  // 개선("기술 효율(비례) +30% · 기술 효율(고정) +6")·쇠약("받는 피해 +14%")의 결과 수치.
+  // 뒤에 붙는 MP 표기 때문에 kind가 resource로 잡히므로 kind와 무관하게 판정한다.
+  if (/(?:기술 효율\((?:비례|고정)\)|받는 피해)\s*$/.test(event.slice(0, start))) return true;
+  if (/^\s*(?:체력 소모|보호막 부여)/.test(suffix)) return true;
   // 격려처럼 "피해 증폭 +20%" 형태로 끝나는 버프 수치도 계산식을 붙인다.
-  if (value.endsWith("%") && /(?:증폭|감소|효율|확률)\s*$/.test(event.slice(0, start))) return true;
+  if (value.endsWith("%") && /(?:증폭|감소|효율|확률|존재감)\s*$/.test(event.slice(0, start))) return true;
   // 환경 피해처럼 "피해 6 [94/100]" 형태로 이름표가 숫자 앞에 오는 경우도 계산 결과로 본다.
   if (kind === "damage" && /(?:^|\s)피해\s$/.test(event.slice(0, start))) return true;
   if (kind === "damage") return /^\s*(?:피해|반격 피해|지속 피해)/.test(suffix);

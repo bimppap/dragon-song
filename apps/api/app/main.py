@@ -90,6 +90,8 @@ from app.schemas import (
     SettlementRead,
     SignupRequest,
     SkillCustomizationUpdate,
+    SetClonedSkillsRequest,
+    ClonedSkillsRead,
     SkillNodeRead,
     SkillNodeUpdate,
     SkillVisibilityUpdate,
@@ -107,6 +109,13 @@ from app.schemas import (
 from app import crud
 
 ensure_schema(engine)
+
+# 기존 DB의 탐구의 서 파생 기술(개선/쇠약/복제)을 최신 스펙으로 맞춘다.
+_reconcile_db = SessionLocal()
+try:
+    crud.reconcile_inquiry_derived_skills(_reconcile_db)
+finally:
+    _reconcile_db.close()
 
 app = FastAPI()
 
@@ -1520,6 +1529,28 @@ def customize_character_skill(
     return crud.update_character_skill_customization(
         db, character_id, node_id, data.model_dump(exclude_unset=True),
     )
+
+
+@app.get("/characters/{character_id}/cloned-skills", response_model=ClonedSkillsRead)
+def get_character_cloned_skills(
+    character_id: int,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """복제 슬롯 수와 저장해 둔 아군 기술 목록. 다른 러너의 캐릭터도 열람은 누구나 가능하다."""
+    return crud.get_character_cloned_skills(db, character_id)
+
+
+@app.put("/characters/{character_id}/cloned-skills", response_model=ClonedSkillsRead)
+def set_character_cloned_skills(
+    character_id: int,
+    data: SetClonedSkillsRequest,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """복제 슬롯을 통째로 교체한다(비전투 중 캐릭터 정보 화면). 본인 캐릭터 또는 관리자만 편집할 수 있다."""
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.set_character_cloned_skills(db, character_id, data.slots)
 
 
 @app.post("/characters/{character_id}/skills/{node_id}/image", response_model=CharacterSkillTreeRead)

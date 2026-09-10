@@ -313,6 +313,27 @@ class CharacterSkillUnlock(Base):
     )
 
 
+class CharacterClonedSkill(Base):
+    """복제(ab_clone)로 저장한 다른 캐릭터의 기술 슬롯. 비전투 중 캐릭터 정보 화면에서 편집한다."""
+
+    __tablename__ = "character_cloned_skills"
+    __table_args__ = (
+        UniqueConstraint("character_id", "slot_index", name="uq_character_cloned_skill_slot"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    slot_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    # 복제 대상 캐릭터와 그 캐릭터의 기술 노드.
+    source_character_id: Mapped[int] = mapped_column(Integer, ForeignKey("characters.id"), nullable=False, index=True)
+    source_node_id: Mapped[int] = mapped_column(Integer, ForeignKey("skill_nodes.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=now_kst,
+    )
+
+
 class Purchase(Base):
     __tablename__ = "purchases"
     __table_args__ = (

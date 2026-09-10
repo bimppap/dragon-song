@@ -157,6 +157,13 @@ export default function AdminSkillEditor() {
     setSaving(true);
     setError(null);
     try {
+      if (editing.book === "헌신의 서" && editing.col === 1 && editing.tier >= 2) {
+        await updateSkillNode(editing.id, { default_name: editing.default_name, description: editing.description, ...(editing.branch !== 2 ? { power: Number(draft.powerPercents.power) } : {}) });
+        const refreshed = await fetchSkillNodes(editing.book);
+        setNodesByBook((prev) => prev ? { ...prev, [editing.book]: refreshed } : prev);
+        closeEdit();
+        return;
+      }
       const skillMetadata = editing.tier === 0 ? {} : {
         trigger_type: draft.triggerType as SkillTriggerType,
         category: draft.category as SkillCategory,
@@ -198,6 +205,11 @@ export default function AdminSkillEditor() {
     }
   }
 
+  const isValorProgression = editing?.book === "용맹의 서" && editing.col === 1 && editing.tier >= 2;
+  const isEscortProgression = editing?.book === "불굴의 서" && editing.branch === 0 && editing.col === 1 && editing.tier >= 2;
+  const isEruptionProgression = editing?.book === "불굴의 서" && editing.branch === 1 && editing.col === 1 && editing.tier >= 2;
+  const isVeilProgression = editing?.book === "불굴의 서" && editing.branch === 2 && editing.col === 1 && editing.tier >= 2;
+  const isDevotionProgression = editing?.book === "헌신의 서" && editing.col === 1 && editing.tier >= 2;
   const isSkillNode = editing !== null && editing.tier !== 0;
   const targetIsValid = draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
   const activationOrderIsValid = /^-?\d+$/.test(draft.activationOrder.trim());
@@ -295,7 +307,15 @@ export default function AdminSkillEditor() {
         title={editing ? `${editing.book} · ${editing.tier_label} 기술 편집` : undefined}
         className="max-w-2xl"
       >
-        <div className="space-y-4">
+        {(isDevotionProgression || isVeilProgression || isEruptionProgression || isEscortProgression || isValorProgression) && editing ? <div className="space-y-4">
+          <h3 className="text-lg font-semibold">{editing.default_name} · depth {editing.tier}</h3>
+          <p className="text-sm text-muted">depth 2부터 같은 기술이 강화됩니다. 대상·효과·계산식은 같고, 각 단계의 강화 수치만 달라집니다.</p>
+          <div className="flex flex-wrap gap-2">{nodesByBook?.[editing.book].filter((node) => node.branch === editing.branch && node.col === editing.col && node.tier >= 2).map((node) => <Button key={node.id} variant={node.id === editing.id ? "default" : "outline"} size="sm" disabled={saving} onClick={() => startEdit(node)}>depth {node.tier}</Button>)}</div>
+          <p className="whitespace-pre-line text-sm">{editing.description}</p>
+          {isValorProgression ? <div className="rounded-lg bg-inset p-3 text-sm space-y-2">{editing.branch === 0 ? <><p>피해: (자애 + 지혜) × 2 + 기술 효율(고정)</p><p>자신 공격력 버프: (자애 + 지혜) × 2 + 기술 효율(고정) / 2</p><p className="text-xs text-muted">주입은 고정 2배라 depth가 깊어져도 배율은 그대로이며, 버프는 중첩됩니다.</p></> : editing.branch === 1 ? <><p>사용 시 피해: {editing.tier} × 5 + 기술 효율(고정) = {editing.tier * 5} + 기술 효율(고정)</p><p>대상: 모든 에너미 (하수인 제외)</p><p>보유 시 상시 공격력: {editing.tier} × 2 + 기술 효율(고정) = {editing.tier * 2} + 기술 효율(고정)</p><p className="text-xs text-muted">상시 공격력은 기술을 쓰지 않아도 보유만으로 적용됩니다.</p></> : <><p>암시 턴 피해: {editing.tier} × 6 + 기술 효율(고정) = {editing.tier * 6} + 기술 효율(고정)</p><p>대상: 모든 적 (에너미 + 하수인)</p><p className="text-xs text-muted">적의 행동 암시 턴마다 발동하며, 중첩되고 전투 종료까지 유지됩니다.</p></>}</div> : isEscortProgression ? <div className="rounded-lg bg-inset p-3 text-sm space-y-2"><p>자신 피해 감소: {editing.tier} × 5% + 기술 효율(비례) = {editing.tier * 5}% + 기술 효율(비례)</p><p>피해 감소 스택: 최대 2스택 (합산 적용)</p><p>경호 스택: 지정한 아군 1명 (아군당 최대 1스택)</p><p className="text-xs text-muted">경호 스택을 가진 아군이 피격되면 시전자가 대신 맞습니다. 전투 종료까지 유지되며, 피해 감소는 방어 행동 여부와 무관하게 항상 적용됩니다.</p></div> : isEruptionProgression ? <div className="rounded-lg bg-inset p-3 text-sm space-y-2"><p>존재감: 사용마다 +20%p</p><p>피격 시 반응 피해: {editing.tier} × 5 + 기술 효율(고정) = {editing.tier * 5} + 기술 효율(고정)</p><p>대상: 모든 에너미 (하수인 제외)</p><p className="text-xs text-muted">전투 종료까지 유지되며 중첩됩니다. 중첩마다 존재감과 반응 피해가 합산됩니다.</p></div> : isVeilProgression ? <div className="rounded-lg bg-inset p-3 text-sm space-y-2"><p>체력 소모: 최대 체력 × max(0, {50 - editing.tier * 5}% − 기술 효율 비례)</p><p>아군 전체 보호막: {editing.tier} + 기술 효율(고정) / 2</p><p className="text-xs text-muted">depth가 깊어질수록 체력 소모는 줄고 보호막은 증가합니다. 두 값은 자동 계산됩니다.</p></div> : editing.branch === 2 ? <p className="rounded-lg bg-inset p-3 text-sm">회복 비율: {editing.tier} × 15% + 10% = {editing.tier * 15 + 10}%<br />실제 회복량만큼 무작위 에너미 1명에게 피해</p> : <label className="block space-y-2 text-sm">{editing.branch === 0 ? "체력 재생력 증가 기본값" : "전체 회복 기본값"}<Input type="number" min={0} step="any" value={draft.powerPercents.power ?? ""} onChange={(event) => setDraft((prev) => ({ ...prev, powerPercents: { ...prev.powerPercents, power: event.target.value } }))} /><span className="block text-xs text-muted">최종값 = {draft.powerPercents.power || "0"} + 시전자 기술 효율(고정) / 4</span></label>}
+          <p className="text-xs text-muted">{editing.formula}</p>
+          <div className="flex justify-end gap-2"><Button variant="ghost" onClick={closeEdit} disabled={saving}>닫기</Button>{isDevotionProgression && editing.branch !== 2 && <Button onClick={saveEdit} disabled={saving || !powerIsValid}>{saving ? "저장 중..." : "강화 수치 저장"}</Button>}</div>
+        </div> : <div className="space-y-4">
           <div className="space-y-1.5">
             <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 이름</label>
             <Input
@@ -487,7 +507,7 @@ export default function AdminSkillEditor() {
               {saving ? "저장 중..." : "저장"}
             </Button>
           </div>
-        </div>
+        </div>}
       </Modal>
     </div>
   );

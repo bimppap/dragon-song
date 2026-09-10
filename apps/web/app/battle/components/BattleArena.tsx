@@ -355,9 +355,10 @@ const MULTI_ENEMY_SKILL_NAMES = new Set(["분쇄", "파괴"]);
 const SINGLE_ALLY_SKILL_NAMES = new Set(["반격", "보호", "수호", "회복", "생명", "정화", "승화"]);
 const MULTI_ALLY_SKILL_NAMES = new Set(["구호"]);
 // 구호는 관리자가 대상을 고르지 않고 서버가 현재 체력이 낮은 순으로 자동 지정한다.
-const AUTO_ALLY_TARGET_SKILL_NAMES = new Set(["구호"]);
+const ALL_ALLY_TARGET_SKILL_NAMES = new Set(["후광", "장막"]);
+const AUTO_ALLY_TARGET_SKILL_NAMES = new Set(["구호", ...ALL_ALLY_TARGET_SKILL_NAMES]);
 // 충전은 기절한 아군에게는 걸 수 없고 시전자 자신도 대상이 되지 않는다(서버 ab_charge와 동일 조건).
-const ACTIVE_ALLY_SKILL_NAMES = new Set(["충전"]);
+const ACTIVE_ALLY_SKILL_NAMES = new Set(["충전", "재생"]);
 const SELF_EXCLUDED_SKILL_NAMES = new Set(["충전"]);
 
 type BattleSkillTargetMode = "enemy-single" | "enemy-multi" | "ally-single" | "ally-multi" | "self" | "none";
@@ -436,6 +437,7 @@ function draftTargetNames(
       return chosen ? [chosen.name] : [];
     }
     case "skill": {
+      if (skill && ALL_ALLY_TARGET_SKILL_NAMES.has(skill.default_name)) return ["아군 전체"];
       const keys = draft.skill_target_keys ?? [];
       if (keys.length > 0) return keys.map(nameForKey).filter(notNull);
       const mode = skill ? getBattleSkillTargetMode(skill) : null;
@@ -1844,7 +1846,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               icon: Sparkles,
               control: (
                 <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
-                  체력 낮은 순 {getBattleSkillTargetCount(selectedSkill)}명 자동 지정
+                  {ALL_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name) ? "아군 전체 자동 지정" : `체력 낮은 순 ${getBattleSkillTargetCount(selectedSkill)}명 자동 지정`}
                 </div>
               ),
             });

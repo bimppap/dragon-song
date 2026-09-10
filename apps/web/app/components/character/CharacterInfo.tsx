@@ -23,6 +23,7 @@ import {
   Zap,
 } from "lucide-react";
 import CharacterOwnedSkills from "./CharacterOwnedSkills";
+import CharacterClonedSkills from "./CharacterClonedSkills";
 import CharacterEquipmentSlots from "./CharacterEquipmentSlots";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
@@ -1290,6 +1291,7 @@ export default function CharacterInfo({
                     형제끼리 값이 같으면 안 되므로 컴포넌트 이름을 앞에 붙여 구분한다. */}
                 <div className="flex items-start gap-2">
                   <CharacterOwnedSkills key={`skills:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
+                  <CharacterClonedSkills key={`cloned:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} />
                   <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
                 </div>
               </div>

@@ -1335,6 +1335,31 @@ class CharacterSkillTreeRead(BaseModel):
     nodes: list[CharacterSkillNodeRead]
 
 
+class ClonedSkillSlotInput(BaseModel):
+    slot_index: int
+    source_character_id: int
+    source_node_id: int
+
+
+class SetClonedSkillsRequest(BaseModel):
+    slots: list[ClonedSkillSlotInput] = Field(default_factory=list)
+
+
+class ClonedSkillRead(BaseModel):
+    slot_index: int
+    source_character_id: int
+    source_character_name: str
+    source_node_id: int
+    book: str
+    display_name: str
+    image_url: str | None = None
+
+
+class ClonedSkillsRead(BaseModel):
+    slot_count: int
+    slots: list[ClonedSkillRead]
+
+
 class SkillCustomizationUpdate(BaseModel):
     """습득한 기술의 이름·설명 커스터마이즈. 보내지 않은 필드는 그대로 두고, 빈 문자열은 초기화한다.
 
