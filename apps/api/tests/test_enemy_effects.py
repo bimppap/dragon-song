@@ -48,6 +48,28 @@ class EnemyEffectsTest(unittest.TestCase):
         self.db.commit()
         return crud.resolve_battle_enemy_turn(self.db, battle.id)
 
+    def test_on_hit_dot_ticks_next_telegraph_and_cleanses(self):
+        skill = EnemySkill(skill_type="지정 공격", name="독니", target_count=1, damage_percent=100,
+                           on_hit_dot=True, dot_name="맹독", dot_damage=7)
+        battle = self.battle([skill])
+        target_id = self.party[0]["character_id"]
+        self.telegraph(battle, 0, [target_id])
+        self.enemy_turn(battle)
+        self.assertEqual(battle.participants[0]["hp"], 90)
+        self.assertEqual(battle.participants[0]["status_effects"][0]["skill_name"], "맹독")
+        self.telegraph(battle, 0, [target_id])
+        self.assertEqual(battle.participants[0]["hp"], 83)
+        self.enemy_turn(battle)
+        self.assertEqual(len(battle.participants[0]["status_effects"]), 1)
+        participants = copy.deepcopy(battle.participants)
+        removed, names = crud._cleanse_combat_debuffs(self.db, participants[0], 1)
+        self.assertEqual((removed, names), (1, ["맹독"]))
+        battle.participants = participants
+        self.db.commit()
+        self.telegraph(battle)
+        self.assertEqual(battle.participants[0]["hp"], 73)
+        self.assertEqual(battle.participants[1]["hp"], 100)
+
     def test_environment_alive_dead_conditions_and_existing_stacks(self):
         alive = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="생존", enemy_condition="alive", condition_enemy_id=1, stacks_per_round=2, damage_per_stack=3))
         dead = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="사망", enemy_condition="dead", condition_enemy_id=1))

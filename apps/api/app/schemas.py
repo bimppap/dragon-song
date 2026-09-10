@@ -832,6 +832,9 @@ class EnemySkill(BaseModel):
     environment_stack_count: int = Field(default=1, ge=1)
     manual_target_count: bool = False
     auto_target_mode: Literal["attention", "random"] = "attention"
+    on_hit_dot: bool = False
+    dot_name: str = "지속 피해"
+    dot_damage: int = Field(default=1, ge=1)
     debuff_stat: str = "atk"
     debuff_amount: float = Field(default=0, ge=0)
     debuff_stackable: bool = False
@@ -859,6 +862,12 @@ class EnemySkill(BaseModel):
 
     @model_validator(mode="after")
     def validate_by_type(self):
+        self.dot_name = self.dot_name.strip()
+        if self.on_hit_dot:
+            if self.skill_type not in ("지정 공격", "광역 공격"):
+                raise ValueError("피격 지속 피해는 공격 스킬에만 설정할 수 있습니다.")
+            if not self.dot_name:
+                raise ValueError("지속 피해 디버프 이름을 입력해 주세요.")
         if self.skill_type == "환경" and self.environment_id is None:
             raise ValueError("환경 스킬에는 적용할 환경을 선택해 주세요.")
         if self.skill_type != "환경":

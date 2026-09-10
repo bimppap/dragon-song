@@ -1474,6 +1474,9 @@ export interface EnemySkill {
   auto_target_mode?: "attention" | "random";
   environment_id?: number | null;
   environment_stack_count?: number;
+  on_hit_dot?: boolean;
+  dot_name?: string;
+  dot_damage?: number;
   debuff_stat?: string;
   debuff_amount?: number;
   debuff_stackable?: boolean;

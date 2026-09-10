@@ -5328,6 +5328,16 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             ]
 
     _apply_minion_phase(participants, enemies, summons, round_no, "telegraph", events)
+    for participant in participants:
+        for effect in list(_ensure_status_effects(participant)):
+            if not _combatant_targetable(participant, round_no):
+                break
+            if effect.get("effect_type") != "ongoing_damage" or effect.get("trigger_phase") != "telegraph":
+                continue
+            damage = min(participant["hp"], max(0, int(effect.get("damage", 0))))
+            participant["hp"] -= damage
+            events.append(f"☠️ {effect.get('skill_name', '지속 피해')} → {participant['name']} {damage} 지속 피해 · [{participant['hp']}/{participant['max_hp']}]")
+            _mark_combatant_downed(participant)
     _apply_ongoing_telegraph_skill_effects(enemies, events, calculations)
     if all(enemy["hp"] <= 0 for enemy in enemies):
         session.status = "victory"
@@ -6762,6 +6772,15 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 recipient, dmg, absorbed, redirected, counter_results, damage_formula = hit(
                     enemy, t, base, base_formula
                 )
+                if skill.get("on_hit_dot") and _combatant_active(recipient):
+                    source = f"enemy:{enemy_id}:skill:{skill_index}:dot"
+                    if not any(effect.get("stack_source") == source for effect in _ensure_status_effects(recipient)):
+                        _add_status_effect(recipient, {
+                            "effect_type": "ongoing_damage", "affinity": "debuff",
+                            "trigger_phase": "telegraph", "damage": skill.get("dot_damage", 1),
+                            "skill_name": skill.get("dot_name") or "지속 피해", "source_name": enemy["name"],
+                            "stack_source": source, "stackable": False,
+                        }, participants=participants, enemies=enemies)
                 redirect_note = f" (→ {recipient['name']}이(가) 대신 방어)" if redirected else ""
                 events.append(
                     f"🔥 {enemy['name']}의 {skill['name']} → {t['name']}{redirect_note} {dmg} 피해"

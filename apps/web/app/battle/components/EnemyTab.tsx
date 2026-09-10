@@ -79,6 +79,9 @@ type SkillFormEntry = {
   auto_target_mode: "attention" | "random";
   environment_id: string;
   environment_stack_count: string;
+  on_hit_dot: boolean;
+  dot_name: string;
+  dot_damage: string;
   debuff_stat: string;
   debuff_amount: string;
   debuff_stackable: boolean;
@@ -117,6 +120,7 @@ type EnemyFormState = {
 };
 
 const EMPTY_SKILL: SkillFormEntry = {
+  on_hit_dot: false, dot_name: "지속 피해", dot_damage: "1",
   manual_target_count: false, auto_target_mode: "attention", environment_id: "", environment_stack_count: "1", debuff_stat: "atk", debuff_amount: "0", debuff_stackable: false,
   summon_action_type: "attack", summon_trigger_phase: "enemy", summon_effect_stat: "atk",
   summon_effect_percent: "0", summon_buff_enemy_id: "", summon_buff_stat: "attack",
@@ -154,6 +158,8 @@ function toPayload(form: EnemyFormState): EnemyCreate {
       auto_target_mode: s.auto_target_mode,
       environment_id: isEnvironment && s.environment_id ? Number(s.environment_id) : null,
       environment_stack_count: isEnvironment ? Math.max(1, parsePositiveInt(s.environment_stack_count) || 1) : 1,
+      on_hit_dot: !isSummon && !isEnvironment && s.skill_type !== "지속 디버프" && s.on_hit_dot,
+      dot_name: s.dot_name.trim() || "지속 피해", dot_damage: Math.max(1, parsePositiveInt(s.dot_damage)),
       debuff_stat: s.debuff_stat, debuff_amount: Number(s.debuff_amount) || 0, debuff_stackable: s.debuff_stackable,
       summon_action_type: s.summon_action_type, summon_trigger_phase: s.summon_trigger_phase,
       summon_effect_stat: s.summon_effect_stat, summon_effect_percent: Number(s.summon_effect_percent) || 0,
@@ -198,6 +204,7 @@ function enemyToForm(enemy: Enemy): EnemyFormState {
           auto_target_mode: s.auto_target_mode ?? "attention",
           environment_id: s.environment_id != null ? String(s.environment_id) : "",
           environment_stack_count: String(s.environment_stack_count ?? 1),
+          on_hit_dot: s.on_hit_dot ?? false, dot_name: s.dot_name ?? "지속 피해", dot_damage: String(s.dot_damage ?? 1),
           debuff_stat: s.debuff_stat ?? "atk", debuff_amount: String(s.debuff_amount ?? 0), debuff_stackable: s.debuff_stackable ?? false,
           summon_action_type: s.summon_action_type ?? "attack", summon_trigger_phase: s.summon_trigger_phase ?? "enemy",
           summon_effect_stat: s.summon_effect_stat ?? "atk", summon_effect_percent: String(s.summon_effect_percent ?? 0),
@@ -1041,6 +1048,16 @@ export default function EnemyTab() {
                     </div>
                   </div>
 
+                  {(skill.skill_type === "지정 공격" || skill.skill_type === "광역 공격") && (
+                    <div className="space-y-2 rounded-xl border border-line p-3">
+                      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.on_hit_dot} onChange={(event) => updateSkill(idx, "on_hit_dot", event.target.checked)} />피격 대상에게 지속 피해 디버프 부여</label>
+                      {skill.on_hit_dot && <>
+                        <label className="block text-xs">디버프 이름<Input required value={skill.dot_name} onChange={(event) => updateSkill(idx, "dot_name", event.target.value)} /></label>
+                        <label className="block text-xs">턴마다 고정 피해<Input type="number" min={1} required value={skill.dot_damage} onChange={(event) => updateSkill(idx, "dot_damage", event.target.value)} /></label>
+                        <p className="text-xs text-muted">다음 적의 행동 암시부터 매 턴 피해를 입습니다. 같은 스킬은 중첩되지 않으며 디버프 해제로 제거할 수 있습니다.</p>
+                      </>}
+                    </div>
+                  )}
                   {!isSummon && (
                     <div className="grid gap-2 sm:grid-cols-3">
                       <div className="flex flex-col gap-1.5">
