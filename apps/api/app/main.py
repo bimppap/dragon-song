@@ -101,6 +101,7 @@ from app.schemas import (
     DeliveryRequestRead,
     TokenResponse,
     UseItemRequest,
+    AdminCharacterUpdate,
     CharacterStatUpgradeRequest,
 )
 from app import crud
@@ -254,6 +255,16 @@ def update_character(
 ):
     """관리자가 만든 캐릭터(러너 계정 미연결)만 능력치·기술을 제한 없이 통째로 수정할 수 있다."""
     return crud.update_character(db, character_id, data)
+
+
+@app.patch("/characters/{character_id}/admin", response_model=CharacterDetailRead)
+def patch_admin_character(character_id: int, data: AdminCharacterUpdate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.patch_admin_character(db, character_id, data.lv, data.stats, data.faction)
+
+
+@app.put("/characters/{character_id}/admin/skill/{node_id}", response_model=CharacterDetailRead)
+def select_admin_character_skill(character_id: int, node_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.select_admin_character_skill(db, character_id, node_id)
 
 
 @app.get("/characters", response_model=list[CharacterRead])
@@ -1479,7 +1490,10 @@ def get_character_skills(
     db: Session = Depends(get_db),
 ):
     """다른 러너의 캐릭터라도 열람은 누구나 가능하다(강화/이름/이미지 변경만 본인 캐릭터로 제한)."""
-    return crud.get_character_skill_tree(db, character_id, book)
+    # 관리자·스텝은 다른 캐릭터의 기술을 제한 없이 고를 수 있어야 하므로 비공개 노드까지 드러낸다.
+    # 다만 본인 캐릭터는 러너와 똑같이 다뤄야 하므로(스텝), 자기 캐릭터에는 적용하지 않는다.
+    reveal = is_admin_role(member.role) and crud.get_member_character_id(db, member.id) != character_id
+    return crud.get_character_skill_tree(db, character_id, book, reveal=reveal)
 
 
 @app.post("/characters/{character_id}/skills/{node_id}/unlock", response_model=CharacterSkillTreeRead)

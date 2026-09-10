@@ -17,7 +17,6 @@ import {
   Image as ImageIcon,
   Lock,
   Package,
-  Pencil,
   Shield,
   Trash2,
   Trophy,
@@ -35,6 +34,7 @@ import { useToast } from "@/components/common/ToastProvider";
 import { formatRewardItems, rewardLabel, rewardVisual } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -51,8 +51,8 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
-import { consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemHistoryEntry, Reward, RewardGrant, UseItemSelection } from "@/lib/api";
+import { MAX_CHARACTER_LEVEL, patchAdminCharacter, formatEffect, consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
+import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemEffect, ItemHistoryEntry, Reward, RewardGrant, UseItemSelection } from "@/lib/api";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import DatePicker from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
@@ -70,7 +70,7 @@ interface Props {
   /** 지정하면 캐릭터 삭제 버튼을 노출한다(관리자 콘솔 전용). */
   onDeleted?: (characterId: number) => void;
   /** 지정하면, 관리자가 만든 캐릭터(러너 계정 미연결)에 한해 수정 버튼을 노출한다(관리자 콘솔 전용). */
-  onEdit?: (character: CharacterDetail) => void;
+  adminMode?: boolean;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -118,7 +118,7 @@ const DETAIL_STATS: {
     "atk" | "atk_p" | "def" | "def_p" | "def_eff" | "presence" | "hp_max" |
     "hp_max_p" | "hp_regen_true" | "hp_regen_fixed" | "heal_eff" |
     "mp_max" | "mp_regen" | "sh" | "dmg_p" | "dmg_r" | "skill_eff_true" |
-    "skill_eff_fixed"
+    "skill_eff_fixed" | "attn" | "skill_lv" | "skill_cost" | "skill_target"
   >;
   label: string;
   description: string;
@@ -126,6 +126,10 @@ const DETAIL_STATS: {
   /** true면 값 자체를 ×100%로 표시(예: 0.3 → 30%). 기본은 (1+값)×100%(예: 0 → 100%, 증폭류 스탯). */
   rawPercent?: boolean;
 }[] = [
+  { key: "attn", label: "주목도", description: "적의 공격 대상 선정에 사용하는 주목도입니다." },
+  { key: "skill_lv", label: "기술 레벨", description: "캐릭터의 기술 레벨입니다." },
+  { key: "skill_cost", label: "기술 비용", description: "기술 사용 비용 보정값입니다." },
+  { key: "skill_target", label: "기술 대상", description: "기술 대상 수 보정값입니다." },
   { key: "atk", label: "공격력", description: "공격 행동 시 에너미에게 주는 기본 피해량입니다." },
   { key: "atk_p", label: "공격력 증폭(%)", isFloat: true, rawPercent: true, description: "공격력에 곱해지는 증폭 배율입니다. 높을수록 공격 피해가 커집니다." },
   { key: "def", label: "방어력", description: "수비할 때 받는 피해를 고정으로 줄여 주는 값입니다." },
@@ -186,6 +190,77 @@ function formatAdminOnlyStat(type: AdminOnlyStatType, value: number | boolean): 
   return numberFormatter.format(Number(value));
 }
 
+/** 수치를 더블클릭(또는 포커스 후 Enter)하면 그 자리에서 고칠 수 있게 하는 표시용 래퍼.
+ *  onSave가 없으면 편집 기능 없이 값만 보여준다(러너 화면·열람 전용). */
+function EditableValue({ value, display, label, onSave, disabled = false, boolean = false }: {
+  value: number | boolean; display: React.ReactNode; label: string;
+  onSave?: (value: number | boolean) => Promise<void>; disabled?: boolean; boolean?: boolean;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+  const [error, setError] = useState("");
+
+  function startEditing() {
+    setDraft(String(value));
+    setError("");
+    setEditing(true);
+  }
+
+  if (!onSave) return <>{display}</>;
+  if (!editing) {
+    return (
+      <span
+        tabIndex={0}
+        role="button"
+        title="더블클릭하여 수정"
+        aria-label={`${label} 직접 수정`}
+        className="cursor-text rounded underline decoration-dotted decoration-muted underline-offset-2"
+        onDoubleClick={startEditing}
+        onKeyDown={(event) => { if (event.key === "Enter") startEditing(); }}
+      >
+        {display}
+      </span>
+    );
+  }
+
+  return (
+    <form
+      className="flex flex-wrap items-center gap-1"
+      onSubmit={async (event) => {
+        event.preventDefault();
+        const next = boolean ? draft === "true" : Number(draft);
+        if (!boolean && (!draft.trim() || !Number.isFinite(next))) { setError("숫자를 입력해 주세요."); return; }
+        try { await onSave(next); setEditing(false); }
+        catch (saveError) { setError(saveError instanceof Error ? saveError.message : "저장 실패"); }
+      }}
+    >
+      {boolean ? (
+        <Select value={draft} onValueChange={setDraft}>
+          <SelectTrigger aria-label={label} className="h-7 w-24"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="true">가능</SelectItem>
+            <SelectItem value="false">불가능</SelectItem>
+          </SelectContent>
+        </Select>
+      ) : (
+        <Input
+          autoFocus
+          aria-label={label}
+          type="number"
+          step="any"
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          className="h-7 w-24"
+          onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setEditing(false); } }}
+        />
+      )}
+      <Button type="submit" size="sm" variant="ghost" disabled={disabled} className="h-7 px-2 text-xs text-gold">저장</Button>
+      <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)} className="h-7 px-2 text-xs text-muted">취소</Button>
+      {error && <span role="alert" className="w-full text-xs text-red-500">{error}</span>}
+    </form>
+  );
+}
+
 function StatBar({
   label,
   icon: Icon,
@@ -193,6 +268,8 @@ function StatBar({
   max,
   iconAccent,
   barColor,
+  onValueSave,
+  onMaxSave,
 }: {
   label: string;
   icon: React.ElementType;
@@ -200,6 +277,8 @@ function StatBar({
   max: number;
   iconAccent: string;
   barColor: string;
+  onValueSave?: (value: number | boolean) => Promise<void>;
+  onMaxSave?: (value: number | boolean) => Promise<void>;
 }) {
   const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
   return (
@@ -210,7 +289,7 @@ function StatBar({
           {label}
         </span>
         <span className="font-num text-ivory">
-          {numberFormatter.format(value)} / {numberFormatter.format(max)}
+          <EditableValue value={value} display={numberFormatter.format(value)} label={`${label} 현재값`} onSave={onValueSave} /> / <EditableValue value={max} display={numberFormatter.format(max)} label={`${label} 최대값`} onSave={onMaxSave} />
         </span>
       </div>
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
@@ -231,6 +310,7 @@ function CoreStatLine({
   canUpgrade,
   upgrading,
   onUpgrade,
+  onEdit,
 }: {
   label: string;
   icon: React.ElementType;
@@ -239,6 +319,7 @@ function CoreStatLine({
   canUpgrade: boolean;
   upgrading: boolean;
   onUpgrade: () => void;
+  onEdit?: (value: number | boolean) => Promise<void>;
 }) {
   return (
     <div className="flex items-center justify-between border-b border-line py-2 last:border-b-0">
@@ -248,7 +329,7 @@ function CoreStatLine({
       </span>
       <span className="flex items-center gap-1.5">
         <span className="font-num text-base font-semibold text-ivory">
-          {numberFormatter.format(value)}
+          <EditableValue value={value} display={numberFormatter.format(value)} label={label} onSave={onEdit} />
         </span>
         {canUpgrade && (
           <button
@@ -303,17 +384,6 @@ function ExperienceBar({
       </span>
     </button>
   );
-}
-
-/** 능력치 등급별 AP 소모량. 인덱스 = 도달하려는 등급(1~6). 7등급 이상은 AP로 도달할 수 없다(장신구·특성 전용). */
-const STAT_GRADE_AP_COST = [0, 1, 1, 1, 2, 2, 2];
-const MAX_AP_STAT_GRADE = STAT_GRADE_AP_COST.length - 1;
-
-/** currentGrade에서 다음 등급으로 올릴 때 필요한 AP. 다음 등급이 AP로 도달 불가능하면 null. */
-function getNextStatUpgradeCost(currentGrade: number): number | null {
-  const nextGrade = currentGrade + 1;
-  if (nextGrade > MAX_AP_STAT_GRADE) return null;
-  return STAT_GRADE_AP_COST[nextGrade];
 }
 
 function GradeChoiceSelector({
@@ -911,7 +981,7 @@ export default function CharacterInfo({
   readOnly = false,
   showHistory,
   onDeleted,
-  onEdit,
+  adminMode = false,
 }: Props) {
   const canViewHistory = showHistory ?? !readOnly;
   const { toast } = useToast();
@@ -920,6 +990,7 @@ export default function CharacterInfo({
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [statUpgradeLoading, setStatUpgradeLoading] = useState<GradeStat | null>(null);
+  const [adminSaving, setAdminSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
   const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(null);
   const [imageUploading, setImageUploading] = useState(false);
@@ -995,6 +1066,23 @@ export default function CharacterInfo({
     }
   }
 
+  const canAdminEdit = adminMode && !readOnly && selectedDetail?.member_id === null;
+
+  async function saveAdminFaction(nextFaction: Faction) {
+    if (!selectedDetail) return;
+    setAdminSaving(true);
+    try { setDetail(await patchAdminCharacter(selectedDetail.id, { faction: nextFaction })); }
+    catch (error) { toast(error instanceof Error ? error.message : "포지션 변경 실패", "error"); }
+    finally { setAdminSaving(false); }
+  }
+
+  async function saveAdminStat(key: string, value: number | boolean) {
+    if (!selectedDetail || !canAdminEdit) return;
+    setAdminSaving(true);
+    try { setDetail(await patchAdminCharacter(selectedDetail.id, { stats: { [key]: value } })); }
+    finally { setAdminSaving(false); }
+  }
+
   async function handleStatUpgrade(stat: GradeStat, label: string, cost: number) {
     if (selectedDetail == null) return;
     const accepted = await confirm({
@@ -1002,6 +1090,7 @@ export default function CharacterInfo({
       content: (
         <p className="text-xs text-muted">
           소모 AP {numberFormatter.format(cost)} / 보유 AP {numberFormatter.format(selectedDetail.ap)}
+          <span className="mt-2 block">{Object.entries(selectedDetail.stat_upgrades?.[stat]?.changes ?? {}).map(([key, delta]) => formatEffect({ stat: key as ItemEffect["stat"], delta })).join(" · ")}</span>
         </p>
       ),
       maxWidthClassName: "max-w-xs",
@@ -1165,7 +1254,7 @@ export default function CharacterInfo({
                 </div>
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
                 <div className="flex items-start gap-2">
-                  <CharacterOwnedSkills characterId={selectedDetail.id} readOnly={readOnly} />
+                  <CharacterOwnedSkills key={selectedDetail.id} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
                   <CharacterEquipmentSlots key={selectedDetail.id} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
                 </div>
               </div>
@@ -1204,8 +1293,26 @@ export default function CharacterInfo({
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="gap-1 font-num">
                     <Trophy size={12} />
-                    Lv.{selectedDetail.lv}
+                    {canAdminEdit ? <Select value={String(selectedDetail.lv)} disabled={adminSaving} onValueChange={async (value) => {
+                      setAdminSaving(true);
+                      try { setDetail(await patchAdminCharacter(selectedDetail.id, { lv: Number(value) })); }
+                      catch (error) { toast(error instanceof Error ? error.message : "레벨 변경 실패", "error"); }
+                      finally { setAdminSaving(false); }
+                    }}><SelectTrigger aria-label="캐릭터 레벨" className="h-7 w-24"><SelectValue /></SelectTrigger><SelectContent>{Array.from({ length: Math.max(MAX_CHARACTER_LEVEL, selectedDetail.lv) }, (_, index) => index + 1).map((level) => <SelectItem key={level} value={String(level)}>Lv.{level}</SelectItem>)}</SelectContent></Select> : `Lv.${selectedDetail.lv}`}
                   </Badge>
+                  {canAdminEdit && (
+                    <Badge variant="outline" className="gap-1">
+                      <Select value={selectedDetail.faction ?? undefined} disabled={adminSaving}
+                        onValueChange={(value) => saveAdminFaction(value as Faction)}>
+                        <SelectTrigger aria-label="캐릭터 포지션" className="h-7 w-24"><SelectValue placeholder="포지션" /></SelectTrigger>
+                        <SelectContent>
+                          {(Object.keys(FACTION_POSITION_IMAGE) as Faction[]).map((value) => (
+                            <SelectItem key={value} value={value}>{value}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </Badge>
+                  )}
                   <ExperienceBar
                     value={selectedDetail.exp}
                     max={GROWTH_EXP_PER_LEVEL}
@@ -1214,12 +1321,16 @@ export default function CharacterInfo({
                   />
                   <Badge variant="outline" className="gap-1 font-num">
                     <Gauge size={12} className="text-gold" />
-                    AP {numberFormatter.format(selectedDetail.ap)}
+                    AP <EditableValue value={selectedDetail.ap} display={numberFormatter.format(selectedDetail.ap)}
+                      label="AP" disabled={adminSaving}
+                      onSave={canAdminEdit ? (value) => saveAdminStat("ap", value) : undefined} />
                   </Badge>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <StatBar
+                    onValueSave={canAdminEdit ? (value) => saveAdminStat("hp", value) : undefined}
+                    onMaxSave={canAdminEdit ? (value) => saveAdminStat("hp_max", value) : undefined}
                     label="HP"
                     icon={Heart}
                     value={selectedDetail.hp}
@@ -1228,6 +1339,8 @@ export default function CharacterInfo({
                     barColor="bg-rose-500"
                   />
                   <StatBar
+                    onValueSave={canAdminEdit ? (value) => saveAdminStat("mp", value) : undefined}
+                    onMaxSave={canAdminEdit ? (value) => saveAdminStat("mp_max", value) : undefined}
                     label="MP"
                     icon={Zap}
                     value={selectedDetail.mp}
@@ -1237,10 +1350,11 @@ export default function CharacterInfo({
                   />
                 </div>
 
+                {canAdminEdit && <p className="text-xs text-muted">레벨당 AP 2점이 지급됩니다. 능력치와 상세정보의 수치를 더블클릭하거나 키보드로 선택 후 Enter를 누르면 직접 수정할 수 있습니다.</p>}
                 {/* 핵심 능력치 */}
                 <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
                   {CORE_STATS.map(({ key, label, icon: Icon, accent }) => {
-                    const cost = getNextStatUpgradeCost(selectedDetail[key]);
+                    const cost = selectedDetail.stat_upgrades?.[key]?.cost ?? null;
                     const canUpgrade = !readOnly && cost != null && selectedDetail.ap >= cost;
                     return (
                       <CoreStatLine
@@ -1252,6 +1366,7 @@ export default function CharacterInfo({
                         canUpgrade={canUpgrade}
                         upgrading={statUpgradeLoading === key}
                         onUpgrade={() => cost != null && handleStatUpgrade(key, label, cost)}
+                        onEdit={canAdminEdit ? (value) => saveAdminStat(key, value) : undefined}
                       />
                     );
                   })}
@@ -1276,9 +1391,10 @@ export default function CharacterInfo({
                             <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
                               <span className="shrink-0 whitespace-nowrap text-muted">{label}</span>
                               <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-ivory">
-                                {isFloat
-                                  ? `${percentageFormatter.format((rawPercent ? Number(selectedDetail[key]) : 1 + Number(selectedDetail[key])) * 100)}%`
-                                  : numberFormatter.format(selectedDetail[key])}
+                                <EditableValue key={`${selectedDetail.id}:${key}`} label={label} disabled={adminSaving}
+                                  value={isFloat ? Math.round((rawPercent ? Number(selectedDetail[key]) : 1 + Number(selectedDetail[key])) * 10000) / 100 : selectedDetail[key]}
+                                  display={isFloat ? `${percentageFormatter.format((rawPercent ? Number(selectedDetail[key]) : 1 + Number(selectedDetail[key])) * 100)}%` : numberFormatter.format(selectedDetail[key])}
+                                  onSave={canAdminEdit ? (value) => saveAdminStat(key, isFloat ? Number(value) / 100 - (rawPercent ? 0 : 1) : value) : undefined} />
                               </span>
                             </div>
                           </InfoTooltip>
@@ -1300,7 +1416,7 @@ export default function CharacterInfo({
                                   <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-gold/10 px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
                                     <span className="shrink-0 whitespace-nowrap text-gold">{label}</span>
                                     <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-gold">
-                                      {formatAdminOnlyStat(type, value)}
+                                      <EditableValue key={`${selectedDetail.id}:${key}`} label={label} boolean={type === "boolean"} disabled={adminSaving} value={type === "percent" ? Number(value) * 100 : value} display={formatAdminOnlyStat(type, value)} onSave={canAdminEdit ? (next) => saveAdminStat(key, type === "percent" ? Number(next) / 100 : next) : undefined} />
                                     </span>
                                   </div>
                                 </InfoTooltip>
@@ -1490,20 +1606,12 @@ export default function CharacterInfo({
             )}
           </div>}
 
-          {!readOnly && (onDeleted || (onEdit && selectedDetail.member_id === null)) && (
+          {!readOnly && onDeleted && (
             <div className="flex justify-end gap-2">
-              {onEdit && selectedDetail.member_id === null && (
-                <Button variant="outline" onClick={() => onEdit(selectedDetail)}>
-                  <Pencil size={15} />
-                  능력치·기술 수정하기
-                </Button>
-              )}
-              {onDeleted && (
-                <Button variant="destructive" onClick={handleDeleteCharacter} disabled={deletingCharacter}>
+              <Button variant="destructive" onClick={handleDeleteCharacter} disabled={deletingCharacter}>
                   <Trash2 size={15} />
                   {deletingCharacter ? "삭제 중..." : "캐릭터 삭제하기"}
                 </Button>
-              )}
             </div>
           )}
         </>

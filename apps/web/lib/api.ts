@@ -583,7 +583,11 @@ export interface CharacterFlagsUpdate {
   warning_count: number;
 }
 
+/** 캐릭터가 도달할 수 있는 최대 레벨(app/game_data.py의 MAX_CHARACTER_LEVEL과 동일). */
+export const MAX_CHARACTER_LEVEL = 11;
+
 export type CharacterCreate = Partial<Omit<Character, "id">> & {
+  initialize_growth?: boolean;
   name: string;
   skill_node_ids?: number[];
 };
@@ -623,6 +627,7 @@ export interface CharacterAchievedMission {
 }
 
 export interface CharacterDetail extends Character {
+  stat_upgrades: Partial<Record<GradeStat, { cost: number; changes: Record<string, number> }>>;
   owned_items: CharacterOwnedItem[];
   achieved_challenges: CharacterAchievedChallenge[];
   achieved_missions: CharacterAchievedMission[];
@@ -813,6 +818,18 @@ export async function updateCharacterFlags(
   }, "관리 플래그 저장 실패");
   invalidateApiCache("characters:");
   return character;
+}
+
+export async function patchAdminCharacter(characterId: number, data: { lv?: number; faction?: Faction; stats?: Record<string, number | boolean> }): Promise<CharacterDetail> {
+  const detail = await request<CharacterDetail>(`/characters/${characterId}/admin`, { method: "PATCH", body: JSON.stringify(data) }, "캐릭터 수정 실패");
+  invalidateApiCache("characters:");
+  return detail;
+}
+
+export async function selectAdminCharacterSkill(characterId: number, nodeId: number): Promise<CharacterDetail> {
+  const detail = await request<CharacterDetail>(`/characters/${characterId}/admin/skill/${nodeId}`, { method: "PUT" }, "기술 선택 실패");
+  invalidateApiCache("characters:", `skills:character:${characterId}:`, "battles:active-skills:");
+  return detail;
 }
 
 export async function createCharacter(data: CharacterCreate): Promise<Character> {

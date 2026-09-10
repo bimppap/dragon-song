@@ -2,6 +2,8 @@ from datetime import date, datetime, time
 from typing import Literal, get_args
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.game_data import MAX_CHARACTER_LEVEL
+
 EnemySkillType = Literal["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"]
 Faction = Literal["공격", "수비", "치유"]
 FACTIONS = get_args(Faction)
@@ -287,11 +289,19 @@ class NoncombatHealResult(BaseModel):
     heal_amount: int
 
 
+class AdminCharacterUpdate(BaseModel):
+    model_config = {"extra": "forbid"}
+    lv: int | None = Field(default=None, ge=1, le=MAX_CHARACTER_LEVEL)
+    faction: Faction | None = None
+    stats: dict[str, float | bool] = Field(default_factory=dict)
+
+
 class CharacterCreate(BaseModel):
     model_config = {"populate_by_name": True}
 
     name: str
     faction: Faction | None = None
+    initialize_growth: bool = False
     skill_node_ids: list[int] = Field(default_factory=list)
     gold: int = Field(default=0, ge=0)
     cp: int = Field(default=0, ge=0)
@@ -674,6 +684,7 @@ class CharacterAchievedMissionRead(BaseModel):
 
 
 class CharacterDetailRead(CharacterRead):
+    stat_upgrades: dict[str, dict] = Field(default_factory=dict)
     owned_items: list[CharacterOwnedItemRead]
     achieved_challenges: list[CharacterAchievedChallengeRead]
     achieved_missions: list[CharacterAchievedMissionRead]

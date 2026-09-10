@@ -14,6 +14,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session, load_only
 from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_refresh_token, hash_password, is_admin_role, verify_password
 from app.game_data import (
+    MAX_CHARACTER_LEVEL,
     build_skill_node_specs,
     calculate_stat_grade_totals,
     get_faction_base_dmg_r,
@@ -617,6 +618,16 @@ def _replace_character_skills_unrestricted(db: Session, character: Character, sk
 def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
     character = Character()
     _assign_character_stats(character, data)
+    if data.initialize_growth:
+        character.lv = max(1, min(data.lv, MAX_CHARACTER_LEVEL))
+        character.ap = 10 + (character.lv - 1) * GROWTH_AP_PER_LEVEL
+        for stat in GRADE_STAT_FIELDS:
+            setattr(character, stat, 0)
+        totals = calculate_stat_grade_totals(0, 0, 0, 0, faction=data.faction)
+        for key, attr in _GRADE_TOTAL_TO_ATTR.items():
+            setattr(character, attr, totals[key])
+        character.hp = character.hp_max
+        character.mp = character.mp_max
     db.add(character)
     db.flush()
 
@@ -642,6 +653,77 @@ def update_character(db: Session, character_id: int, data: CharacterCreate) -> C
     db.commit()
     db.refresh(character)
     return _to_character_read(character)
+
+
+def _character_stat_upgrades(character: Character) -> dict:
+    grades = {stat: getattr(character, stat) for stat in GRADE_STAT_FIELDS}
+    before = calculate_stat_grade_totals(**grades)
+    result = {}
+    for stat, grade in grades.items():
+        try:
+            cost = get_stat_upgrade_ap_cost(grade, 1, unrestricted=character.member_id is None)
+        except ValueError:
+            continue
+        after = calculate_stat_grade_totals(**{**grades, stat: grade + 1})
+        result[stat] = {"cost": cost, "changes": {key: round(after[key] - before[key], 6) for key in before if after[key] != before[key]}}
+    return result
+
+
+def _get_admin_character(db: Session, character_id: int) -> Character:
+    character = db.query(Character).filter(Character.id == character_id).with_for_update().populate_existing().first()
+    if character is None:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    if character.member_id is not None:
+        raise HTTPException(status_code=400, detail="관리자가 생성한 캐릭터만 직접 수정할 수 있습니다.")
+    return character
+
+
+def patch_admin_character(db: Session, character_id: int, lv: int | None, stats: dict, faction: str | None = None) -> CharacterDetailRead:
+    character = _get_admin_character(db, character_id)
+    allowed = set(CharacterCreate.model_fields) - {"name", "faction", "skill_node_ids", "initialize_growth", "lv"}
+    normalized = {"def_" if key == "def" else key: value for key, value in stats.items()}
+    if set(normalized) - allowed:
+        raise HTTPException(status_code=400, detail="수정할 수 없는 능력치입니다.")
+    values = {key: getattr(character, key) for key in allowed}
+    try:
+        validated = CharacterCreate(name=character.name, **{**values, **normalized})
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="올바른 능력치 값을 입력해 주세요.") from exc
+    if any(getattr(validated, stat) < 0 or getattr(validated, stat) > 9 for stat in GRADE_STAT_FIELDS if stat in normalized):
+        raise HTTPException(status_code=400, detail="능력치 등급은 0~9 사이여야 합니다.")
+    if faction is not None and faction != character.faction:
+        if faction not in FACTIONS:
+            raise HTTPException(status_code=400, detail="공격/수비/치유 중에서만 선택할 수 있습니다.")
+        # 전직 아이템과 같은 경로를 써서, 역할별 피해 감소 기본값 차이만 반영하고
+        # 기술·장신구로 붙은 보너스는 건드리지 않는다.
+        _change_character_faction(character, faction)
+    if lv is not None:
+        next_ap = character.ap + (lv - character.lv) * GROWTH_AP_PER_LEVEL
+        if next_ap < 0:
+            raise HTTPException(status_code=400, detail="이미 투자한 AP가 있어 레벨을 낮출 수 없습니다. 능력치와 AP를 먼저 조정해 주세요.")
+        character.ap = next_ap
+        character.lv = lv
+    for stat in GRADE_STAT_FIELDS:
+        if stat in normalized:
+            difference = getattr(validated, stat) - getattr(character, stat)
+            if difference:
+                _apply_grade_choice(character, [stat], 1, sign=difference)
+    for key in normalized.keys() - set(GRADE_STAT_FIELDS):
+        setattr(character, key, getattr(validated, key))
+    db.commit()
+    return get_character_detail(db, character_id)
+
+
+def select_admin_character_skill(db: Session, character_id: int, node_id: int) -> CharacterDetailRead:
+    character = _get_admin_character(db, character_id)
+    node = db.get(SkillNode, node_id)
+    if node is None or node.tier == 0:
+        raise HTTPException(status_code=400, detail="선택할 기술을 찾을 수 없습니다.")
+    for unlock in db.query(CharacterSkillUnlock).filter_by(character_id=character.id).all():
+        _apply_item_effects(character, unlock.applied_effects or [], sign=-1)
+    _replace_character_skills_unrestricted(db, character, [node_id])
+    db.commit()
+    return get_character_detail(db, character_id)
 
 
 def get_characters(db: Session) -> list[CharacterRead]:
@@ -794,6 +876,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
 
     return CharacterDetailRead(
         **_character_read_kwargs(character),
+        stat_upgrades=_character_stat_upgrades(character),
         owned_items=[
             CharacterOwnedItemRead(
                 item_id=row.item_id,
@@ -1166,7 +1249,7 @@ def upgrade_character_stat_with_ap(db: Session, character_id: int, stat: str, am
 
     character = _get_character_or_404(db, character_id)
     try:
-        ap_cost = get_stat_upgrade_ap_cost(getattr(character, stat), amount)
+        ap_cost = get_stat_upgrade_ap_cost(getattr(character, stat), amount, unrestricted=character.member_id is None)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if character.ap < ap_cost:
@@ -7240,8 +7323,8 @@ def _find_parent_node(db: Session, node: SkillNode) -> SkillNode | None:
     )
 
 
-def _to_character_skill_node_read(node: SkillNode, unlock: CharacterSkillUnlock | None, character: Character) -> CharacterSkillNodeRead:
-    is_public = node.is_public
+def _to_character_skill_node_read(node: SkillNode, unlock: CharacterSkillUnlock | None, character: Character, *, reveal: bool = False) -> CharacterSkillNodeRead:
+    is_public = node.is_public or reveal
     unlocked = node.tier == 0 or unlock is not None
     return CharacterSkillNodeRead(
         id=node.id,
@@ -7283,7 +7366,7 @@ def _to_character_skill_node_read(node: SkillNode, unlock: CharacterSkillUnlock 
     )
 
 
-def get_character_skill_tree(db: Session, character_id: int, book: str) -> CharacterSkillTreeRead:
+def get_character_skill_tree(db: Session, character_id: int, book: str, *, reveal: bool = False) -> CharacterSkillTreeRead:
     """이름 중복 정리는 쓰기 경로에서만 수행한다(get_skill_nodes 주석 참고). 캐릭터 정보 화면은
     서 4개를 병렬로 조회하므로, 여기서 매번 정규화 스캔을 반복하면 그 비용이 4배로 늘어난다."""
     character = _get_character_or_404(db, character_id)
@@ -7305,7 +7388,7 @@ def get_character_skill_tree(db: Session, character_id: int, book: str) -> Chara
     unlock_by_node = {u.node_id: u for u in unlocks}
     latest_unlock = max(unlocks, key=lambda u: u.unlocked_at, default=None)
 
-    node_reads = [_to_character_skill_node_read(node, unlock_by_node.get(node.id), character) for node in nodes]
+    node_reads = [_to_character_skill_node_read(node, unlock_by_node.get(node.id), character, reveal=reveal) for node in nodes]
 
     return CharacterSkillTreeRead(
         book=book,

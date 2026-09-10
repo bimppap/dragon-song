@@ -12,6 +12,9 @@ import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import Modal from "@/components/common/Modal";
 import {
   fetchCharacterSkillTree,
+  fetchCharacterDetail,
+  selectAdminCharacterSkill,
+  type CharacterDetail,
   formatEffect,
   customizeCharacterSkill,
   unlockCharacterSkill,
@@ -30,9 +33,13 @@ const numberFormatter = new Intl.NumberFormat("ko-KR");
 
 interface Props {
   characterId: number;
+  adminMode?: boolean;
+  customizeOnly?: boolean;
+  onUpdated?: (detail: CharacterDetail) => void;
+  onClose?: () => void;
 }
 
-export default function MySkillTree({ characterId }: Props) {
+export default function MySkillTree({ characterId, adminMode = false, customizeOnly = false, onUpdated, onClose }: Props) {
   const { confirm } = useDialog();
   const { toast } = useToast();
   const [treesByBook, setTreesByBook] = useState<Record<SkillBook, CharacterSkillTree> | null>(null);
@@ -55,6 +62,10 @@ export default function MySkillTree({ characterId }: Props) {
       try {
         const lists = await Promise.all(BOOKS.map((b) => fetchCharacterSkillTree(characterId, b)));
         if (cancelled) return;
+        if (customizeOnly) {
+          const node = deepestLearnedSkill(lists.flatMap((tree) => tree.nodes));
+          if (node) openCustomize(node.book, node);
+        }
         setTreesByBook(Object.fromEntries(BOOKS.map((b, i) => [b, lists[i]])) as Record<SkillBook, CharacterSkillTree>);
       } catch (e) {
         if (!cancelled) toast(e instanceof Error ? e.message : "기술트리 조회 실패", "error");
@@ -65,7 +76,7 @@ export default function MySkillTree({ characterId }: Props) {
 
     load();
     return () => { cancelled = true; };
-  }, [characterId, toast]);
+  }, [characterId, toast, customizeOnly]);
 
   /** SP는 캐릭터 전역 값이라, 한 서에서 소모해도 나머지 서의 캐시된 표시 SP를 함께 갱신해야 어긋나지 않는다. */
   function applyTreeUpdate(book: SkillBook, updated: CharacterSkillTree) {
@@ -101,6 +112,7 @@ export default function MySkillTree({ characterId }: Props) {
 
   function closeCustomize() {
     setCustomizing(null);
+    if (customizeOnly) onClose?.();
   }
 
   function handleCustomImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -126,6 +138,7 @@ export default function MySkillTree({ characterId }: Props) {
         tree = await uploadCharacterSkillImage(characterId, node.id, customImageFile);
       }
       applyTreeUpdate(book, tree);
+      if (adminMode) onUpdated?.(await fetchCharacterDetail(characterId));
       closeCustomize();
     } catch (e) {
       toast(e instanceof Error ? e.message : "기술 커스터마이즈에 실패했습니다.", "error");
@@ -135,6 +148,7 @@ export default function MySkillTree({ characterId }: Props) {
   }
 
   function canUnlock(tree: CharacterSkillTree, node: CharacterSkillNode): boolean {
+    if (adminMode) return node.tier > 0;
     if (selectedBook && selectedBook !== node.book) return false;
     if (isExcludedSkillPath(tree.nodes, node)) return false;
     if (!node.is_public || node.unlocked || node.tier === 0 || tree.character_sp < tree.sp_cost_to_unlock) return false;
@@ -154,6 +168,14 @@ export default function MySkillTree({ characterId }: Props) {
   }
 
   async function handleNodeClick(book: SkillBook, tree: CharacterSkillTree, node: CharacterSkillNode) {
+    if (adminMode) {
+      if (node.tier === 0 || busyNodeId !== null) return;
+      setBusyNodeId(node.id);
+      try { onUpdated?.(await selectAdminCharacterSkill(characterId, node.id)); onClose?.(); }
+      catch (error) { toast(error instanceof Error ? error.message : "기술 선택 실패", "error"); }
+      finally { setBusyNodeId(null); }
+      return;
+    }
     if (node.unlocked) {
       // 루트(0단계) 노드는 서 자체를 나타내는 자리표시자라 이름·이미지를 커스터마이즈할 수 없다.
       if (node.tier === 0) return;
@@ -172,30 +194,30 @@ export default function MySkillTree({ characterId }: Props) {
   const selectedBook = treesByBook
     ? deepestLearnedSkill(BOOKS.flatMap((book) => treesByBook[book].nodes))?.book ?? null
     : null;
-  const visibleBooks = selectedBook ? [selectedBook] : BOOKS;
+  const visibleBooks = !adminMode && selectedBook ? [selectedBook] : BOOKS;
   const anyTree = treesByBook ? treesByBook[BOOKS[0]] : null;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!customizeOnly && <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <h2 className="text-lg font-bold text-ivory">기술트리</h2>
           <p className="text-sm text-muted">
-            캐릭터의 역할과 무관하게 용맹·불굴·헌신·탐구 중 하나의 서를 선택할 수 있습니다.
+            {adminMode ? "서·선행 기술·SP 제한 없이 기술 하나를 선택하세요. 기존 기술은 교체됩니다." : <>캐릭터의 역할과 무관하게 용맹·불굴·헌신·탐구 중 하나의 서를 선택할 수 있습니다.
             첫 기술을 습득하면 해당 서만 표시됩니다. 1단계의 세 계열과 2단계의 두 세부 경로에서 각각 하나를 선택하며,
             선택하지 않은 경로는 설명만 확인할 수 있습니다. 습득한 기술을 누르면 이름·이미지·설명을 바꿀 수
-            있습니다(루트 노드는 제외).
+            있습니다(루트 노드는 제외).</>}
           </p>
         </div>
-        {anyTree && (
+        {anyTree && !adminMode && (
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="font-num">보유 SP {numberFormatter.format(anyTree.character_sp)}</Badge>
             <Badge variant="secondary" className="font-num">강화 비용 {numberFormatter.format(anyTree.sp_cost_to_unlock)} SP</Badge>
           </div>
         )}
-      </div>
+      </div>}
 
-      {loading || !treesByBook ? (
+      {!customizeOnly && (loading || !treesByBook ? (
         <p className="text-sm text-muted">불러오는 중...</p>
       ) : (
         <div className="no-scrollbar overflow-x-auto pb-2"><div className="mx-auto flex w-max gap-6">
@@ -209,11 +231,11 @@ export default function MySkillTree({ characterId }: Props) {
                     nodes={tree.nodes}
                     getLabel={(n) => n.display_name}
                     isHighlighted={(n) => n.unlocked}
-                    isLocked={(n) => !n.is_public}
+                    isLocked={(n) => !adminMode && !n.is_public}
                     isDisabled={(node) => busyNodeId !== null || (!node.unlocked && !canUnlock(tree, node))}
                     onNodeClick={(node) => handleNodeClick(book, tree, node)}
                     showLabels={false}
-                    tooltipVariant="runner"
+                    tooltipVariant={adminMode ? "admin" : "runner"}
                     accent={BOOK_ACCENT[book]}
                   />
                 </div>
@@ -221,7 +243,7 @@ export default function MySkillTree({ characterId }: Props) {
             );
           })}
         </div></div>
-      )}
+      ))}
 
       <Modal
         open={customizing !== null}

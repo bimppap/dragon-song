@@ -11,6 +11,11 @@ LEVEL_GRADE_STATS = [
 ]
 
 
+# 캐릭터가 도달할 수 있는 최대 레벨. 레벨은 AP만 지급하는 선형 값이라 표가 따로 없고,
+# 레벨로 인덱싱하는 LEVEL_GRADE_STATS는 5를 넘으면 clamp되어 이후 레벨은 모두 같은 조건이다.
+MAX_CHARACTER_LEVEL = 11
+
+
 def get_level_grade_stats(grade: int) -> dict:
     clamped = max(0, min(grade, len(LEVEL_GRADE_STATS) - 1))
     return LEVEL_GRADE_STATS[clamped]
@@ -99,12 +104,16 @@ STAT_GRADE_AP_COST = [0, 1, 1, 1, 2, 2, 2]
 MAX_AP_STAT_GRADE = len(STAT_GRADE_AP_COST) - 1
 
 
-def get_stat_upgrade_ap_cost(current_grade: int, amount: int) -> int:
+def get_stat_upgrade_ap_cost(current_grade: int, amount: int, *, unrestricted: bool = False) -> int:
     """current_grade에서 amount만큼 등급을 올리는 데 필요한 총 AP.
 
     목표 등급이 MAX_AP_STAT_GRADE(6)를 넘으면 AP로는 올릴 수 없다.
     """
     target_grade = current_grade + amount
+    if unrestricted:
+        if target_grade > 9 or current_grade < 0:
+            raise ValueError("능력치는 9등급까지 투자할 수 있습니다.")
+        return sum((STAT_GRADE_AP_COST + [3, 3, 3])[grade] for grade in range(current_grade + 1, target_grade + 1))
     if target_grade > MAX_AP_STAT_GRADE:
         raise ValueError(f"AP로는 {MAX_AP_STAT_GRADE}등급까지만 올릴 수 있습니다.")
     return sum(STAT_GRADE_AP_COST[grade] for grade in range(current_grade + 1, target_grade + 1))

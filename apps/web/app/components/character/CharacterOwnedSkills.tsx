@@ -9,6 +9,9 @@ import { SkillTooltipContent } from "@/components/skill/SkillTreeGrid";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import { Button } from "@/components/ui/button";
 import { fetchCharacterSkillTree, type CharacterSkillNode, type SkillBook } from "@/lib/api";
+import Modal from "@/components/common/Modal";
+import MySkillTree from "@/app/battle/components/MySkillTree";
+import type { CharacterDetail } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { deepestLearnedSkill } from "@/lib/skillProgression";
@@ -23,19 +26,24 @@ const BOOK_BORDER_CLASS: Record<SkillBook, string> = {
 
 interface Props {
   characterId: number;
+  adminMode?: boolean;
+  onUpdated?: (detail: CharacterDetail) => void;
   /** 다른 러너의 캐릭터를 열람할 때: 기술트리 편집 페이지로 이동하지 않고 정보만 보여준다. */
   readOnly?: boolean;
 }
 
 /** 서와 무관하게 가장 깊이 습득한 기술을 한 슬롯에 보여준다. */
-export default function CharacterOwnedSkills({ characterId, readOnly = false }: Props) {
+export default function CharacterOwnedSkills({ characterId, readOnly = false, adminMode = false, onUpdated }: Props) {
   const router = useRouter();
+  const [mode, setMode] = useState<"actions" | "tree" | "custom" | null>(null);
+  const [revision, setRevision] = useState(0);
   const [skills, setSkills] = useState<CharacterSkillNode[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function goToSkillPage() {
     if (readOnly) return;
+    if (adminMode) { setMode(skills.length ? "actions" : "tree"); return; }
     router.push("/skill");
   }
 
@@ -60,10 +68,19 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false }: 
 
     load();
     return () => { cancelled = true; };
-  }, [characterId]);
+  }, [characterId, revision]);
 
   return (
     <div className="flex flex-col gap-2">
+      {adminMode && <>
+        <Modal open={mode === "actions"} onClose={() => setMode(null)} title="기술 설정">
+          <div className="flex gap-2"><Button onClick={() => setMode("tree")}>스킬 변경하기</Button><Button variant="outline" onClick={() => setMode("custom")}>커스텀 하기</Button></div>
+        </Modal>
+        <Modal open={mode === "tree"} onClose={() => setMode(null)} title="기술 선택" className="max-w-6xl">
+          {mode === "tree" && <MySkillTree characterId={characterId} adminMode onClose={() => setMode(null)} onUpdated={(detail) => { onUpdated?.(detail); setRevision((value) => value + 1); }} />}
+        </Modal>
+        {mode === "custom" && <MySkillTree characterId={characterId} adminMode customizeOnly onClose={() => setMode(null)} onUpdated={(detail) => { onUpdated?.(detail); setRevision((value) => value + 1); }} />}
+      </>}
       {error ? (
         <span className="text-xs text-red-500">{error}</span>
       ) : !loaded ? (
@@ -106,7 +123,7 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false }: 
                           goToSkillPage();
                         }}
                       >
-                        {isOwned ? "기술 강화하기" : "기술 배우기"}
+                        {adminMode ? "기술 설정" : isOwned ? "기술 강화하기" : "기술 배우기"}
                       </Button>
                     )}
                   />

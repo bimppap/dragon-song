@@ -7,12 +7,12 @@ import CharacterList from "../components/character/CharacterList";
 import CharacterCardGrid from "../components/character/CharacterCardGrid";
 import CharacterInfo from "../components/character/CharacterInfo";
 import CharacterCreate from "../components/character/CharacterCreate";
-import { fetchCharacters, fetchMyCharacter, type Character, type CharacterDetail, type MemberRole } from "@/lib/api";
+import { fetchCharacters, fetchMyCharacter, type Character, type MemberRole } from "@/lib/api";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { useToast } from "@/components/common/ToastProvider";
 
-type Tab = "list" | "info" | "create" | "edit";
+type Tab = "list" | "info" | "create";
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "list", label: "캐릭터 목록", icon: List },
@@ -26,7 +26,6 @@ function AdminCharacterConsole() {
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loadingCharacters, setLoadingCharacters] = useState(true);
   const [focusCharacterId, setFocusCharacterId] = useState<number | null>(null);
-  const [editingCharacter, setEditingCharacter] = useState<CharacterDetail | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,22 +64,10 @@ function AdminCharacterConsole() {
           setFocusCharacterId(null);
           setTab("list");
         }}
-        onEdit={(character) => { setEditingCharacter(character); setTab("edit"); }}
+        adminMode
       />
     )}
-    {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.name.localeCompare(b.name, "ko"))); setTab("list"); }} />}
-    {tab === "edit" && editingCharacter && (
-      <CharacterCreate
-        key={editingCharacter.id}
-        character={editingCharacter}
-        onSaved={(character) => {
-          setCharacters((prev) => prev.map((c) => (c.id === character.id ? character : c)));
-          setEditingCharacter(null);
-          setTab("info");
-        }}
-        onCancel={() => { setEditingCharacter(null); setTab("info"); }}
-      />
-    )}
+    {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.name.localeCompare(b.name, "ko"))); setFocusCharacterId(character.id); setTab("info"); }} />}
   </PageContainer>;
 }
 
@@ -197,13 +184,16 @@ function MyCharacterConsole({ role }: { role: MemberRole }) {
           &lt;&lt; 캐릭터 목록으로
         </button>
       </div>
+      {/* 스텝은 본인 캐릭터는 러너로서(mine 뷰), 다른 캐릭터는 관리자로서 다룬다. 실제 편집 가능 여부는
+          CharacterInfo가 캐릭터의 소유자 유무로 다시 판정하므로, 러너 소유 캐릭터는 열람만 된다. */}
       <CharacterInfo
         key={view.character.id}
         characters={[view.character]}
         loading={false}
         showSelector={false}
-        showId={false}
-        readOnly
+        showId={isStaff}
+        readOnly={!isStaff}
+        adminMode={isStaff}
         showHistory={isStaff}
       />
     </>}
