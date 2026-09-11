@@ -125,14 +125,27 @@ class EscortSkillTest(unittest.TestCase):
         # 스택 2개 → 피해 감소 40% → floor(100 × 0.6) = 60
         self.assertEqual(self.participant(result, self.caster.id)["hp"], 40)
 
-    def test_guard_persists_across_rounds(self):
+    def test_guard_is_consumed_between_attacks_in_same_enemy_turn(self):
+        self.cast()
+        self.battle.phase = "enemy"
+        self.battle.pending_enemy_actions = [{
+            "enemy_id": 1, "kind": "attack", "skill_index": 0,
+            "target_character_ids": [self.ally.id],
+        }] * 2
+        self.db.commit()
+        result = crud.resolve_battle_enemy_turn(self.db, self.battle.id)
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
+        self.assertEqual(self.participant(result, self.ally.id)["hp"], 0)
+
+    def test_guard_consumed_but_reduction_persists_across_rounds(self):
         self.cast()
         first = self.hit(self.ally.id)
         self.assertEqual(self.participant(first, self.ally.id)["hp"], 100)
-        # 다음 라운드에도 경호가 유지되어 여전히 경호원이 대신 맞는다.
+        # 다음 피격은 아군이 직접 받으며 시전자의 피해 감소는 유지된다.
         second = self.hit(self.ally.id)
-        self.assertEqual(self.participant(second, self.ally.id)["hp"], 100)
-        self.assertEqual(self.participant(second, self.caster.id)["hp"], 0)
+        self.assertEqual(self.participant(second, self.ally.id)["hp"], 0)
+        self.assertEqual(self.participant(second, self.caster.id)["hp"], 20)
+        self.assertEqual(len(crud._status_effects_of_type(self.participant(second, self.caster.id), "escort_damage_reduction")), 1)
 
 
 class EscortSpecTest(unittest.TestCase):

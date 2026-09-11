@@ -63,6 +63,34 @@ class DevotionDerivedTest(unittest.TestCase):
         crud._remove_status_effects_by_affinity(target, 'buff', 1)
         self.assertEqual(target['hp_regen_true'], 0)
 
+    def test_regeneration_floors_and_survives_rounds_and_downing(self):
+        self.caster.skill_eff_true = 5
+        self.db.commit()
+        node = self.node(0)
+        battle = self.battle(node)
+        result = self.cast(battle, node)
+        target = copy.deepcopy(result.participants[1])
+        self.assertEqual(target['hp_regen_true'], 5)
+        event = next(e for e in result.log[-1]['events'] if '체력 재생력(고정)' in e)
+        self.assertEqual(result.log[-1]['calculations'][event], 'floor(기본값 4 + 시전자 기술 효율 고정 5 / 4)')
+        for round_no in range(1, 20):
+            crud._expire_round_status_effects([target], round_no)
+        target['hp'] = 0
+        crud._mark_combatant_downed(target)
+        self.assertEqual(target['hp_regen_true'], 5)
+        self.assertEqual(len(target['status_effects']), 1)
+
+    def test_regeneration_on_new_target_keeps_previous_target_buff(self):
+        node = self.node(0)
+        battle = self.battle(node)
+        self.cast(battle, node)
+        battle.phase = 'ally'
+        self.db.commit()
+        result = crud.resolve_battle_ally_turn(self.db, battle.id, BattleAllyTurnRequest(character_actions=[
+            CharacterActionInput(character_id=self.caster.id, kind='skill', skill_node_id=node.id, target_character_id=self.caster.id)
+        ]))
+        self.assertEqual([p['hp_regen_true'] for p in result.participants], [7, 7])
+
     def test_halo_heals_every_ally_and_records_each_formula(self):
         node = self.node(1)
         battle = self.battle(node)
@@ -83,9 +111,9 @@ class DevotionDerivedTest(unittest.TestCase):
         with patch('app.crud.random.choice', side_effect=lambda enemies: enemies[-1]):
             result = self.cast(battle, node)
         self.assertEqual(result.participants[1]['hp'], 100)
-        self.assertEqual([e['hp'] for e in result.enemies], [1000, 995])
+        self.assertEqual([e['hp'] for e in result.enemies], [1000, 983])
         heal_event = next(e for e in result.log[-1]['events'] if '5 치유' in e)
-        damage_event = next(e for e in result.log[-1]['events'] if '5 피해' in e)
+        damage_event = next(e for e in result.log[-1]['events'] if '17 피해' in e)
         self.assertIn('스킬레벨 2 × 0.15 + 0.10', result.log[-1]['calculations'][heal_event])
         self.assertIn('실제 회복량 5', result.log[-1]['calculations'][damage_event])
 
@@ -93,7 +121,7 @@ class DevotionDerivedTest(unittest.TestCase):
         node = self.node(0, 4)
         updated = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='임의 이름', description='임의 설명', power=10, target='SELF'))
         self.assertEqual((updated.default_name, updated.power, updated.target), ('재생', 10, '1'))
-        self.assertIn('+10', updated.description)
+        self.assertIn('floor(10 +', updated.description)
         self.assertEqual(crud._to_skill_node_read(self.node(0, 2)).power, 4)
         hex_node = self.node(2, 5)
         updated = crud.update_skill_node(self.db, hex_node.id, SkillNodeUpdate(default_name='주술', power=0.99))

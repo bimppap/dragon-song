@@ -80,6 +80,10 @@ class SkillLogFormulaTest(unittest.TestCase):
         )
 
     def test_aid_heal_uses_configured_skill_power(self):
+        participants = [dict(p) for p in self.battle.participants]
+        participants[0]["skill_eff_true"] = 30
+        self.battle.participants = participants
+        self.db.commit()
         result = self._resolve(CharacterActionInput(
             character_id=self.caster.id,
             kind="skill",
@@ -93,7 +97,7 @@ class SkillLogFormulaTest(unittest.TestCase):
         self.assertEqual(
             result.log[-1]["calculations"][heal_event],
             "min(floor(최대 체력 100 × (기술 위력 0.1 × (1 + 기술 효율 비례 0)) × "
-            "(1 + 치유 효율 0) + 기술 효율 고정 0), 잃은 체력 50)",
+            "(1 + 치유 효율 0)), 잃은 체력 50)",
         )
 
 

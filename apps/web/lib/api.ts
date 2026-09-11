@@ -2129,6 +2129,7 @@ export async function unlockCharacterSkill(characterId: number, nodeId: number):
   }, "기술 강화 실패");
   invalidateApiCache(`skills:character:${characterId}:`, "characters:");
   invalidateApiCache("battles:active-skills:");
+  if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent("character-skills-updated", { detail: characterId }));
   return tree;
 }
 

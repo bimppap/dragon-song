@@ -3669,6 +3669,8 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
         dynamic = dynamic_derived_description(var_name, node.tier)
         if dynamic is not None:
             return dynamic
+    if field == "formula" and spec.get("var_name") == "ab_aid":
+        return spec["formula"]
     current = getattr(node, field)
     if spec.get("var_name") in SPEC_DRIVEN_DERIVED_VARS:
         if field == "is_placeholder":
@@ -3682,9 +3684,9 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
             return 0.15 if spec["var_name"] == "ab_hex_heal" else power
         if field == "description":
             if spec["var_name"] == "ab_hex_heal":
-                return f"아군 1명의 최대 체력의 {node.tier * 15 + 10}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량만큼 무작위 에너미 1명에게 피해를 줍니다."
+                return f"아군 1명의 최대 체력의 {node.tier * 15 + 10}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다."
             if spec["var_name"] == "ab_regeneration":
-                return f"아군 1명에게 전투 종료까지 체력 재생력(고정) +{power:g} + 시전자 기술 효율(고정)/4 버프를 부여합니다."
+                return f"아군 1명에게 전투 종료까지 체력 재생력(고정) +floor({power:g} + 시전자 기술 효율(고정)/4) 버프를 부여합니다."
             return f"아군 전원의 현재 체력을 {power:g} + 시전자 기술 효율(고정)/4만큼 회복합니다."
         if field == "is_placeholder":
             return False
@@ -4004,8 +4006,11 @@ def _mark_combatant_downed(target: dict) -> bool:
     if target["hp"] > 0:
         return False
     newly_downed = not bool(target.get("downed"))
+    persistent = [effect for effect in _ensure_status_effects(target)
+                  if effect.get("var_name") == "ab_regeneration"
+                  or effect.get("effect_type") == "escort_damage_reduction"]
     for effect in _ensure_status_effects(target):
-        if effect.get("effect_type") != "stat_modifier":
+        if effect in persistent or effect.get("effect_type") != "stat_modifier":
             continue
         stat = effect.get("stat")
         if isinstance(stat, str):
@@ -4014,7 +4019,7 @@ def _mark_combatant_downed(target: dict) -> bool:
     target["attn"] = 0
     target["env_stacks"] = {}
     target["env_stack_order"] = []
-    target["status_effects"] = []
+    target["status_effects"] = persistent
     return newly_downed
 
 
@@ -4159,8 +4164,8 @@ def _add_status_effect(
     var_name = effect.get("var_name")
     if not effect.get("stackable") and isinstance(source_character_id, int) and isinstance(var_name, str):
         _remove_non_stackable_status_effects(
-            participants,
-            enemies,
+            [target] if var_name == "ab_regeneration" else participants,
+            [] if var_name == "ab_regeneration" else enemies,
             source_character_id=source_character_id,
             var_name=var_name,
         )
@@ -4621,18 +4626,19 @@ def _skill_heal_amount(
     skill_eff_fixed: float,
     *,
     include_heal_efficiency: bool = True,
+    include_flat_efficiency: bool = True,
 ) -> tuple[int, str]:
     """기술 치유량과 계산식을 만든다. 피해 계산과 같이 기술 위력 비례를 곱한 뒤 기술 효율 고정을 더한다."""
     heal_eff = actor["heal_eff"] if include_heal_efficiency else 0
-    raw = target["max_hp"] * ((skill_power * (1 + skill_eff_fixed)) * (1 + heal_eff)) + actor["skill_eff_true"]
+    raw = target["max_hp"] * ((skill_power * (1 + skill_eff_fixed)) * (1 + heal_eff)) + (actor["skill_eff_true"] if include_flat_efficiency else 0)
     # 치유 효율을 아예 적용하지 않는 기술(모루 등)만 계산식에서도 해당 항을 뺀다.
     heal_eff_term = f" × (1 + 치유 효율 {_formula_number(heal_eff)})" if include_heal_efficiency else ""
+    flat_term = f" + 기술 효율 고정 {_formula_number(actor['skill_eff_true'])}" if include_flat_efficiency else ""
     formula = (
         f"floor(최대 체력 {_formula_number(target['max_hp'])} × "
         f"(기술 위력 {_formula_number(skill_power)} × "
         f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}))"
-        f"{heal_eff_term} + "
-        f"기술 효율 고정 {_formula_number(actor['skill_eff_true'])})"
+        f"{heal_eff_term}{flat_term})"
     )
     return max(0, _floor_amount(raw)), formula
 
@@ -6425,6 +6431,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 base_formula = f"기본값 {_formula_number(skill_power)} + 시전자 기술 효율 고정 {_formula_number(p['skill_eff_true'])} / 4"
                 flat_amount = max(0, skill_power + p["skill_eff_true"] / 4)
                 if var_name == "ab_regeneration":
+                    flat_amount = _floor_amount(flat_amount)
                     target = targets[0]
                     # 같은 시전자/기술의 기존 강화는 새 값으로 교체한다.
                     effect = {
@@ -6435,7 +6442,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     _add_status_effect(target, effect, participants=participants, enemies=enemies)
                     target["hp_regen_true"] += flat_amount
                     events.append(f"🌱 {p['name']}의 {skill_name} → {target['name']} 체력 재생력(고정) +{_formula_number(flat_amount)}")
-                    calculations[events[-1]] = base_formula
+                    calculations[events[-1]] = f"floor({base_formula})"
                     continue
                 healed_values = []
                 for target in targets:
@@ -6464,7 +6471,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         if eligible_enemies:
                             enemy = random.choice(eligible_enemies)
                             hex_damage, hex_formula = _apply_weaken_amp(
-                                enemy, healed, f"실제 회복량 {healed} = {heal_formula}",
+                                enemy, max(0, _floor_amount(healed + p["skill_eff_true"])),
+                                f"floor(실제 회복량 {healed} + 시전자 기술 효율 고정 {_formula_number(p['skill_eff_true'])})",
                             )
                             dealt, overkill = _apply_damage_to_enemy(enemy, hex_damage)
                             events.append(f"🔮 {p['name']}의 {skill_name} → {enemy['name']} {dealt} 피해 [{enemy['hp']}/{enemy['max_hp']}]")
@@ -6869,7 +6877,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 damage_bonus = max(0.0, skill_lv * 0.01)
                 healed_values = []
                 for target in targets:
-                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed)
+                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed, include_flat_efficiency=False)
                     before_hp = target["hp"]
                     healed, revived = _apply_skill_heal(p, target, heal_amount, grant_attention=False)
                     healed_values.append(healed)
@@ -7354,8 +7362,6 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         {env.id: env for env in db.query(Environment).filter(Environment.chapter == session.chapter).all()}
         if session.chapter else {}
     )
-    protect_map = _build_protect_map(participants)
-
     def hit(
         attacker: dict,
         target: dict,
@@ -7363,7 +7369,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         base_formula: str,
     ) -> tuple[dict, int, int, bool, list[dict], str]:
         """방어 지정 대상이 있으면 방어자가 대신 맞고, 반격 버프가 있으면 즉시 처리한다."""
-        protector_id = protect_map.get(target["character_id"])
+        protector_id = _build_protect_map(participants).get(target["character_id"])
+        target["status_effects"] = [effect for effect in _ensure_status_effects(target)
+                                    if effect.get("effect_type") != "escort_guard"]
         recipient = target
         redirected = False
         if protector_id is not None and protector_id != target["character_id"]:

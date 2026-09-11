@@ -53,14 +53,24 @@ export default function CharacterClonedSkills({ characterId, readOnly = false }:
     async function load() {
       try {
         const result = await fetchClonedSkills(characterId);
-        if (!cancelled) setData(result);
+        if (!cancelled) { setData(result); setError(null); }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "복제 기술 조회 실패");
       }
     }
 
+    function onSkillsUpdated(event: Event) {
+      if ((event as CustomEvent<number>).detail === characterId) {
+        setCandidates(null);
+        void load();
+      }
+    }
+    window.addEventListener("character-skills-updated", onSkillsUpdated);
     load();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      window.removeEventListener("character-skills-updated", onSkillsUpdated);
+    };
   }, [characterId]);
 
   async function openPicker(slotIndex: number) {

@@ -375,7 +375,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "derived": _skill(
                     "재생", trigger_type="지속형", category="강화", stackable=False, order=4,
                     var_name="ab_regeneration", cost=0, power=4, target="1", target_side="ALLY",
-                    formula="체력 재생력 증가: 기본값 + 시전자 기술 효율(고정)/4",
+                    formula="체력 재생력 증가: floor(기본값 + 시전자 기술 효율(고정)/4)",
                     description="지정한 아군 1명에게 전투 종료까지 체력 재생력(고정)을 기본값 + 시전자 기술 효율(고정)/4만큼 증가시키는 버프를 부여합니다.",
                 ),
             },
@@ -383,7 +383,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "구호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_aid",
                     cost=3, power=0.1, target="2", target_side="ALLY", order=2,
-                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정",
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)",
                     description="복수의 아군을 체력이 낮은 순서대로 회복시킵니다.",
                     tier6_effect="일회성 강화 부여: 기술 등급만큼 피해 증폭",
                     placeholder=True,
@@ -408,8 +408,8 @@ SKILL_BOOKS: dict[str, dict] = {
                 "derived": _skill(
                     "주술", trigger_type="즉발형", category="복합", stackable=False, order=2,
                     var_name="ab_hex_heal", cost=4, power=0.15, target="1", target_side="ALLY",
-                    formula="회복: 대상 최대 체력*(depth*15%+10%)*(1+기술 효율 비례)*(1+치유 효율). 무작위 적 피해: 실제 회복량",
-                    description="지정한 아군 1명을 회복하고 실제 회복한 만큼 무작위 에너미 1명에게 피해를 줍니다.",
+                    formula="회복: 대상 최대 체력*(depth*15%+10%)*(1+기술 효율 비례)*(1+치유 효율). 무작위 적 피해: floor(실제 회복량 + 시전자 기술 효율 고정)",
+                    description="지정한 아군 1명을 회복하고 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다.",
                 ),
             },
         ],
@@ -500,7 +500,7 @@ def dynamic_derived_description(var_name: str | None, tier: int) -> str | None:
         return (
             f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 피해 감소를 "
             f"{L * 5}% + 기술 효율(비례)만큼 올리는 버프를 최대 2스택까지 부여합니다. "
-            "경호 스택을 가진 아군이 피격되면 시전자가 대신 공격을 받습니다."
+            "경호 스택을 가진 아군이 피격되면 스택을 소모하고 시전자가 대신 공격을 받습니다. 자신의 피해 감소는 전투 종료까지 유지됩니다."
         )
     if var_name == "ab_veil":
         return (
