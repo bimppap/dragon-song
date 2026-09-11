@@ -437,8 +437,8 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "저주", trigger_type="즉발형", category="약화", stackable=False, var_name="ab_curse",
                     cost=3, power=0.05, target="1", target_side="ENEMY", order=3,
-                    formula="약화 수치: 기술 위력*(1+기술 효율 비례)",
-                    description="지정한 적군의 피해 증폭을 감소시킵니다.",
+                    formula="받는 피해 증가(이번 라운드): 기술 위력*(1+기술 효율 비례)",
+                    description="지정한 적이 이번 라운드 동안 아군에게 받는 모든 피해를 증가시킵니다.",
                     tier6_name="봉인",
                 ),
                 "derived": _skill(

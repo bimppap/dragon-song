@@ -3631,7 +3631,9 @@ INQUIRY_DERIVED_VARS = {"ab_improve", "ab_weaken", "ab_clone"}
 SUPPORTED_BATTLE_SKILL_VAR_NAMES = set(SKILL_LEVEL_SUFFIX_VAR_NAMES)
 SKILL_BOOK_ORDER = ("용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서")
 # 기술 효율 항을 계산에서 뺀 기술: 기존 DB에 저장된 옛 계산식 대신 스펙의 계산식을 보여준다.
-SPEC_FORMULA_VAR_NAMES = {"ab_protect", "ab_cure", "ab_aid", "ab_purification", "ab_charge"}
+SPEC_FORMULA_VAR_NAMES = {"ab_protect", "ab_cure", "ab_aid", "ab_purification", "ab_charge", "ab_curse"}
+# 효과가 바뀐 기술의 옛 기본 설명. 관리자가 고치지 않은 채 DB에 남아 있으면 스펙 설명으로 대체한다.
+LEGACY_SKILL_DESCRIPTIONS = {"ab_curse": "지정한 적군의 피해 증폭을 감소시킵니다."}
 
 # 아군 턴 발동 순서: 숫자가 낮을수록 먼저 개시된다. 기술은 기술마다 activation_order 값을 따로 갖는다.
 BATTLE_ACTION_KIND_PRIORITY: dict[str, int] = {
@@ -3674,6 +3676,8 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
     if field == "formula" and spec.get("var_name") in SPEC_FORMULA_VAR_NAMES:
         return spec["formula"]
     current = getattr(node, field)
+    if field == "description" and current is not None and current == LEGACY_SKILL_DESCRIPTIONS.get(spec.get("var_name")):
+        return spec["description"]
     if spec.get("var_name") in SPEC_DRIVEN_DERIVED_VARS:
         if field == "is_placeholder":
             return False
@@ -4511,7 +4515,7 @@ def _status_effects_of_type(target: dict, effect_type: str) -> list[dict]:
 
 
 def _weaken_incoming_amp(enemy: dict) -> float:
-    """쇠약이 부여한 이번 라운드 '아군에게 받는 피해 증가' 합. 라운드 종료 시 소멸한다."""
+    """쇠약·저주가 부여한 이번 라운드 '아군에게 받는 피해 증가' 합. 라운드 종료 시 소멸한다."""
     return sum(
         float(effect.get("value", 0.0))
         for effect in _ensure_status_effects(enemy)
@@ -4520,12 +4524,12 @@ def _weaken_incoming_amp(enemy: dict) -> float:
 
 
 def _apply_weaken_amp(enemy: dict, damage: int, formula: str) -> tuple[int, str]:
-    """대상 적의 쇠약 스택만큼 아군 피해를 증폭하고, 계산식 문자열에 프래그먼트를 덧붙인다."""
+    """대상 적의 쇠약·저주 합계만큼 아군 피해를 증폭하고, 계산식 문자열에 프래그먼트를 덧붙인다."""
     amp = _weaken_incoming_amp(enemy)
     if amp <= 0:
         return damage, formula
     boosted = _floor_amount(damage * (1 + amp))
-    return boosted, f"({formula}) × (1 + 쇠약 받는 피해 증가 {_formula_number(amp)})"
+    return boosted, f"({formula}) × (1 + 받는 피해 증가 {_formula_number(amp)})"
 
 
 def _expire_round_status_effects(combatants: list[dict], round_no: int) -> None:
@@ -7084,25 +7088,27 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if not target_enemies:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                penalty = max(0.0, skill_power * (1 + skill_eff_fixed))
+                # 저주도 쇠약처럼 이번 라운드 동안 아군에게 받는 모든 피해를 늘린다(쇠약과 합산).
+                amp = max(0.0, skill_power * (1 + skill_eff_fixed))
                 for target_enemy in target_enemies:
                     _add_status_effect(
                         target_enemy,
                         {
-                            "effect_type": "outgoing_damage_penalty_once",
+                            "effect_type": "incoming_damage_bonus_round",
                             "affinity": "debuff",
                             "source_character_id": p["character_id"],
                             "source_name": p["name"],
                             "skill_name": skill_name,
                             "var_name": var_name,
                             "stackable": bool(selected_skill.get("stackable")),
-                            "value": penalty,
+                            "value": amp,
+                            "expires_round": round_no,
                         },
                         participants=participants,
                         enemies=enemies,
                     )
                     events.append(
-                        f"🔮 {p['name']}의 {skill_name} → {target_enemy['name']} 피해 증폭 -{_floor_amount(penalty * 100)}%"
+                        f"🔮 {p['name']}의 {skill_name} → {target_enemy['name']} 받는 데미지 +{_floor_amount(amp * 100)}%"
                     )
                     calculations[events[-1]] = (
                         f"floor(기술 위력 {_formula_number(skill_power)} × "

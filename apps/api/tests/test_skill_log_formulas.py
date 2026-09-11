@@ -63,7 +63,7 @@ class SkillLogFormulaTest(unittest.TestCase):
     def _resolve(self, action: CharacterActionInput):
         return crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(character_actions=[action]))
 
-    def test_curse_logs_damage_amplification_with_formula(self):
+    def test_curse_logs_incoming_damage_bonus_with_formula(self):
         result = self._resolve(CharacterActionInput(
             character_id=self.caster.id,
             kind="skill",
@@ -72,7 +72,7 @@ class SkillLogFormulaTest(unittest.TestCase):
             target_enemy_id=1,
         ))
 
-        event = "🔮 실험 요정 D의 저주 → 오버그로스 피해 증폭 -5% · MP -1 [9/10]"
+        event = "🔮 실험 요정 D의 저주 → 오버그로스 받는 데미지 +5% · MP -1 [9/10]"
         self.assertIn(event, result.log[-1]["events"])
         self.assertEqual(
             result.log[-1]["calculations"][event],

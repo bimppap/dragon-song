@@ -79,7 +79,7 @@ class WeakenSkillTest(unittest.TestCase):
         attack_event = next(e for e in events if e.startswith("⚔️ 검사 공격:"))
         # 기본 피해 10 → floor(10 × (1 + 0.14)) = 11
         self.assertIn("11 피해", attack_event)
-        self.assertIn("쇠약 받는 피해 증가 0.14", calcs[attack_event])
+        self.assertIn("받는 피해 증가 0.14", calcs[attack_event])
 
     def test_weaken_amplifies_hex_heal_enemy_damage(self):
         """주술(회복량만큼 무작위 적 피해)처럼 아군 턴의 다른 피해원도 쇠약 증폭을 받아야 한다."""
@@ -119,7 +119,57 @@ class WeakenSkillTest(unittest.TestCase):
         hex_event = next(e for e in events if e.startswith("🔮 주술사2의"))
         # 회복량 40(최대 체력 100 × (스킬레벨 2 × 15% + 10%))에 쇠약 14%가 곱해진다.
         self.assertIn("45 피해", hex_event)
-        self.assertIn("쇠약 받는 피해 증가 0.14", result.log[-1]["calculations"][hex_event])
+        self.assertIn("받는 피해 증가 0.14", result.log[-1]["calculations"][hex_event])
+
+    def _add_curser(self):
+        curser = Character(name="저주술사", faction="치유", hp=100, hp_max=100, mp=10, mp_max=10, skill_eff_fixed=0.0)
+        curse = SkillNode(
+            book="탐구의 서", branch=1, col=0, tier=1, default_name="저주 I",
+            trigger_type="즉발형", category="약화", stackable=False, var_name="ab_curse",
+            cost=3, power=0.5, target="1", target_side="ENEMY", activation_order=3, is_public=True,
+        )
+        self.db.add_all([curser, curse])
+        self.db.flush()
+        self.db.add(CharacterSkillUnlock(character_id=curser.id, node_id=curse.id))
+        self.battle.participants = [*self.battle.participants, crud._snapshot_combatant(curser)]
+        self.db.commit()
+        return CharacterActionInput(character_id=curser.id, kind="skill", skill_node_id=curse.id, target_enemy_id=1)
+
+    def test_curse_increases_ally_damage_taken_this_round(self):
+        curse_action = self._add_curser()
+        result = self._resolve([
+            curse_action,
+            CharacterActionInput(character_id=self.attacker.id, kind="attack", target_enemy_id=1),
+        ])
+        events = result.log[-1]["events"]
+        calcs = result.log[-1]["calculations"]
+
+        curse_event = next(e for e in events if e.startswith("🔮 저주술사의 저주 I → 허수아비"))
+        self.assertIn("받는 데미지 +50%", curse_event)
+        attack_event = next(e for e in events if e.startswith("⚔️ 검사 공격:"))
+        # 기본 피해 10 → floor(10 × (1 + 0.5)) = 15
+        self.assertIn("15 피해", attack_event)
+        self.assertIn("받는 피해 증가 0.5", calcs[attack_event])
+
+        self.battle.phase = "enemy"
+        self.battle.pending_enemy_actions = []
+        self.db.commit()
+        after_enemy_turn = crud.resolve_battle_enemy_turn(self.db, self.battle.id)
+        self.assertFalse(any(
+            effect.get("var_name") == "ab_curse" for effect in after_enemy_turn.enemies[0]["status_effects"]
+        ))
+
+    def test_curse_and_weaken_bonuses_are_summed(self):
+        curse_action = self._add_curser()
+        result = self._resolve([
+            curse_action,
+            self._weaken_action(),
+            CharacterActionInput(character_id=self.attacker.id, kind="attack", target_enemy_id=1),
+        ])
+        attack_event = next(e for e in result.log[-1]["events"] if e.startswith("⚔️ 검사 공격:"))
+        # 저주 0.5 + 쇠약 0.14 = 0.64 → floor(10 × 1.64) = 16 (곱연산이면 17)
+        self.assertIn("16 피해", attack_event)
+        self.assertIn("받는 피해 증가 0.64", result.log[-1]["calculations"][attack_event])
 
     def test_weaken_survives_ally_turn_and_expires_after_enemy_turn(self):
         """분출 반응·반격 피해까지 증폭해야 하므로 쇠약은 에너미 턴이 끝날 때 소멸한다."""

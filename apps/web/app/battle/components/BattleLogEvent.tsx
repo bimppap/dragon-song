@@ -95,9 +95,9 @@ function isCalculatedResultNumber(
 ): boolean {
   const suffix = event.slice(end, Math.min(event.length, end + 10));
   if (/체력 재생력\(고정\)\s*$/.test(event.slice(0, start))) return true;
-  // 개선("기술 효율(비례) +30% · 기술 효율(고정) +6")·쇠약("받는 피해 +14%")의 결과 수치.
+  // 개선("기술 효율(비례) +30% · 기술 효율(고정) +6")·쇠약("받는 피해 +14%")·저주("받는 데미지 +5%")의 결과 수치.
   // 뒤에 붙는 MP 표기 때문에 kind가 resource로 잡히므로 kind와 무관하게 판정한다.
-  if (/(?:기술 효율\((?:비례|고정)\)|받는 피해)\s*$/.test(event.slice(0, start))) return true;
+  if (/(?:기술 효율\((?:비례|고정)\)|받는 (?:피해|데미지))\s*$/.test(event.slice(0, start))) return true;
   if (/^\s*(?:체력 소모|보호막 부여)/.test(suffix)) return true;
   // 격려처럼 "피해 증폭 +20%" 형태로 끝나는 버프 수치도 계산식을 붙인다.
   if (value.endsWith("%") && /(?:증폭|감소|효율|확률|존재감)\s*$/.test(event.slice(0, start))) return true;
