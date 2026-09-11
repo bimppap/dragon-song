@@ -80,9 +80,11 @@ function formulaFor(
   return null;
 }
 
-function shouldShowFormula(event: string, value: string, kind: NumberKind): boolean {
+function shouldShowFormula(event: string, value: string, kind: NumberKind, isCalcNumber: boolean): boolean {
   if (kind === "health") return false;
-  if (kind !== "resource") return true;
+  // 저주("피해 증폭 -5% · MP -1")처럼 뒤에 붙는 MP 표기 때문에 resource로 잡힌 계산 결과는
+  // 음수여도 비용이 아니므로 계산식을 보여준다.
+  if (kind !== "resource" || isCalcNumber) return true;
   return !value.startsWith("-") && !/(?:마나|MP).*?(?:소모|비용)/i.test(event);
 }
 
@@ -154,7 +156,7 @@ export default function BattleLogEvent({
       ? calculationList[Math.min(calculationIndex, calculationList.length - 1)]
       : null;
     if (isCalcNumber) calculationIndex += 1;
-    const formula = showFormula && shouldShowFormula(event, value, kind)
+    const formula = showFormula && shouldShowFormula(event, value, kind, isCalcNumber)
       ? storedCalculation ?? formulaFor(event, kind, session, previousEvent)
       : null;
     const hasFormulaTooltip = formula !== null;
