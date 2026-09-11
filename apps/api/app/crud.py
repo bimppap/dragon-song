@@ -3630,6 +3630,8 @@ INQUIRY_DERIVED_VARS = {"ab_improve", "ab_weaken", "ab_clone"}
 # 복제(ab_clone)는 전투에서 원본 기술의 var_name을 그대로 쓰므로 supported 집합에 넣지 않는다.
 SUPPORTED_BATTLE_SKILL_VAR_NAMES = set(SKILL_LEVEL_SUFFIX_VAR_NAMES)
 SKILL_BOOK_ORDER = ("용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서")
+# 기술 효율 항을 계산에서 뺀 기술: 기존 DB에 저장된 옛 계산식 대신 스펙의 계산식을 보여준다.
+SPEC_FORMULA_VAR_NAMES = {"ab_protect", "ab_cure", "ab_aid", "ab_purification", "ab_charge"}
 
 # 아군 턴 발동 순서: 숫자가 낮을수록 먼저 개시된다. 기술은 기술마다 activation_order 값을 따로 갖는다.
 BATTLE_ACTION_KIND_PRIORITY: dict[str, int] = {
@@ -3669,7 +3671,7 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
         dynamic = dynamic_derived_description(var_name, node.tier)
         if dynamic is not None:
             return dynamic
-    if field == "formula" and spec.get("var_name") == "ab_aid":
+    if field == "formula" and spec.get("var_name") in SPEC_FORMULA_VAR_NAMES:
         return spec["formula"]
     current = getattr(node, field)
     if spec.get("var_name") in SPEC_DRIVEN_DERIVED_VARS:
@@ -4584,21 +4586,20 @@ def _signed_number(value: int | float) -> str:
 
 
 def _damage_from_skill_power(actor: dict, skill_power: float, skill_eff_fixed: float) -> tuple[int, str]:
+    """강타·분쇄·위해의 기술 피해. 기술 효율은 비례만 반영하고 고정은 더하지 않는다."""
     damage_amp = _consume_outgoing_damage_amplification(actor)
     raw = (
         actor["atk"]
         * (1 + actor["atk_p"])
         * (skill_power * (1 + skill_eff_fixed))
         * (1 + damage_amp)
-        + actor["skill_eff_true"]
     )
     formula = (
         f"floor(공격력 {_formula_number(actor['atk'])} × "
         f"(1 + 공격력 증폭률 {_formula_number(actor['atk_p'])}) × "
         f"(기술 위력 {_formula_number(skill_power)} × "
         f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)})) × "
-        f"(1 + 피해 증폭 {_formula_number(damage_amp)}) + "
-        f"기술 효율 고정 {_formula_number(actor['skill_eff_true'])})"
+        f"(1 + 피해 증폭 {_formula_number(damage_amp)}))"
     )
     return max(0, _floor_amount(raw)), formula
 
@@ -6802,7 +6803,6 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             "counter_def": p["def"],
                             "counter_def_p": p["def_p"],
                             "counter_def_eff": p["def_eff"],
-                            "counter_skill_eff_true": p["skill_eff_true"],
                             "round": round_no,
                         },
                         participants=participants,
@@ -6828,7 +6828,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 attn_reduction_pct = min(1.0, max(0.0, attn_transfer * (1 + skill_eff_fixed)))
                 healed_values: list[int] = []
                 for target in targets:
-                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed)
+                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed, include_flat_efficiency=False)
                     before_hp = target["hp"]
                     healed, revived = _apply_skill_heal(p, target, heal_amount, grant_attention=False)
                     healed_values.append(healed)
@@ -6864,7 +6864,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 healed_values = []
                 for target in targets:
-                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed)
+                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed, include_flat_efficiency=False)
                     before_hp = target["hp"]
                     healed, revived = _apply_skill_heal(
                         p, target, heal_amount, allow_overheal=tier6_bonus, grant_attention=False
@@ -6934,7 +6934,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 healed_values = []
                 for target in targets:
-                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed)
+                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed, include_flat_efficiency=False)
                     before_hp = target["hp"]
                     healed, revived = _apply_skill_heal(p, target, heal_amount, grant_attention=False)
                     healed_values.append(healed)
@@ -7118,7 +7118,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                mana_restored = max(0, _floor_amount(skill_power * (1 + skill_eff_fixed)))
+                mana_restored = max(0, _floor_amount(skill_power))
                 for target in targets:
                     before_mp = target["mp"]
                     target["mp"] = min(target["max_mp"], target["mp"] + mana_restored)
@@ -7128,8 +7128,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"[{target['mp']}/{target['max_mp']}]"
                     )
                     calculations[events[-1]] = (
-                        f"min(floor(기술 위력 {_formula_number(skill_power)} × "
-                        f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)})), "
+                        f"min(floor(기술 위력 {_formula_number(skill_power)}), "
                         f"잃은 MP {_formula_number(target['max_mp'] - before_mp)})"
                     )
                 continue
@@ -7440,7 +7439,6 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             counter_def = counter_stat("def", "counter_def", recipient["def"])
             counter_def_p = counter_stat("def_p", "counter_def_p", 0.0)
             counter_def_eff = counter_stat("def_eff", "counter_def_eff", 0.0)
-            counter_eff_true = counter_stat("skill_eff_true", "counter_skill_eff_true", 0.0)
             counterattacker_name = str(
                 counter_actor["name"] if counter_actor is not None else effect.get("source_name") or recipient["name"]
             )
@@ -7459,7 +7457,6 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                         )
                         * counter_multiplier
                         * (1 + counter_eff_fixed)
-                        + counter_eff_true
                     )
                     * (1 + counter_damage_amp)
                 ),
@@ -7473,8 +7470,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 f"(1 + 방어력 증폭 {_formula_number(counter_def_p)}) × "
                 f"(1 + 방어 효율 {_formula_number(counter_def_eff)})) × "
                 f"기술 위력 {_formula_number(counter_multiplier)} × "
-                f"(1 + 기술 효율 비례 {_formula_number(counter_eff_fixed)}) + "
-                f"기술 효율 고정 {_formula_number(counter_eff_true)}) × "
+                f"(1 + 기술 효율 비례 {_formula_number(counter_eff_fixed)})) × "
                 f"(1 + 피해 증폭 {_formula_number(counter_damage_amp)}))"
             )
             # 쇠약이 걸린 적은 이번 라운드 아군 피해를 더 받는다(반격 피해도 아군 피해다).

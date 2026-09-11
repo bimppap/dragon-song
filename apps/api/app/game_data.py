@@ -348,7 +348,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "보호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_protect",
                     cost=2, power=0.05, powers={"attn_transfer": 0.1}, target="1", target_side="ALLY", order=7,
-                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정 / 주목도 이전: 주목도 이전*(1+기술 효율 비례)",
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율) / 주목도 이전: 주목도 이전*(1+기술 효율 비례)",
                     description="지정한 아군의 체력을 회복시키며 주목도를 감소시키고, 감소량의 2배만큼 자신의 주목도를 높입니다.",
                     tier6_name="수호",
                 ),
@@ -367,7 +367,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "회복", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_cure",
                     cost=2, power=0.2, target="1", target_side="ALLY", order=5,
-                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정",
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)",
                     description="지정한 아군의 체력을 회복시키는 기본 회복 기술입니다.",
                     tier6_name="생명",
                     tier6_effect="오버힐 허용, 대상에게 걸린 약화 n개 해제(n = skill_lv mod 6)",
@@ -400,7 +400,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     "정화", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_purification",
                     cost=2, power=0.15, cleanse_count=(1, 2, 3, 4, 5, 6),
                     target="1", target_side="ALLY", order=2,
-                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)+기술 효율 고정",
+                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)",
                     description="지정한 아군의 체력을 회복시키고 기술 등급만큼 약화 스택을 제거합니다.",
                     tier6_name="승화",
                     tier6_effect="해제한 약화 수만큼 강화 스택 부여(약화 상태 방지, 스택*5만큼 피해 증폭)",
@@ -453,7 +453,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "root": _skill(
                     "충전", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",
                     cost=4, power=2, target="1", target_side="ALLY", order=1,
-                    formula="마나 회복: 기술 위력*(1+기술 효율 비례)",
+                    formula="마나 회복: 기술 위력",
                     description="지정한 아군의 마나를 회복시킵니다. 자신은 대상이 되지 않습니다.",
                     placeholder=True,
                 ),

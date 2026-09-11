@@ -26,6 +26,8 @@ class CounterSkillTest(unittest.TestCase):
             def_=5,
             def_eff=0.2,
             skill_eff_fixed=0.1,
+            # 반격 피해는 기술 효율 고정을 더하지 않는다.
+            skill_eff_true=30,
         )
         self.target = Character(
             name="실험 요정 A",
@@ -136,7 +138,7 @@ class CounterSkillTest(unittest.TestCase):
             enemy_result.log[-1]["calculations"][counter_event],
             "min(floor(((공격력 10 × (1 + 공격력 증폭 0) + "
             "방어력 5 × (1 + 방어력 증폭 0) × (1 + 방어 효율 0.2)) × "
-            "기술 위력 2 × (1 + 기술 효율 비례 0.1) + 기술 효율 고정 0) × "
+            "기술 위력 2 × (1 + 기술 효율 비례 0.1)) × "
             "(1 + 피해 증폭 0)), 남은 체력 100)",
         )
 

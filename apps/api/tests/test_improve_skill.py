@@ -89,8 +89,8 @@ class ImproveSkillTest(unittest.TestCase):
         self.assertIn("스킬레벨 2 × 기술 위력 0.1", calcs[improve_event])
 
         strike_event = next(e for e in events if e.startswith("✨ 검사의") and "허수아비" in e)
-        # floor(10 × (1.5 × (1 + 0.30)) + 기술 효율 고정 6) = floor(19.5 + 6) = 25
-        self.assertIn("25 피해", strike_event)
+        # 강타는 기술 효율 고정을 쓰지 않으므로 비례 보정만 반영된다: floor(10 × (1.5 × (1 + 0.30))) = 19
+        self.assertIn("19 피해", strike_event)
 
     def test_improve_bonus_expires_after_round(self):
         result = self._resolve([

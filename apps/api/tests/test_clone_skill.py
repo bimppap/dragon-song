@@ -129,10 +129,11 @@ class CloneSkillTest(unittest.TestCase):
         events = result.log[-1]["events"]
         strike_event = next(e for e in events if e.startswith("✨ 복제가의 복제:강타 I"))
         # depth 2 → 기술 효율(비례) -50% + 10%×2 = -0.30, 기술 효율(고정) -20 + 4×2 = -12.
-        # 100 × (1.5 × (1 - 0.3)) - 12 = 92.99999999999999 → 내림 92.
+        # 강타는 기술 효율 고정을 계산에 쓰지 않는다: 100 × (1.5 × (1 - 0.3)) = 104.99999999999999 → 내림 104.
         # (부동소수 오차로 인한 내림은 엔진의 기존 _floor_amount 동작 그대로다.)
-        self.assertIn("92 피해", strike_event)
+        self.assertIn("104 피해", strike_event)
         self.assertIn("기술 효율 비례 -0.3", result.log[-1]["calculations"][strike_event])
+        self.assertNotIn("기술 효율 고정", result.log[-1]["calculations"][strike_event])
         # 기술 비용은 depth와 무관하게 4다.
         actor = next(p for p in result.participants if p["character_id"] == self.cloner.id)
         self.assertEqual(actor["mp"], 6)

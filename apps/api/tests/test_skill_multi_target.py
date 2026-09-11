@@ -99,6 +99,20 @@ class SkillMultiTargetTest(unittest.TestCase):
         # 시전자는 기술 비용만 소모하고 충전 대상이 되지 않는다.
         self.assertEqual(by_id[self.caster.id]["mp"], 9)
 
+    def test_charge_ignores_proportional_skill_efficiency(self):
+        participants = [dict(p) for p in self.battle.participants]
+        participants[0]["skill_eff_fixed"] = 0.5
+        self.battle.participants = participants
+        self.db.commit()
+
+        result = self._resolve(self.charge, [f"ally:{self.ally_a.id}", f"ally:{self.ally_b.id}"])
+
+        by_id = {p["character_id"]: p for p in result.participants}
+        # 충전은 기술 효율 비례를 곱하지 않는다: floor(기술 위력 2) = 2
+        self.assertEqual(by_id[self.ally_a.id]["mp"], 2)
+        event = next(e for e in result.log[-1]["events"] if "아군 A MP" in e)
+        self.assertEqual(result.log[-1]["calculations"][event], "min(floor(기술 위력 2), 잃은 MP 10)")
+
     def test_charge_rejects_caster_as_target(self):
         with self.assertRaises(HTTPException):
             self._resolve(self.charge, [f"ally:{self.caster.id}", f"ally:{self.ally_a.id}"])

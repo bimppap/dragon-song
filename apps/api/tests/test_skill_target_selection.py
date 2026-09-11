@@ -21,7 +21,7 @@ class SkillTargetSelectionTest(unittest.TestCase):
         self.assertEqual(_skill_target_count({"target": "SELF"}), 1)
         self.assertEqual(_skill_target_count({"target": None}), 1)
 
-    def test_skill_damage_applies_proportional_and_fixed_efficiency_in_order(self):
+    def test_skill_damage_applies_proportional_efficiency_without_fixed_efficiency(self):
         actor = {
             "atk": 10,
             "atk_p": 0.1,
@@ -32,12 +32,13 @@ class SkillTargetSelectionTest(unittest.TestCase):
 
         damage, formula = _damage_from_skill_power(actor, skill_power=3, skill_eff_fixed=0.1)
 
-        self.assertEqual(damage, 41)
+        # 기술 효율 고정 5는 더하지 않는다: floor(10 × 1.1 × (3 × 1.1)) = 36
+        self.assertEqual(damage, 36)
         self.assertEqual(
             f"min({formula}, 남은 체력 2500)",
             "min(floor(공격력 10 × (1 + 공격력 증폭률 0.1) × "
             "(기술 위력 3 × (1 + 기술 효율 비례 0.1)) × "
-            "(1 + 피해 증폭 0) + 기술 효율 고정 5), 남은 체력 2500)",
+            "(1 + 피해 증폭 0)), 남은 체력 2500)",
         )
 
 
