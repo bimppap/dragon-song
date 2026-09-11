@@ -1684,6 +1684,7 @@ export interface BattleSummonState {
 }
 
 export interface BattleStatusEffect {
+  source_character_id?: number | null;
   stack_source?: string;
   affinity: "buff" | "debuff";
   effect_type: string;

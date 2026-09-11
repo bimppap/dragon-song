@@ -5702,8 +5702,6 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             raise HTTPException(status_code=400, detail="현재 행동할 수 없는 에너미가 포함되어 있습니다.")
         actions_by_enemy.setdefault(action.enemy_id, []).append(action)
         if action.kind == "none":
-            if enemy.get("action_count") is not None and enemy["skills"]:
-                raise HTTPException(status_code=400, detail=f"{enemy['name']}: 각 행동에 사용할 스킬을 선택해 주세요.")
             continue
         index = action.skill_index
         if index is None or not 0 <= index < len(enemy["skills"]):

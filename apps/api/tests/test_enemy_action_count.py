@@ -79,7 +79,7 @@ class EnemyActionCountTest(unittest.TestCase):
 
     def test_missing_excess_and_unselected_actions_rejected_without_turn_changes(self):
         for actions in [[], [self.action(1)], [self.action(1)] * 3,
-                        [self.action(1), {"enemy_id": self.enemy.id, "kind": "none"}],
+                        [self.action(1), {"enemy_id": self.enemy.id, "kind": "attack"}],
                         [self.action(1), {**self.action(1), "skill_index": 99}],
                         [self.action(1), {**self.action(2), "kind": "attack"}]]:
             with self.subTest(actions=actions):
@@ -92,6 +92,29 @@ class EnemyActionCountTest(unittest.TestCase):
                 self.assertEqual(battle.round_snapshots, [])
                 self.assertEqual(battle.participants, before)
                 crud.terminate_battle(self.db, battle.id)
+
+    def test_all_enemies_can_skip_all_actions_and_advance_round(self):
+        battle = self.start()
+        battle.enemies = [*battle.enemies, {**copy.deepcopy(battle.enemies[0]), "enemy_id": 99, "action_count": 1}]
+        self.db.commit()
+        actions = [{"enemy_id": enemy_id, "kind": "none"} for enemy_id in [self.enemy.id, self.enemy.id, 99]]
+        result = crud.resolve_battle_telegraph(self.db, battle.id, BattleTelegraphRequest(enemy_actions=actions))
+        self.assertEqual(result.phase, "ally")
+        self.assertEqual([a["kind"] for a in result.pending_enemy_actions], ["none"] * 3)
+        result = self.enemy_turn(battle)
+        self.assertEqual((result.phase, result.round, result.status), ("telegraph", 2, "in_progress"))
+        self.assertEqual([p["hp"] for p in result.participants], [100, 100])
+        self.assertEqual(result.pending_enemy_actions, [])
+        self.assertEqual(sum("무반응" in event for event in result.log[-1]["events"]), 3)
+
+    def test_no_response_can_mix_with_attack(self):
+        battle = self.start()
+        crud.resolve_battle_telegraph(self.db, battle.id, BattleTelegraphRequest(enemy_actions=[
+            {"enemy_id": self.enemy.id, "kind": "none"}, self.action(1),
+        ]))
+        result = self.enemy_turn(battle)
+        self.assertEqual(result.participants[0]["hp"], 90)
+        self.assertEqual((result.phase, result.round), ("telegraph", 2))
 
     def test_debuff_then_attack_uses_changed_defense_and_reversed_order_does_not(self):
         for indices, expected_hp in [([0, 1], 70), ([1, 0], 90)]:

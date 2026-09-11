@@ -216,6 +216,7 @@ interface StackBarItem {
   color?: string;
   /** 상태이상처럼 강화/약화로 색이 정해지는 경우 */
   tone?: "buff" | "debuff";
+  direction?: "left" | "right";
 }
 
 const STACK_BAR_TONE = {
@@ -250,7 +251,7 @@ function StackBars({ items, className }: { items: StackBarItem[]; className?: st
               <span
                 key={index}
                 aria-hidden="true"
-                className={cn("block h-2.5 w-0.5 rotate-20 rounded-full", item.tone && STACK_BAR_TONE[item.tone].bar)}
+                className={cn("block h-2.5 w-0.5 rounded-full", item.direction === "left" ? "-rotate-20" : "rotate-20", item.tone && STACK_BAR_TONE[item.tone].bar)}
                 style={item.tone ? undefined : { backgroundColor: item.color }}
               />
             ))}
@@ -1195,7 +1196,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     const actingEnemies = session.enemies.filter((enemy) => isEnemyTargetable(enemy, session.round));
     for (const enemy of actingEnemies) {
       const actions = telegraphDrafts[enemy.enemy_id]?.actions ?? [];
-      if (actions.length !== (enemy.action_count ?? 1) || (enemy.skills.length > 0 && actions.some((action) => action.skill_index == null))) {
+      if (actions.length !== (enemy.action_count ?? 1) || actions.some((action) => action.kind !== "none" && action.skill_index == null)) {
         toast(`${enemy.name}: 행동횟수에 맞춰 스킬 ${enemy.action_count ?? 1}개를 순서대로 선택해 주세요.`, "error");
         return;
       }
@@ -2049,6 +2050,18 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
           // 표시할 배지를 먼저 모은다. 바깥 조건을 따로 적어 두면 안쪽 조건과 어긋나기 쉽고,
           // 그때 빈 컨테이너가 남아 space-y 간격만큼 카드가 혼자 높아진다.
+          const selfBuffs = (p.status_effects ?? []).filter((effect) =>
+            effect.affinity === "buff" && effect.source_character_id === p.character_id,
+          );
+          const otherEffects = displayStatusEffects((p.status_effects ?? []).filter((effect) =>
+            effect.affinity !== "buff" || effect.source_character_id !== p.character_id,
+          ));
+          const stackBars: StackBarItem[] = [
+            ...(p.environment_stacks ?? []).map((stack) => ({
+              key: `environment:${stack.id}`, label: stack.name, count: stack.count, color: stack.color,
+            })),
+            ...statusEffectBarItems(selfBuffs).map((item): StackBarItem => ({ ...item, direction: "left" })),
+          ];
           const statusBadges = [
             p.downed && <Badge key="downed" variant="destructive" className="text-[10px]">기절</Badge>,
             p.retreated && <Badge key="retreated" variant="secondary" className="text-[10px]">퇴각</Badge>,
@@ -2158,20 +2171,15 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       </div>
                     )}
 
-                    <StackBars items={(p.environment_stacks ?? []).map((stack) => ({
-                      key: String(stack.id),
-                      label: stack.name,
-                      count: stack.count,
-                      color: stack.color,
-                    }))} />
+                    <StackBars items={stackBars} />
 
                     {statusBadges.length > 0 && (
                       <div className="flex flex-wrap gap-2">{statusBadges}</div>
                     )}
 
-                    {p.status_effects != null && p.status_effects.length > 0 && (
+                    {otherEffects.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
-                        {displayStatusEffects(p.status_effects).map((effect, index) => {
+                        {otherEffects.map((effect, index) => {
                           const isBuff = effect.affinity === "buff";
                           const label = effect.skill_name || effect.var_name || effect.effect_type;
                           return (
