@@ -54,6 +54,7 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import { useBattleSocket, type BattleDraftPreview, type BattleDraftPreviewEntry, type BattleDraftSnapshot, type BattleEditingState } from "@/lib/useBattleSocket";
 import { isAdminRole, useAuth } from "@/lib/auth";
+import AllyTargetBookmarks, { type AllyTargetBookmark } from "./AllyTargetBookmarks";
 import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
@@ -305,25 +306,38 @@ function ResourceBar({
   value,
   max,
   color,
+  shield = 0,
 }: {
   icon: LucideIcon;
   iconClassName?: string;
   value: number;
   max: number;
   color: string;
+  shield?: number;
 }) {
-  const pct = max > 0 ? Math.min(100, Math.max(0, (value / max) * 100)) : 0;
+  const current = Math.max(0, value);
+  const currentShield = Math.max(0, shield);
+  // 최대 체력을 넘는 보호막도 잘리지 않게 HP와 보호막을 같은 비율로 표시한다.
+  const scale = currentShield > 0 ? Math.max(max, current + currentShield) : max;
+  const pct = scale > 0 ? Math.min(100, (current / scale) * 100) : 0;
+  const shieldPct = scale > 0 ? (currentShield / scale) * 100 : 0;
+  const label = `${fmt(value)}/${fmt(max)}${currentShield > 0 ? ` + ${fmt(currentShield)} 보호막` : ""}`;
 
   return (
     <div className="flex items-center gap-2">
       <Icon className={cn("h-3.5 w-3.5 shrink-0", iconClassName)} />
-      <div className="relative h-[18px] flex-1 overflow-hidden rounded-full border border-line bg-white/10">
-        <div
-          className={cn("h-full rounded-full transition-all", color)}
-          style={{ width: `${pct}%` }}
-        />
-        <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-num text-[10px] font-semibold text-ivory">
-          {fmt(value)}/{fmt(max)}
+      <div className="relative h-[18px] flex-1 overflow-hidden rounded-full border border-line bg-white/10" aria-label={label} title={label}>
+        <div className="flex h-full">
+          <div
+            className={cn("h-full shrink-0 transition-all", currentShield > 0 ? "rounded-l-full" : "rounded-full", color)}
+            style={{ width: `${pct}%` }}
+          />
+          {currentShield > 0 && (
+            <div className="h-full shrink-0 rounded-r-full bg-gold transition-all" style={{ width: `${shieldPct}%` }} />
+          )}
+        </div>
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-num text-[10px] font-semibold text-ivory [text-shadow:0_1px_2px_black]">
+          {label}
         </span>
       </div>
     </div>
@@ -454,6 +468,21 @@ function draftTargetNames(
     default:
       return [];
   }
+}
+
+/** 제출 시 사용하는 대상 규칙으로 아군 지원 표시를 만든다. */
+function draftAllyTargetIds(actor: BattleParticipant, draft: CharDraft, skill: BattleActiveSkill | null, session: BattleSession): number[] {
+  if (draft.kind === "defend") return actor.faction === "수비" ? [draft.protect_target_character_id ?? actor.character_id] : [];
+  if (draft.kind === "heal") return draft.target_character_id == null ? [] : [draft.target_character_id];
+  if (draft.kind !== "skill" || !skill) return [];
+  if (AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name)) {
+    const candidates = session.participants.filter((p) => isHealable(p, session.round));
+    return (ALL_ALLY_TARGET_SKILL_NAMES.has(skill.default_name) ? candidates : [...candidates].sort((a, b) => a.hp - b.hp).slice(0, getBattleSkillTargetCount(skill))).map((p) => p.character_id);
+  }
+  const mode = getBattleSkillTargetMode(skill);
+  if (mode === "self") return [actor.character_id];
+  if (!mode.startsWith("ally")) return [];
+  return (draft.skill_target_keys ?? []).filter((key) => key.startsWith("ally:")).map((key) => Number(key.slice(5)));
 }
 
 /** 러너 미리보기 배지의 행동 이름. 기술/소비는 무엇을 쓰는지까지 함께 보여준다. */
@@ -1023,6 +1052,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           target_character_id: charDraft.target_character_id,
           protect_target_character_id: charDraft.protect_target_character_id,
           target_names: draftTargetNames(actor, charDraft, skill, session),
+          ally_target_ids: draftAllyTargetIds(actor, charDraft, skill, session),
         };
       }
       sendBattleWs({ type: "draft_update", version: session.updated_at, draft, sources: charDrafts });
@@ -2050,11 +2080,42 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
 
           // 표시할 배지를 먼저 모은다. 바깥 조건을 따로 적어 두면 안쪽 조건과 어긋나기 쉽고,
           // 그때 빈 컨테이너가 남아 space-y 간격만큼 카드가 혼자 높아진다.
+          const bookmarks: AllyTargetBookmark[] = (p.status_effects ?? [])
+            .filter((effect) => effect.effect_type === "escort_guard")
+            .map((effect, index) => ({
+              key: `escort:${effect.source_character_id}:${index}`,
+              casterName: effect.source_name ?? participantsById.get(effect.source_character_id ?? -1)?.name ?? "시전자",
+              name: effect.skill_name ?? "경호",
+              imageUrl: effect.skill_image_url,
+              description: effect.skill_description,
+            }));
+          if (phase === "ally" && session.status === "in_progress") {
+            for (const actor of session.participants) {
+              if (!isActive(actor) || actor.joined_round === session.round) continue;
+              if (readOnly) {
+                const preview = draftPreview?.[actor.character_id];
+                if (!preview?.ally_target_ids?.includes(p.character_id)) continue;
+                bookmarks.push({ key: `draft:${actor.character_id}`, casterName: actor.name,
+                  name: preview.kind === "skill" ? preview.skill_name ?? "기술" : CHAR_ACTION_LABEL[preview.kind],
+                  imageUrl: preview.kind === "skill" ? preview.skill_image_url : FACTION_POSITION_IMAGE[preview.kind === "defend" ? "수비" : "치유"],
+                  description: preview.kind === "skill" ? preview.skill_description : preview.kind === "defend" ? "대상 아군이 받을 공격을 대신 방어합니다." : "대상 아군의 체력을 회복합니다.", pending: true });
+              } else {
+                const action = charDrafts[actor.character_id];
+                if (!action) continue;
+                const skill = action.kind === "skill" ? resolveSelectedSkill(actor.character_id, action.skill_node_id) : null;
+                if (!draftAllyTargetIds(actor, action, skill, session).includes(p.character_id)) continue;
+                bookmarks.push({ key: `draft:${actor.character_id}`, casterName: actor.name,
+                  name: skill?.display_name ?? CHAR_ACTION_LABEL[action.kind],
+                  imageUrl: skill ? skill.image_url : FACTION_POSITION_IMAGE[action.kind === "defend" ? "수비" : "치유"],
+                  description: skill ? skill.description : action.kind === "defend" ? "대상 아군이 받을 공격을 대신 방어합니다." : "대상 아군의 체력을 회복합니다.", pending: true });
+              }
+            }
+          }
           const selfBuffs = (p.status_effects ?? []).filter((effect) =>
             effect.affinity === "buff" && effect.source_character_id === p.character_id,
           );
           const otherEffects = displayStatusEffects((p.status_effects ?? []).filter((effect) =>
-            effect.affinity !== "buff" || effect.source_character_id !== p.character_id,
+            effect.effect_type !== "escort_guard" && (effect.affinity !== "buff" || effect.source_character_id !== p.character_id),
           ));
           const stackBars: StackBarItem[] = [
             ...(p.environment_stacks ?? []).map((stack) => ({
@@ -2083,7 +2144,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
             <div
               key={p.character_id}
               className={cn(
-                "w-full rounded-2xl border p-2.5 transition-colors duration-200",
+                "relative mt-12 w-full rounded-2xl border p-2.5 transition-colors duration-200",
                 !session.pair_battle && "max-w-[21rem]",
                 !active
                   ? "border-line bg-primary-light/10 opacity-60"
@@ -2094,6 +2155,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                       : "border-line bg-surface",
               )}
             >
+              <AllyTargetBookmarks items={bookmarks} />
               <div className="space-y-2.5">
                 <div className="flex gap-2.5">
                   <div className="flex w-16 shrink-0 flex-col gap-1.5 self-start">
@@ -2148,6 +2210,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                         iconClassName="text-rose-500"
                         value={p.hp}
                         max={p.max_hp}
+                        shield={p.shield}
                         color="bg-rose-500"
                       />
                       <ResourceBar

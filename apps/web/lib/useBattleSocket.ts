@@ -8,6 +8,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 /** 확정 전 초안 미리보기 페이로드. 카드 표시에 필요한 값(기술/아이템 아이콘, 행동 대상)만 담는다. */
 export interface BattleDraftPreviewEntry {
+  ally_target_ids?: number[];
   kind: CharacterActionKind;
   skill_node_id: number | null;
   skill_name: string | null;

@@ -29,6 +29,7 @@ class EscortSkillTest(unittest.TestCase):
             trigger_type="지속형", category="강화", stackable=True, var_name="ab_escort",
             cost=0, power=0.05, target="1", target_side="ALLY", activation_order=4, is_public=True,
         )
+        self.node.image_url = "/skill/escort-test.png"
         self.db.add(self.node)
         self.db.flush()
         self.db.add(CharacterSkillUnlock(character_id=self.caster.id, node_id=self.node.id))
@@ -80,7 +81,9 @@ class EscortSkillTest(unittest.TestCase):
         result = self.cast()
         ally = self.participant(result, self.ally.id)
         caster = self.participant(result, self.caster.id)
-        self.assertTrue(any(e.get("effect_type") == "escort_guard" for e in ally["status_effects"]))
+        guard = next(e for e in ally["status_effects"] if e.get("effect_type") == "escort_guard")
+        self.assertEqual(guard["skill_image_url"], "/skill/escort-test.png")
+        self.assertIn("경호 스택", guard["skill_description"])
         reductions = [e for e in caster["status_effects"] if e.get("effect_type") == "escort_damage_reduction"]
         self.assertEqual(len(reductions), 1)
         self.assertAlmostEqual(reductions[0]["value"], 0.2)
@@ -95,6 +98,23 @@ class EscortSkillTest(unittest.TestCase):
         self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
         self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
         self.assertTrue(any("대신 방어" in e for e in result.log[-1]["events"]))
+
+    def test_existing_guard_gets_bookmark_metadata_without_changing_snapshot(self):
+        result = self.cast()
+        participants = [dict(p) for p in result.participants]
+        ally = next(p for p in participants if p["character_id"] == self.ally.id)
+        ally["status_effects"] = [dict(effect) for effect in ally["status_effects"]]
+        guard = next(effect for effect in ally["status_effects"] if effect["effect_type"] == "escort_guard")
+        guard.pop("skill_image_url")
+        guard.pop("skill_description")
+        self.battle.participants = participants
+        self.db.commit()
+        result = crud._to_battle_session_read(self.db, self.battle)
+        guard = next(effect for effect in self.participant(result, self.ally.id)["status_effects"] if effect["effect_type"] == "escort_guard")
+        self.assertEqual(guard["skill_image_url"], "/skill/escort-test.png")
+        self.assertIn("경호 스택", guard["skill_description"])
+        stored_ally = next(p for p in self.battle.participants if p["character_id"] == self.ally.id)
+        self.assertNotIn("skill_description", stored_ally["status_effects"][0])
 
     def test_reduction_applies_without_defending(self):
         """경호 버프의 피해 감소는 방어 행동 여부와 무관하게 항상 적용된다."""

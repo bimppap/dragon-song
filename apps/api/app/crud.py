@@ -5243,6 +5243,23 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
          "color": environments[env_id].color if env_id in environments else "#e879f9", "count": count}
         for env_id, count in participant.get("env_stacks", {}).items() if count > 0
     ]} for participant in session.participants]
+    # 이전 전투의 경호에도 시전자별 커스텀 아이콘과 설명을 보충한다.
+    missing_guard_metadata = any(
+        effect.get("effect_type") == "escort_guard" and "skill_description" not in effect
+        for participant in participants for effect in participant.get("status_effects", [])
+    )
+    if missing_guard_metadata:
+        skills_by_actor = _battle_skills_by_participant(db, participants, cached=True)
+        for participant in participants:
+            participant["status_effects"] = [dict(effect) for effect in participant.get("status_effects", [])]
+            for effect in participant["status_effects"]:
+                if effect.get("effect_type") != "escort_guard" or "skill_description" in effect:
+                    continue
+                skill = next((skill for skill in skills_by_actor.get(effect.get("source_character_id"), {}).values()
+                              if skill.get("var_name") == "ab_escort"), None)
+                if skill:
+                    effect["skill_image_url"] = skill.get("image_url")
+                    effect["skill_description"] = skill.get("description")
     return BattleSessionRead(
         id=session.id,
         mode=session.mode,
@@ -6362,9 +6379,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         existing_guard[0]["source_character_id"] = p["character_id"]
                         existing_guard[0]["source_name"] = p["name"]
                         existing_guard[0]["skill_name"] = skill_name
+                        existing_guard[0]["skill_image_url"] = selected_skill.get("image_url")
+                        existing_guard[0]["skill_description"] = selected_skill.get("description")
                     else:
                         _add_status_effect(target, {
                             "effect_type": "escort_guard", "affinity": "buff",
+                            "skill_image_url": selected_skill.get("image_url"),
+                            "skill_description": selected_skill.get("description"),
                             "source_character_id": p["character_id"], "source_name": p["name"],
                             "skill_name": skill_name, "var_name": var_name, "stackable": True,
                         }, participants=participants, enemies=enemies)
