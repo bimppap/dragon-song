@@ -98,7 +98,8 @@ export default function ChapterTab() {
     setChapters((prev) => prev.map((chapter) => chapter.id === updated.id ? updated : chapter));
   }
 
-  const canCreate = form.name.trim() !== "" && form.start_date !== "" && form.end_date !== "" && form.battle_date !== "";
+  // 전투 일정·시각은 선택 입력이다.
+  const canCreate = form.name.trim() !== "" && form.start_date !== "" && form.end_date !== "";
 
   function openCreate() {
     setForm(EMPTY_FORM); setImageFile(null); setImagePreview(null); setMusicFile(null); setError(null);
@@ -213,7 +214,7 @@ export default function ChapterTab() {
         </div>
         <div className="flex items-center gap-2">
           <span className="shrink-0 text-sm text-muted">전투 일정</span>
-          <DatePicker className="min-w-0 flex-1" value={form.battle_date} onChange={(value) => setForm((prev) => ({ ...prev, battle_date: value }))} />
+          <DatePicker className="min-w-0 flex-1" placeholder="미정 (선택)" clearable value={form.battle_date} onChange={(value) => setForm((prev) => ({ ...prev, battle_date: value, battle_time: value ? prev.battle_time : "" }))} />
           <TimePicker
             className="w-32 shrink-0"
             placeholder="시각"
@@ -258,7 +259,7 @@ export default function ChapterTab() {
         </div>
         <div className="flex items-center gap-2">
           <span className="shrink-0 text-sm text-muted">전투 일정</span>
-          <DatePicker className="min-w-0 flex-1" value={editForm.battle_date} onChange={(value) => setEditForm((prev) => ({ ...prev, battle_date: value }))} />
+          <DatePicker className="min-w-0 flex-1" placeholder="미정 (선택)" clearable value={editForm.battle_date} onChange={(value) => setEditForm((prev) => ({ ...prev, battle_date: value, battle_time: value ? prev.battle_time : "" }))} />
           <TimePicker
             className="w-32 shrink-0"
             placeholder="시각"

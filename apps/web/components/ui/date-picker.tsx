@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { CalendarDays } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import Modal from "@/components/common/Modal";
 import { cn, toDateValue } from "@/lib/utils";
@@ -16,6 +17,8 @@ interface Props {
   disabledDates?: string[];
   placeholder?: string;
   className?: string;
+  /** 선택한 날짜를 비울 수 있게 "지우기" 버튼을 보여준다. 지우면 빈 문자열로 onChange한다. */
+  clearable?: boolean;
 }
 
 function parseDateValue(value: string | null): Date | undefined {
@@ -40,6 +43,7 @@ export default function DatePicker({
   disabledDates,
   placeholder = "날짜 선택",
   className,
+  clearable = false,
 }: Props) {
   const [open, setOpen] = useState(false);
   const disabledSet = disabledDates ? new Set(disabledDates) : null;
@@ -78,6 +82,11 @@ export default function DatePicker({
             return false;
           }}
         />
+        {clearable && value && (
+          <div className="mt-3 flex justify-end">
+            <Button type="button" variant="ghost" onClick={() => { onChange(""); setOpen(false); }}>지우기</Button>
+          </div>
+        )}
       </Modal>
     </>
   );
