@@ -2,7 +2,7 @@
 
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { ArrowLeft, Ban, Check, Eye, Files, Heart, HeartPulse, Link2, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Ban, Check, Eye, Files, Heart, HeartPulse, Link2, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -59,7 +59,7 @@ import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
 import BattlePairGrid from "./BattlePairGrid";
-import { sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
+import { reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
 
 function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect[] {
   const result: BattleStatusEffect[] = [];
@@ -142,6 +142,7 @@ const PARTICIPANT_SORTS: { value: ParticipantSort; label: string }[] = [
   { value: "hp", label: "체력 비율순" },
   { value: "position", label: "포지션 순" },
 ];
+const RUNNER_PARTICIPANT_SORTS = PARTICIPANT_SORTS.filter(({ value }) => value === "hp");
 
 /** 이름 옆에 붙는 포지션(공격/수비/치유) 아이콘. */
 function ParticipantFactionIcon({ faction }: { faction: BattleParticipant["faction"] }) {
@@ -321,7 +322,7 @@ function ResourceBar({
   const scale = currentShield > 0 ? Math.max(max, current + currentShield) : max;
   const pct = scale > 0 ? Math.min(100, (current / scale) * 100) : 0;
   const shieldPct = scale > 0 ? (currentShield / scale) * 100 : 0;
-  const label = `${fmt(value)}/${fmt(max)}${currentShield > 0 ? ` + ${fmt(currentShield)} 보호막` : ""}`;
+  const label = `${fmt(value)}/${fmt(max)}${currentShield > 0 ? ` + ${fmt(currentShield)}` : ""}`;
 
   return (
     <div className="flex items-center gap-2">
@@ -773,6 +774,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const skillsByCharacter = loadedSkills?.key === activeSkillLoadoutKey ? loadedSkills.skills : EMPTY_BATTLE_SKILLS;
   const skillsReady = readOnly || loadedSkills?.key === activeSkillLoadoutKey;
   const [participantSort, setParticipantSort] = useState<ParticipantSort>("attention");
+  const [pairGrouped, setPairGrouped] = useState(true);
 
   const [joinOpen, setJoinOpen] = useState(false);
   const [joinCandidates, setJoinCandidates] = useState<Character[]>([]);
@@ -1477,6 +1479,24 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     });
   }, [session?.participants, effectiveParticipantSort]);
 
+  const showPairGroups = !!session?.pair_battle && pairGrouped;
+  function selectParticipantSort(value: ParticipantSort) {
+    setParticipantSort(value);
+    setPairGrouped(false);
+  }
+  // 페어 묶음을 풀어 보는 동안에는 카드마다 페어 상대 이름을 붙인다.
+  const pairPartnerNameById = useMemo(() => {
+    const names = new Map<number, string>();
+    if (!session?.pair_battle || pairGrouped) return names;
+    const nameById = new Map((session?.participants ?? []).map((participant) => [participant.character_id, participant.name]));
+    for (const pair of reconcileBattlePairs(session?.pairs ?? [], [...nameById.keys()])) {
+      if (pair.length !== 2) continue;
+      names.set(pair[0], nameById.get(pair[1])!);
+      names.set(pair[1], nameById.get(pair[0])!);
+    }
+    return names;
+  }, [session?.pair_battle, session?.pairs, session?.participants, pairGrouped]);
+
   const editingFieldByInputId = useMemo(() => {
     const fields = new Map<string, BattleEditingState["field"]>();
     for (const state of Object.values(remoteEditing)) fields.set(state.input_id, state.field);
@@ -1803,18 +1823,30 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         </div>
       )}
 
-      {isAdmin && !session.pair_battle && (
-        <div className="flex items-center justify-end gap-2">
+      {(isAdmin || session.pair_battle) && (
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-xs font-semibold text-muted">캐릭터 정렬</span>
-          <div className="flex rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
-            {PARTICIPANT_SORTS.map(({ value, label }) => (
+          <div className="flex flex-wrap rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
+            {/* 페어 전투는 페어 묶음 보기가 기본이고, 러너도 체력 비율순으로 풀어 볼 수 있다. */}
+            {session.pair_battle && (
+              <Button
+                type="button"
+                size="sm"
+                variant={pairGrouped ? "default" : "ghost"}
+                aria-pressed={pairGrouped}
+                onClick={() => setPairGrouped(true)}
+              >
+                페어순
+              </Button>
+            )}
+            {(isAdmin ? PARTICIPANT_SORTS : RUNNER_PARTICIPANT_SORTS).map(({ value, label }) => (
               <Button
                 key={value}
                 type="button"
                 size="sm"
-                variant={participantSort === value ? "default" : "ghost"}
-                aria-pressed={participantSort === value}
-                onClick={() => setParticipantSort(value)}
+                variant={!showPairGroups && effectiveParticipantSort === value ? "default" : "ghost"}
+                aria-pressed={!showPairGroups && effectiveParticipantSort === value}
+                onClick={() => selectParticipantSort(value)}
               >
                 {label}
               </Button>
@@ -1833,8 +1865,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       )}
       <BattlePairGrid
         characters={sortedParticipants.map((participant) => ({ id: participant.character_id, name: participant.name }))}
-        pairs={session.pair_battle ? session.pairs : null}
-        onSwap={canAct && session.pair_battle ? handlePairSwap : undefined}
+        pairs={showPairGroups ? session.pairs : null}
+        onSwap={canAct && showPairGroups ? handlePairSwap : undefined}
         disabled={savingPairs}
       >
         {sortedParticipants.map((p) => {
@@ -2145,7 +2177,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
               key={p.character_id}
               className={cn(
                 "relative mt-12 w-full rounded-2xl border p-2.5 transition-colors duration-200",
-                !session.pair_battle && "max-w-[21rem]",
+                !showPairGroups && "max-w-[21rem]",
                 !active
                   ? "border-line bg-primary-light/10 opacity-60"
                   : showActionUi
@@ -2197,6 +2229,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                     <p className="flex items-center gap-1.5 truncate text-sm font-semibold text-ivory">
                       <ParticipantFactionIcon faction={p.faction} />
                       <span className="truncate">{p.name}</span>
+                      {pairPartnerNameById.has(p.character_id) && (
+                        <span className="inline-flex min-w-0 max-w-[45%] shrink-0 items-center gap-1 text-[11px] font-normal text-gold" title="페어 상대">
+                          <ArrowLeftRight size={11} className="shrink-0" />
+                          <span className="truncate">{pairPartnerNameById.get(p.character_id)}</span>
+                        </span>
+                      )}
                       {!readOnly && (
                         <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-normal text-gold" title="주목도 (관리자 전용)">
                           <Eye size={11} />
