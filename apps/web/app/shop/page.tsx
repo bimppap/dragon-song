@@ -270,6 +270,8 @@ function AdminShop({
       title: "선물 보내기",
       description: `${characterNames}에게 각각 다음 선물을 보낼까요?\n${contents}`,
       confirmText: "보내기",
+      // 실수로 Enter를 눌러 선물이 나가지 않도록 버튼 클릭으로만 보낸다.
+      disableEnterConfirm: true,
     });
     if (!ok) return;
 

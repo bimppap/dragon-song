@@ -15,6 +15,9 @@ interface DialogOptions {
   tone?: "default" | "danger";
   /** 팝업 최대 너비 (Tailwind max-w-* 클래스). 기본은 max-w-sm. */
   maxWidthClassName?: string;
+  /** Enter 키로 확인되지 않게 한다(확인 버튼 자동 포커스도 끈다).
+   *  선물 전송처럼 실수로 보내면 되돌리기 어려운 창에 쓴다. */
+  disableEnterConfirm?: boolean;
 }
 
 type DialogInput = string | DialogOptions;
@@ -84,9 +87,10 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!dialog) return;
     const isPrompt = dialog.mode === "prompt";
+    const enterConfirms = !dialog.disableEnterConfirm;
     function onKey(e: KeyboardEvent) {
       if (e.key === "Escape") close(false);
-      else if (e.key === "Enter") close(isPrompt ? promptValue : true);
+      else if (e.key === "Enter" && enterConfirms) close(isPrompt ? promptValue : true);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -129,7 +133,8 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
                 size="sm"
                 variant={dialog.tone === "danger" ? "destructive" : "default"}
                 onClick={() => close(dialog.mode === "prompt" ? promptValue : true)}
-                autoFocus={dialog.mode !== "prompt"}
+                // 자동 포커스된 버튼은 Enter로도 눌리므로, Enter 확인을 끈 창에서는 포커스도 주지 않는다.
+                autoFocus={dialog.mode !== "prompt" && !dialog.disableEnterConfirm}
               >
                 {dialog.confirmText ?? "확인"}
               </Button>

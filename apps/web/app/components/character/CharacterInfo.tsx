@@ -800,6 +800,8 @@ function OwnedItemTile({
               const ok = await confirm({
                 title: "선물 상자 배달 요청",
                 confirmText: "요청하기",
+                // 실수로 Enter를 눌러 요청이 나가지 않도록 버튼 클릭으로만 보낸다.
+                disableEnterConfirm: true,
                 content: (
                   <DeliveryFreeformForm
                     recipients={recipients}
