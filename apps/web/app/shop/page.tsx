@@ -21,6 +21,7 @@ import {
 import type { Character, Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/common/PageContainer";
+import TabBar from "@/components/common/TabBar";
 import { useRequireMember } from "@/lib/auth";
 import { useDialog } from "@/components/common/DialogProvider";
 
@@ -149,9 +150,11 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
 function RunnerShop({
   characterId,
   shopOpen,
+  embedded = false,
 }: {
   characterId: number;
   shopOpen: boolean;
+  embedded?: boolean;
 }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [balance, setBalance] = useState<{ gold: number; cp: number } | null>(null);
@@ -171,52 +174,61 @@ function RunnerShop({
     return () => { cancelled = true; };
   }, [characterId, refreshKey]);
 
+  const content = (
+    <ShopContentFrame closed={!shopOpen}>
+      <div className="flex flex-col items-start gap-6 lg:flex-row">
+        <div className="w-full min-w-0 flex-1">
+          <ShopGrid
+            characterId={characterId}
+            cartItemIds={cartItemIds}
+            onAddToCart={handleAddToCart}
+            refreshKey={refreshKey}
+          />
+        </div>
+        <div className="flex w-full shrink-0 flex-col gap-2 lg:w-72">
+          <p className="text-sm text-muted" aria-live="polite">
+            보유 골드 <span className="font-num font-semibold text-gold">{balance ? `${balance.gold.toLocaleString()} G` : "-"}</span>
+            <span className="px-2 text-line">·</span>
+            보유 CP <span className="font-num font-semibold text-cyan-600">{balance ? balance.cp.toLocaleString() : "-"}</span>
+          </p>
+          <Cart
+            entries={cart}
+            loading={cartLoading}
+            onUpdateQty={handleUpdateQty}
+            onRemove={handleRemove}
+            onPurchase={handlePurchase}
+          />
+        </div>
+      </div>
+    </ShopContentFrame>
+  );
+
+  if (embedded) return content;
+
   return (
     <PageContainer className="space-y-8">
       <div className="flex flex-col gap-2">
         <h1 className="text-2xl font-bold tracking-tight text-ivory">상점</h1>
         <p className="text-sm text-muted">보유 골드로 아이템을 구매할 수 있습니다.</p>
       </div>
-
-      <ShopContentFrame closed={!shopOpen}>
-        <div className="flex flex-col items-start gap-6 lg:flex-row">
-          <div className="w-full min-w-0 flex-1">
-            <ShopGrid
-              characterId={characterId}
-              cartItemIds={cartItemIds}
-              onAddToCart={handleAddToCart}
-              refreshKey={refreshKey}
-            />
-          </div>
-          <div className="flex w-full shrink-0 flex-col gap-2 lg:w-72">
-            <p className="text-sm text-muted" aria-live="polite">
-              보유 골드 <span className="font-num font-semibold text-gold">{balance ? `${balance.gold.toLocaleString()} G` : "-"}</span>
-              <span className="px-2 text-line">·</span>
-              보유 CP <span className="font-num font-semibold text-cyan-600">{balance ? balance.cp.toLocaleString() : "-"}</span>
-            </p>
-            <Cart
-              entries={cart}
-              loading={cartLoading}
-              onUpdateQty={handleUpdateQty}
-              onRemove={handleRemove}
-              onPurchase={handlePurchase}
-            />
-          </div>
-        </div>
-      </ShopContentFrame>
+      {content}
     </PageContainer>
   );
 }
 
 function AdminShop({
+  characterId,
   shopOpen,
   onShopOpenChange,
 }: {
   shopOpen: boolean;
+  characterId: number | null;
   onShopOpenChange: (isOpen: boolean) => void;
 }) {
   const { confirm, alert } = useDialog();
   const [managing, setManaging] = useState(false);
+  const [mode, setMode] = useState<"purchase" | "gift">(characterId == null ? "gift" : "purchase");
+  const purchasing = characterId != null && mode === "purchase";
   const [characters, setCharacters] = useState<Character[]>([]);
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<number[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -306,7 +318,9 @@ function AdminShop({
           <p className="text-sm text-muted">
             {managing
               ? "아이템을 관리하고 구매 내역을 확인할 수 있습니다."
-              : "캐릭터를 선택해 골드·CP·경험치·아이템을 선물로 보낼 수 있습니다."}
+              : purchasing
+                ? "보유 골드로 아이템을 구매할 수 있습니다."
+                : "캐릭터를 선택해 골드·CP·경험치·아이템을 선물로 보낼 수 있습니다."}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -326,8 +340,18 @@ function AdminShop({
         </div>
       </div>
 
+      {!managing && characterId != null && (
+        <TabBar
+          tabs={[{ id: "purchase", label: "구매" }, { id: "gift", label: "선물 보내기" }]}
+          active={mode}
+          onChange={setMode}
+        />
+      )}
+
       {managing ? (
         <ShopAdminPanel />
+      ) : purchasing ? (
+        <RunnerShop key={characterId} characterId={characterId} shopOpen={shopOpen} embedded />
       ) : (
         <ShopContentFrame closed={!shopOpen}>
           <div className="flex flex-col items-start gap-6 lg:flex-row">
@@ -381,7 +405,7 @@ export default function ShopPage() {
   if (!member) return null;
 
   if (member.role === "ADMIN" || member.role === "STAFF") {
-    return <AdminShop shopOpen={shopOpen} onShopOpenChange={setShopOpen} />;
+    return <AdminShop key={member.id} characterId={member.character_id ?? null} shopOpen={shopOpen} onShopOpenChange={setShopOpen} />;
   }
 
   return <RunnerShop characterId={member.character_id!} shopOpen={shopOpen} />;
