@@ -221,6 +221,32 @@ class EscortSpecTest(unittest.TestCase):
         self.assertIn("25%", dynamic_derived_description("ab_escort", 5))
         self.assertIn("최대 2스택", dynamic_derived_description("ab_escort", 2))
 
+    def test_runner_custom_name_drops_the_depth_numeral(self):
+        """단계 숫자는 기본 이름을 구분하려고 붙는 것이라, 러너가 직접 지은 이름에는 붙지 않는다."""
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine)
+        db = Session(engine)
+        try:
+            crud.get_skill_nodes(db, "불굴의 서")
+            node = db.query(SkillNode).filter_by(book="불굴의 서", branch=0, col=1, tier=3).one()
+            runner = Character(name="러너", faction="수비", hp=100, hp_max=100, skill_lv=3)
+            db.add(runner)
+            db.flush()
+            db.add(CharacterSkillUnlock(character_id=runner.id, node_id=node.id, custom_name="테스트"))
+            db.commit()
+
+            tree = crud.get_character_skill_tree(db, runner.id, "불굴의 서")
+            self.assertEqual(next(n for n in tree.nodes if n.id == node.id).display_name, "테스트")
+            self.assertEqual(
+                crud._battle_skill_name(crud._battle_skill_dict(node, skill_lv=3, custom_name="테스트")),
+                "테스트",
+            )
+            # 커스텀 이름이 없으면 종전대로 depth 숫자가 붙는다.
+            self.assertEqual(crud._battle_skill_name(crud._battle_skill_dict(node, skill_lv=3)), "경호 III")
+        finally:
+            db.close()
+            engine.dispose()
+
     def test_legacy_resolution_row_resolves_to_escort(self):
         """기존 DB에 '결의'로 시드된 행도 읽을 때 경호 스펙으로 해석된다."""
         engine = create_engine("sqlite:///:memory:")

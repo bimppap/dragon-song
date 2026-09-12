@@ -3816,10 +3816,13 @@ def _format_skill_name_for_level(name: str, var_name: str | None, skill_lv: int)
 
 
 def _skill_display_name(node: SkillNode, *, skill_lv: int, custom_name: str | None = None) -> str:
-    base_name = custom_name if custom_name else _resolved_skill_node_name(node)
-    if _resolved_skill_node_value(node, "var_name") in DEVOTION_DERIVED_VARS | SPEC_DRIVEN_DERIVED_VARS:
+    # 단계 숫자는 같은 기본 이름을 쓰는 단계들을 구분하려고 붙이는 것이라, 러너가 직접 지은 이름에는 붙이지 않는다.
+    if custom_name:
+        return custom_name
+    var_name = _resolved_skill_node_value(node, "var_name")
+    if var_name in DERIVED_VARS:
         skill_lv = node.tier
-    return _format_skill_name_for_level(base_name, _resolved_skill_node_value(node, "var_name"), skill_lv)
+    return _format_skill_name_for_level(_resolved_skill_node_name(node), var_name, skill_lv)
 
 
 def _normalize_duplicate_skill_node_names(db: Session, *, book: str | None = None) -> bool:
@@ -4754,11 +4757,11 @@ def _skill_lv_from_tier(skill: dict) -> int:
 
 
 def _battle_skill_name(skill: dict) -> str:
-    return _format_skill_name_for_level(
-        str(skill.get("display_name") or skill.get("default_name") or "기술"),
-        skill.get("var_name"),
-        _skill_lv_from_tier(skill),
-    )
+    name = str(skill.get("display_name") or skill.get("default_name") or "기술")
+    # 러너가 직접 지은 이름은 이미 완성된 이름이라 단계 숫자를 덧붙이지 않는다.
+    if skill.get("is_custom_name"):
+        return name
+    return _format_skill_name_for_level(name, skill.get("var_name"), _skill_lv_from_tier(skill))
 
 
 def _apply_ongoing_telegraph_skill_effects(
@@ -4983,6 +4986,7 @@ def _battle_skill_dict(
         "tier": node.tier,
         "default_name": _resolved_skill_node_name(node),
         "display_name": _skill_display_name(node, skill_lv=skill_lv, custom_name=custom_name),
+        "is_custom_name": bool(custom_name),
         "image_url": custom_image_url or node.image_url,
         "trigger_type": _resolved_skill_node_value(node, "trigger_type"),
         "category": _resolved_skill_node_value(node, "category"),
