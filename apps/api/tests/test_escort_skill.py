@@ -20,7 +20,7 @@ class EscortSkillTest(unittest.TestCase):
             name="경호원", faction="수비", hp=100, hp_max=100, mp=20, mp_max=20, skill_eff_fixed=0.1,
         )
         self.ally = Character(name="요인", faction="치유", hp=100, hp_max=100)
-        self.ally2 = Character(name="요인2", faction="치유", hp=100, hp_max=100)
+        self.ally2 = Character(name="요인2", faction="수비", hp=100, hp_max=100, mp=3, mp_max=3)
         self.db.add_all([self.caster, self.ally, self.ally2])
         self.db.flush()
 
@@ -98,6 +98,35 @@ class EscortSkillTest(unittest.TestCase):
         self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
         self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
         self.assertTrue(any("대신 방어" in e for e in result.log[-1]["events"]))
+
+    def test_other_defender_preserves_guard_for_later_attack(self):
+        crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(
+            character_actions=[
+                CharacterActionInput(
+                    character_id=self.caster.id, kind="skill",
+                    skill_node_id=self.node.id, target_character_id=self.ally.id,
+                ),
+                CharacterActionInput(
+                    character_id=self.ally2.id, kind="defend",
+                    protect_target_character_id=self.ally.id,
+                ),
+            ],
+        ))
+        result = self.hit()
+        self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 100)
+        self.assertLess(self.participant(result, self.ally2.id)["hp"], 100)
+        guards = crud._status_effects_of_type(self.participant(result, self.ally.id), "escort_guard")
+        self.assertEqual(len(guards), 1)
+        self.assertEqual(guards[0]["source_character_id"], self.caster.id)
+
+        self.battle.phase = "ally"
+        self.db.commit()
+        crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(character_actions=[]))
+        result = self.hit()
+        self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
+        self.assertEqual(crud._status_effects_of_type(self.participant(result, self.ally.id), "escort_guard"), [])
 
     def test_existing_guard_gets_bookmark_metadata_without_changing_snapshot(self):
         result = self.cast()

@@ -7388,8 +7388,6 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     ) -> tuple[dict, int, int, bool, list[dict], str]:
         """방어 지정 대상이 있으면 방어자가 대신 맞고, 반격 버프가 있으면 즉시 처리한다."""
         protector_id = _build_protect_map(participants).get(target["character_id"])
-        target["status_effects"] = [effect for effect in _ensure_status_effects(target)
-                                    if effect.get("effect_type") != "escort_guard"]
         recipient = target
         redirected = False
         if protector_id is not None and protector_id != target["character_id"]:
@@ -7397,6 +7395,12 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             if protector is not None and _combatant_active(protector):
                 recipient = protector
                 redirected = True
+        # 다른 방어자가 대신 맞으면 아직 사용하지 않은 경호 스택은 유지한다.
+        target["status_effects"] = [
+            effect for effect in _ensure_status_effects(target)
+            if effect.get("effect_type") != "escort_guard"
+            or (redirected and effect.get("source_character_id") != recipient["character_id"])
+        ]
         counter_effects = _counter_effects_for_target(recipient)
         extra_reduction = (
             sum(float(effect.get("damage_reduction", 0.0)) for effect in counter_effects)
