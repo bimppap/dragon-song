@@ -474,6 +474,10 @@ def ensure_schema(engine: Engine) -> None:
         if "acquired_via_item" not in {col["name"] for col in inspector.get_columns("challenge_progress")}:
             statements.append("ALTER TABLE challenge_progress ADD COLUMN acquired_via_item BOOLEAN NOT NULL DEFAULT false")
 
+    if "skill_nodes" in table_names:
+        if "description_override" not in {col["name"] for col in inspector.get_columns("skill_nodes")}:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN description_override VARCHAR")
+
     if not statements:
         return
 

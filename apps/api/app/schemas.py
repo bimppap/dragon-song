@@ -1261,6 +1261,10 @@ class SkillNodeRead(BaseModel):
     description: str | None = None
     is_placeholder: bool = False
     is_public: bool = True
+    # 파생기 여부. 발동 타입·분류·중첩·위력을 스펙과 depth가 정하므로 편집 화면에서 그 칸들을 잠근다.
+    is_derived: bool = False
+    # 파생기 중 위력(기본값)만은 관리자가 정하는 기술이 있어, 위력 칸을 열어둘지 따로 알린다.
+    power_editable: bool = True
 
     model_config = {"from_attributes": True}
 

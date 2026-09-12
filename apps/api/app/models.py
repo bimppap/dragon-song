@@ -276,6 +276,8 @@ class SkillNode(Base):
     cleanse_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     formula: Mapped[str | None] = mapped_column(String, nullable=True)  # 계산 공식 (관리자 전용 표시)
     description: Mapped[str | None] = mapped_column(String, nullable=True)  # 개요 (관리자 전용 표시)
+    # 파생기(설명이 depth로 자동 생성되는 기술)에서 관리자가 직접 쓴 설명. 없으면 자동 생성 설명을 쓴다.
+    description_override: Mapped[str | None] = mapped_column(String, nullable=True)
     # skill.xlsx에 값이 비어있어 기획 확정 전 임시로 채운 노드인지 여부 (UI에서 색으로 구분 표시).
     is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))

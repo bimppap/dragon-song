@@ -117,15 +117,22 @@ class DevotionDerivedTest(unittest.TestCase):
         self.assertIn('스킬레벨 2 × 0.15 + 0.10', result.log[-1]['calculations'][heal_event])
         self.assertIn('실제 회복량 5', result.log[-1]['calculations'][damage_event])
 
-    def test_per_depth_power_only_and_legacy_placeholder_resolution(self):
+    def test_admin_edits_stick_per_depth_while_spec_drives_the_rest(self):
         node = self.node(0, 4)
         updated = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='임의 이름', description='임의 설명', power=10, target='SELF'))
-        self.assertEqual((updated.default_name, updated.power, updated.target), ('재생', 10, '1'))
-        self.assertIn('floor(10 +', updated.description)
+        # 이름·설명·대상은 관리자가 정하고, 헌신의 서 파생기는 회복 기본값(power)까지 직접 정한다.
+        self.assertEqual((updated.default_name, updated.description, updated.target), ('임의 이름', '임의 설명', 'SELF'))
+        self.assertEqual(updated.power, 10)
+        # depth마다 따로 저장되므로 다른 depth는 그대로다.
         self.assertEqual(crud._to_skill_node_read(self.node(0, 2)).power, 4)
+        # 설명을 비우면 depth로 자동 생성된 설명으로 되돌아간다.
+        reverted = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='임의 이름', description='', power=10))
+        self.assertIn('floor(10 +', reverted.description)
         hex_node = self.node(2, 5)
         updated = crud.update_skill_node(self.db, hex_node.id, SkillNodeUpdate(default_name='주술', power=0.99))
-        self.assertEqual(updated.power, 0.15)
+        # 저주 회복은 회복 비율이 depth로 고정이라 위력만은 관리자가 바꿀 수 없다.
+        # 같은 서에 같은 이름이 여럿이면 다른 기술과 마찬가지로 depth 숫자가 붙는다.
+        self.assertEqual((updated.default_name, updated.power), ('주술 V', 0.15))
         self.assertIn('85%', updated.description)
         legacy = self.node(1)
         legacy.default_name = '헌혈'
@@ -134,3 +141,13 @@ class DevotionDerivedTest(unittest.TestCase):
         self.db.commit()
         resolved = crud._to_skill_node_read(legacy)
         self.assertEqual((resolved.default_name, resolved.power), ('후광', 4))
+
+    def test_changing_power_keeps_description_following_the_new_value(self):
+        """편집 화면에 채워져 있던 자동 설명을 그대로 두고 위력만 바꾸면, 설명도 새 위력을 따라가야 한다."""
+        node = self.node(0, 3)
+        prefilled = crud._to_skill_node_read(node).description
+        updated = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(
+            default_name=node.default_name, description=prefilled, power=25,
+        ))
+        self.assertIn('floor(25 +', updated.description)
+        self.assertIsNone(self.node(0, 3).description_override)

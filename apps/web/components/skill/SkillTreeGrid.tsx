@@ -97,6 +97,21 @@ function HighlightedDescription({ text, className }: { text: string; className: 
 }
 
 /**
+ * 기술 설명 본문. 수치는 자동으로 강조하고, 작은따옴표로 감싼 구간은 관리자가 직접 고른 강조 구간으로 본다
+ * (따옴표 자체는 서식 기호라 표시하지 않는다).
+ */
+export function DescriptionText({ text, className }: { text: string; className: string }) {
+  // 캡처 그룹이 있는 split이라 홀수 인덱스가 따옴표 안쪽 텍스트다.
+  return text.split(/'([^']+)'/g).map((part, index) => (
+    index % 2 === 0 ? (
+      <span key={index}><HighlightedDescription text={part} className={className} /></span>
+    ) : (
+      <span key={index} className={cn("font-semibold", className)}>{part}</span>
+    )
+  ));
+}
+
+/**
  * 커스텀 기술 설명에서 작은따옴표로 감싼 구간을 강조한다. 따옴표 자체는 서식 기호라 표시하지 않는다.
  * color를 지정하지 않으면 서(book) 기본 강조색을 쓴다. 임의의 색은 클래스로 표현할 수 없어 style로 넣는다.
  */
@@ -179,7 +194,7 @@ export function SkillTooltipContent({
       </ul>
       {node.description && (
         <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-muted">
-          <HighlightedDescription text={node.description} className={accent.text} />
+          <DescriptionText text={node.description} className={accent.text} />
         </p>
       )}
       {node.custom_description && (

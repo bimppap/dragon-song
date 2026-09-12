@@ -3623,6 +3623,11 @@ DEVOTION_DERIVED_VARS = {"ab_regeneration", "ab_halo", "ab_hex_heal"}
 FORTITUDE_DERIVED_VARS = {"ab_veil", "ab_eruption", "ab_escort"}
 VALOR_DERIVED_VARS = {"ab_enchant", "ab_suppressing", "ab_sparge"}
 SPEC_DRIVEN_DERIVED_VARS = FORTITUDE_DERIVED_VARS | VALOR_DERIVED_VARS
+DERIVED_VARS = DEVOTION_DERIVED_VARS | SPEC_DRIVEN_DERIVED_VARS
+# 파생기에서도 관리자가 직접 정하는 표시·운용 항목. 나머지(발동 타입·분류·중첩·위력)는 스펙과 depth가 정한다.
+DERIVED_EDITABLE_FIELDS = {"default_name", "target", "target_side", "activation_order", "cost"}
+# 스펙이 정하는 항목. 관리자가 무엇을 바꾸든 항상 스펙 값을 돌려준다.
+DERIVED_SPEC_FIELDS = {"var_name", "trigger_type", "category", "stackable", "formula", "cleanse_count"}
 SKILL_LEVEL_SUFFIX_VAR_NAMES.update(DEVOTION_DERIVED_VARS | SPEC_DRIVEN_DERIVED_VARS)
 # 탐구의 서 파생: 개선/쇠약은 등급 접미사를 붙이고, 복제는 전투에서 "복제:기술명"으로 표기한다.
 SKILL_LEVEL_SUFFIX_VAR_NAMES.update({"ab_improve", "ab_weaken"})
@@ -3662,37 +3667,71 @@ def _skill_node_is_unsynced(node: SkillNode, spec: dict | None = None) -> bool:
     return bool(resolved_spec) and node.trigger_type is None and resolved_spec.get("trigger_type") is not None
 
 
+def _skill_node_matches_spec(node: SkillNode, spec: dict) -> bool:
+    """노드가 현재 스펙과 같은 기술인지. 스펙이 교체된 슬롯(예: 모루 → 경호)에는 옛 기술의 값이 남아 있어,
+    그 값을 관리자가 편집한 값으로 오해하지 않으려면 이 확인이 필요하다."""
+    return bool(spec) and node.var_name == spec.get("var_name")
+
+
+def _devotion_derived_power(node: SkillNode, spec: dict) -> float:
+    # depth 2 이후는 같은 효과를 공유하며, 명시된 기본값만 노드별로 변경한다.
+    return node.power if _skill_node_matches_spec(node, spec) and node.power is not None else spec["power"]
+
+
+def _devotion_derived_description(node: SkillNode, spec: dict) -> str:
+    power = _devotion_derived_power(node, spec)
+    if spec["var_name"] == "ab_hex_heal":
+        return f"아군 1명의 최대 체력의 {node.tier * 15 + 10}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다."
+    if spec["var_name"] == "ab_regeneration":
+        return f"아군 1명에게 전투 종료까지 체력 재생력(고정) +floor({power:g} + 시전자 기술 효율(고정)/4) 버프를 부여합니다."
+    return f"아군 전원의 현재 체력을 {power:g} + 시전자 기술 효율(고정)/4만큼 회복합니다."
+
+
+def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str | None:
+    """파생기의 depth 기반 자동 설명. 관리자가 설명을 따로 쓰지 않으면 이 값을 보여준다."""
+    resolved_spec = spec if spec is not None else (_skill_spec_for_node(node) or {})
+    var_name = resolved_spec.get("var_name")
+    if var_name in DEVOTION_DERIVED_VARS:
+        return _devotion_derived_description(node, resolved_spec)
+    return dynamic_derived_description(var_name, node.tier)
+
+
 def _resolved_skill_node_value(node: SkillNode, field: str):
     spec = _skill_spec_for_node(node) or {}
+    spec_var_name = spec.get("var_name")
+    # 파생기라도 관리자가 설명을 직접 썼으면 자동 생성 설명 대신 그것을 보여준다.
+    if field == "description" and spec_var_name in DERIVED_VARS:
+        override = (getattr(node, "description_override", None) or "").strip()
+        if override:
+            return override
     # 개선/쇠약/복제는 depth별로 설명이 달라지므로 저장값 대신 tier로 계산한 설명을 준다.
     # (기존 DB에 "설명 준비 중입니다."가 저장돼 있어도 새 설명으로 덮는다.)
     if field == "description":
-        var_name = getattr(node, "var_name", None) or spec.get("var_name")
+        var_name = getattr(node, "var_name", None) or spec_var_name
         dynamic = dynamic_derived_description(var_name, node.tier)
         if dynamic is not None:
             return dynamic
-    if field == "formula" and spec.get("var_name") in SPEC_FORMULA_VAR_NAMES:
+    if field == "formula" and spec_var_name in SPEC_FORMULA_VAR_NAMES:
         return spec["formula"]
     current = getattr(node, field)
-    if spec.get("var_name") in SPEC_DRIVEN_DERIVED_VARS:
+    # 파생기의 편집 가능한 항목은 스펙과 같은 기술로 동기화된 뒤부터 저장값을 따른다.
+    if spec_var_name in DERIVED_VARS and field in DERIVED_EDITABLE_FIELDS and not _skill_node_matches_spec(node, spec):
+        return spec.get(field)
+    if spec_var_name in SPEC_DRIVEN_DERIVED_VARS:
         if field == "is_placeholder":
             return False
-        if field in {"default_name", "var_name", "trigger_type", "category", "stackable", "power", "target", "target_side", "activation_order", "formula", "cleanse_count"}:
+        # 불굴·용맹의 서 파생기는 위력까지 depth가 정한다.
+        if field == "power" or field in DERIVED_SPEC_FIELDS:
             return spec.get(field)
-    if spec.get("var_name") in DEVOTION_DERIVED_VARS:
-        # depth 2 이후는 같은 효과를 공유하며, 명시된 기본값만 노드별로 변경한다.
-        power = node.power if node.var_name == spec["var_name"] and node.power is not None else spec["power"]
+    if spec_var_name in DEVOTION_DERIVED_VARS:
+        power = _devotion_derived_power(node, spec)
         if field == "power":
             return 0.15 if spec["var_name"] == "ab_hex_heal" else power
         if field == "description":
-            if spec["var_name"] == "ab_hex_heal":
-                return f"아군 1명의 최대 체력의 {node.tier * 15 + 10}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다."
-            if spec["var_name"] == "ab_regeneration":
-                return f"아군 1명에게 전투 종료까지 체력 재생력(고정) +floor({power:g} + 시전자 기술 효율(고정)/4) 버프를 부여합니다."
-            return f"아군 전원의 현재 체력을 {power:g} + 시전자 기술 효율(고정)/4만큼 회복합니다."
+            return _devotion_derived_description(node, spec)
         if field == "is_placeholder":
             return False
-        if field in {"default_name", "var_name", "trigger_type", "category", "stackable", "target", "target_side", "activation_order", "formula", "cleanse_count"}:
+        if field in DERIVED_SPEC_FIELDS:
             return spec.get(field)
     if field == "default_name" and _skill_node_is_unsynced(node, spec):
         return current if current not in (None, "") else spec.get("default_name")
@@ -7929,6 +7968,7 @@ def rollback_battle_session(db: Session, session_id: int) -> None:
 # ── Skill Tree ───────────────────────────────────────────────────────────────
 
 def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
+    spec_var_name = (_skill_spec_for_node(node) or {}).get("var_name")
     return SkillNodeRead(
         id=node.id,
         book=node.book,
@@ -7955,6 +7995,9 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         description=_resolved_skill_node_value(node, "description"),
         is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")),
         is_public=node.is_public,
+        is_derived=spec_var_name in DERIVED_VARS,
+        # 헌신의 서 파생기는 회복·재생 기본값을 관리자가 정한다. 나머지 파생기의 위력은 depth가 정한다.
+        power_editable=spec_var_name not in SPEC_DRIVEN_DERIVED_VARS and spec_var_name != "ab_hex_heal",
     )
 
 
@@ -8151,25 +8194,45 @@ def get_skill_nodes(db: Session, book: str) -> list[SkillNodeRead]:
     return [_to_skill_node_read(n) for n in nodes]
 
 
+def _update_derived_skill_node(db: Session, node: SkillNode, data: SkillNodeUpdate, spec: dict) -> SkillNodeRead:
+    """파생기 저장. 발동 타입·분류·중첩·위력은 스펙과 depth가 정하고, 표시·운용 항목만 관리자가 바꾼다."""
+    spec_var_name = spec["var_name"]
+    # 편집 화면에 채워져 있던 자동 설명. 위력을 바꾸면 자동 설명도 바뀌므로, 바꾸기 전에 먼저 잡아둔다.
+    auto_description_before = derived_auto_description(node, spec)
+    # 스펙이 교체된 슬롯(예: 모루 → 경호)에는 옛 기술의 값이 남아 있으므로, 편집 전에 스펙 값으로 맞춘다.
+    if not _skill_node_matches_spec(node, spec):
+        for field in DERIVED_EDITABLE_FIELDS:
+            setattr(node, field, spec.get(field))
+        node.power = spec["power"]
+        node.description_override = None
+        node.var_name = spec_var_name
+    if spec_var_name in DEVOTION_DERIVED_VARS and spec_var_name != "ab_hex_heal" and "power" in data.model_fields_set:
+        if data.power is None or not math.isfinite(data.power) or data.power < 0:
+            raise HTTPException(status_code=400, detail="기본값은 0 이상의 유한한 숫자여야 합니다.")
+        node.power = data.power
+    node.default_name = data.default_name.strip()
+    if "description" in data.model_fields_set:
+        written = (data.description or "").strip()
+        # 자동 설명을 그대로 두고 저장했으면 덮어쓰지 않아, 이후 depth·수치 변경을 계속 따라가게 둔다.
+        untouched = written in (auto_description_before, derived_auto_description(node, spec))
+        node.description_override = None if not written or untouched else written
+    for field in ("target", "target_side", "activation_order", "cost"):
+        if field in data.model_fields_set:
+            setattr(node, field, getattr(data, field))
+    _normalize_duplicate_skill_node_names(db, book=node.book)
+    db.commit()
+    invalidate_active_battle_skills_cache()
+    db.refresh(node)
+    return _to_skill_node_read(node)
+
+
 def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> SkillNodeRead:
     node = db.get(SkillNode, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
     spec = _skill_spec_for_node(node) or {}
-    if spec.get("var_name") in SPEC_DRIVEN_DERIVED_VARS:
-        # 위력은 depth와 시전자 능력치로 자동 결정된다.
-        return _to_skill_node_read(node)
-    if spec.get("var_name") in DEVOTION_DERIVED_VARS:
-        if "power" in data.model_fields_set and spec["var_name"] != "ab_hex_heal":
-            if data.power is None or not math.isfinite(data.power) or data.power < 0:
-                raise HTTPException(status_code=400, detail="기본값은 0 이상의 유한한 숫자여야 합니다.")
-            node.power = data.power
-        elif node.var_name != spec["var_name"]:
-            node.power = spec["power"]
-        node.var_name = spec["var_name"]
-        db.commit()
-        invalidate_active_battle_skills_cache()
-        return _to_skill_node_read(node)
+    if spec.get("var_name") in DERIVED_VARS:
+        return _update_derived_skill_node(db, node, data, spec)
     node.default_name = data.default_name.strip()
     if "description" in data.model_fields_set:
         node.description = data.description.strip() if data.description else None

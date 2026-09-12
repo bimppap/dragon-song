@@ -71,14 +71,31 @@ class VeilSkillTest(unittest.TestCase):
         self.assertEqual(result.participants[0]['hp'], 0)
         self.assertEqual(result.participants[1]['shield'], 8)
 
-    def test_legacy_node_uses_fixed_formula_and_depth(self):
+    def test_legacy_node_syncs_to_spec_and_keeps_admin_name(self):
         node = self.db.query(SkillNode).filter_by(book='불굴의 서', branch=2, col=1, tier=4).one()
         node.var_name = None
         node.description = '이전 설명'
         node.power = 2
         self.db.commit()
         result = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='다른 이름', power=99))
-        self.assertEqual((result.default_name, result.power, result.target), ('장막', 0, 'SELF'))
+        # 이름은 관리자가 정하고, 위력·대상·계산식은 스펙과 depth가 정한다.
+        self.assertEqual((result.default_name, result.power, result.target), ('다른 이름', 0, 'SELF'))
         self.assertIn('30%', result.description)
         self.assertIn('4 +', result.description)
         self.assertFalse(result.is_placeholder)
+
+    def test_admin_description_overrides_auto_text_until_cleared(self):
+        node = self.db.query(SkillNode).filter_by(book='불굴의 서', branch=2, col=1, tier=4).one()
+        written = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='장막', description="'장막'이 펼쳐진다"))
+        self.assertEqual(written.description, "'장막'이 펼쳐진다")
+        cleared = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='장막', description=''))
+        self.assertIn('30%', cleared.description)
+
+    def test_admin_can_set_target_and_cost_but_not_spec_fields(self):
+        node = self.db.query(SkillNode).filter_by(book='불굴의 서', branch=2, col=1, tier=4).one()
+        spec_category = crud._to_skill_node_read(node).category
+        result = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(
+            default_name='장막', target='3', target_side='ALLY', activation_order=7, cost=9, category='피해',
+        ))
+        self.assertEqual((result.target, result.target_side, result.activation_order, result.cost), ('3', 'ALLY', 7, 9))
+        self.assertEqual(result.category, spec_category)
