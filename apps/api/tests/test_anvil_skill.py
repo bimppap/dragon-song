@@ -116,7 +116,8 @@ class AnvilSkillTest(unittest.TestCase):
         )
 
         participant = result.participants[0]
-        event = "🪨 실험 요정 B의 모루 I → 18 치유 · 늪의 저주 스택 -1 · MP -3 [7/10]"
+        # 모루도 기술 대상 설정을 따르게 되면서 로그에 대상 이름이 함께 붙는다.
+        event = "🪨 실험 요정 B의 모루 I → 실험 요정 B 18 치유 · 늪의 저주 스택 -1 · MP -3 [7/10]"
         self.assertIn(event, result.log[-1]["events"])
         self.assertEqual(participant["hp"], 96)
         self.assertEqual(participant["attn"], 23)

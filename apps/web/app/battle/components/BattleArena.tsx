@@ -1,5 +1,7 @@
 "use client";
 
+import { isAllSkillTarget } from "@/lib/skillTargets";
+
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Image from "next/image";
 import { ArrowLeft, ArrowLeftRight, Ban, Check, Eye, Files, Heart, HeartPulse, Link2, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
@@ -386,6 +388,7 @@ function skillTargetCount(target: string | null): number | null {
 }
 
 function getBattleSkillTargetMode(skill: BattleActiveSkill): BattleSkillTargetMode {
+  if (isAllSkillTarget(skill.target)) return skill.target === "아군 전원" ? "ally-multi" : "enemy-multi";
   if (SELF_TARGET_SKILL_NAMES.has(skill.default_name) || skill.target === "SELF") return "self";
   const configuredCount = skillTargetCount(skill.target);
   const multi = configuredCount != null && configuredCount > 1;
@@ -453,6 +456,7 @@ function draftTargetNames(
       return chosen ? [chosen.name] : [];
     }
     case "skill": {
+      if (skill && isAllSkillTarget(skill.target)) return [skill.target];
       if (skill && ALL_ALLY_TARGET_SKILL_NAMES.has(skill.default_name)) return ["아군 전체"];
       const keys = draft.skill_target_keys ?? [];
       if (keys.length > 0) return keys.map(nameForKey).filter(notNull);
@@ -476,6 +480,11 @@ function draftAllyTargetIds(actor: BattleParticipant, draft: CharDraft, skill: B
   if (draft.kind === "defend") return actor.faction === "수비" ? [draft.protect_target_character_id ?? actor.character_id] : [];
   if (draft.kind === "heal") return draft.target_character_id == null ? [] : [draft.target_character_id];
   if (draft.kind !== "skill" || !skill) return [];
+  if (isAllSkillTarget(skill.target)) {
+    return skill.target === "아군 전원"
+      ? session.participants.filter((p) => (skill.category === "강화" || ACTIVE_ALLY_SKILL_NAMES.has(skill.default_name)) ? isTargetable(p, session.round) : isHealable(p, session.round)).map((p) => p.character_id)
+      : [];
+  }
   if (AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name)) {
     const candidates = session.participants.filter((p) => isHealable(p, session.round));
     return (ALL_ALLY_TARGET_SKILL_NAMES.has(skill.default_name) ? candidates : [...candidates].sort((a, b) => a.hp - b.hp).slice(0, getBattleSkillTargetCount(skill))).map((p) => p.character_id);
@@ -1259,7 +1268,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       // 기술 대상이 SELF인 기술은 대상을 고르지 않고 시전자 본인으로 자동 지정한다.
       const skill = draft.kind === "skill" ? resolveSelectedSkill(characterId, draft.skill_node_id) : null;
       const selfTargeted = skill != null && getBattleSkillTargetMode(skill) === "self";
-      const autoTargeted = skill != null && AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name);
+      const autoTargeted = skill != null && (isAllSkillTarget(skill.target) || AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name));
       return {
         character_id: characterId,
         kind: draft.kind,
@@ -1903,13 +1912,13 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           const targetInputId = `character:${p.character_id}:target`;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
-          if (draft?.kind === "skill" && selectedSkill && AUTO_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name)) {
+          if (draft?.kind === "skill" && selectedSkill && (isAllSkillTarget(selectedSkill.target) || AUTO_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name))) {
             extraControls.push({
               key: "skill-target",
               icon: Sparkles,
               control: (
                 <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
-                  {ALL_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name) ? "아군 전체 자동 지정" : `체력 낮은 순 ${getBattleSkillTargetCount(selectedSkill)}명 자동 지정`}
+                  {isAllSkillTarget(selectedSkill.target) ? `${selectedSkill.target} 자동 지정` : ALL_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name) ? "아군 전체 자동 지정" : `체력 낮은 순 ${getBattleSkillTargetCount(selectedSkill)}명 자동 지정`}
                 </div>
               ),
             });

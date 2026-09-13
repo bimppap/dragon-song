@@ -13,6 +13,7 @@ SkillBook = Literal["용맹의 서", "불굴의 서", "헌신의 서", "탐구�
 SkillTriggerType = Literal["즉발형", "지속형", "혼합형"]
 SkillCategory = Literal["피해", "복합", "강화", "약화", "회복"]
 SkillTargetSide = Literal["ALLY", "ENEMY"]
+ALL_SKILL_TARGETS = {"아군 전원": "ALLY", "에너미+하수인 전원": "ENEMY", "에너미 전원": "ENEMY"}
 MemberRole = Literal["RUNNER", "ADMIN", "STAFF"]
 
 # 환경·기술 강조색 등 UI 색상 입력에 공통으로 쓰는 형식.
@@ -1285,10 +1286,17 @@ class SkillNodeUpdate(BaseModel):
     # 전투 로직은 위력을 배율로 사용한다. UI에서는 퍼센트로 입력받아 100으로 나눈 값을 보낸다.
     power: float | None = Field(default=None, ge=0)
     powers: dict[str, float] = Field(default_factory=dict)
+    power_units: dict[str, Literal["percent", "flat"]] = Field(default_factory=dict)
     target: str | None = None
     target_side: SkillTargetSide | None = None
     activation_order: int | None = None
     cleanse_count: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def align_all_target_side(self):
+        if self.target in ALL_SKILL_TARGETS:
+            self.target_side = ALL_SKILL_TARGETS[self.target]
+        return self
 
     @field_validator("power")
     @classmethod
@@ -1310,10 +1318,10 @@ class SkillNodeUpdate(BaseModel):
         if value is None:
             return None
         normalized = value.strip().upper()
-        if normalized == "SELF":
+        if normalized == "SELF" or normalized in ALL_SKILL_TARGETS:
             return normalized
         if not normalized.isdigit() or int(normalized) < 1:
-            raise ValueError("기술 대상은 SELF 또는 1 이상의 정수여야 합니다.")
+            raise ValueError("기술 대상은 SELF, 1 이상의 정수 또는 전체 대상 옵션이어야 합니다.")
         return str(int(normalized))
 
 

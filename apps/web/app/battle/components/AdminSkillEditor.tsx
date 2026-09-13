@@ -4,10 +4,12 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Check, Image as ImageIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import { ALL_SKILL_TARGETS, isAllSkillTarget } from "@/lib/skillTargets";
 import Modal from "@/components/common/Modal";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
@@ -63,6 +65,7 @@ interface Draft {
   cost: string;
   /** 위력 슬롯 키 → 퍼센트 입력값. 위력이 하나인 기술은 "power" 하나만 쓴다. */
   powerPercents: Record<string, string>;
+  powerUnits: Record<string, PowerSlot["unit"]>;
   cleanseCount: string;
 }
 
@@ -77,6 +80,7 @@ const EMPTY_DRAFT: Draft = {
   activationOrder: "",
   cost: "",
   powerPercents: {},
+  powerUnits: {},
   cleanseCount: "0",
 };
 
@@ -131,6 +135,7 @@ export default function AdminSkillEditor() {
       targetSide: node.target_side ?? "",
       activationOrder: node.activation_order != null ? String(node.activation_order) : "",
       cost: node.cost != null ? String(node.cost) : "",
+      powerUnits: Object.fromEntries(powerSlotsOf(node).map((slot) => [slot.key, slot.unit])),
       powerPercents: Object.fromEntries(powerSlotsOf(node).map((slot) => [
         slot.key,
         slotValueToInput(slot, slot.key === "power" ? node.power : node.powers?.[slot.key] ?? null),
@@ -163,7 +168,7 @@ export default function AdminSkillEditor() {
     setError(null);
     try {
       const powerValue = () => slotInputToValue(
-        powerSlotsOf(editing).find((slot) => slot.key === "power") ?? DEFAULT_POWER_SLOTS[0],
+        powerSlots.find((slot) => slot.key === "power") ?? DEFAULT_POWER_SLOTS[0],
         draft.powerPercents.power ?? "",
       );
       const skillMetadata = editing.tier === 0 ? {} : {
@@ -175,8 +180,9 @@ export default function AdminSkillEditor() {
         activation_order: Number(draft.activationOrder),
         cost: Number(draft.cost),
         power: powerValue(),
+        power_units: Object.fromEntries(powerSlots.map((slot) => [slot.key, slot.unit])),
         powers: Object.fromEntries(
-          powerSlotsOf(editing)
+          powerSlots
             .filter((slot) => slot.key !== "power")
             .map((slot) => [slot.key, slotInputToValue(slot, draft.powerPercents[slot.key] ?? "")]),
         ),
@@ -206,13 +212,16 @@ export default function AdminSkillEditor() {
 
   const isSkillNode = editing !== null && editing.tier !== 0;
   const isDerived = Boolean(editing?.is_derived);
-  const targetIsValid = draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
+  const targetIsValid = isAllSkillTarget(draft.target) || draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
   const activationOrderIsValid = /^-?\d+$/.test(draft.activationOrder.trim());
   const costIsValid = /^\d+$/.test(draft.cost.trim());
-  const powerSlots = editing ? powerSlotsOf(editing) : DEFAULT_POWER_SLOTS;
+  const powerSlots = (editing ? powerSlotsOf(editing) : DEFAULT_POWER_SLOTS).map((slot) => ({
+    ...slot, unit: draft.powerUnits[slot.key] ?? slot.unit,
+  }));
   const powerIsValid = powerSlots.every((slot) => {
     const value = draft.powerPercents[slot.key] ?? "";
-    return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0;
+    return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0
+      && (slot.unit !== "flat" || Number.isInteger(Number(value)));
   });
   const cleanseCountIsValid = !isSkillNode || isDerived || !editing.has_cleanse_count || /^\d+$/.test(draft.cleanseCount.trim());
   const metadataIsValid = !isSkillNode || (
@@ -377,21 +386,38 @@ export default function AdminSkillEditor() {
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상</label>
-                  <Input
+                  <Select
+                    value={isAllSkillTarget(draft.target) || draft.target === "SELF" ? draft.target : "COUNT"}
+                    onValueChange={(value) => setDraft((prev) => ({
+                      ...prev,
+                      target: value === "COUNT" ? "1" : value,
+                      targetSide: isAllSkillTarget(value) ? (value === "아군 전원" ? "ALLY" : "ENEMY") : prev.targetSide,
+                    }))}
+                  >
+                    <SelectTrigger aria-label="기술 대상"><SelectValue /></SelectTrigger>
+                    <SelectContent><SelectGroup>
+                      <SelectItem value="COUNT">인원 지정</SelectItem>
+                      <SelectItem value="SELF">SELF (본인)</SelectItem>
+                      {ALL_SKILL_TARGETS.map((target) => <SelectItem key={target} value={target}>{target}</SelectItem>)}
+                    </SelectGroup></SelectContent>
+                  </Select>
+                  {!isAllSkillTarget(draft.target) && draft.target !== "SELF" && <Input
+                    aria-label="기술 대상 인원"
                     value={draft.target}
                     onChange={(e) => setDraft((prev) => ({ ...prev, target: e.target.value }))}
-                    placeholder="SELF 또는 1 이상의 정수"
+                    placeholder="1 이상의 정수"
                     aria-invalid={draft.target !== "" && !targetIsValid}
-                  />
+                  />}
                   {draft.target !== "" && !targetIsValid ? (
-                    <p className="text-xs text-red-500">SELF 또는 1 이상의 정수를 입력하세요.</p>
+                    <p className="text-xs text-red-500">1 이상의 정수를 입력하세요.</p>
                   ) : null}
                 </div>
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상 진영</label>
                   <Select
-                    value={draft.targetSide}
+                    value={isAllSkillTarget(draft.target) ? (draft.target === "아군 전원" ? "ALLY" : "ENEMY") : draft.targetSide}
+                    disabled={isAllSkillTarget(draft.target)}
                     onValueChange={(value) => setDraft((prev) => ({ ...prev, targetSide: value as SkillTargetSide }))}
                   >
                     <SelectTrigger><SelectValue placeholder="아군/적군 선택" /></SelectTrigger>
@@ -437,18 +463,38 @@ export default function AdminSkillEditor() {
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
                         {slot.unit === "flat" ? slot.label : `${slot.label} (%)`}
                       </label>
+                      <RadioGroup
+                        aria-label={`${slot.label} 형식`}
+                        className="flex gap-4"
+                        value={slot.unit}
+                        disabled={saving}
+                        onValueChange={(unit) => setDraft((prev) => ({
+                          ...prev, powerUnits: { ...prev.powerUnits, [slot.key]: unit as PowerSlot["unit"] },
+                        }))}
+                      >
+                        <label className="flex cursor-pointer items-center gap-2 text-xs text-ivory">
+                          <RadioGroupItem value="percent" />퍼센트형 (%)
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-2 text-xs text-ivory">
+                          <RadioGroupItem value="flat" />정수형
+                        </label>
+                      </RadioGroup>
                       <Input
+                        aria-label={slot.label}
                         type="number"
                         min="0"
-                        step="any"
+                        step={slot.unit === "flat" ? "1" : "any"}
                         value={value}
                         onChange={(e) => setDraft((prev) => ({
                           ...prev,
                           powerPercents: { ...prev.powerPercents, [slot.key]: e.target.value },
                         }))}
                         placeholder={slot.unit === "flat" ? "예: 2" : "예: 150"}
-                        aria-invalid={value !== "" && !(Number.isFinite(Number(value)) && Number(value) >= 0)}
+                        aria-invalid={value !== "" && !(Number.isFinite(Number(value)) && Number(value) >= 0 && (slot.unit !== "flat" || Number.isInteger(Number(value))))}
                       />
+                      <p className="text-xs text-muted">
+                        {slot.unit === "flat" ? "0 이상의 정수를 입력하세요." : "입력값을 퍼센트로 적용합니다. 예: 150 → 150%"}
+                      </p>
                     </div>
                   );
                 })}

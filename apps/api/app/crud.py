@@ -29,6 +29,7 @@ from app.game_data import (
 from app.models import KST, now_kst
 from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterClonedSkill, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
 from app.schemas import (
+    ALL_SKILL_TARGETS,
     FACTIONS,
     GRADE_STAT_FIELDS,
     ITEM_EFFECT_SPECIAL_STATS,
@@ -3783,7 +3784,30 @@ def _resolved_skill_node_powers(node: SkillNode) -> dict[str, float]:
 
 
 def _skill_node_power_slots(node: SkillNode) -> list[SkillPowerSlot]:
-    return [SkillPowerSlot(**slot) for slot in skill_power_slots(_resolved_skill_node_value(node, "var_name"))]
+    units = (node.settings_overrides or {}).get("power_units", {})
+    return [SkillPowerSlot(**{**slot, "unit": units.get(slot["key"], slot["unit"])})
+            for slot in skill_power_slots(_resolved_skill_node_value(node, "var_name"))]
+
+
+def _update_skill_power_units(node: SkillNode, data: SkillNodeUpdate) -> None:
+    overrides = dict(node.settings_overrides or {})
+    units = dict(overrides.get("power_units", {}))
+    if "power_units" in data.model_fields_set:
+        slot_keys = {slot.key for slot in _skill_node_power_slots(node)}
+        unknown = sorted(set(data.power_units) - slot_keys)
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"이 기술에 없는 기술 위력 항목입니다: {', '.join(unknown)}")
+        units.update(data.power_units)
+    # 과거 정수형 슬롯에 저장된 소수는 자동 변경하지 않는다. 명시적으로 선택한 정수형부터 검증한다.
+    for key, unit in units.items():
+        if unit != "flat":
+            continue
+        value = _resolved_skill_node_value(node, "power") if key == "power" else _resolved_skill_node_powers(node).get(key)
+        if value is not None and (not math.isfinite(float(value)) or not float(value).is_integer()):
+            raise HTTPException(status_code=400, detail="정수형 기술 위력은 0 이상의 정수여야 합니다.")
+    if "power_units" in data.model_fields_set:
+        overrides["power_units"] = units
+        node.settings_overrides = overrides
 
 
 def _resolved_skill_node_name(node: SkillNode) -> str:
@@ -4392,43 +4416,36 @@ def _apply_sparge_telegraph(
         effects = _status_effects_of_type(p, "sparge_telegraph")
         if not effects:
             continue
-        damages = [max(0, int(effect.get("damage", 0))) for effect in effects]
-        total = sum(damages)
-        if total <= 0:
-            continue
-        skill_name = str(effects[0].get("skill_name") or "살포")
-        stack_formula = " + ".join(
-            f"max(0, floor(스킬레벨 {effect.get('skill_lv', 2)} × 6 + 기술 효율 고정))"
-            for effect in effects
-        )
-        total_dealt = 0
-        for enemy in enemies:
-            if not _enemy_targetable(enemy, round_no):
+        by_scope: dict[str, list[dict]] = {}
+        for effect in effects:
+            scope = effect.get("target_scope") or "에너미+하수인 전원"
+            by_scope.setdefault(scope, []).append(effect)
+        for scope, scoped_effects in by_scope.items():
+            total = sum(max(0, int(effect.get("damage", 0))) for effect in scoped_effects)
+            if total <= 0:
                 continue
-            dealt, overkill = _apply_damage_to_enemy(enemy, total)
-            total_dealt += dealt
-            events.append(
-                f"🌪️ {p['name']}의 {skill_name} ({len(effects)}중첩) → "
-                f"{enemy['name']} {dealt} 피해 [{enemy['hp']}/{enemy['max_hp']}]"
+            skill_name = str(scoped_effects[0].get("skill_name") or "살포")
+            stack_formula = " + ".join(
+                f"max(0, floor(스킬레벨 {effect.get('skill_lv', 2)} × 6 + 기술 효율 고정))"
+                for effect in scoped_effects
             )
-            calculations[events[-1]] = f"min({stack_formula}, 남은 체력 {enemy['hp'] + dealt})"
-            if enemy["hp"] <= 0:
-                events.append(f"💀 {enemy['name']} 격파")
-        for summon in summons:
-            if summon["hp"] <= 0:
-                continue
-            dealt = min(total, summon["hp"])
-            summon["hp"] = max(0, summon["hp"] - total)
-            total_dealt += dealt
-            summon_name = _summon_log_name(summon)
-            events.append(
-                f"🌪️ {p['name']}의 {skill_name} ({len(effects)}중첩) → "
-                f"하수인 {summon_name} {dealt} 피해 [{summon['hp']}/{summon['max_hp']}]"
-            )
-            calculations[events[-1]] = f"min({stack_formula}, 남은 체력 {summon['hp'] + dealt})"
-            if summon["hp"] <= 0:
-                events.append(f"💀 하수인 {summon_name} 처치")
-        _apply_damage_attn(p, total_dealt)
+            total_dealt = 0
+            for kind, target in _all_skill_targets({"target": scope}, participants, enemies, summons, round_no, active_only=True) or []:
+                dealt, overkill = _apply_damage_to_enemy(target, total)
+                total_dealt += dealt
+                name = f"하수인 {_summon_log_name(target)}" if kind == "summon" else target["name"]
+                events.append(
+                    f"🌪️ {p['name']}의 {skill_name} ({len(scoped_effects)}중첩) → "
+                    f"{name} {dealt} 피해 [{target['hp']}/{target['max_hp']}]"
+                )
+                calculations[events[-1]] = f"min({stack_formula}, 남은 체력 {target['hp'] + dealt})"
+                if target["hp"] <= 0:
+                    if kind == "ally":
+                        _mark_combatant_downed(target)
+                        events.append(f"💫 {name} 기절")
+                    else:
+                        events.append(f"💀 {name} {'처치' if kind == 'summon' else '격파'}")
+            _apply_damage_attn(p, total_dealt)
 
 
 def _sync_suppressing_passive(p: dict, skills: dict[int, dict]) -> None:
@@ -4759,8 +4776,23 @@ def _skill_power_value(skill: dict, key: str, default: float = 0.0) -> float:
         return default
 
 
+def _all_skill_targets(skill: dict | None, participants: list[dict], enemies: list[dict],
+                       summons: list[dict], round_no: int, *, active_only: bool = False) -> list[tuple[str, dict]] | None:
+    """전체 대상은 현재 전투 상태로 정하며, 이전에 고른 개별 대상은 사용하지 않는다."""
+    scope = (skill or {}).get("target")
+    if scope == "아군 전원":
+        eligible = _combatant_targetable if active_only else _healable
+        return [("ally", target) for target in participants if eligible(target, round_no)]
+    if scope in {"에너미 전원", "에너미+하수인 전원"}:
+        targets = [("enemy", target) for target in enemies if _enemy_targetable(target, round_no)]
+        if scope == "에너미+하수인 전원":
+            targets.extend(("summon", target) for target in summons if target["hp"] > 0)
+        return targets
+    return None
+
+
 def _skill_target_count(skill: dict) -> int:
-    """기술 적용 인원은 기술 노드의 '기술 대상'(SELF 또는 1 이상의 정수)만 따른다."""
+    """인원 지정 기술의 대상 수. 전체 대상은 _all_skill_targets에서 별도로 해석한다."""
     target = str(skill.get("target") or "").strip().upper()
     if target.isdigit():
         return max(1, int(target))
@@ -6194,6 +6226,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     initial_active_candidates = {f"ally:{target['character_id']}": target for target in participants if _combatant_targetable(target, round_no)}
 
     def _resolve_damage_targets(preferred_enemy_id: int | None, count: int, keys: list[str] | None = None) -> list[tuple[str, dict]]:
+        all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True)
+        if all_targets is not None:
+            return all_targets
         if keys is not None:
             # 선택 창에서는 에너미만 지정한다. 실제 타격 시 살아 있는 하수인이 선택 슬롯을
             # 앞에서부터 가로채며, 남은 슬롯만 관리자가 고른 에너미에게 적용된다.
@@ -6224,6 +6259,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         return targets
 
     def _enemy_targets(preferred_enemy_id: int | None, count: int, keys: list[str] | None = None) -> list[dict]:
+        all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no)
+        if all_targets is not None:
+            return [target for _kind, target in all_targets]
         """약화처럼 하수인을 노리지 않는 기술의 대상. 기술의 '기술 대상' 수만큼 에너미를 고른다."""
         if keys is not None:
             return [
@@ -6252,6 +6290,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 return False
             return _combatant_targetable(target, round_no) if active_only else _healable(target, round_no)
 
+        all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=active_only)
+        if all_targets is not None:
+            return [target for _kind, target in all_targets]
+
         candidates = {
             key: target
             for key, target in (initial_active_candidates if active_only else initial_healable_candidates).items()
@@ -6273,11 +6315,20 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         return ordered[:count]
 
     def _multi_ally_targets(count: int, keys: list[str] | None = None) -> list[dict]:
+        all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no)
+        if all_targets is not None:
+            return [target for _kind, target in all_targets]
         # 체력 낮은 순 → 동률이면 주목도 높은 순 → 그것도 같으면 이름 가나다순.
         healable = [p for p in participants if _healable(p, round_no)]
         if keys is not None:
             return [target for target in _explicit_skill_targets(keys, initial_healable_candidates, count) if _healable(target, round_no)]
         return sorted(healable, key=lambda target: (target["hp"], -target["attn"], target["name"]))[:count]
+
+    def _add_action_status_effect(target: dict, effect: dict, *, participants: list[dict], enemies: list[dict]) -> bool:
+        # 전원 기술 한 번의 적용 중 다른 대상에게 방금 건 비중첩 효과를 지우지 않는다.
+        if (selected_skill or {}).get("target") in ALL_SKILL_TARGETS:
+            return _add_status_effect(target, effect, participants=[target], enemies=[])
+        return _add_status_effect(target, effect, participants=participants, enemies=enemies)
 
     def _selected_skill(actor: dict, action: CharacterActionInput) -> dict | None:
         available = battle_skills_by_character.get(actor["character_id"], {})
@@ -6418,15 +6469,18 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
             if var_name == "ab_eruption":
                 _spend_skill_cost(p, selected_skill)
-                _add_status_effect(p, {
-                    "effect_type": "stat_modifier", "affinity": "buff", "stat": "presence",
-                    "applied_delta": 0.2, "reaction": "eruption", "skill_lv": int(selected_skill.get("tier") or 2),
-                    "source_character_id": p["character_id"], "source_name": p["name"],
-                    "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
-                }, participants=participants, enemies=enemies)
-                p["presence"] = round(p["presence"] + 0.2, 6)
-                events.append(f"🌋 {p['name']}의 {skill_name} → 존재감 +20% · 피격 시 전체 에너미 반응 피해 강화 부여")
-                calculations[events[-1]] = "존재감 0.2 × 100% = 20% (중첩마다 가산)"
+                all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True)
+                targets = [target for _kind, target in all_targets] if all_targets is not None else [p]
+                for target in targets:
+                    _add_action_status_effect(target, {
+                        "effect_type": "stat_modifier", "affinity": "buff", "stat": "presence",
+                        "applied_delta": 0.2, "reaction": "eruption", "skill_lv": int(selected_skill.get("tier") or 2),
+                        "source_character_id": p["character_id"], "source_name": p["name"],
+                        "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
+                    }, participants=participants, enemies=enemies)
+                    target["presence"] = round(target.get("presence", 0) + 0.2, 6)
+                    events.append(f"🌋 {p['name']}의 {skill_name} → {target['name']} 존재감 +20% · 피격 시 전체 에너미 반응 피해 강화 부여")
+                    calculations[events[-1]] = "존재감 0.2 × 100% = 20% (중첩마다 가산)"
                 continue
 
             if var_name == "ab_escort":
@@ -6448,7 +6502,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         existing_guard[0]["skill_image_url"] = selected_skill.get("image_url")
                         existing_guard[0]["skill_description"] = selected_skill.get("description")
                     else:
-                        _add_status_effect(target, {
+                        _add_action_status_effect(target, {
                             "effect_type": "escort_guard", "affinity": "buff",
                             "skill_image_url": selected_skill.get("image_url"),
                             "skill_description": selected_skill.get("description"),
@@ -6472,7 +6526,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"{max_stacks}스택 유지 (최대치)"
                     )
                     continue
-                _add_status_effect(p, {
+                _add_action_status_effect(p, {
                     "effect_type": "escort_damage_reduction", "affinity": "buff",
                     "source_character_id": p["character_id"], "source_name": p["name"],
                     "skill_name": skill_name, "var_name": var_name, "stackable": True,
@@ -6505,17 +6559,19 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 shield_formula = f"max(0, floor(스킬레벨 {depth} + 시전자 기술 효율 고정 {_formula_number(p['skill_eff_true'])} / 2))"
                 if _mark_combatant_downed(p):
                     events.append(f"💫 {p['name']} 기절")
-                for target in participants:
-                    if not _combatant_targetable(target, round_no):
-                        continue
-                    target["shield"] += shield
+                all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True)
+                shield_targets = [target for _kind, target in all_targets] if all_targets is not None else [target for target in participants if _combatant_targetable(target, round_no)]
+                for target in shield_targets:
+                    target["shield"] = target.get("shield", 0) + shield
                     events.append(f"🛡️ {p['name']}의 {skill_name} → {target['name']} {shield} 보호막 부여")
                     calculations[events[-1]] = shield_formula
                 continue
 
             if var_name in DEVOTION_DERIVED_VARS:
-                targets = ([target for target in participants if _healable(target, round_no)]
-                           if var_name == "ab_halo" else _ally_targets(p, action, 1, active_only=var_name == "ab_regeneration"))
+                all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=var_name == "ab_regeneration")
+                targets = ([target for _kind, target in all_targets] if all_targets is not None else
+                           [target for target in participants if _healable(target, round_no)] if var_name == "ab_halo" else
+                           _ally_targets(p, action, _skill_target_count(selected_skill), active_only=var_name == "ab_regeneration"))
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
@@ -6523,17 +6579,17 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 flat_amount = max(0, skill_power + p["skill_eff_true"] / 4)
                 if var_name == "ab_regeneration":
                     flat_amount = _floor_amount(flat_amount)
-                    target = targets[0]
-                    # 같은 시전자/기술의 기존 강화는 새 값으로 교체한다.
-                    effect = {
-                        "effect_type": "stat_modifier", "affinity": "buff", "stat": "hp_regen_true",
-                        "applied_delta": flat_amount, "source_character_id": p["character_id"],
-                        "source_name": p["name"], "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
-                    }
-                    _add_status_effect(target, effect, participants=participants, enemies=enemies)
-                    target["hp_regen_true"] += flat_amount
-                    events.append(f"🌱 {p['name']}의 {skill_name} → {target['name']} 체력 재생력(고정) +{_formula_number(flat_amount)}")
-                    calculations[events[-1]] = f"floor({base_formula})"
+                    for target in targets:
+                        # 같은 시전자/기술의 기존 강화는 새 값으로 교체한다.
+                        effect = {
+                            "effect_type": "stat_modifier", "affinity": "buff", "stat": "hp_regen_true",
+                            "applied_delta": flat_amount, "source_character_id": p["character_id"],
+                            "source_name": p["name"], "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
+                        }
+                        _add_action_status_effect(target, effect, participants=participants, enemies=enemies)
+                        target["hp_regen_true"] += flat_amount
+                        events.append(f"🌱 {p['name']}의 {skill_name} → {target['name']} 체력 재생력(고정) +{_formula_number(flat_amount)}")
+                        calculations[events[-1]] = f"floor({base_formula})"
                     continue
                 healed_values = []
                 for target in targets:
@@ -6582,30 +6638,30 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 damage, damage_formula = _damage_from_skill_power(p, skill_power, skill_eff_fixed)
-                _apply_damage_attn(p, damage)
-                target_kind, target = targets[0]
-                if target_kind == "summon":
-                    dealt, overkill = _apply_damage_to_summon(target, damage)
-                    summon_name = _summon_log_name(target)
-                    events.append(
-                        f"✨ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
-                        f"[{target['hp']}/{target['max_hp']}]"
-                        f"{' (오버킬)' if overkill else ''}"
-                    )
-                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
-                    if target["hp"] <= 0:
-                        events.append(f"💀 하수인 {summon_name} 처치")
-                else:
-                    weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
-                    dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
-                    events.append(
-                        f"✨ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
-                        f"[{target['hp']}/{target['max_hp']}]"
-                        f"{' (오버킬)' if overkill else ''}"
-                    )
-                    calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
-                    if target["hp"] <= 0:
-                        events.append(f"💀 {target['name']} 격파")
+                _apply_damage_attn(p, damage * len(targets))
+                for target_kind, target in targets:
+                    if target_kind == "summon":
+                        dealt, overkill = _apply_damage_to_summon(target, damage)
+                        summon_name = _summon_log_name(target)
+                        events.append(
+                            f"✨ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]"
+                            f"{' (오버킬)' if overkill else ''}"
+                        )
+                        calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            events.append(f"💀 하수인 {summon_name} 처치")
+                    else:
+                        weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
+                        dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
+                        events.append(
+                            f"✨ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]"
+                            f"{' (오버킬)' if overkill else ''}"
+                        )
+                        calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            events.append(f"💀 {target['name']} 격파")
                 continue
 
             if var_name == "ab_crushing":
@@ -6643,7 +6699,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                     if tier6_bonus:
-                        _add_status_effect(
+                        _add_action_status_effect(
                             target,
                             {
                                 "effect_type": "outgoing_damage_penalty_once",
@@ -6678,33 +6734,33 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 damage_formula = (
                     f"max(0, floor({base_formula} + 기술 효율 고정 {_formula_number(p['skill_eff_true'])}))"
                 )
-                _apply_damage_attn(p, damage)
-                target_kind, target = targets[0]
-                if target_kind == "summon":
-                    dealt, overkill = _apply_damage_to_summon(target, damage)
-                    summon_name = _summon_log_name(target)
-                    events.append(
-                        f"💉 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
-                        f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
-                    )
-                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
-                    if target["hp"] <= 0:
-                        events.append(f"💀 하수인 {summon_name} 처치")
-                else:
-                    weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
-                    dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
-                    events.append(
-                        f"💉 {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
-                        f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
-                    )
-                    calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
-                    if target["hp"] <= 0:
-                        events.append(f"💀 {target['name']} 격파")
+                _apply_damage_attn(p, damage * len(targets))
+                for target_kind, target in targets:
+                    if target_kind == "summon":
+                        dealt, overkill = _apply_damage_to_summon(target, damage)
+                        summon_name = _summon_log_name(target)
+                        events.append(
+                            f"💉 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
+                        )
+                        calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            events.append(f"💀 하수인 {summon_name} 처치")
+                    else:
+                        weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
+                        dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
+                        events.append(
+                            f"💉 {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
+                        )
+                        calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            events.append(f"💀 {target['name']} 격파")
                 # 자신에게 공격력 버프를 중첩한다.
                 buff_power = _skill_power_value(selected_skill, "attack_buff", 2.0)
                 buff_formula = f"(자애 {p['stat_charity']} + 지혜 {p['stat_wisdom']}) × {_formula_number(buff_power)}"
                 atk_bonus = max(0, _floor_amount(stat_sum * buff_power + p["skill_eff_true"] / 2))
-                _add_status_effect(p, {
+                _add_action_status_effect(p, {
                     "effect_type": "stat_modifier", "affinity": "buff", "stat": "atk",
                     "applied_delta": atk_bonus, "source_character_id": p["character_id"],
                     "source_name": p["name"], "skill_name": skill_name, "var_name": var_name,
@@ -6720,7 +6776,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
             if var_name == "ab_suppressing":
                 depth = int(selected_skill.get("tier") or 2)
-                living_enemies = [enemy for enemy in enemies if _enemy_targetable(enemy, round_no)]
+                living_enemies = [target for _kind, target in (_all_skill_targets(selected_skill, participants, enemies, summons, round_no) or [])] if selected_skill.get("target") in ALL_SKILL_TARGETS else [enemy for enemy in enemies if _enemy_targetable(enemy, round_no)]
                 if not living_enemies:
                     continue
                 _spend_skill_cost(p, selected_skill)
@@ -6749,11 +6805,12 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 depth = int(selected_skill.get("tier") or 2)
                 _spend_skill_cost(p, selected_skill)
                 sparge_damage = max(0, _floor_amount(depth * 6 + p["skill_eff_true"]))
-                _add_status_effect(p, {
+                _add_action_status_effect(p, {
                     "effect_type": "sparge_telegraph", "affinity": "buff",
                     "source_character_id": p["character_id"], "source_name": p["name"],
                     "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
                     "damage": sparge_damage, "skill_lv": depth,
+                    "target_scope": selected_skill.get("target") if selected_skill.get("target") in ALL_SKILL_TARGETS else "에너미+하수인 전원",
                 }, participants=participants, enemies=enemies)
                 stacks = len(_status_effects_of_type(p, "sparge_telegraph"))
                 events.append(
@@ -6773,81 +6830,84 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 damage, damage_formula = _damage_from_skill_power(p, skill_power, skill_eff_fixed)
-                _apply_damage_attn(p, damage)
-                target_kind, target = targets[0]
-                if target_kind == "summon":
-                    dealt, overkill = _apply_damage_to_summon(target, damage)
-                    summon_name = _summon_log_name(target)
-                    events.append(
-                        f"☠️ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
-                        f"[{target['hp']}/{target['max_hp']}]"
-                        f"{' (오버킬)' if overkill else ''}"
-                    )
-                    calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
-                    if target["hp"] <= 0:
-                        events.append(f"💀 하수인 {summon_name} 처치")
-                else:
-                    weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
-                    dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
-                    events.append(
-                        f"☠️ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
-                        f"[{target['hp']}/{target['max_hp']}]"
-                        f"{' (오버킬)' if overkill else ''}"
-                    )
-                    calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
-                    if target["hp"] <= 0:
-                        events.append(f"💀 {target['name']} 격파")
-                    else:
-                        _add_status_effect(
-                            target,
-                            {
-                                "effect_type": "ongoing_damage",
-                                "affinity": "debuff",
-                                "trigger_phase": "telegraph",
-                                "damage": damage,
-                                "source_character_id": p["character_id"],
-                                "source_name": p["name"],
-                                "skill_name": skill_name,
-                                "var_name": var_name,
-                                "stackable": bool(selected_skill.get("stackable")),
-                            },
-                            participants=participants,
-                            enemies=enemies,
+                _apply_damage_attn(p, damage * len(targets))
+                for target_kind, target in targets:
+                    if target_kind == "summon":
+                        dealt, overkill = _apply_damage_to_summon(target, damage)
+                        summon_name = _summon_log_name(target)
+                        events.append(
+                            f"☠️ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]"
+                            f"{' (오버킬)' if overkill else ''}"
                         )
-                        events.append(f"　↳ {target['name']}에게 지속 피해가 누적됩니다.")
+                        calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            events.append(f"💀 하수인 {summon_name} 처치")
+                    else:
+                        weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
+                        dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
+                        events.append(
+                            f"☠️ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]"
+                            f"{' (오버킬)' if overkill else ''}"
+                        )
+                        calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            events.append(f"💀 {target['name']} 격파")
+                        else:
+                            _add_action_status_effect(
+                                target,
+                                {
+                                    "effect_type": "ongoing_damage",
+                                    "affinity": "debuff",
+                                    "trigger_phase": "telegraph",
+                                    "damage": damage,
+                                    "source_character_id": p["character_id"],
+                                    "source_name": p["name"],
+                                    "skill_name": skill_name,
+                                    "var_name": var_name,
+                                    "stackable": bool(selected_skill.get("stackable")),
+                                },
+                                participants=participants,
+                                enemies=enemies,
+                            )
+                            events.append(f"　↳ {target['name']}에게 지속 피해가 누적됩니다.")
                 continue
 
             if var_name == "ab_anvil":
                 _spend_skill_cost(p, selected_skill)
-                heal_amount, heal_formula = _skill_heal_amount(
-                    p,
-                    p,
-                    skill_power,
-                    skill_eff_fixed,
-                    include_heal_efficiency=False,
-                )
-                before_hp = p["hp"]
-                healed, revived = _apply_skill_heal(p, p, heal_amount, grant_attention=False)
-                p["attn"] += healed
-                cleanse_count = max(0, int(selected_skill.get("cleanse_count") or 0))
-                # 모루도 정화처럼 약화 효과와 환경 스택을 함께 해제한다.
-                removed, removed_names = _cleanse_combat_debuffs(db, p, cleanse_count)
-                log = (
-                    f"🪨 {p['name']}의 {skill_name} → {healed} 치유"
-                    f"{' (부활)' if revived else ''}"
-                )
-                if removed > 0:
-                    removed_by_name: dict[str, int] = {}
-                    for removed_name in removed_names:
-                        removed_by_name[removed_name] = removed_by_name.get(removed_name, 0) + 1
-                    log += " · " + " / ".join(
-                        f"{removed_name} 스택 -{count}"
-                        for removed_name, count in removed_by_name.items()
+                all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no)
+                targets = [target for _kind, target in all_targets] if all_targets is not None else [p]
+                for target in targets:
+                    heal_amount, heal_formula = _skill_heal_amount(
+                        p,
+                        target,
+                        skill_power,
+                        skill_eff_fixed,
+                        include_heal_efficiency=False,
                     )
-                elif cleanse_count > 0:
-                    log += " · 해제할 스택 없음"
-                events.append(log)
-                calculations[events[-1]] = _skill_heal_formula(p, heal_formula, before_hp)
+                    before_hp = target["hp"]
+                    healed, revived = _apply_skill_heal(p, target, heal_amount, grant_attention=False)
+                    p["attn"] += healed
+                    cleanse_count = max(0, int(selected_skill.get("cleanse_count") or 0))
+                    # 모루도 정화처럼 약화 효과와 환경 스택을 함께 해제한다.
+                    removed, removed_names = _cleanse_combat_debuffs(db, target, cleanse_count)
+                    log = (
+                        f"🪨 {p['name']}의 {skill_name} → {target['name']} {healed} 치유"
+                        f"{' (부활)' if revived else ''}"
+                    )
+                    if removed > 0:
+                        removed_by_name: dict[str, int] = {}
+                        for removed_name in removed_names:
+                            removed_by_name[removed_name] = removed_by_name.get(removed_name, 0) + 1
+                        log += " · " + " / ".join(
+                            f"{removed_name} 스택 -{count}"
+                            for removed_name, count in removed_by_name.items()
+                        )
+                    elif cleanse_count > 0:
+                        log += " · 해제할 스택 없음"
+                    events.append(log)
+                    calculations[events[-1]] = _skill_heal_formula(target, heal_formula, before_hp)
                 continue
 
             if var_name == "ab_counter":
@@ -6857,7 +6917,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 reduction_bonus = max(0.0, skill_power * (1 + skill_eff_fixed))
                 for target in targets:
-                    _add_status_effect(
+                    _add_action_status_effect(
                         target,
                         {
                             "effect_type": "counter",
@@ -6979,7 +7039,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     )
                     calculations[events[-1]] = _skill_heal_formula(target, heal_formula, before_hp)
                     if tier6_bonus and damage_bonus > 0:
-                        _add_status_effect(
+                        _add_action_status_effect(
                             target,
                             {
                                 "effect_type": "outgoing_damage_bonus_once",
@@ -7014,7 +7074,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     cleanse_count = max(0, int(selected_skill.get("cleanse_count") or 0))
                     removed, removed_names = _cleanse_combat_debuffs(db, target, cleanse_count)
                     if tier6_bonus and removed > 0:
-                        _add_status_effect(
+                        _add_action_status_effect(
                             target,
                             {
                                 "effect_type": "purification_guard",
@@ -7055,7 +7115,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 fixed_bonus = max(0.0, depth * skill_power + caster_fixed)
                 true_bonus = max(0, depth * 2 + caster_true // 2)
                 for target in targets:
-                    _add_status_effect(
+                    _add_action_status_effect(
                         target,
                         {
                             "effect_type": "skill_eff_bonus_round",
@@ -7093,7 +7153,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 amp = max(0.0, depth * skill_power + skill_eff_fixed)
                 for target_enemy in target_enemies:
-                    _add_status_effect(
+                    _add_action_status_effect(
                         target_enemy,
                         {
                             "effect_type": "incoming_damage_bonus_round",
@@ -7125,7 +7185,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 bonus = max(0.0, skill_power * (1 + skill_eff_fixed))
                 for target in targets:
-                    _add_status_effect(
+                    _add_action_status_effect(
                         target,
                         {
                             "effect_type": "outgoing_damage_bonus_once",
@@ -7159,7 +7219,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 penalty = max(0.0, skill_power * (1 + skill_eff_fixed))
                 for target_enemy in target_enemies:
-                    _add_status_effect(
+                    _add_action_status_effect(
                         target_enemy,
                         {
                             "effect_type": "outgoing_damage_penalty_once",
@@ -7235,6 +7295,22 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             dmg = max(0, _floor_amount(raw))
             attn_mult = 4 if p["faction"] == "수비" else 1
             p["attn"] += _floor_amount(dmg * attn_mult * (1 + p["presence"]))
+
+            all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True) if action.kind == "skill" else None
+            if all_targets is not None:
+                for kind, target in all_targets:
+                    target_damage, target_formula = _apply_weaken_amp(target, dmg, damage_formula)
+                    dealt, overkill = _apply_damage_to_enemy(target, target_damage)
+                    name = f"하수인 {_summon_log_name(target)}" if kind == "summon" else target["name"]
+                    events.append(f"⚔️ {p['name']}의 {selected_skill['display_name']} → {name} {dealt} 피해 [{target['hp']}/{target['max_hp']}]")
+                    calculations[events[-1]] = f"min({target_formula}, 남은 체력 {target['hp'] + dealt})"
+                    if target["hp"] <= 0:
+                        if kind == "ally":
+                            _mark_combatant_downed(target)
+                            events.append(f"💫 {name} 기절")
+                        else:
+                            events.append(f"💀 {name} {'처치' if kind == 'summon' else '격파'}")
+                continue
 
             target_summon = next((summon for summon in summons if summon["hp"] > 0), None)
             if target_summon is not None:
@@ -8267,6 +8343,7 @@ def _update_derived_skill_node(db: Session, node: SkillNode, data: SkillNodeUpda
     for field in ("target", "target_side", "activation_order", "cost"):
         if field in data.model_fields_set:
             setattr(node, field, getattr(data, field))
+    _update_skill_power_units(node, data)
     _normalize_duplicate_skill_node_names(db, book=node.book)
     db.commit()
     invalidate_active_battle_skills_cache()
@@ -8305,6 +8382,7 @@ def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> Skill
         if unknown:
             raise HTTPException(status_code=400, detail=f"이 기술에 없는 기술 위력 항목입니다: {', '.join(unknown)}")
         node.powers = {key: float(value) for key, value in data.powers.items() if key != "power"}
+    _update_skill_power_units(node, data)
     _normalize_duplicate_skill_node_names(db, book=node.book)
     db.commit()
     invalidate_active_battle_skills_cache()

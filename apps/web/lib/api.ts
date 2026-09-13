@@ -2089,6 +2089,7 @@ export async function updateSkillNode(
     cost?: number;
     power?: number;
     powers?: Record<string, number>;
+    power_units?: Record<string, "percent" | "flat">;
     target?: string;
     target_side?: SkillTargetSide;
     activation_order?: number;
