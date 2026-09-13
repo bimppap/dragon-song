@@ -3716,6 +3716,15 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
             f"{node.tier * power * 100:g}% + 기술 효율(비례)만큼 올리는 버프를 최대 {max_stacks}스택까지 부여합니다. "
             "경호 스택을 가진 아군이 피격되면 스택을 소모하고 시전자가 대신 공격을 받습니다. 자신의 피해 감소는 전투 종료까지 유지됩니다."
         )
+    if var_name == "ab_clone":
+        # 복제 비용은 관리자가 정하므로 설명도 저장된 값을 그대로 쓴다.
+        cost = _resolved_skill_node_value(node, "cost")
+        depth = node.tier
+        return (
+            f"비전투 시 다른 캐릭터의 기술을 최대 {depth}개 저장하고, 전투에서 복제해 사용합니다"
+            f"(비용 {_formula_number(cost or 0)}). "
+            f"복제 사용 시 기술 효율(비례) {-50 + 10 * depth:+d}%, 기술 효율(고정) {-20 + 4 * depth:+d}로 보정됩니다."
+        )
     if var_name in DEVOTION_DERIVED_VARS:
         return _devotion_derived_description(node, resolved_spec)
     return dynamic_derived_description(var_name, node.tier)
@@ -5137,7 +5146,8 @@ def _expand_clone_skills(db: Session, by_character: dict[int, dict[int, dict]]) 
                 continue
             synthetic = dict(source)
             synthetic["id"] = CLONE_SKILL_ID_BASE + int(slot.slot_index)
-            synthetic["cost"] = 4
+            # 복제 비용은 원본 기술이 아니라 복제 노드에 설정한 값을 쓴다.
+            synthetic["cost"] = clone_entry.get("cost")
             synthetic["display_name"] = f"{prefix}:{source['display_name']}"
             synthetic["is_clone"] = True
             synthetic["clone_slot"] = int(slot.slot_index)
@@ -7416,6 +7426,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         elif action.kind == "retreat":
             p["retreated"] = True
             events.append(f"🏳️ {p['name']} 퇴각")
+            # 살포 스택은 시전자가 전장에 있어야 유지된다. 기절과 마찬가지로 퇴각해도 사라진다.
+            sparge_effects = _status_effects_of_type(p, "sparge_telegraph")
+            if sparge_effects:
+                skill_name = str(sparge_effects[0].get("skill_name") or "살포")
+                p["status_effects"] = [effect for effect in _ensure_status_effects(p)
+                                       if effect.get("effect_type") != "sparge_telegraph"]
+                events.append(f"🌪️ {p['name']}의 {skill_name} {len(sparge_effects)}중첩 해제 (시전자 퇴각)")
 
         elif action.kind == "heal":
             # 이 시점에 에너미가 전부 죽어 승리가 확정됐다면 치유는 생략한다.

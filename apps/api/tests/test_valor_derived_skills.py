@@ -238,6 +238,36 @@ class ValorDerivedBattleTest(unittest.TestCase):
         # 2중첩 → 44
         self.assertEqual([enemy["hp"] for enemy in result.enemies], [956, 956])
 
+    def test_sparge_stacks_are_cleared_when_the_caster_leaves_the_field(self):
+        """살포 스택은 시전자가 전장에 있어야 유지된다. 기절·퇴각하면 사라진다."""
+        node = self.node(
+            2, "살포", "ab_sparge", trigger_type="지속형", category="강화",
+            stackable=True, target="SELF", target_side="ALLY", activation_order=2,
+        )
+        self.cast(node)
+        self.cast(node)
+        caster = self.battle.participants[0]
+        self.assertEqual(len(crud._status_effects_of_type(caster, "sparge_telegraph")), 2)
+
+        self.battle.phase = "ally"
+        self.db.commit()
+        result = crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(
+            character_actions=[CharacterActionInput(character_id=self.caster.id, kind="retreat")],
+        ))
+        self.assertEqual(crud._status_effects_of_type(result.participants[0], "sparge_telegraph"), [])
+        self.assertTrue(any("살포" in event and "해제" in event for event in result.log[-1]["events"]))
+
+    def test_downed_caster_also_loses_sparge_stacks(self):
+        node = self.node(
+            2, "살포", "ab_sparge", trigger_type="지속형", category="강화",
+            stackable=True, target="SELF", target_side="ALLY", activation_order=2,
+        )
+        self.cast(node)
+        caster = self.battle.participants[0]
+        caster["hp"] = 0
+        crud._mark_combatant_downed(caster)
+        self.assertEqual(crud._status_effects_of_type(caster, "sparge_telegraph"), [])
+
 
 class ValorDerivedSpecTest(unittest.TestCase):
     def _spec(self, branch: int, tier: int) -> dict:
