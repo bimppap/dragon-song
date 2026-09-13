@@ -12,6 +12,10 @@ class FakeWebSocket:
         self.started = started
         self.release = release
         self.fail = fail
+        self.closed = False
+
+    async def close(self, code=1000):
+        self.closed = True
 
     async def send_json(self, _message: dict) -> None:
         self.started.append(self)
@@ -31,6 +35,12 @@ class SnapshotWebSocket:
         self.messages.append(message)
 
 
+async def drain(manager):
+    await asyncio.wait_for(asyncio.gather(*(queue.join() for queue in manager._queues.values())), 1)
+    if manager._closing:
+        await asyncio.gather(*manager._closing)
+
+
 def battle_session(version="2026-09-08T12:00:00+09:00", **changes):
     return {"id": 1, "updated_at": version, "status": "in_progress", "phase": "ally", **changes}
 
@@ -42,6 +52,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         manager.remember_session(1, session)
         staff = SnapshotWebSocket()
         await manager.connect(1, staff, is_staff=True, session=session)
+        await drain(manager)
         actions = [
             {"kind": "attack", "skill_index": 2, "target_character_ids": [12]},
             {"kind": "summon", "skill_index": 0, "target_character_ids": []},
@@ -50,9 +61,11 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
                    "draft_type": "enemy", "entity_id": 3, "patch": {"actions": actions}}
         with patch.object(ws, "manager", manager):
             await ws.handle_ws_message(1, SimpleNamespace(id=7, role="ADMIN"), staff, message)
+            await drain(manager)
             self.assertEqual(staff.messages[-1]["patch"]["actions"], actions)
             reconnected = SnapshotWebSocket()
             await manager.connect(1, reconnected, is_staff=True, session=session)
+            await drain(manager)
             self.assertEqual(reconnected.messages[-1]["draft"]["enemy"]["3"]["actions"], actions)
             for invalid in [actions[:1], [*actions, actions[0]], [None, actions[0]], [{**actions[0], "target_character_ids": "bad"}, actions[1]]]:
                 before = len(staff.messages)
@@ -76,8 +89,39 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         self.assertCountEqual(started, [alive, dead])
         release.set()
         await task
+        await drain(manager)
 
         self.assertEqual(manager._rooms[1], {alive})
+
+    async def test_slow_connection_does_not_block_broadcast_and_is_closed(self):
+        manager = BattleConnectionManager()
+        release = asyncio.Event()
+        slow = FakeWebSocket([], release)
+        fast = SnapshotWebSocket()
+        manager._rooms[1] = {slow, fast}
+        with patch.object(ws, "SEND_TIMEOUT_SECONDS", 0.02):
+            await manager.broadcast(1, {"type": "first"})
+            await manager.broadcast(1, {"type": "second"})
+            await asyncio.wait_for(manager._queues[fast].join(), 0.01)
+            self.assertEqual([message["type"] for message in fast.messages], ["first", "second"])
+            self.assertFalse(release.is_set())
+            sender = manager._senders[slow]
+            await asyncio.wait_for(sender, 1)
+            await drain(manager)
+        self.assertTrue(slow.closed)
+        self.assertNotIn(slow, manager._rooms[1])
+        manager.disconnect(1, fast)
+
+    async def test_queue_overflow_closes_connection_for_snapshot_recovery(self):
+        manager = BattleConnectionManager()
+        slow = FakeWebSocket([], asyncio.Event())
+        manager._rooms[1] = {slow}
+        with patch.object(ws, "MAX_PENDING_MESSAGES", 1):
+            await manager.broadcast(1, {"type": "first"})
+            await manager.broadcast(1, {"type": "second"})
+            await drain(manager)
+        self.assertTrue(slow.closed)
+        self.assertNotIn(1, manager._rooms)
 
     async def test_staff_only_broadcast_excludes_runner_connections(self):
         manager = BattleConnectionManager()
@@ -96,6 +140,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(started, [staff])
         release.set()
         await task
+        await drain(manager)
 
     async def test_draft_patch_is_shared_only_with_staff(self):
         original_manager = ws.manager
@@ -112,6 +157,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
                     "client_id": "browser-tab-a",
                     "draft_type": "character",
                     "entity_id": 12,
+                    "patch_id": "ack-1",
                     "patch": {"target_enemy_id": 3},
                 },
             )
@@ -125,6 +171,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
                 "version": battle_session()["updated_at"],
                 "editor_id": 7,
                 "editor_client_id": "browser-tab-a",
+                "patch_id": "ack-1",
                 "draft_type": "character",
                 "entity_id": 12,
                 "patch": {"target_enemy_id": 3},
@@ -165,6 +212,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         websocket = SnapshotWebSocket()
 
         await manager.connect(1, websocket, is_staff=True, session=session)
+        await drain(manager)
 
         self.assertEqual(websocket.messages, [{
             "type": "battle_update",
@@ -191,10 +239,12 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         manager.apply_preview(1, preview, {"12": {"kind": "heal", "target_character_id": 13}})
         first = SnapshotWebSocket()
         await manager.connect(1, first, is_staff=False, session=session)
+        await drain(manager)
         manager.disconnect(1, first)
         reconnected = SnapshotWebSocket()
 
         await manager.connect(1, reconnected, is_staff=False, session=session)
+        await drain(manager)
 
         self.assertEqual(first.messages, reconnected.messages)
         self.assertEqual(reconnected.messages, [{"type": "battle_update", "session": session, "preview": preview}])
@@ -207,12 +257,15 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         runner = SnapshotWebSocket()
         for operator in operators:
             await manager.connect(1, operator, is_staff=True, session=old)
+            await drain(manager)
         await manager.connect(1, runner, is_staff=False, session=old)
+        await drain(manager)
         manager.apply_draft_patch(1, "character", 12, {"kind": "heal"})
         manager.apply_preview(1, {"12": {"kind": "heal"}}, {"12": {"kind": "heal"}})
         updated = battle_session("2026-09-08T12:01:00+09:00", phase="enemy")
 
         await manager.publish_session_message(1, {"type": "battle_update", "session": updated})
+        await drain(manager)
 
         for operator in operators:
             self.assertEqual(len(operator.messages), 2)
@@ -264,7 +317,9 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         manager.apply_preview(1, {"12": {"kind": "none"}}, {"12": {"kind": "none"}})
         operator = SnapshotWebSocket()
         await manager.connect(1, operator, is_staff=True, session=battle_session())
+        await drain(manager)
         await manager.publish_session_message(1, {"type": "battle_update", "session": session})
+        await drain(manager)
         self.assertEqual(operator.messages[0], operator.messages[1])
         self.assertEqual(operator.messages[0]["session"], session)
         self.assertEqual(operator.messages[0]["draft"]["character"]["12"]["kind"], "none")
@@ -285,6 +340,7 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         manager.apply_draft_patch(1, "character", 12, {"kind": "none"})
         manager.apply_preview(1, {"12": {"kind": "none"}}, {"12": {"kind": "none"}})
         await manager.publish_session_message(1, {"type": "battle_deleted", "session_id": 1})
+        await drain(manager)
         self.assertEqual(manager._sessions, {})
         self.assertEqual(manager._previews, {})
         self.assertEqual(manager.draft_snapshot(1), {})

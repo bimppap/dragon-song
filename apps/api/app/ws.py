@@ -7,6 +7,7 @@ from app.models import Member
 from app.schemas import BattleSessionRead
 
 SEND_TIMEOUT_SECONDS = 3.0
+MAX_PENDING_MESSAGES = 128
 
 # 브라우저가 보낸 임시 초안은 DB에 저장하지 않지만, 다른 운영 화면에 그대로
 # 병합되므로 각 초안 유형에서 실제로 사용하는 필드만 전달한다.
@@ -40,6 +41,9 @@ class BattleConnectionManager:
         self._sessions: dict[int, dict] = {}
         self._previews: dict[int, dict] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._queues: dict[WebSocket, asyncio.Queue] = {}
+        self._senders: dict[WebSocket, asyncio.Task] = {}
+        self._closing: set[asyncio.Task] = set()
 
     def set_loop(self, loop: asyncio.AbstractEventLoop) -> None:
         self._loop = loop
@@ -51,7 +55,7 @@ class BattleConnectionManager:
         if is_staff:
             self._staff_rooms.setdefault(session_id, set()).add(websocket)
         # 세션과 초안을 한 메시지로 복원해 접속/새로고침 중 기본 행동이 끼어들지 않게 한다.
-        await websocket.send_json(self.session_message(session_id, is_staff=is_staff))
+        self._enqueue(session_id, websocket, self.session_message(session_id, is_staff=is_staff))
 
     def remember_session(self, session_id: int, session: dict) -> bool:
         previous = self._sessions.get(session_id)
@@ -120,6 +124,10 @@ class BattleConnectionManager:
         self._previews.pop(session_id, None)
 
     def disconnect(self, session_id: int, websocket: WebSocket) -> None:
+        self._queues.pop(websocket, None)
+        sender = self._senders.pop(websocket, None)
+        if sender is not None and sender is not asyncio.current_task():
+            sender.cancel()
         room = self._rooms.get(session_id)
         if room is None:
             return
@@ -149,17 +157,46 @@ class BattleConnectionManager:
         staff = self._staff_rooms.get(session_id, set())
         recipients = tuple(ws for ws in room if ws is not exclude and not (runners_only and ws in staff))
 
-        async def send(ws: WebSocket) -> WebSocket | None:
-            try:
-                await asyncio.wait_for(ws.send_json(message), timeout=SEND_TIMEOUT_SECONDS)
-                return None
-            except Exception:
-                return ws
+        # 전송은 연결별 단일 큐에서 순서대로 처리한다. 느린 수신자를 기다리지 않는다.
+        for websocket in recipients:
+            self._enqueue(session_id, websocket, message)
 
-        # 한 사용자의 느린 연결이 나머지 전체 전송을 순차적으로 막지 않게 한다.
-        dead = [ws for ws in await asyncio.gather(*(send(ws) for ws in recipients)) if ws is not None]
-        for ws in dead:
-            self.disconnect(session_id, ws)
+    async def _close_socket(self, websocket: WebSocket) -> None:
+        try:
+            await asyncio.wait_for(websocket.close(code=1013), SEND_TIMEOUT_SECONDS)
+        except Exception:
+            pass
+
+    def _drop_connection(self, session_id: int, websocket: WebSocket) -> None:
+        self.disconnect(session_id, websocket)
+        task = asyncio.create_task(self._close_socket(websocket))
+        self._closing.add(task)
+        task.add_done_callback(self._closing.discard)
+
+    def _enqueue(self, session_id: int, websocket: WebSocket, message: dict) -> None:
+        queue = self._queues.get(websocket)
+        if queue is None:
+            queue = asyncio.Queue(maxsize=MAX_PENDING_MESSAGES)
+            self._queues[websocket] = queue
+            self._senders[websocket] = asyncio.create_task(self._send_messages(session_id, websocket, queue))
+        try:
+            queue.put_nowait(message)
+        except asyncio.QueueFull:
+            # 갱신을 조용히 버리지 않고 재접속 스냅샷으로 복구한다.
+            self._drop_connection(session_id, websocket)
+
+    async def _send_messages(self, session_id: int, websocket: WebSocket, queue: asyncio.Queue) -> None:
+        try:
+            while True:
+                message = await queue.get()
+                try:
+                    await asyncio.wait_for(websocket.send_json(message), SEND_TIMEOUT_SECONDS)
+                finally:
+                    queue.task_done()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            self._drop_connection(session_id, websocket)
 
     def schedule_broadcast(self, session_id: int, message: dict) -> None:
         """동기 컨텍스트(일반 REST 엔드포인트, 스레드풀에서 실행됨)에서
@@ -267,6 +304,7 @@ async def handle_ws_message(session_id: int, member: Member, websocket: WebSocke
                 "draft_type": draft_type,
                 "entity_id": entity_id,
                 "patch": patch,
+                **({"patch_id": raw["patch_id"]} if isinstance(raw.get("patch_id"), str) else {}),
             },
             staff_only=True,
         )

@@ -795,7 +795,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [joiningEnemy, setJoiningEnemy] = useState(false);
 
   // controlled 모드(러너 관전 화면)에서는 부모가 이미 소켓을 갖고 있으므로 여기서는 연결하지 않는다.
-  const { connected: battleSocketConnected, send: sendBattleWs, clientId: battleClientId } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
+  const { connected: battleSocketConnected, send: sendBattleWs, clientId: battleClientId, pendingChanges } = useBattleSocket(!controlled ? session?.id ?? null : null, (msg) => {
     if (msg.type === "battle_update") {
       if (!applyBattleSession(msg.session, msg.draft)) return;
       setSocketVersion(msg.session.updated_at);
@@ -914,10 +914,10 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     return () => { cancelled = true; };
   }, [sessionId, toast, controlled]);
 
-  // 관전(readOnly) 화면은 아무도 행동을 제출하지 않으므로, 라운드 진행 상황을 놓치지 않도록 주기적으로 다시 불러온다.
+  // 소켓 연결이 끊기면 관리자와 관전자 모두 확정 상태를 주기적으로 다시 불러온다.
   // (부모가 세션을 공급하는 controlled 모드에서는 부모가 이미 폴링하므로 중복 폴링을 하지 않는다.)
   useEffect(() => {
-    if (!readOnly || controlled || battleSocketConnected || session?.status !== "in_progress") return;
+    if (controlled || battleSocketConnected || session?.status !== "in_progress") return;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     async function poll() {
@@ -1616,6 +1616,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
           </div>
         )}
       </div>
+
+      {!controlled && !readOnly && inProgress && (!battleSocketConnected || pendingChanges) && (
+        <AlertBanner tone="warning">
+          {!battleSocketConnected ? "연결을 복구하고 있습니다. 입력한 초안은 같은 턴에서 재연결되면 동기화됩니다." : "초안을 동기화하고 있습니다."}
+        </AlertBanner>
+      )}
 
       {readOnly && (
         <AlertBanner tone="success">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
+import { BattleDraftOutbox } from "./battleDraftOutbox";
 import { getToken } from "@/lib/token";
 import type { BattleSession, CharacterActionKind } from "@/lib/api";
 
@@ -39,6 +40,7 @@ export interface BattleEditingState {
 }
 
 export interface BattleDraftPatch {
+  patch_id?: string;
   editor_id: number;
   editor_client_id: string;
   draft_type: "character" | "enemy";
@@ -72,10 +74,15 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
       : Math.random().toString(36).slice(2)
   ));
   const attemptRef = useRef(0);
+  const outboxRef = useRef(new BattleDraftOutbox());
+  const readyVersionRef = useRef<string | null>(null);
+  const [pendingChanges, setPendingChanges] = useState(false);
   const handleMessage = useEffectEvent((msg: BattleWsMessage) => onMessage(msg));
 
   useEffect(() => {
     if (sessionId == null) return;
+    const outbox = outboxRef.current;
+    let latestVersion: string | null = null;
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -88,18 +95,34 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
       ws.onopen = () => {
         if (cancelled || wsRef.current !== ws) return;
         attemptRef.current = 0;
-        setConnectedSessionId(sessionId);
+        // 연결 직후 서버 스냅샷을 받은 뒤에만 초안을 전송한다.
       };
       ws.onmessage = (event) => {
         if (cancelled || wsRef.current !== ws) return;
         try {
-          handleMessage(JSON.parse(event.data));
+          const incoming = JSON.parse(event.data) as BattleWsMessage;
+          if (incoming.type === "battle_update") {
+            if (latestVersion != null && incoming.session.updated_at < latestVersion) return;
+            latestVersion = incoming.session.updated_at;
+          }
+          const message = outbox.reconcile(incoming, clientId);
+          if (message.type === "battle_update") {
+            readyVersionRef.current = message.session.updated_at;
+            setConnectedSessionId(sessionId);
+            for (const patch of outbox.values()) {
+              if (patch.version !== message.session.updated_at) continue;
+              ws.send(JSON.stringify({ ...patch, client_id: clientId }));
+            }
+          }
+          setPendingChanges(outboxRef.current.size > 0);
+          handleMessage(message);
         } catch {
           // 잘못된 메시지는 무시한다.
         }
       };
       ws.onclose = () => {
         if (cancelled || wsRef.current !== ws) return;
+        readyVersionRef.current = null;
         setConnectedSessionId(null);
         const delay = Math.min(1000 * 2 ** attemptRef.current, 15000) + Math.random() * 500;
         attemptRef.current += 1;
@@ -114,17 +137,28 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
       if (timer) clearTimeout(timer);
       wsRef.current?.close();
       wsRef.current = null;
+      readyVersionRef.current = null;
+      outbox.clear();
     };
-  }, [sessionId]);
+  }, [sessionId, clientId]);
 
   const send = useCallback((message: unknown) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      const payload = message != null && typeof message === "object" && !Array.isArray(message)
-        ? { ...message, client_id: clientId }
-        : message;
-      wsRef.current.send(JSON.stringify(payload));
+    let outgoing = message;
+    if (message != null && typeof message === "object" && "type" in message && message.type === "draft_patch") {
+      outgoing = outboxRef.current.add(message as Parameters<BattleDraftOutbox["add"]>[0]);
+      setPendingChanges(true);
+    }
+    if (readyVersionRef.current != null && wsRef.current?.readyState === WebSocket.OPEN) {
+      const payload = outgoing != null && typeof outgoing === "object" && !Array.isArray(outgoing)
+        ? { ...outgoing, client_id: clientId }
+        : outgoing;
+      try {
+        wsRef.current.send(JSON.stringify(payload));
+      } catch {
+        wsRef.current.close();
+      }
     }
   }, [clientId]);
 
-  return { connected: sessionId != null && connectedSessionId === sessionId, send, clientId };
+  return { connected: sessionId != null && connectedSessionId === sessionId, send, clientId, pendingChanges };
 }

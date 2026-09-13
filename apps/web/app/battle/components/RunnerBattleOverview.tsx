@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import Image from "next/image";
 import { CalendarClock, Image as ImageIcon } from "lucide-react";
 import EmptyState from "@/components/common/EmptyState";
@@ -80,10 +80,12 @@ export default function RunnerBattleOverview() {
     };
   }, [toast]);
 
+  const keepFinishedResult = useEffectEvent(() => liveSession != null && liveSession.status !== "in_progress");
+
   // 관리자가 실전 전투를 시작했는지 주기적으로 확인해, 있으면 관전 화면으로 전환한다.
   useEffect(() => {
     // 소켓이 살아 있는 동안에는 같은 전투 상태를 REST로 중복 확인하지 않는다.
-    if (battleSocketConnected) return;
+    if (battleSocketConnected && liveSession?.status === "in_progress") return;
     let cancelled = false;
     let polling = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
@@ -105,6 +107,8 @@ export default function RunnerBattleOverview() {
       try {
         const live = await fetchLiveBattle(liveVersionRef.current ?? undefined);
         if (!cancelled && live !== undefined) {
+          // 다음 전투가 없으면 종료 결과 화면을 유지하면서 탐색만 계속한다.
+          if (live === null && keepFinishedResult()) return;
           const previous = liveVersionRef.current;
           if (live && previous?.id === live.id && previous.updated_at > live.updated_at) return;
           if (previous?.id !== live?.id || previous?.updated_at !== live?.updated_at) setDraftPreview(null);
@@ -133,7 +137,7 @@ export default function RunnerBattleOverview() {
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [battleSocketConnected]);
+  }, [battleSocketConnected, liveSession?.status]);
 
   if (liveSession != null) {
     return (
@@ -142,7 +146,11 @@ export default function RunnerBattleOverview() {
         externalSession={liveSession}
         draftPreview={draftPreview}
         readOnly
-        onExit={() => setLiveSession(null)}
+        onExit={() => {
+          setLiveSession(null);
+          liveVersionRef.current = null;
+          setDraftPreview(null);
+        }}
       />
     );
   }

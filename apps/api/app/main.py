@@ -18,6 +18,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app import storage
@@ -1276,21 +1277,23 @@ def get_battle(session_id: int, member: Member = Depends(get_current_member), db
     return crud.get_battle_session(db, session_id, member)
 
 
-@app.websocket("/ws/battles/{session_id}")
-async def battle_ws(websocket: WebSocket, session_id: int, token: str | None = Query(default=None)):
+def _load_battle_socket(token: str | None, session_id: int):
+    # 인증과 세션 조회의 DB 세션은 같은 작업 스레드 안에서 열고 닫는다.
     member = authenticate_ws_token(token)
     if member is None:
-        await websocket.close(code=4401)
-        return
-
-    db = SessionLocal()
-    try:
+        raise HTTPException(status_code=401)
+    with SessionLocal() as db:
         session = BattleSessionRead.model_validate(crud.get_battle_session(db, session_id, member)).model_dump(mode="json")
-    except HTTPException:
-        await websocket.close(code=4403)
+    return member, session
+
+
+@app.websocket("/ws/battles/{session_id}")
+async def battle_ws(websocket: WebSocket, session_id: int, token: str | None = Query(default=None)):
+    try:
+        member, session = await run_in_threadpool(_load_battle_socket, token, session_id)
+    except HTTPException as error:
+        await websocket.close(code=4401 if error.status_code == 401 else 4403)
         return
-    finally:
-        db.close()
 
     try:
         await manager.connect(session_id, websocket, is_staff=is_admin_role(member.role), session=session)
