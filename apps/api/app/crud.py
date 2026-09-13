@@ -6555,8 +6555,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 p["hp"] -= hp_cost
                 events.append(f"🩸 {p['name']}의 {skill_name} → {hp_cost} 체력 소모 [{p['hp']}/{p['max_hp']}]")
                 calculations[events[-1]] = hp_formula
-                shield = max(0, _floor_amount(depth + p["skill_eff_true"] / 2))
-                shield_formula = f"max(0, floor(스킬레벨 {depth} + 시전자 기술 효율 고정 {_formula_number(p['skill_eff_true'])} / 2))"
+                shield = max(0, _floor_amount(depth * 2 + p["skill_eff_true"] / 2))
+                shield_formula = f"max(0, floor(스킬레벨 {depth} × 2 + 시전자 기술 효율 고정 {_formula_number(p['skill_eff_true'])} / 2))"
                 if _mark_combatant_downed(p):
                     events.append(f"💫 {p['name']} 기절")
                 all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True)

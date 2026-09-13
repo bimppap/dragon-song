@@ -40,11 +40,11 @@ class VeilSkillTest(unittest.TestCase):
     def test_depth_two_cost_bypasses_shield_and_grants_whole_party(self):
         result = self.cast()
         caster, ally = result.participants
-        self.assertEqual((caster['hp'], caster['shield'], ally['shield']), (60, 17, 8))
+        self.assertEqual((caster['hp'], caster['shield'], ally['shield']), (60, 19, 10))
         logs = result.log[-1]
         cost = next(event for event in logs['events'] if '40 체력 소모' in event)
         self.assertIn('스킬레벨 2 × 0.05', logs['calculations'][cost])
-        shields = [event for event in logs['events'] if '8 보호막 부여' in event]
+        shields = [event for event in logs['events'] if '10 보호막 부여' in event]
         self.assertEqual(len(shields), 2)
         for event in shields:
             self.assertIn('고정 12 / 2', logs['calculations'][event])
@@ -52,12 +52,12 @@ class VeilSkillTest(unittest.TestCase):
     def test_depth_three_and_fractional_efficiency(self):
         result = self.cast(tier=3, efficiency=0.1, fixed=5)
         self.assertEqual(result.participants[0]['hp'], 75)
-        self.assertEqual(result.participants[1]['shield'], 5)
+        self.assertEqual(result.participants[1]['shield'], 8)
 
     def test_high_efficiency_never_heals_caster(self):
         result = self.cast(tier=6, efficiency=0.7)
         self.assertEqual(result.participants[0]['hp'], 100)
-        self.assertEqual(result.participants[1]['shield'], 12)
+        self.assertEqual(result.participants[1]['shield'], 18)
 
     def test_insufficient_health_grants_no_shield_and_spends_no_mp(self):
         result = self.cast(hp=30)
@@ -69,7 +69,7 @@ class VeilSkillTest(unittest.TestCase):
         result = self.cast(hp=40)
         self.assertTrue(result.participants[0]['downed'])
         self.assertEqual(result.participants[0]['hp'], 0)
-        self.assertEqual(result.participants[1]['shield'], 8)
+        self.assertEqual(result.participants[1]['shield'], 10)
 
     def test_legacy_node_syncs_to_spec_and_keeps_admin_name(self):
         node = self.db.query(SkillNode).filter_by(book='불굴의 서', branch=2, col=1, tier=4).one()
@@ -81,7 +81,7 @@ class VeilSkillTest(unittest.TestCase):
         # 관리자가 명시한 이름·위력은 저장하고, 나머지는 기존 스펙을 유지한다.
         self.assertEqual((result.default_name, result.power, result.target), ('다른 이름', 99, 'SELF'))
         self.assertIn('30%', result.description)
-        self.assertIn('4 +', result.description)
+        self.assertIn('8 +', result.description)
         self.assertFalse(result.is_placeholder)
 
     def test_admin_description_overrides_auto_text_until_cleared(self):

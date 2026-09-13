@@ -359,7 +359,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "derived": _skill(
                     "장막", trigger_type="즉발형", category="강화", stackable=False,
                     var_name="ab_veil", cost=0, power=0, target="SELF", target_side="ALLY", order=4,
-                    formula="체력 소모: floor(시전자 최대 체력*max(0, 0.5-depth*0.05-기술 효율 비례)). 보호막: floor(depth+기술 효율 고정/2)",
+                    formula="체력 소모: floor(시전자 최대 체력*max(0, 0.5-depth*0.05-기술 효율 비례)). 보호막: floor(depth*2+기술 효율 고정/2)",
                     description="시전자의 체력을 소모하고 아군 전원에게 고정 보호막을 부여합니다.",
                 ),
             },
@@ -509,7 +509,7 @@ def dynamic_derived_description(var_name: str | None, tier: int) -> str | None:
     if var_name == "ab_veil":
         return (
             f"시전자 최대 체력의 max(0, {50 - L * 5}% - 기술 효율 비례)만큼 체력을 소모하고, "
-            f"아군 전원에게 {L} + 시전자 기술 효율(고정)/2만큼 보호막을 부여합니다. "
+            f"아군 전원에게 {L * 2} + 시전자 기술 효율(고정)/2만큼 보호막을 부여합니다. "
             "체력과 보호막은 소수점을 버리며, 현재 체력이 비용보다 적으면 사용할 수 없습니다."
         )
     if var_name == "ab_improve":
