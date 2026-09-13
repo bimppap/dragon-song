@@ -3619,14 +3619,14 @@ SKILL_LEVEL_SUFFIX_VAR_NAMES = {
     "ab_charge",
 }
 DEVOTION_DERIVED_VARS = {"ab_regeneration", "ab_halo", "ab_hex_heal"}
-# 불굴·용맹의 서 파생: 위력·이름 등을 노드 저장값 대신 항상 스펙에서 해석하고, skill_lv도 tier를 그대로 쓴다.
+# 불굴·용맹의 서 파생: 기본 설정은 스펙에서 해석하고, skill_lv는 tier를 그대로 쓴다.
 FORTITUDE_DERIVED_VARS = {"ab_veil", "ab_eruption", "ab_escort"}
 VALOR_DERIVED_VARS = {"ab_enchant", "ab_suppressing", "ab_sparge"}
 SPEC_DRIVEN_DERIVED_VARS = FORTITUDE_DERIVED_VARS | VALOR_DERIVED_VARS
 DERIVED_VARS = DEVOTION_DERIVED_VARS | SPEC_DRIVEN_DERIVED_VARS
-# 파생기에서도 관리자가 직접 정하는 표시·운용 항목. 나머지(발동 타입·분류·중첩·위력)는 스펙과 depth가 정한다.
+# 파생기에서도 노드 컬럼을 직접 따르는 표시·운용 항목. 발동 타입·분류·중첩·위력의 명시적 변경은 settings_overrides에 둔다.
 DERIVED_EDITABLE_FIELDS = {"default_name", "target", "target_side", "activation_order", "cost"}
-# 스펙이 정하는 항목. 관리자가 무엇을 바꾸든 항상 스펙 값을 돌려준다.
+# 명시적인 설정 변경이 없을 때 스펙을 따르는 항목.
 DERIVED_SPEC_FIELDS = {"var_name", "trigger_type", "category", "stackable", "formula", "cleanse_count"}
 SKILL_LEVEL_SUFFIX_VAR_NAMES.update(DEVOTION_DERIVED_VARS | SPEC_DRIVEN_DERIVED_VARS)
 # 탐구의 서 파생: 개선/쇠약은 등급 접미사를 붙이고, 복제는 전투에서 "복제:기술명"으로 표기한다.
@@ -3679,9 +3679,9 @@ def _devotion_derived_power(node: SkillNode, spec: dict) -> float:
 
 
 def _devotion_derived_description(node: SkillNode, spec: dict) -> str:
-    power = _devotion_derived_power(node, spec)
+    power = _resolved_skill_node_value(node, "power")
     if spec["var_name"] == "ab_hex_heal":
-        return f"아군 1명의 최대 체력의 {node.tier * 15 + 10}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다."
+        return f"아군 1명의 최대 체력의 {node.tier * power * 100 + 10:g}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다."
     if spec["var_name"] == "ab_regeneration":
         return f"아군 1명에게 전투 종료까지 체력 재생력(고정) +floor({power:g} + 시전자 기술 효율(고정)/4) 버프를 부여합니다."
     return f"아군 전원의 현재 체력을 {power:g} + 시전자 기술 효율(고정)/4만큼 회복합니다."
@@ -3691,6 +3691,23 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
     """파생기의 depth 기반 자동 설명. 관리자가 설명을 따로 쓰지 않으면 이 값을 보여준다."""
     resolved_spec = spec if spec is not None else (_skill_spec_for_node(node) or {})
     var_name = resolved_spec.get("var_name")
+    if var_name == "ab_enchant":
+        damage_power = _resolved_skill_node_value(node, "power")
+        buff_power = _resolved_skill_node_powers(node)["attack_buff"]
+        stackable = _resolved_skill_node_value(node, "stackable")
+        return (
+            f"적 1명에게 (자애 + 지혜) × {damage_power:g} + 기술 효율(고정)만큼 피해를 주고, "
+            f"자신의 공격력을 (자애 + 지혜) × {buff_power:g} + 기술 효율(고정)/2만큼 올리는 버프를 부여합니다. "
+            + ("이 버프는 중첩됩니다." if stackable else "이 버프는 중첩되지 않습니다.")
+        )
+    if var_name == "ab_escort":
+        power = _resolved_skill_node_value(node, "power")
+        max_stacks = 2 if _resolved_skill_node_value(node, "stackable") else 1
+        return (
+            f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 피해 감소를 "
+            f"{node.tier * power * 100:g}% + 기술 효율(비례)만큼 올리는 버프를 최대 {max_stacks}스택까지 부여합니다. "
+            "경호 스택을 가진 아군이 피격되면 스택을 소모하고 시전자가 대신 공격을 받습니다. 자신의 피해 감소는 전투 종료까지 유지됩니다."
+        )
     if var_name in DEVOTION_DERIVED_VARS:
         return _devotion_derived_description(node, resolved_spec)
     return dynamic_derived_description(var_name, node.tier)
@@ -3699,11 +3716,16 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
 def _resolved_skill_node_value(node: SkillNode, field: str):
     spec = _skill_spec_for_node(node) or {}
     spec_var_name = spec.get("var_name")
+    if spec_var_name in DERIVED_VARS and _skill_node_matches_spec(node, spec):
+        overrides = node.settings_overrides or {}
+        if field in overrides:
+            return overrides[field]
     # 파생기라도 관리자가 설명을 직접 썼으면 자동 생성 설명 대신 그것을 보여준다.
     if field == "description" and spec_var_name in DERIVED_VARS:
         override = (getattr(node, "description_override", None) or "").strip()
         if override:
             return override
+        return derived_auto_description(node, spec)
     # 개선/쇠약/복제는 depth별로 설명이 달라지므로 저장값 대신 tier로 계산한 설명을 준다.
     # (기존 DB에 "설명 준비 중입니다."가 저장돼 있어도 새 설명으로 덮는다.)
     if field == "description":
@@ -6400,7 +6422,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     "effect_type": "stat_modifier", "affinity": "buff", "stat": "presence",
                     "applied_delta": 0.2, "reaction": "eruption", "skill_lv": int(selected_skill.get("tier") or 2),
                     "source_character_id": p["character_id"], "source_name": p["name"],
-                    "skill_name": skill_name, "var_name": var_name, "stackable": True,
+                    "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
                 }, participants=participants, enemies=enemies)
                 p["presence"] = round(p["presence"] + 0.2, 6)
                 events.append(f"🌋 {p['name']}의 {skill_name} → 존재감 +20% · 피격 시 전체 에너미 반응 피해 강화 부여")
@@ -6437,11 +6459,17 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"🛡️ {p['name']}의 {skill_name} → {target['name']} 경호 스택 부여 (피격 시 {p['name']}이(가) 대신 방어)"
                     )
                 reduction = max(0.0, depth * skill_power + skill_eff_fixed)
+                stackable = bool(selected_skill.get("stackable"))
+                max_stacks = ESCORT_MAX_REDUCTION_STACKS if stackable else 1
+                if not stackable:
+                    # 일반 중첩 제거는 아군의 경호 스택도 지우므로 자신의 피해 감소만 갱신한다.
+                    p["status_effects"] = [effect for effect in _ensure_status_effects(p)
+                                           if effect.get("effect_type") != "escort_damage_reduction"]
                 own_stacks = len(_status_effects_of_type(p, "escort_damage_reduction"))
-                if own_stacks >= ESCORT_MAX_REDUCTION_STACKS:
+                if own_stacks >= max_stacks:
                     events.append(
                         f"🛡️ {p['name']}의 {skill_name} → 피해 감소 "
-                        f"{ESCORT_MAX_REDUCTION_STACKS}스택 유지 (최대치)"
+                        f"{max_stacks}스택 유지 (최대치)"
                     )
                     continue
                 _add_status_effect(p, {
@@ -6452,7 +6480,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 }, participants=participants, enemies=enemies)
                 events.append(
                     f"🛡️ {p['name']}의 {skill_name} → 피해 감소 +{_floor_amount(reduction * 100)}% "
-                    f"({own_stacks + 1}/{ESCORT_MAX_REDUCTION_STACKS}스택 · "
+                    f"({own_stacks + 1}/{max_stacks}스택 · "
                     f"합계 {_floor_amount(_escort_damage_reduction(p) * 100)}%)"
                 )
                 calculations[events[-1]] = (
@@ -6500,7 +6528,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     effect = {
                         "effect_type": "stat_modifier", "affinity": "buff", "stat": "hp_regen_true",
                         "applied_delta": flat_amount, "source_character_id": p["character_id"],
-                        "source_name": p["name"], "skill_name": skill_name, "var_name": var_name, "stackable": False,
+                        "source_name": p["name"], "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
                     }
                     _add_status_effect(target, effect, participants=participants, enemies=enemies)
                     target["hp_regen_true"] += flat_amount
@@ -6512,10 +6540,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     before_hp = target["hp"]
                     if var_name == "ab_hex_heal":
                         depth = int(selected_skill.get("tier") or 2)
-                        ratio = depth * 0.15 + 0.10
+                        ratio = depth * skill_power + 0.10
                         amount = max(0, _floor_amount(target["max_hp"] * ratio * (1 + skill_eff_fixed) * (1 + p["heal_eff"])))
                         formula = (f"floor(대상 최대 체력 {_formula_number(target['max_hp'])} × "
-                                   f"(스킬레벨 {depth} × 0.15 + 0.10) × (1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}) × "
+                                   f"(스킬레벨 {depth} × {_formula_number(skill_power)} + 0.10) × (1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}) × "
                                    f"(1 + 치유 효율 {_formula_number(p['heal_eff'])}))")
                     else:
                         amount = _floor_amount(flat_amount)
@@ -6635,7 +6663,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_enchant":
-                # 주입은 깊이와 무관하게 (자애+지혜)×2 고정 배율을 쓴다.
+                # depth별로 저장한 피해 배율과 공격력 버프 배율을 각각 적용한다.
                 targets = _resolve_damage_targets(
                     action.target_enemy_id, _skill_target_count(selected_skill), action.skill_target_keys
                 )
@@ -6644,9 +6672,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 stat_sum = int(p["stat_charity"]) + int(p["stat_wisdom"])
                 base_formula = (
-                    f"(자애 {p['stat_charity']} + 지혜 {p['stat_wisdom']}) × 2"
+                    f"(자애 {p['stat_charity']} + 지혜 {p['stat_wisdom']}) × {_formula_number(skill_power)}"
                 )
-                damage = max(0, _floor_amount(stat_sum * 2 + p["skill_eff_true"]))
+                damage = max(0, _floor_amount(stat_sum * skill_power + p["skill_eff_true"]))
                 damage_formula = (
                     f"max(0, floor({base_formula} + 기술 효율 고정 {_formula_number(p['skill_eff_true'])}))"
                 )
@@ -6673,17 +6701,19 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     if target["hp"] <= 0:
                         events.append(f"💀 {target['name']} 격파")
                 # 자신에게 공격력 버프를 중첩한다.
-                atk_bonus = max(0, _floor_amount(stat_sum * 2 + p["skill_eff_true"] / 2))
+                buff_power = _skill_power_value(selected_skill, "attack_buff", 2.0)
+                buff_formula = f"(자애 {p['stat_charity']} + 지혜 {p['stat_wisdom']}) × {_formula_number(buff_power)}"
+                atk_bonus = max(0, _floor_amount(stat_sum * buff_power + p["skill_eff_true"] / 2))
                 _add_status_effect(p, {
                     "effect_type": "stat_modifier", "affinity": "buff", "stat": "atk",
                     "applied_delta": atk_bonus, "source_character_id": p["character_id"],
                     "source_name": p["name"], "skill_name": skill_name, "var_name": var_name,
-                    "stackable": True,
+                    "stackable": bool(selected_skill.get("stackable")),
                 }, participants=participants, enemies=enemies)
                 p["atk"] += atk_bonus
                 events.append(f"💪 {p['name']}의 {skill_name} → 공격력 +{atk_bonus} (현재 {p['atk']})")
                 calculations[events[-1]] = (
-                    f"max(0, floor({base_formula} + "
+                    f"max(0, floor({buff_formula} + "
                     f"기술 효율 고정 {_formula_number(p['skill_eff_true'])} / 2))"
                 )
                 continue
@@ -6722,7 +6752,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _add_status_effect(p, {
                     "effect_type": "sparge_telegraph", "affinity": "buff",
                     "source_character_id": p["character_id"], "source_name": p["name"],
-                    "skill_name": skill_name, "var_name": var_name, "stackable": True,
+                    "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
                     "damage": sparge_damage, "skill_lv": depth,
                 }, participants=participants, enemies=enemies)
                 stacks = len(_status_effects_of_type(p, "sparge_telegraph"))
@@ -8000,8 +8030,7 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")),
         is_public=node.is_public,
         is_derived=spec_var_name in DERIVED_VARS,
-        # 헌신의 서 파생기는 회복·재생 기본값을 관리자가 정한다. 나머지 파생기의 위력은 depth가 정한다.
-        power_editable=spec_var_name not in SPEC_DRIVEN_DERIVED_VARS and spec_var_name != "ab_hex_heal",
+        power_editable=True,
     )
 
 
@@ -8199,7 +8228,7 @@ def get_skill_nodes(db: Session, book: str) -> list[SkillNodeRead]:
 
 
 def _update_derived_skill_node(db: Session, node: SkillNode, data: SkillNodeUpdate, spec: dict) -> SkillNodeRead:
-    """파생기 저장. 발동 타입·분류·중첩·위력은 스펙과 depth가 정하고, 표시·운용 항목만 관리자가 바꾼다."""
+    """파생기의 depth별 설정을 저장하고, 명시한 설정은 자동 스펙보다 우선한다."""
     spec_var_name = spec["var_name"]
     # 편집 화면에 채워져 있던 자동 설명. 위력을 바꾸면 자동 설명도 바뀌므로, 바꾸기 전에 먼저 잡아둔다.
     auto_description_before = derived_auto_description(node, spec)
@@ -8210,10 +8239,25 @@ def _update_derived_skill_node(db: Session, node: SkillNode, data: SkillNodeUpda
         node.power = spec["power"]
         node.description_override = None
         node.var_name = spec_var_name
-    if spec_var_name in DEVOTION_DERIVED_VARS and spec_var_name != "ab_hex_heal" and "power" in data.model_fields_set:
+        node.settings_overrides = {}
+    if "power" in data.model_fields_set:
         if data.power is None or not math.isfinite(data.power) or data.power < 0:
             raise HTTPException(status_code=400, detail="기본값은 0 이상의 유한한 숫자여야 합니다.")
         node.power = data.power
+    overrides = dict(node.settings_overrides or {})
+    for field in ("trigger_type", "category", "stackable", "power"):
+        if field in data.model_fields_set:
+            value = getattr(data, field)
+            if value is None:
+                raise HTTPException(status_code=400, detail="기술 설정은 비워둘 수 없습니다.")
+            overrides[field] = value
+    node.settings_overrides = overrides
+    if "powers" in data.model_fields_set:
+        slot_keys = {slot["key"] for slot in skill_power_slots(spec_var_name)}
+        unknown = sorted(set(data.powers) - slot_keys)
+        if unknown:
+            raise HTTPException(status_code=400, detail=f"이 기술에 없는 기술 위력 항목입니다: {', '.join(unknown)}")
+        node.powers = {key: float(value) for key, value in data.powers.items() if key != "power"}
     node.default_name = data.default_name.strip()
     if "description" in data.model_fields_set:
         written = (data.description or "").strip()

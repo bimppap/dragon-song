@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app import crud
 from app.db import Base
 from app.models import BattleSession, Character, CharacterSkillUnlock, SkillNode
-from app.schemas import BattleAllyTurnRequest, CharacterActionInput
+from app.schemas import BattleAllyTurnRequest, CharacterActionInput, SkillNodeUpdate
 
 
 class EscortSkillTest(unittest.TestCase):
@@ -159,6 +159,22 @@ class EscortSkillTest(unittest.TestCase):
         reductions = [e for e in caster["status_effects"] if e.get("effect_type") == "escort_damage_reduction"]
         self.assertEqual(len(reductions), 2)
         self.assertTrue(any("최대치" in e for e in result.log[-1]["events"]))
+
+    def test_edited_nonstacking_reduction_keeps_ally_guards(self):
+        updated = crud.update_skill_node(self.db, self.node.id, SkillNodeUpdate(
+            default_name="경호", stackable=False, power=0.1,
+        ))
+        self.assertIn("20%", updated.description)
+        self.assertIn("최대 1스택", updated.description)
+        self.cast(self.ally.id)
+        result = self.cast(self.ally2.id)
+        caster = self.participant(result, self.caster.id)
+        reductions = crud._status_effects_of_type(caster, "escort_damage_reduction")
+        self.assertEqual(len(reductions), 1)
+        self.assertAlmostEqual(reductions[0]["value"], 0.3)
+        for character_id in (self.ally.id, self.ally2.id):
+            self.assertEqual(len(crud._status_effects_of_type(
+                self.participant(result, character_id), "escort_guard")), 1)
 
     def test_ally_keeps_single_guard_stack(self):
         self.cast(self.ally.id)

@@ -80,11 +80,6 @@ const EMPTY_DRAFT: Draft = {
   cleanseCount: "0",
 };
 
-/** 파생기에서 depth·계산식이 정하는 칸임을 알리는 표시. */
-function LockedHint() {
-  return <span className="ml-1.5 font-normal normal-case text-[10px] text-muted/70">depth 자동</span>;
-}
-
 function ratioToPercent(value: number | null): string {
   return value == null ? "" : String(Number((value * 100).toFixed(6)));
 }
@@ -124,6 +119,7 @@ export default function AdminSkillEditor() {
   }, []);
 
   function startEdit(node: SkillNode) {
+    setError(null);
     setEditing(node);
     setDraft({
       name: node.default_name,
@@ -158,7 +154,11 @@ export default function AdminSkillEditor() {
   }
 
   async function saveEdit() {
-    if (!editing) return;
+    if (!editing || saving) return;
+    if (!draft.name.trim() || !metadataIsValid) {
+      setError("기술 이름과 기술 설정의 필수 항목을 확인해 주세요. 대상·발동 순서·비용·위력은 올바른 숫자 또는 지정된 값이어야 합니다.");
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -166,14 +166,7 @@ export default function AdminSkillEditor() {
         powerSlotsOf(editing).find((slot) => slot.key === "power") ?? DEFAULT_POWER_SLOTS[0],
         draft.powerPercents.power ?? "",
       );
-      // 파생기는 발동 타입·분류·중첩·위력을 depth와 스펙이 정하므로, 관리자가 정하는 항목만 보낸다.
-      const skillMetadata = editing.tier === 0 ? {} : editing.is_derived ? {
-        target: draft.target.trim().toUpperCase(),
-        target_side: draft.targetSide as SkillTargetSide,
-        activation_order: Number(draft.activationOrder),
-        cost: Number(draft.cost),
-        ...(editing.power_editable ? { power: powerValue() } : {}),
-      } : {
+      const skillMetadata = editing.tier === 0 ? {} : {
         trigger_type: draft.triggerType as SkillTriggerType,
         category: draft.category as SkillCategory,
         stackable: draft.stackable,
@@ -212,24 +205,19 @@ export default function AdminSkillEditor() {
   }
 
   const isSkillNode = editing !== null && editing.tier !== 0;
-  // 파생기는 발동 타입·분류·중첩·위력을 depth와 스펙이 정한다. 그 칸들은 값만 보여주고 편집은 막는다.
   const isDerived = Boolean(editing?.is_derived);
-  const powerIsEditable = !isDerived || Boolean(editing?.power_editable);
   const targetIsValid = draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
   const activationOrderIsValid = /^-?\d+$/.test(draft.activationOrder.trim());
   const costIsValid = /^\d+$/.test(draft.cost.trim());
   const powerSlots = editing ? powerSlotsOf(editing) : DEFAULT_POWER_SLOTS;
-  // 잠긴 칸은 관리자가 고칠 수 없으므로 저장을 막는 검사에서도 제외한다.
-  const powerIsValid = !powerIsEditable || powerSlots.every((slot) => {
+  const powerIsValid = powerSlots.every((slot) => {
     const value = draft.powerPercents[slot.key] ?? "";
     return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0;
   });
   const cleanseCountIsValid = !isSkillNode || isDerived || !editing.has_cleanse_count || /^\d+$/.test(draft.cleanseCount.trim());
   const metadataIsValid = !isSkillNode || (
-    (isDerived || (
-      TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
-      && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
-    ))
+    TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
+    && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
     && TARGET_SIDES.some(({ value }) => value === draft.targetSide)
     && targetIsValid
     && activationOrderIsValid
@@ -287,7 +275,7 @@ export default function AdminSkillEditor() {
         </div>
       </div>
 
-      {error && <p className="text-sm text-red-500">{error}</p>}
+      {error && !editing && <p role="alert" className="text-sm text-red-500">{error}</p>}
 
       {loading || !nodesByBook ? (
         <p className="text-sm text-muted">불러오는 중...</p>
@@ -322,8 +310,7 @@ export default function AdminSkillEditor() {
           {isDerived && (
             <div className="space-y-2 rounded-lg bg-inset p-3">
               <p className="text-xs text-muted">
-                depth 2부터 같은 기술이 강화됩니다. 발동 타입·분류·중첩·위력은 depth와 계산식이 정해서 잠겨 있고,
-                잠기지 않은 칸만 관리자가 정합니다.
+                depth별로 발동 타입·분류·기술 위력·중첩 여부를 각각 설정할 수 있습니다.
               </p>
               <div className="flex flex-wrap gap-2">
                 {depthSiblings.map((node) => (
@@ -356,12 +343,11 @@ export default function AdminSkillEditor() {
               <div className="grid gap-3 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
-                    발동 타입{isDerived && <LockedHint />}
+                    발동 타입
                   </label>
                   <Select
                     value={draft.triggerType}
                     onValueChange={(value) => setDraft((prev) => ({ ...prev, triggerType: value as SkillTriggerType }))}
-                    disabled={isDerived}
                   >
                     <SelectTrigger><SelectValue placeholder="발동 타입 선택" /></SelectTrigger>
                     <SelectContent>
@@ -374,12 +360,11 @@ export default function AdminSkillEditor() {
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
-                    분류{isDerived && <LockedHint />}
+                    분류
                   </label>
                   <Select
                     value={draft.category}
                     onValueChange={(value) => setDraft((prev) => ({ ...prev, category: value as SkillCategory }))}
-                    disabled={isDerived}
                   >
                     <SelectTrigger><SelectValue placeholder="분류 선택" /></SelectTrigger>
                     <SelectContent>
@@ -451,7 +436,6 @@ export default function AdminSkillEditor() {
                     <div key={slot.key} className="space-y-1.5">
                       <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
                         {slot.unit === "flat" ? slot.label : `${slot.label} (%)`}
-                        {!powerIsEditable && <LockedHint />}
                       </label>
                       <Input
                         type="number"
@@ -463,8 +447,7 @@ export default function AdminSkillEditor() {
                           powerPercents: { ...prev.powerPercents, [slot.key]: e.target.value },
                         }))}
                         placeholder={slot.unit === "flat" ? "예: 2" : "예: 150"}
-                        disabled={!powerIsEditable}
-                        aria-invalid={powerIsEditable && value !== "" && !(Number.isFinite(Number(value)) && Number(value) >= 0)}
+                        aria-invalid={value !== "" && !(Number.isFinite(Number(value)) && Number(value) >= 0)}
                       />
                     </div>
                   );
@@ -491,9 +474,8 @@ export default function AdminSkillEditor() {
                 <Checkbox
                   checked={draft.stackable}
                   onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, stackable: checked === true }))}
-                  disabled={isDerived}
                 />
-                중첩 가능 (스택 사용){isDerived && <LockedHint />}
+                중첩 가능 (스택 사용)
               </label>
             </div>
           ) : null}
@@ -535,12 +517,13 @@ export default function AdminSkillEditor() {
             </p>
           </div>
 
+          {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
           <div className="flex items-center justify-end gap-2">
-            <Button size="sm" variant="ghost" onClick={closeEdit} disabled={saving}>
+            <Button type="button" size="sm" variant="ghost" onClick={closeEdit} disabled={saving}>
               <X size={14} />
               취소
             </Button>
-            <Button size="sm" onClick={saveEdit} disabled={saving || !draft.name.trim() || !metadataIsValid}>
+            <Button type="button" size="sm" onClick={saveEdit} disabled={saving}>
               <Check size={14} />
               {saving ? "저장 중..." : "저장"}
             </Button>

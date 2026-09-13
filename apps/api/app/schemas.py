@@ -1,3 +1,4 @@
+import math
 from datetime import date, datetime, time
 from typing import Literal, get_args
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -1261,9 +1262,9 @@ class SkillNodeRead(BaseModel):
     description: str | None = None
     is_placeholder: bool = False
     is_public: bool = True
-    # 파생기 여부. 발동 타입·분류·중첩·위력을 스펙과 depth가 정하므로 편집 화면에서 그 칸들을 잠근다.
+    # 파생기 여부. 편집 화면에서 같은 기술의 depth별 노드로 이동할 수 있다.
     is_derived: bool = False
-    # 파생기 중 위력(기본값)만은 관리자가 정하는 기술이 있어, 위력 칸을 열어둘지 따로 알린다.
+    # 이전 클라이언트와의 호환 필드. 모든 기술의 위력을 편집할 수 있다.
     power_editable: bool = True
 
     model_config = {"from_attributes": True}
@@ -1288,6 +1289,20 @@ class SkillNodeUpdate(BaseModel):
     target_side: SkillTargetSide | None = None
     activation_order: int | None = None
     cleanse_count: int | None = Field(default=None, ge=0)
+
+    @field_validator("power")
+    @classmethod
+    def validate_power(cls, value: float | None) -> float | None:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("기술 위력은 유한한 숫자여야 합니다.")
+        return value
+
+    @field_validator("powers")
+    @classmethod
+    def validate_powers(cls, value: dict[str, float]) -> dict[str, float]:
+        if any(not math.isfinite(number) or number < 0 for number in value.values()):
+            raise ValueError("기술 위력은 0 이상의 유한한 숫자여야 합니다.")
+        return value
 
     @field_validator("target")
     @classmethod

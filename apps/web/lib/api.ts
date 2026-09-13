@@ -1992,9 +1992,9 @@ export interface SkillNode {
   description: string | null;
   is_placeholder: boolean;
   is_public: boolean;
-  /** 파생기 여부. 발동 타입·분류·중첩·위력을 depth와 스펙이 정하므로 편집 화면에서 그 칸을 잠근다. */
+  /** 파생기 여부. 편집 화면에서 같은 기술의 depth별 노드로 이동할 수 있다. */
   is_derived: boolean;
-  /** 파생기 중에서도 위력(기본값)을 관리자가 정하는 기술인지. */
+  /** 이전 클라이언트와의 호환 필드. 모든 기술의 위력을 편집할 수 있다. */
   power_editable: boolean;
 }
 

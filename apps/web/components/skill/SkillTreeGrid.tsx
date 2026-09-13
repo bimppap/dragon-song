@@ -85,7 +85,7 @@ function HighlightedDescription({ text, className }: { text: string; className: 
     const result = (
       <span key={`${start}-${value}`}>
         {text.slice(cursor, start)}
-        <span className={cn("font-num font-bold", className)}>{value}</span>
+        <span className={cn("font-num", className)}>{value}</span>
       </span>
     );
     cursor = end;
@@ -106,7 +106,7 @@ export function DescriptionText({ text, className }: { text: string; className: 
     index % 2 === 0 ? (
       <span key={index}><HighlightedDescription text={part} className={className} /></span>
     ) : (
-      <span key={index} className={cn("font-semibold", className)}>{part}</span>
+      <span key={index} className={className}>{part}</span>
     )
   ));
 }

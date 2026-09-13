@@ -2,9 +2,11 @@ import unittest
 
 from fastapi import HTTPException
 from pydantic import ValidationError
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
+from app.migrations import ensure_schema
 from sqlalchemy.orm import Session
 
+from app import crud
 from app.crud import update_skill_node
 from app.db import Base
 from app.game_data import build_skill_node_specs
@@ -60,6 +62,59 @@ class SkillAdminUpdateTest(unittest.TestCase):
         self.assertEqual(updated.activation_order, -1)
         self.assertEqual(updated.cost, 4)
         self.assertEqual(updated.power, 1.25)
+
+    def test_derived_metadata_and_powers_persist_only_at_edited_depth(self):
+        nodes = crud.get_skill_nodes(self.db, "불굴의 서")
+        node = next(n for n in nodes if n.branch == 0 and n.col == 1 and n.tier == 3)
+        updated = update_skill_node(self.db, node.id, SkillNodeUpdate(
+            default_name=node.default_name, trigger_type="혼합형", category="복합",
+            stackable=False, power=0.25,
+        ))
+        self.assertTrue(updated.power_editable)
+        self.db.expire_all()
+        reloaded = crud._to_skill_node_read(self.db.get(SkillNode, node.id))
+        self.assertEqual((reloaded.trigger_type, reloaded.category, reloaded.stackable, reloaded.power),
+                         ("혼합형", "복합", False, 0.25))
+        sibling = next(n for n in crud.get_skill_nodes(self.db, "불굴의 서")
+                       if n.branch == 0 and n.col == 1 and n.tier == 2)
+        self.assertEqual((sibling.trigger_type, sibling.category, sibling.stackable, sibling.power),
+                         ("지속형", "강화", True, 0.05))
+        renamed = update_skill_node(self.db, node.id, SkillNodeUpdate(default_name="새 경호"))
+        self.assertEqual((renamed.power, renamed.stackable), (0.25, False))
+
+    def test_enchant_multipliers_are_independent_per_depth(self):
+        # 이 테스트의 기본 노드는 같은 서의 시딩을 막으므로 먼저 제거한다.
+        self.db.delete(self.db.get(SkillNode, self.node_id))
+        self.db.commit()
+        nodes = crud.get_skill_nodes(self.db, "용맹의 서")
+        node = next(n for n in nodes if n.branch == 0 and n.col == 1 and n.tier >= 2 and n.tier == 4)
+        updated = update_skill_node(self.db, node.id, SkillNodeUpdate(
+            default_name=node.default_name, power=3.5, powers={"attack_buff": 1.5},
+        ))
+        self.assertEqual([(s.key, s.unit) for s in updated.power_slots],
+                         [("power", "flat"), ("attack_buff", "flat")])
+        self.db.expire_all()
+        nodes = crud.get_skill_nodes(self.db, "용맹의 서")
+        for current in (n for n in nodes if n.branch == 0 and n.col == 1 and n.tier >= 2):
+            expected = (3.5, 1.5) if current.tier == 4 else (2, 2)
+            self.assertEqual((current.power, current.powers["attack_buff"]), expected)
+
+    def test_rejects_negative_and_nonfinite_powers(self):
+        for value in (-1, float("inf"), float("nan")):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                SkillNodeUpdate(default_name="기술", powers={"attack_buff": value})
+            with self.subTest(power=value), self.assertRaises(ValidationError):
+                SkillNodeUpdate(default_name="기술", power=value)
+
+    def test_existing_database_gets_empty_overrides_without_changing_old_values(self):
+        with self.engine.begin() as connection:
+            connection.execute(text("ALTER TABLE skill_nodes DROP COLUMN settings_overrides"))
+        ensure_schema(self.engine)
+        ensure_schema(self.engine)
+        self.db.expire_all()
+        node = self.db.get(SkillNode, self.node_id)
+        self.assertEqual(node.settings_overrides, {})
+        self.assertEqual(node.default_name, "기존 기술")
 
     def test_rejects_non_integer_target(self):
         with self.assertRaises(ValidationError):

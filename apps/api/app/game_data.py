@@ -231,9 +231,13 @@ def _skill(
 # unit "percent"는 퍼센트로 입력받아 배율로 저장하고, "flat"은 입력값을 그대로 쓴다(예: 마나 회복량).
 DEFAULT_POWER_SLOTS: list[dict[str, str]] = [{"key": "power", "label": "기술 위력", "unit": "percent"}]
 SKILL_POWER_SLOTS: dict[str, list[dict[str, str]]] = {
+    "ab_enchant": [
+        {"key": "power", "label": "피해 배율", "unit": "flat"},
+        {"key": "attack_buff", "label": "공격력 버프 배율", "unit": "flat"},
+    ],
     "ab_regeneration": [{"key": "power", "label": "체력 재생력 증가 기본값", "unit": "flat"}],
     "ab_halo": [{"key": "power", "label": "전체 회복 기본값", "unit": "flat"}],
-    "ab_hex_heal": [{"key": "power", "label": "레벨당 회복 비율 (고정)", "unit": "percent"}],
+    "ab_hex_heal": [{"key": "power", "label": "레벨당 회복 비율", "unit": "percent"}],
     "ab_counter": [
         {"key": "power", "label": "피해 감소", "unit": "percent"},
         {"key": "counter_damage", "label": "반격 피해", "unit": "percent"},
@@ -274,8 +278,8 @@ SKILL_BOOKS: dict[str, dict] = {
                 ),
                 "derived": _skill(
                     "주입", trigger_type="즉발형", category="복합", stackable=True, var_name="ab_enchant",
-                    cost=2, power=0, target="1", target_side="ENEMY", order=1,
-                    formula="피해: (자애+지혜)*2 + 기술 효율 고정 / 공격력 버프(중첩): (자애+지혜)*2 + 기술 효율 고정/2",
+                    cost=2, power=2, powers={"attack_buff": 2.0}, target="1", target_side="ENEMY", order=1,
+                    formula="피해: (자애+지혜)*피해 배율 + 기술 효율 고정 / 공격력 버프: (자애+지혜)*공격력 버프 배율 + 기술 효율 고정/2",
                     description="적 1명에게 자애·지혜에 비례한 피해를 주고, 자신의 공격력을 올리는 버프를 중첩해 쌓습니다.",
                 ),
             },

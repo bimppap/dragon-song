@@ -278,6 +278,8 @@ class SkillNode(Base):
     description: Mapped[str | None] = mapped_column(String, nullable=True)  # 개요 (관리자 전용 표시)
     # 파생기(설명이 depth로 자동 생성되는 기술)에서 관리자가 직접 쓴 설명. 없으면 자동 생성 설명을 쓴다.
     description_override: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 파생기의 고정 스펙과 구분해 관리자가 명시적으로 바꾼 설정만 보관한다.
+    settings_overrides: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     # skill.xlsx에 값이 비어있어 기획 확정 전 임시로 채운 노드인지 여부 (UI에서 색으로 구분 표시).
     is_placeholder: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=text("true"))

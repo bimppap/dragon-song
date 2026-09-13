@@ -78,8 +78,8 @@ class VeilSkillTest(unittest.TestCase):
         node.power = 2
         self.db.commit()
         result = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='다른 이름', power=99))
-        # 이름은 관리자가 정하고, 위력·대상·계산식은 스펙과 depth가 정한다.
-        self.assertEqual((result.default_name, result.power, result.target), ('다른 이름', 0, 'SELF'))
+        # 관리자가 명시한 이름·위력은 저장하고, 나머지는 기존 스펙을 유지한다.
+        self.assertEqual((result.default_name, result.power, result.target), ('다른 이름', 99, 'SELF'))
         self.assertIn('30%', result.description)
         self.assertIn('4 +', result.description)
         self.assertFalse(result.is_placeholder)
@@ -91,11 +91,10 @@ class VeilSkillTest(unittest.TestCase):
         cleared = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(default_name='장막', description=''))
         self.assertIn('30%', cleared.description)
 
-    def test_admin_can_set_target_and_cost_but_not_spec_fields(self):
+    def test_admin_can_set_target_cost_and_category(self):
         node = self.db.query(SkillNode).filter_by(book='불굴의 서', branch=2, col=1, tier=4).one()
-        spec_category = crud._to_skill_node_read(node).category
         result = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(
             default_name='장막', target='3', target_side='ALLY', activation_order=7, cost=9, category='피해',
         ))
         self.assertEqual((result.target, result.target_side, result.activation_order, result.cost), ('3', 'ALLY', 7, 9))
-        self.assertEqual(result.category, spec_category)
+        self.assertEqual(result.category, "피해")

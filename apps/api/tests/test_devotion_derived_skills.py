@@ -130,10 +130,10 @@ class DevotionDerivedTest(unittest.TestCase):
         self.assertIn('floor(10 +', reverted.description)
         hex_node = self.node(2, 5)
         updated = crud.update_skill_node(self.db, hex_node.id, SkillNodeUpdate(default_name='주술', power=0.99))
-        # 저주 회복은 회복 비율이 depth로 고정이라 위력만은 관리자가 바꿀 수 없다.
+        # 저주 회복의 레벨당 회복 비율도 depth별로 직접 정할 수 있다.
         # 같은 서에 같은 이름이 여럿이면 다른 기술과 마찬가지로 depth 숫자가 붙는다.
-        self.assertEqual((updated.default_name, updated.power), ('주술 V', 0.15))
-        self.assertIn('85%', updated.description)
+        self.assertEqual((updated.default_name, updated.power), ('주술 V', 0.99))
+        self.assertIn('505%', updated.description)
         legacy = self.node(1)
         legacy.default_name = '헌혈'
         legacy.var_name = None

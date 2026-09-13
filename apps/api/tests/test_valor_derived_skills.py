@@ -7,7 +7,7 @@ from app import crud
 from app.db import Base
 from app.game_data import build_skill_node_specs, dynamic_derived_description
 from app.models import BattleSession, Character, CharacterSkillUnlock, SkillNode
-from app.schemas import BattleAllyTurnRequest, BattleTelegraphRequest, CharacterActionInput
+from app.schemas import BattleAllyTurnRequest, BattleTelegraphRequest, CharacterActionInput, SkillNodeUpdate
 
 
 class ValorDerivedBattleTest(unittest.TestCase):
@@ -93,8 +93,45 @@ class ValorDerivedBattleTest(unittest.TestCase):
         ]
         self.assertEqual(len(stacks), 2)
 
-    def test_enchant_does_not_scale_with_depth(self):
-        """주입은 고정 2배라 depth가 깊어져도 배율이 그대로다."""
+    def test_enchant_edited_multipliers_and_nonstacking_apply_in_battle(self):
+        node = self.node(
+            0, "주입", "ab_enchant", trigger_type="즉발형", category="복합",
+            stackable=True, target="1", target_side="ENEMY", activation_order=1,
+        )
+        before = crud._to_skill_node_read(node)
+        updated = crud.update_skill_node(self.db, node.id, SkillNodeUpdate(
+            default_name="주입", description=before.description,
+            power=3, powers={"attack_buff": 4}, stackable=False,
+        ))
+        self.assertIn("× 3", updated.description)
+        self.assertIn("× 4", updated.description)
+        self.assertIn("중첩되지 않습니다", updated.description)
+        self.assertIsNone(node.description_override)
+        result = self.cast(node, target_enemy_id=1)
+        self.assertEqual(result.enemies[0]["hp"], 969)  # 7*3 + 10
+        self.assertEqual(self.me(result)["atk"], 43)  # 10 + 7*4 + 10/2
+        formulas = list(result.log[-1]["calculations"].values())
+        self.assertTrue(any("× 3" in formula for formula in formulas))
+        self.assertTrue(any("× 4" in formula for formula in formulas))
+        result = self.cast(node, target_enemy_id=1)
+        self.assertEqual(self.me(result)["atk"], 43)
+        buffs = [e for e in self.me(result)["status_effects"] if e.get("var_name") == "ab_enchant"]
+        self.assertEqual(len(buffs), 1)
+
+    def test_enchant_accepts_zero_multipliers(self):
+        node = self.node(
+            0, "주입", "ab_enchant", trigger_type="즉발형", category="복합",
+            stackable=True, target="1", target_side="ENEMY", activation_order=1,
+        )
+        crud.update_skill_node(self.db, node.id, SkillNodeUpdate(
+            default_name="주입", power=0, powers={"attack_buff": 0},
+        ))
+        result = self.cast(node, target_enemy_id=1)
+        self.assertEqual(result.enemies[0]["hp"], 990)
+        self.assertEqual(self.me(result)["atk"], 15)
+
+    def test_enchant_defaults_to_two_at_each_depth(self):
+        """직접 설정하지 않은 주입의 기본 배율은 모든 depth에서 2다."""
         deep = dynamic_derived_description("ab_enchant", 5)
         self.assertIn("× 2", deep)
         self.assertEqual(deep, dynamic_derived_description("ab_enchant", 2))
