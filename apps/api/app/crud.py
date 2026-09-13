@@ -6804,8 +6804,14 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
             if var_name == "ab_suppressing":
                 depth = int(selected_skill.get("tier") or 2)
-                living_enemies = [target for _kind, target in (_all_skill_targets(selected_skill, participants, enemies, summons, round_no) or [])] if selected_skill.get("target") in ALL_SKILL_TARGETS else [enemy for enemy in enemies if _enemy_targetable(enemy, round_no)]
-                if not living_enemies:
+                all_targets = (
+                    _all_skill_targets(selected_skill, participants, enemies, summons, round_no)
+                    if selected_skill.get("target") in ALL_SKILL_TARGETS else None
+                )
+                targets = all_targets if all_targets is not None else [
+                    ("enemy", enemy) for enemy in enemies if _enemy_targetable(enemy, round_no)
+                ]
+                if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
                 damage = max(0, _floor_amount(depth * 5 + p["skill_eff_true"]))
@@ -6814,7 +6820,19 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     f"기술 효율 고정 {_formula_number(p['skill_eff_true'])}))"
                 )
                 total_dealt = 0
-                for target in living_enemies:
+                for target_kind, target in targets:
+                    if target_kind == "summon":
+                        dealt, overkill = _apply_damage_to_summon(target, damage)
+                        summon_name = _summon_log_name(target)
+                        total_dealt += dealt
+                        events.append(
+                            f"💥 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
+                        )
+                        calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            events.append(f"💀 하수인 {summon_name} 처치")
+                        continue
                     weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
                     dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
                     total_dealt += dealt

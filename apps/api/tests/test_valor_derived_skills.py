@@ -146,6 +146,21 @@ class ValorDerivedBattleTest(unittest.TestCase):
         # 피해 = 스킬레벨 2 × 5 + 기술 효율 고정 10 = 20 (모든 에너미)
         self.assertEqual([enemy["hp"] for enemy in result.enemies], [980, 980])
 
+    def test_suppressing_also_hits_summons(self):
+        """제압의 기본 대상은 에너미+하수인 전원이라 하수인도 같은 피해를 받는다."""
+        node = self.node(
+            1, "제압", "ab_suppressing", trigger_type="즉발형", category="피해",
+            stackable=False, target_side="ENEMY", activation_order=4,
+        )
+        self.battle.summons = [{
+            "id": 1, "name": "하수인", "hp": 50, "max_hp": 50, "attack": 0,
+            "action_type": "attack", "trigger_phase": "enemy", "spawn_round": 0,
+        }]
+        self.db.commit()
+        result = self.cast(node)
+        self.assertEqual([enemy["hp"] for enemy in result.enemies], [980, 980])
+        self.assertEqual(result.summons[0]["hp"], 30)
+
     def test_suppressing_passive_attack_applies_without_casting(self):
         """보유만으로 공격력이 오른다: 기술을 쓰지 않고 무반응해도 적용된다."""
         self.node(

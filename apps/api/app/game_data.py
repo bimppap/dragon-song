@@ -294,9 +294,9 @@ SKILL_BOOKS: dict[str, dict] = {
                 ),
                 "derived": _skill(
                     "제압", trigger_type="즉발형", category="피해", stackable=False, var_name="ab_suppressing",
-                    cost=4, power=0, target_side="ENEMY", order=4,
-                    formula="피해(하수인 제외 전체): 스킬레벨*5 + 기술 효율 고정 / 보유 시 상시 공격력: 스킬레벨*2 + 기술 효율 고정",
-                    description="사용 시 하수인을 제외한 모든 에너미에게 피해를 주고, 보유만으로 공격력이 오릅니다.",
+                    cost=4, power=0, target="에너미+하수인 전원", target_side="ENEMY", order=4,
+                    formula="피해(에너미+하수인 전원): 스킬레벨*5 + 기술 효율 고정 / 보유 시 상시 공격력: 스킬레벨*2 + 기술 효율 고정",
+                    description="사용 시 모든 적(에너미+하수인)에게 피해를 주고, 보유만으로 공격력이 오릅니다.",
                 ),
             },
             {
@@ -492,7 +492,7 @@ def dynamic_derived_description(var_name: str | None, tier: int) -> str | None:
         )
     if var_name == "ab_suppressing":
         return (
-            f"사용하면 하수인을 제외한 모든 에너미에게 {L * 5} + 기술 효율(고정)만큼 피해를 줍니다. "
+            f"사용하면 모든 적(에너미+하수인)에게 {L * 5} + 기술 효율(고정)만큼 피해를 줍니다. "
             f"또한 이 기술을 보유한 것만으로 공격력이 {L * 2} + 기술 효율(고정)만큼 상시 증가합니다."
         )
     if var_name == "ab_sparge":
