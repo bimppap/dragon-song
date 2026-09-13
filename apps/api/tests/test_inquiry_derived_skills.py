@@ -7,6 +7,7 @@ from app import crud
 from app.db import Base
 from app.game_data import build_skill_node_specs, dynamic_derived_description
 from app.models import SkillNode
+from app.schemas import SkillNodeUpdate
 
 
 class InquiryDerivedSkillSpecTest(unittest.TestCase):
@@ -110,6 +111,53 @@ class InquiryDerivedReconcileTest(unittest.TestCase):
         depth4 = crud._resolved_skill_node_value(nodes[4], "description")
         self.assertIn("최대 2개", depth2)
         self.assertIn("최대 4개", depth4)
+
+
+class InquiryDerivedDescriptionEditTest(unittest.TestCase):
+    """개선/쇠약/복제도 관리자가 쓴 설명이 depth 자동 설명보다 우선해야 한다."""
+
+    def setUp(self):
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        self.db = Session(self.engine)
+        crud.get_skill_nodes(self.db, "탐구의 서")
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    def node(self, branch: int, tier: int = 3) -> SkillNode:
+        return self.db.query(SkillNode).filter_by(
+            book="탐구의 서", branch=branch, col=1, tier=tier).one()
+
+    def save(self, node: SkillNode, description: str):
+        crud.update_skill_node(self.db, node.id, SkillNodeUpdate(
+            default_name=node.default_name, description=description))
+        self.db.expire_all()
+        return crud._to_skill_node_read(node).description
+
+    def test_written_description_wins_and_clearing_restores_auto_text(self):
+        for branch, label in ((0, "개선"), (1, "쇠약"), (2, "복제")):
+            with self.subTest(label=label):
+                node = self.node(branch)
+                written = f"'{label}' 직접 쓴 설명"
+                self.assertEqual(self.save(node, written), written)
+                # 비우면 depth로 자동 생성된 설명으로 되돌아간다.
+                restored = self.save(node, "")
+                self.assertNotEqual(restored, written)
+                self.assertEqual(restored, crud.derived_auto_description(self.node(branch)))
+
+    def test_description_is_saved_per_depth(self):
+        self.save(self.node(0, 3), "depth 3 전용")
+        self.assertEqual(crud._to_skill_node_read(self.node(0, 3)).description, "depth 3 전용")
+        self.assertEqual(crud._to_skill_node_read(self.node(0, 4)).description,
+                         crud.derived_auto_description(self.node(0, 4)))
+
+    def test_saving_the_prefilled_auto_text_keeps_following_depth(self):
+        node = self.node(0, 4)
+        auto = crud._to_skill_node_read(node).description
+        self.save(node, auto)
+        self.assertIsNone(self.node(0, 4).description_override)
 
 
 if __name__ == "__main__":

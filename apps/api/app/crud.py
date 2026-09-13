@@ -3633,6 +3633,8 @@ SKILL_LEVEL_SUFFIX_VAR_NAMES.update(DEVOTION_DERIVED_VARS | SPEC_DRIVEN_DERIVED_
 # 탐구의 서 파생: 개선/쇠약은 등급 접미사를 붙이고, 복제는 전투에서 "복제:기술명"으로 표기한다.
 SKILL_LEVEL_SUFFIX_VAR_NAMES.update({"ab_improve", "ab_weaken"})
 INQUIRY_DERIVED_VARS = {"ab_improve", "ab_weaken", "ab_clone"}
+# 설명이 depth로 자동 생성되는 기술. 관리자가 직접 쓴 설명이 있으면 그것을 우선한다.
+AUTO_DESCRIPTION_VARS = DERIVED_VARS | INQUIRY_DERIVED_VARS
 # 복제(ab_clone)는 전투에서 원본 기술의 var_name을 그대로 쓰므로 supported 집합에 넣지 않는다.
 SUPPORTED_BATTLE_SKILL_VAR_NAMES = set(SKILL_LEVEL_SUFFIX_VAR_NAMES)
 SKILL_BOOK_ORDER = ("용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서")
@@ -3714,6 +3716,17 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
     return dynamic_derived_description(var_name, node.tier)
 
 
+def _apply_skill_description_update(node: SkillNode, data: SkillNodeUpdate, spec: dict, *, auto_before: str | None) -> None:
+    """설명 저장. 설명이 자동 생성되는 기술은 별도 칸에 담아, 비우면 자동 설명으로 돌아가게 한다."""
+    written = (data.description or "").strip()
+    if spec.get("var_name") not in AUTO_DESCRIPTION_VARS:
+        node.description = written or None
+        return
+    # 자동 설명을 그대로 두고 저장했으면 덮어쓰지 않아, 이후 depth·수치 변경을 계속 따라가게 둔다.
+    untouched = written in (auto_before, derived_auto_description(node, spec))
+    node.description_override = None if not written or untouched else written
+
+
 def _resolved_skill_node_value(node: SkillNode, field: str):
     spec = _skill_spec_for_node(node) or {}
     spec_var_name = spec.get("var_name")
@@ -3721,8 +3734,8 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
         overrides = node.settings_overrides or {}
         if field in overrides:
             return overrides[field]
-    # 파생기라도 관리자가 설명을 직접 썼으면 자동 생성 설명 대신 그것을 보여준다.
-    if field == "description" and spec_var_name in DERIVED_VARS:
+    # 자동 설명을 쓰는 기술이라도 관리자가 설명을 직접 썼으면 그것을 보여준다.
+    if field == "description" and spec_var_name in AUTO_DESCRIPTION_VARS:
         override = (getattr(node, "description_override", None) or "").strip()
         if override:
             return override
@@ -8336,10 +8349,7 @@ def _update_derived_skill_node(db: Session, node: SkillNode, data: SkillNodeUpda
         node.powers = {key: float(value) for key, value in data.powers.items() if key != "power"}
     node.default_name = data.default_name.strip()
     if "description" in data.model_fields_set:
-        written = (data.description or "").strip()
-        # 자동 설명을 그대로 두고 저장했으면 덮어쓰지 않아, 이후 depth·수치 변경을 계속 따라가게 둔다.
-        untouched = written in (auto_description_before, derived_auto_description(node, spec))
-        node.description_override = None if not written or untouched else written
+        _apply_skill_description_update(node, data, spec, auto_before=auto_description_before)
     for field in ("target", "target_side", "activation_order", "cost"):
         if field in data.model_fields_set:
             setattr(node, field, getattr(data, field))
@@ -8358,9 +8368,10 @@ def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> Skill
     spec = _skill_spec_for_node(node) or {}
     if spec.get("var_name") in DERIVED_VARS:
         return _update_derived_skill_node(db, node, data, spec)
+    auto_description_before = derived_auto_description(node, spec)
     node.default_name = data.default_name.strip()
     if "description" in data.model_fields_set:
-        node.description = data.description.strip() if data.description else None
+        _apply_skill_description_update(node, data, spec, auto_before=auto_description_before)
     for field in (
         "trigger_type",
         "category",
