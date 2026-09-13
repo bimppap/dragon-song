@@ -147,6 +147,14 @@ class InquiryDerivedDescriptionEditTest(unittest.TestCase):
                 self.assertNotEqual(restored, written)
                 self.assertEqual(restored, crud.derived_auto_description(self.node(branch)))
 
+    def test_clone_hides_fields_it_inherits_from_the_copied_skill(self):
+        """복제는 복제한 기술의 대상·진영·발동 순서를 그대로 쓰므로 노드에 입력할 값이 없다."""
+        clone = self.node(2)
+        self.assertEqual(crud._to_skill_node_read(clone).inapplicable_fields,
+                         ["target", "target_side", "activation_order"])
+        # 다른 탐구 파생기는 종전대로 입력한다.
+        self.assertEqual(crud._to_skill_node_read(self.node(0)).inapplicable_fields, [])
+
     def test_description_is_saved_per_depth(self):
         self.save(self.node(0, 3), "depth 3 전용")
         self.assertEqual(crud._to_skill_node_read(self.node(0, 3)).description, "depth 3 전용")

@@ -3635,6 +3635,11 @@ SKILL_LEVEL_SUFFIX_VAR_NAMES.update({"ab_improve", "ab_weaken"})
 INQUIRY_DERIVED_VARS = {"ab_improve", "ab_weaken", "ab_clone"}
 # 설명이 depth로 자동 생성되는 기술. 관리자가 직접 쓴 설명이 있으면 그것을 우선한다.
 AUTO_DESCRIPTION_VARS = DERIVED_VARS | INQUIRY_DERIVED_VARS
+# 기술 성격상 노드에 입력할 값이 없는 항목. 편집 화면과 툴팁에서 감춘다.
+# 복제는 전투에서 복제한 기술의 대상·진영·발동 순서를 그대로 쓰므로 따로 정할 값이 없다.
+SKILL_INAPPLICABLE_FIELDS: dict[str, tuple[str, ...]] = {
+    "ab_clone": ("target", "target_side", "activation_order"),
+}
 # 복제(ab_clone)는 전투에서 원본 기술의 var_name을 그대로 쓰므로 supported 집합에 넣지 않는다.
 SUPPORTED_BATTLE_SKILL_VAR_NAMES = set(SKILL_LEVEL_SUFFIX_VAR_NAMES)
 SKILL_BOOK_ORDER = ("용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서")
@@ -8120,6 +8125,7 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         is_public=node.is_public,
         is_derived=spec_var_name in DERIVED_VARS,
         power_editable=True,
+        inapplicable_fields=list(SKILL_INAPPLICABLE_FIELDS.get(spec_var_name, ())),
     )
 
 

@@ -164,6 +164,8 @@ export function SkillTooltipContent({
   }
 
   const stackableText = node.stackable == null ? "정보 없음" : node.stackable ? "가능" : "불가능";
+  // 기술 성격상 값이 없는 항목(예: 복제의 대상)은 오해를 부르므로 아예 보여주지 않는다.
+  const hidden = new Set(node.inapplicable_fields ?? []);
 
   return (
     <div className="max-w-64 text-left">
@@ -175,9 +177,9 @@ export function SkillTooltipContent({
         <InfoRow label="발동 타입:" value={node.trigger_type ?? "정보 없음"} />
         <InfoRow label="분류:" value={node.category ?? "정보 없음"} />
         <InfoRow label="중첩 가능:" value={stackableText} />
-        <InfoRow label="기술 대상 진영:" value={node.target_side === "ALLY" ? "아군" : node.target_side === "ENEMY" ? "적군" : "정보 없음"} />
-        <InfoRow label="기술 대상:" value={node.target ?? "정보 없음"} />
-        <InfoRow label="발동 순서:" value={node.activation_order != null ? String(node.activation_order) : "정보 없음"} />
+        {!hidden.has("target_side") && <InfoRow label="기술 대상 진영:" value={node.target_side === "ALLY" ? "아군" : node.target_side === "ENEMY" ? "적군" : "정보 없음"} />}
+        {!hidden.has("target") && <InfoRow label="기술 대상:" value={node.target ?? "정보 없음"} />}
+        {!hidden.has("activation_order") && <InfoRow label="발동 순서:" value={node.activation_order != null ? String(node.activation_order) : "정보 없음"} />}
         <InfoRow label="기술 비용:" value={node.cost != null ? `${node.cost} MP` : "정보 없음"} />
         {variant === "admin" && (
           <>

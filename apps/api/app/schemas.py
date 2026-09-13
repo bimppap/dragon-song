@@ -1267,6 +1267,8 @@ class SkillNodeRead(BaseModel):
     is_derived: bool = False
     # 이전 클라이언트와의 호환 필드. 모든 기술의 위력을 편집할 수 있다.
     power_editable: bool = True
+    # 이 기술에는 해당하지 않아 편집 화면·툴팁에서 감추는 항목(예: 복제는 복제한 기술의 대상을 따른다).
+    inapplicable_fields: list[str] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
 

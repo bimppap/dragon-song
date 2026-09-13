@@ -175,9 +175,10 @@ export default function AdminSkillEditor() {
         trigger_type: draft.triggerType as SkillTriggerType,
         category: draft.category as SkillCategory,
         stackable: draft.stackable,
-        target: draft.target.trim().toUpperCase(),
-        target_side: draft.targetSide as SkillTargetSide,
-        activation_order: Number(draft.activationOrder),
+        // 기술 성격상 해당 없는 항목은 보내지 않는다(예: 복제는 복제한 기술의 대상을 따른다).
+        ...(hides("target") ? {} : { target: draft.target.trim().toUpperCase() }),
+        ...(hides("target_side") ? {} : { target_side: draft.targetSide as SkillTargetSide }),
+        ...(hides("activation_order") ? {} : { activation_order: Number(draft.activationOrder) }),
         cost: Number(draft.cost),
         power: powerValue(),
         power_units: Object.fromEntries(powerSlots.map((slot) => [slot.key, slot.unit])),
@@ -212,8 +213,10 @@ export default function AdminSkillEditor() {
 
   const isSkillNode = editing !== null && editing.tier !== 0;
   const isDerived = Boolean(editing?.is_derived);
-  const targetIsValid = isAllSkillTarget(draft.target) || draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
-  const activationOrderIsValid = /^-?\d+$/.test(draft.activationOrder.trim());
+  // 기술 성격상 노드에 입력할 값이 없는 항목은 칸을 감추고 검사·저장에서도 뺀다.
+  const hides = (field: string) => Boolean(editing?.inapplicable_fields?.includes(field));
+  const targetIsValid = hides("target") || isAllSkillTarget(draft.target) || draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
+  const activationOrderIsValid = hides("activation_order") || /^-?\d+$/.test(draft.activationOrder.trim());
   const costIsValid = /^\d+$/.test(draft.cost.trim());
   const powerSlots = (editing ? powerSlotsOf(editing) : DEFAULT_POWER_SLOTS).map((slot) => ({
     ...slot, unit: draft.powerUnits[slot.key] ?? slot.unit,
@@ -227,7 +230,7 @@ export default function AdminSkillEditor() {
   const metadataIsValid = !isSkillNode || (
     TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
     && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
-    && TARGET_SIDES.some(({ value }) => value === draft.targetSide)
+    && (hides("target_side") || TARGET_SIDES.some(({ value }) => value === draft.targetSide))
     && targetIsValid
     && activationOrderIsValid
     && costIsValid
@@ -384,7 +387,7 @@ export default function AdminSkillEditor() {
                   </Select>
                 </div>
 
-                <div className="space-y-1.5">
+                {!hides("target") && <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상</label>
                   <Select
                     value={isAllSkillTarget(draft.target) || draft.target === "SELF" ? draft.target : "COUNT"}
@@ -411,9 +414,9 @@ export default function AdminSkillEditor() {
                   {draft.target !== "" && !targetIsValid ? (
                     <p className="text-xs text-red-500">1 이상의 정수를 입력하세요.</p>
                   ) : null}
-                </div>
+                </div>}
 
-                <div className="space-y-1.5">
+                {!hides("target_side") && <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상 진영</label>
                   <Select
                     value={isAllSkillTarget(draft.target) ? (draft.target === "아군 전원" ? "ALLY" : "ENEMY") : draft.targetSide}
@@ -429,9 +432,9 @@ export default function AdminSkillEditor() {
                       </SelectGroup>
                     </SelectContent>
                   </Select>
-                </div>
+                </div>}
 
-                <div className="space-y-1.5">
+                {!hides("activation_order") && <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">발동 순서</label>
                   <Input
                     type="number"
@@ -441,7 +444,7 @@ export default function AdminSkillEditor() {
                     placeholder="정수"
                     aria-invalid={draft.activationOrder !== "" && !activationOrderIsValid}
                   />
-                </div>
+                </div>}
 
                 <div className="space-y-1.5">
                   <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 비용 (MP)</label>
