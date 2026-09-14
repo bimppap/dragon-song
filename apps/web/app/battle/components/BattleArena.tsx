@@ -61,6 +61,7 @@ import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
 import BattlePairGrid from "./BattlePairGrid";
+import PixelBorderGlow from "./PixelBorderGlow";
 import { changedPairPartnerIds, reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
 
 function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect[] {
@@ -2287,14 +2288,17 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                           </div>
                         }
                       >
-                        <div className="skill-icon-glow aspect-square w-full cursor-help overflow-hidden border border-line bg-surface">
-                          <CharacterAvatar
-                            src={previewIcon.imageUrl}
-                            alt={previewIcon.name}
-                            className="aspect-square w-full rounded-none"
-                            iconSize={16}
-                            sizes="64px"
-                          />
+                        <div className="relative aspect-square w-full cursor-help">
+                          <div className="size-full overflow-hidden border border-line bg-surface">
+                            <CharacterAvatar
+                              src={previewIcon.imageUrl}
+                              alt={previewIcon.name}
+                              className="aspect-square w-full rounded-none"
+                              iconSize={16}
+                              sizes="64px"
+                            />
+                          </div>
+                          <PixelBorderGlow />
                         </div>
                       </InfoTooltip>
                     )}

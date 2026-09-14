@@ -184,37 +184,59 @@
     display: none;
   }
 
-  /* 기술 아이콘 테두리를 따라 빛이 도는 효과. ::before에 conic-gradient를 얹고
-     mask-composite로 테두리 두께만 남긴 뒤 회전시킨다. */
-  .skill-icon-glow {
-    position: relative;
+  /* 아이콘 테두리를 따라 픽셀 불꽃이 도는 효과(PixelBorderGlow).
+     한 주기(130)에 꼬리 픽셀 → 머리 순으로 대시를 배치하고, dashoffset을 2px 단위로 끊어 옮긴다.
+     머리(20~42) 위에 밝은 심지와 흰 끝점을 같은 속도로 겹친다. */
+  .pixel-border-glow rect {
+    fill: none;
+    stroke-width: 3px;
+    animation: pixel-border-glow-run 2.4s steps(65) infinite;
   }
-  .skill-icon-glow::before {
-    content: "";
-    position: absolute;
-    inset: -2px;
-    padding: 2px;
-    background: conic-gradient(
-      from 0deg,
-      transparent 0%,
-      color-mix(in oklab, var(--color-gold) 90%, transparent) 8%,
-      transparent 22%
-    );
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    animation: skill-icon-glow-spin 2.4s linear infinite;
-    pointer-events: none;
+  .pixel-border-glow-trail {
+    --pixel-glow-from: 0px;
+    stroke: #f97316;
+    stroke-dasharray: 1 4 2 3 3 2 4 1 22 88;
+    filter: drop-shadow(0 0 3px #fb923c) drop-shadow(0 0 6px rgb(249 115 22 / 0.8));
+  }
+  .pixel-border-glow-core {
+    --pixel-glow-from: -26px;
+    stroke: #fcd34d;
+    stroke-dasharray: 16 114;
+  }
+  .pixel-border-glow-tip {
+    --pixel-glow-from: -38px;
+    stroke: #fffbeb;
+    stroke-dasharray: 4 126;
+  }
+  .pixel-border-glow rect.pixel-border-glow-spark {
+    --pixel-glow-from: 0px;
+    --pixel-glow-length: 268px;
+    stroke: #fde68a;
+    stroke-width: 1px;
+    stroke-dasharray: 1 13 1 22 1 96;
+    animation: pixel-border-glow-run 2.4s steps(134) infinite, pixel-border-glow-flicker 0.36s steps(2, jump-none) infinite;
+  }
+}
+
+@keyframes pixel-border-glow-run {
+  from { stroke-dashoffset: var(--pixel-glow-from); }
+  to { stroke-dashoffset: calc(var(--pixel-glow-from) - var(--pixel-glow-length, 260px)); }
+}
+
+@keyframes pixel-border-glow-flicker {
+  from { opacity: 1; }
+  to { opacity: 0.15; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pixel-border-glow rect {
+    animation: none !important;
   }
 }
 
 @keyframes music-dot-fall {
   from { transform: translateY(0); opacity: 0.38; }
   to { transform: translateY(5px); opacity: 1; }
-}
-
-@keyframes skill-icon-glow-spin {
-  to { transform: rotate(360deg); }
 }
 
 /*
