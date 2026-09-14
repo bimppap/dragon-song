@@ -85,6 +85,7 @@ const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
 interface Props {
   sessionId: number;
   readOnly?: boolean;
+  runnerPreview?: boolean;
   onExit: () => void;
   /**
    * 부모가 이미 최신 세션 데이터를 갖고 폴링하는 경우(예: 러너 관전 화면의 `/battles/live` 폴링) 전달한다.
@@ -794,10 +795,11 @@ function TargetPickerButton({
   );
 }
 
-export default function BattleArena({ sessionId, readOnly = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
+export default function BattleArena({ sessionId, readOnly = false, runnerPreview = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
   const { member } = useAuth();
   const isAdmin = member != null && isAdminRole(member.role);
-  const showLogFormulas = isAdmin;
+  const showAdminView = isAdmin && !runnerPreview;
+  const showLogFormulas = showAdminView;
   const { confirm } = useDialog();
   const { toast } = useToast();
   const controlled = externalSession !== undefined;
@@ -1540,7 +1542,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     return groups;
   }, [session?.log]);
 
-  const effectiveParticipantSort: ParticipantSort = isAdmin ? participantSort : "hp";
+  const effectiveParticipantSort: ParticipantSort = showAdminView ? participantSort : "hp";
   const sortedParticipants = useMemo(() => {
     const participants = session?.participants ?? [];
     return participants.toSorted((a, b) => {
@@ -1901,7 +1903,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         </div>
       )}
 
-      {(isAdmin || session.pair_battle) && (
+      {(showAdminView || session.pair_battle) && (
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-xs font-semibold text-muted">캐릭터 정렬</span>
           <div className="flex flex-wrap rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
@@ -1917,7 +1919,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                 페어순
               </Button>
             )}
-            {(isAdmin ? PARTICIPANT_SORTS : RUNNER_PARTICIPANT_SORTS).map(({ value, label }) => (
+            {(showAdminView ? PARTICIPANT_SORTS : RUNNER_PARTICIPANT_SORTS).map(({ value, label }) => (
               <Button
                 key={value}
                 type="button"
@@ -2425,7 +2427,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
                 ? "전투가 조기 종료되었습니다."
                 : "전투 패배... 모든 캐릭터가 기절/퇴각했습니다."}
           </div>
-          {isAdmin ? <BattleRewardCard session={rewardCardSession} /> : null}
+          {showAdminView ? <BattleRewardCard session={rewardCardSession} /> : null}
         </div>
       ) : canAct ? (
         <div className="flex flex-wrap items-center gap-2">
@@ -2471,7 +2473,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       {/* 전투 로그 */}
       {groupedLog.length > 0 && (
         <div className="space-y-3 rounded-xl border border-line bg-inset p-4">
-          {isAdmin ? <BattleRoundMetricsTable log={session.log} /> : null}
+          {showAdminView ? <BattleRoundMetricsTable log={session.log} /> : null}
           <span className="text-xs font-semibold uppercase tracking-wide text-muted">전투 로그</span>
           {[...groupedLog].reverse().map((group, groupIndex) => (
             <div key={group.round} className={cn("space-y-2", groupIndex > 0 && "border-t border-line pt-3")}>

@@ -321,10 +321,10 @@ export default function BattleTab() {
   if (active) {
     return (
       <div className="space-y-4">
-        {active.mode === "practice" && (
+        {(
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-surface px-4 py-3">
             <div>
-              <p className="text-sm font-semibold text-ivory">모의전 화면 확인</p>
+              <p className="text-sm font-semibold text-ivory">전투 화면 확인</p>
               <p className="text-xs text-muted">같은 전투를 관리자 조작 화면과 러너 관전 화면으로 전환해 확인합니다.</p>
             </div>
             <div className="flex rounded-lg border border-line bg-inset p-1" role="group" aria-label="모의전 화면 전환">
@@ -354,6 +354,7 @@ export default function BattleTab() {
         <BattleArena
           sessionId={active.sessionId}
           readOnly={active.readOnly || active.runnerPreview}
+          runnerPreview={active.runnerPreview}
           onExit={() => {
             setActive(null);
             setSelectedEnemyIds(new Set());
