@@ -34,6 +34,9 @@ import {
   undoLastBattleTurn,
   updateBattlePairs,
   invalidateBattleCharacterCache,
+  EFFECT_STAT_LABELS,
+  PERCENT_EFFECT_STATS,
+  type ItemEffectStat,
   type BattleCharacterActionInput,
   type BattleEnemyActionInput,
   type BattleEnemyState,
@@ -227,6 +230,8 @@ interface StackBarItem {
   /** 상태이상처럼 강화/약화로 색이 정해지는 경우 */
   tone?: "buff" | "debuff";
   direction?: "left" | "right";
+  /** 툴팁에서 이름 뒤에 붙이는 효과 설명(예: "공격력 -15") */
+  detail?: string;
 }
 
 const STACK_BAR_TONE = {
@@ -244,7 +249,7 @@ function StackBars({ items, className }: { items: StackBarItem[]; className?: st
           <span key={item.key}>
             {index > 0 && <span className="mr-1 text-muted">|</span>}
             <span className={item.tone ? STACK_BAR_TONE[item.tone].text : undefined} style={item.tone ? undefined : { color: item.color }}>
-              {item.label} × {item.count}
+              {item.label}{item.detail ? ` (${item.detail})` : ""} × {item.count}
             </span>
           </span>
         ))}
@@ -289,6 +294,42 @@ function statusEffectBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
     else grouped.set(key, { key, label, count, tone });
   }
   return [...grouped.values()];
+}
+
+const DEFAULT_ENEMY_DEBUFF_COLOR = "#e879f9";
+
+/** 에너미(또는 그 하수인)가 캐릭터에게 건 약화. 색이 저장되기 전의 전투도 출처로 구분한다. */
+function isEnemyDebuff(effect: BattleStatusEffect): boolean {
+  return effect.affinity === "debuff" && (effect.color != null || /^(enemy|minion):/.test(effect.stack_source ?? ""));
+}
+
+function enemyDebuffDetail(effect: BattleStatusEffect, totalDelta: number): string | undefined {
+  if (effect.effect_type === "ongoing_damage" && effect.damage != null) return `턴마다 피해 ${fmt(effect.damage)}`;
+  if (effect.effect_type !== "stat_modifier" || !effect.stat) return undefined;
+  const percent = PERCENT_EFFECT_STATS.has(effect.stat as ItemEffectStat);
+  const value = percent ? Math.round(totalDelta * 1000) / 10 : Math.round(totalDelta * 100) / 100;
+  const label = (EFFECT_STAT_LABELS[effect.stat] ?? effect.stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
+  return `${label} ${value >= 0 ? "+" : ""}${value}${percent ? "%" : ""}`;
+}
+
+/** 에너미 약화를 환경 스택처럼 지정한 색의 대각선 바로 보여준다. 같은 출처의 중첩은 한 항목으로 묶는다. */
+function enemyDebuffBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
+  const grouped = new Map<string, { item: StackBarItem; effect: BattleStatusEffect; delta: number }>();
+  for (const effect of effects) {
+    const skillName = effect.skill_name || effect.var_name || effect.effect_type;
+    const label = effect.source_name ? `${effect.source_name}의 ${skillName}` : skillName;
+    const color = effect.color || DEFAULT_ENEMY_DEBUFF_COLOR;
+    const key = `enemy-debuff:${effect.stack_source ?? label}:${color}`;
+    const existing = grouped.get(key);
+    const count = Math.max(1, effect.stacks ?? 1);
+    if (existing) {
+      existing.item.count += count;
+      existing.delta += effect.applied_delta ?? 0;
+    } else {
+      grouped.set(key, { item: { key, label, count, color }, effect, delta: effect.applied_delta ?? 0 });
+    }
+  }
+  return [...grouped.values()].map(({ item, effect, delta }) => ({ ...item, detail: enemyDebuffDetail(effect, delta) }));
 }
 
 function isEnemyTargetable(enemy: BattleSession["enemies"][number], currentRound: number): boolean {
@@ -2222,13 +2263,16 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           const selfBuffs = (p.status_effects ?? []).filter((effect) =>
             effect.affinity === "buff" && effect.source_character_id === p.character_id,
           );
+          const enemyDebuffs = (p.status_effects ?? []).filter(isEnemyDebuff);
           const otherEffects = displayStatusEffects((p.status_effects ?? []).filter((effect) =>
-            effect.effect_type !== "escort_guard" && (effect.affinity !== "buff" || effect.source_character_id !== p.character_id),
+            effect.effect_type !== "escort_guard" && !isEnemyDebuff(effect)
+            && (effect.affinity !== "buff" || effect.source_character_id !== p.character_id),
           ));
           const stackBars: StackBarItem[] = [
             ...(p.environment_stacks ?? []).map((stack) => ({
               key: `environment:${stack.id}`, label: stack.name, count: stack.count, color: stack.color,
             })),
+            ...enemyDebuffBarItems(enemyDebuffs),
             ...statusEffectBarItems(selfBuffs).map((item): StackBarItem => ({ ...item, direction: "left" })),
           ];
           const statusBadges = [
