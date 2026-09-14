@@ -792,6 +792,7 @@ function OwnedItemTile({
             {item.item_description && (
               <div className="mt-1 text-muted">{item.item_description}</div>
             )}
+            {item.effects.length > 0 && <div className="mt-2 text-gold">{item.effects.map(formatEffect).join(" · ")}</div>}
             {item.battle_only && (
               <div className="mt-1 text-gold">전투 중에만 사용할 수 있는 아이템입니다.</div>
             )}
