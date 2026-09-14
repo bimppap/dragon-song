@@ -987,6 +987,10 @@ export const GRADE_CHOICE_STAT_OPTIONS: { value: GradeStat; label: string }[] = 
 
 /** "delivery_date_slot"(질문권)/"delivery_freeform"(선물 상자) 아이템 사용 시 함께 보내는 값. */
 export interface DeliveryPayload {
+  recipient_ids?: number[];
+  recipient_names?: string[];
+  anonymous?: boolean;
+  uploading?: boolean;
   recipient_id?: number;
   recipient_name?: string;
   date?: string; // YYYY-MM-DD
@@ -1000,6 +1004,7 @@ export interface UseItemSelection {
   chosenStats?: string[];
   chosenFaction?: Faction;
   delivery?: DeliveryPayload;
+  deliveryGroups?: DeliveryPayload[];
   missionId?: number;
   challengeId?: number;
 }
@@ -1022,6 +1027,8 @@ export async function consumeItem(
       delivery_image_url: selection.delivery?.image_url ?? null,
       delivery_letter: selection.delivery?.letter ?? null,
       delivery_recipient_id: selection.delivery?.recipient_id ?? null,
+      delivery_anonymous: selection.delivery?.anonymous ?? false,
+      delivery_groups: selection.deliveryGroups ?? null,
     }),
   }, "아이템 사용 실패");
   invalidateApiCache("characters:", "items:", "skills:character:", "challenges:");
@@ -2227,7 +2234,7 @@ export async function uploadCharacterSkillImage(
   return tree;
 }
 
-export async function fetchDeliveryRecipients(): Promise<{ id: number; name: string }[]> {
+export async function fetchDeliveryRecipients(): Promise<{ id: number; name: string; faction: Faction | null }[]> {
   return request("/shop/delivery-recipients", undefined, "수신자 목록 조회 실패");
 }
 

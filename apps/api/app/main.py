@@ -730,6 +730,8 @@ def use_item(
         delivery_image_url=data.delivery_image_url if data else None,
         delivery_letter=data.delivery_letter if data else None,
         delivery_recipient_id=data.delivery_recipient_id if data else None,
+        delivery_anonymous=data.delivery_anonymous if data else False,
+        delivery_groups=[group.model_dump() for group in data.delivery_groups] if data and data.delivery_groups is not None else None,
         mission_id=data.mission_id if data else None,
         challenge_id=data.challenge_id if data else None,
     )

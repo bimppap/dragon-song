@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Copy, Download } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import Modal from "@/components/common/Modal";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
@@ -131,13 +132,13 @@ export default function DeliveryGrid({ refreshKey }: Props) {
       <div className="overflow-x-auto rounded-lg border border-line">
         <table className="w-full min-w-[760px] table-fixed text-left text-sm">
           <thead className="bg-inset text-xs text-muted"><tr>
-            <th className="w-28 p-3">발신자</th><th className="w-28 p-3">{group.isGift ? "수신자" : "요청 날짜"}</th>
+            <th className="w-28 p-3">발신자</th><th className={cn("p-3", group.isGift ? "w-48" : "w-28")}>{group.isGift ? "수신자" : "요청 날짜"}</th>
             <th className="p-3">요청 내용</th>
             <th className="w-36 p-3">요청한 시간</th><th className="w-28 p-3">완료 처리</th>
           </tr></thead>
           <tbody>{group.requests.length ? group.requests.map((request) => <tr key={request.id} className="border-t border-line align-top">
-            <td className="break-words p-3">{request.character_name}</td>
-            <td className="break-words p-3">{group.isGift ? request.payload.recipient_name || "미지정" : request.payload.date}</td>
+            <td className="break-words p-3">{request.character_name}{group.isGift && request.payload.anonymous && <Badge variant="outline" className="ml-2">익명 발송</Badge>}</td>
+            <td className="break-words p-3">{group.isGift ? request.payload.recipient_names?.join(", ") || request.payload.recipient_name || "미지정" : request.payload.date}</td>
             <td className="p-3"><RequestContent request={request} isGift={group.isGift} /></td>
             <td className="p-3 text-xs text-muted">{new Date(request.created_at).toLocaleString("ko-KR")}</td>
             <td className="p-3"><Button size="sm" variant={request.status === "completed" ? "secondary" : "outline"}

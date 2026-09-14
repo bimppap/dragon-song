@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Backpack,
   BookOpen,
@@ -512,75 +513,205 @@ function DeliveryDateSlotForm({
   );
 }
 
-function DeliveryFreeformForm({
-  characterId,
-  recipients,
-  onChange,
-}: {
-  characterId: number;
-  recipients: { id: number; name: string }[];
-  onChange: (payload: DeliveryPayload) => void;
+type DeliveryRecipient = { id: number; name: string; faction: Faction | null };
+type GiftMode = "single" | "group";
+
+interface GiftSetDraft {
+  key: number;
+  recipientIds: number[];
+  imageUrl: string | null;
+  previewUrl: string | null;
+  uploading: boolean;
+  letter: string;
+}
+
+const RECIPIENT_QUICK_PICKS: { label: string; faction: Faction | null }[] = [
+  { label: "전체", faction: null },
+  { label: "공격", faction: "공격" },
+  { label: "수비", faction: "수비" },
+  { label: "치유", faction: "치유" },
+];
+
+function emptyGiftSet(key: number): GiftSetDraft {
+  return { key, recipientIds: [], imageUrl: null, previewUrl: null, uploading: false, letter: "" };
+}
+
+/** 선물 상자 배달 요청 폼. 개인은 1명에게 1세트, 단체는 세트마다 여러 명에게 보내며 익명 여부는 전체에 한 번만 정한다. */
+// 요청 1회에 담을 수 있는 선물세트 수(서버 DeliveryGiftGroup 목록 최대 길이와 같다).
+const MAX_GIFT_SETS = 100;
+
+function DeliveryGiftForm({ characterId, recipients, availableBoxes, onChange }: {
+  characterId: number; recipients: DeliveryRecipient[]; availableBoxes: number;
+  onChange: (groups: DeliveryPayload[]) => void;
 }) {
   const { toast } = useToast();
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-  const [letter, setLetter] = useState("");
-  const [recipientId, setRecipientId] = useState<number>();
+  const [mode, setMode] = useState<GiftMode>("single");
+  const [anonymous, setAnonymous] = useState(false);
+  const [sets, setSets] = useState<GiftSetDraft[]>(() => [emptyGiftSet(0)]);
+  const [confirmingSingle, setConfirmingSingle] = useState(false);
+  const nextKey = useRef(1);
 
-  async function handleFileChange(file: File | null) {
-    if (!file) return;
+  useEffect(() => {
+    onChange(sets.map((set) => ({
+      recipient_ids: set.recipientIds, image_url: set.imageUrl, letter: set.letter, anonymous, uploading: set.uploading,
+    })));
+  }, [sets, anonymous, onChange]);
+
+  function updateSet(key: number, update: (set: GiftSetDraft) => GiftSetDraft) {
+    // 업로드가 끝나기 전에 세트가 지워졌다면 결과를 버린다.
+    setSets((prev) => prev.map((set) => set.key === key ? update(set) : set));
+  }
+
+  async function uploadImage(key: number, file: File) {
     // 다른 이미지 업로드 폼과 동일하게, 서버 업로드 완료를 기다리지 않고 먼저 로컬 미리보기를 보여준다.
-    setPreviewUrl(URL.createObjectURL(file));
-    setUploading(true);
+    updateSet(key, (set) => ({ ...set, previewUrl: URL.createObjectURL(file), uploading: true }));
     try {
       const url = await uploadDeliveryImage(characterId, file);
-      setImageUrl(url);
-      onChange({ image_url: url, letter, recipient_id: recipientId });
+      updateSet(key, (set) => ({ ...set, imageUrl: url, uploading: false }));
     } catch (error) {
       toast(error instanceof Error ? error.message : "이미지 업로드 실패", "error");
-      setPreviewUrl(null);
-    } finally {
-      setUploading(false);
+      updateSet(key, (set) => ({ ...set, previewUrl: set.imageUrl, uploading: false }));
     }
   }
 
-  return (
-    <div className="mt-3 flex flex-col gap-3">
-      <div className="space-y-1.5">
-        <p id="gift-recipient-label" className="text-xs font-semibold text-muted">수신자 (러너·스태프 캐릭터 1명)</p>
-        <Select value={recipientId?.toString() ?? ""} disabled={uploading} onValueChange={(value) => {
-          const id = Number(value);
-          setRecipientId(id);
-          onChange({ image_url: imageUrl, letter, recipient_id: id });
-        }}>
-          <SelectTrigger aria-labelledby="gift-recipient-label"><SelectValue placeholder="선물 상자를 받을 캐릭터 선택" /></SelectTrigger>
-          <SelectContent>{recipients.map((recipient) => <SelectItem key={recipient.id} value={String(recipient.id)}>{recipient.name}</SelectItem>)}</SelectContent>
-        </Select>
+  const [firstSet] = sets;
+  // 선물 상자는 받는 캐릭터 1명당 1개라, 모든 세트의 선택 인원 합계가 보유 수를 넘지 못한다.
+  const selectedCount = sets.reduce((total, set) => total + set.recipientIds.length, 0);
+  const remainingBoxes = Math.max(0, availableBoxes - selectedCount);
+  const lostOnSingle = [
+    sets.length > 1 && (sets.length === 2 ? "선물세트 2" : `선물세트 2~${sets.length}`),
+    firstSet.recipientIds.length > 1 && `선물세트 1의 수신자 ${firstSet.recipientIds.length}명 선택`,
+  ].filter((part): part is string => Boolean(part));
+
+  function selectMode(next: GiftMode) {
+    if (next === mode) return;
+    if (next === "single" && lostOnSingle.length > 0) { setConfirmingSingle(true); return; }
+    setConfirmingSingle(false);
+    setMode(next);
+  }
+
+  function convertToSingle() {
+    setSets((prev) => [{ ...prev[0], recipientIds: prev[0].recipientIds.length === 1 ? prev[0].recipientIds : [] }]);
+    setMode("single");
+    setConfirmingSingle(false);
+  }
+
+  return <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+    <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex rounded-lg border border-line bg-inset p-1" role="group" aria-label="보내는 방식">
+        {([["single", "개인"], ["group", "단체"]] as const).map(([value, label]) => (
+          <Button key={value} type="button" size="sm" variant={mode === value ? "default" : "ghost"} aria-pressed={mode === value}
+            onClick={() => selectMode(value)}>{label}</Button>
+        ))}
       </div>
+      <label className="flex items-center gap-2 text-sm">
+        <Checkbox checked={anonymous} onCheckedChange={(checked) => setAnonymous(checked === true)} />익명으로 보내기
+      </label>
+    </div>
+    {confirmingSingle && lostOnSingle.length > 0 && <div role="alertdialog" aria-label="개인으로 전환 확인" className="space-y-2 rounded-lg border border-red-500/50 bg-red-500/10 p-3">
+      <p className="text-sm text-ivory">개인으로 바꾸면 다음 편집 정보가 사라집니다: {lostOnSingle.join(", ")}. 선물세트 1의 이미지와 편지는 유지됩니다.</p>
+      <div className="flex justify-end gap-2">
+        <Button type="button" size="sm" variant="outline" onClick={() => setConfirmingSingle(false)}>단체 유지</Button>
+        <Button type="button" size="sm" variant="destructive" onClick={convertToSingle}>개인으로 전환</Button>
+      </div>
+    </div>}
+    {mode === "group" && <p className={cn("text-sm font-semibold", remainingBoxes === 0 ? "text-gold" : "text-ivory")}>
+      보유 선물 상자 {availableBoxes}개 · 선택 {selectedCount}명
+    </p>}
+    <p className="text-xs text-muted">
+      {mode === "single"
+        ? "선물 상자 1개로 1명에게 보냅니다."
+        : "세트에 담긴 모든 수신자에게 같은 내용을 전달합니다. 1명당 선물 상자 1개를 소비합니다."}
+    </p>
+    {sets.map((set, index) => (
+      <GiftSetEditor key={set.key} set={set} mode={mode} title={`선물세트 ${index + 1}`} recipients={recipients} remainingBoxes={remainingBoxes}
+        onRemove={mode === "group" && sets.length > 1 ? () => setSets((prev) => prev.filter((value) => value.key !== set.key)) : undefined}
+        onRecipients={(recipientIds) => updateSet(set.key, (value) => ({ ...value, recipientIds }))}
+        onLetter={(letter) => updateSet(set.key, (value) => ({ ...value, letter }))}
+        onImage={(file) => void uploadImage(set.key, file)} />
+    ))}
+    {mode === "group" && <Button type="button" variant="outline" disabled={sets.length >= MAX_GIFT_SETS || remainingBoxes === 0} onClick={() => {
+      const key = nextKey.current++;
+      setSets((prev) => [...prev, emptyGiftSet(key)]);
+    }}>선물세트 추가</Button>}
+  </div>;
+}
+
+function GiftSetEditor({ set, mode, title, recipients, remainingBoxes, onRemove, onRecipients, onLetter, onImage }: {
+  set: GiftSetDraft; mode: GiftMode; title: string; recipients: DeliveryRecipient[]; remainingBoxes: number;
+  onRemove?: () => void; onRecipients: (ids: number[]) => void; onLetter: (letter: string) => void; onImage: (file: File) => void;
+}) {
+  const { previewUrl } = set;
+  const shownImage = set.imageUrl ?? previewUrl;
+  useEffect(() => () => {
+    if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
+  return (
+    <div className={cn("flex flex-col gap-3", mode === "group" && "rounded-lg border border-line p-3")}>
+      {mode === "group" && <div className="flex items-center justify-between">
+        <strong>{title}</strong>
+        {onRemove && <Button type="button" size="sm" variant="ghost" onClick={onRemove}>삭제</Button>}
+      </div>}
+      {mode === "single" ? (
+        <div className="space-y-1.5">
+          <p id={`gift-recipient-${set.key}`} className="text-xs font-semibold text-muted">수신자 (러너·스텝 캐릭터 1명)</p>
+          <Select value={set.recipientIds[0]?.toString() ?? ""} disabled={set.uploading} onValueChange={(value) => onRecipients([Number(value)])}>
+            <SelectTrigger aria-labelledby={`gift-recipient-${set.key}`}><SelectValue placeholder="선물 상자를 받을 캐릭터 선택" /></SelectTrigger>
+            <SelectContent>{recipients.map((recipient) => <SelectItem key={recipient.id} value={String(recipient.id)}>{recipient.name}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-muted">수신자 ({set.recipientIds.length}명)</p>
+            <div className="flex flex-wrap gap-1" role="group" aria-label={`${title} 수신자 빠른 선택`}>
+              {RECIPIENT_QUICK_PICKS.map((pick) => {
+                const ids = recipients.filter((recipient) => pick.faction == null || recipient.faction === pick.faction).map((recipient) => recipient.id);
+                const allSelected = ids.length > 0 && ids.every((id) => set.recipientIds.includes(id));
+                const missing = ids.filter((id) => !set.recipientIds.includes(id)).length;
+                const exceeds = !allSelected && missing > remainingBoxes;
+                return <Button key={pick.label} type="button" size="sm" variant={allSelected ? "default" : "outline"} aria-pressed={allSelected}
+                  title={exceeds ? `선물 상자가 ${missing - remainingBoxes}개 부족합니다.` : undefined}
+                  disabled={set.uploading || ids.length === 0 || exceeds}
+                  onClick={() => onRecipients(allSelected
+                    ? set.recipientIds.filter((id) => !ids.includes(id))
+                    : [...new Set([...set.recipientIds, ...ids])])}>{pick.label}</Button>;
+              })}
+            </div>
+          </div>
+          <div className="grid max-h-40 grid-cols-2 gap-2 overflow-y-auto rounded border border-line p-2">
+            {recipients.map((recipient) => <label key={recipient.id} className="flex items-center gap-2 text-sm">
+              <Checkbox disabled={set.uploading || (remainingBoxes === 0 && !set.recipientIds.includes(recipient.id))} checked={set.recipientIds.includes(recipient.id)} onCheckedChange={(checked) => onRecipients(
+                checked === true ? [...set.recipientIds, recipient.id] : set.recipientIds.filter((id) => id !== recipient.id),
+              )} />{recipient.name}
+            </label>)}
+          </div>
+        </div>
+      )}
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">이미지 (선택)</p>
-        {previewUrl && (
+        {shownImage && (
           <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-line bg-inset">
             {/* blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다. */}
-            <Image src={imageUrl ?? previewUrl} alt="첨부 이미지 미리보기" fill unoptimized className="object-contain" />
+            <Image src={shownImage} alt="첨부 이미지 미리보기" fill unoptimized className="object-contain" />
           </div>
         )}
         <input
           type="file"
           accept="image/*"
-          disabled={uploading}
-          onChange={(event) => handleFileChange(event.target.files?.[0] ?? null)}
+          disabled={set.uploading}
+          onChange={(event) => { const file = event.target.files?.[0]; if (file) onImage(file); }}
           className="w-full text-xs text-muted file:mr-2 file:rounded-md file:border file:border-line file:bg-surface file:px-2 file:py-1 file:text-xs file:text-ivory"
         />
-        {uploading && <p className="text-xs text-muted">업로드 중...</p>}
+        {set.uploading && <p className="text-xs text-muted">업로드 중...</p>}
       </div>
       <div className="space-y-1.5">
         <p className="text-xs font-semibold uppercase tracking-wide text-muted">편지 (선택)</p>
         <Textarea
-          value={letter}
-          disabled={uploading}
-          onChange={(event) => { setLetter(event.target.value); onChange({ image_url: imageUrl, letter: event.target.value, recipient_id: recipientId }); }}
+          value={set.letter}
+          disabled={set.uploading}
+          onChange={(event) => onLetter(event.target.value)}
           rows={3}
           placeholder="전달할 편지 내용을 입력하세요."
         />
@@ -792,34 +923,32 @@ function OwnedItemTile({
               return;
             }
             if (deliveryStat === "delivery_freeform") {
-              let recipients: { id: number; name: string }[];
+              let recipients: DeliveryRecipient[];
               try { recipients = await fetchDeliveryRecipients(); }
               catch (error) { toast(error instanceof Error ? error.message : "수신자 목록 조회 실패", "error"); return; }
               if (!recipients.length) { toast("선택 가능한 수신자가 없습니다.", "error"); return; }
-              const payloadRef: { current: DeliveryPayload } = { current: {} };
+              const groupsRef: { current: DeliveryPayload[] } = { current: [{}] };
               const ok = await confirm({
                 title: "선물 상자 배달 요청",
                 confirmText: "요청하기",
-                // 실수로 Enter를 눌러 요청이 나가지 않도록 버튼 클릭으로만 보낸다.
+                maxWidthClassName: "max-w-xl",
                 disableEnterConfirm: true,
-                content: (
-                  <DeliveryFreeformForm
-                    recipients={recipients}
-                    characterId={characterId}
-                    onChange={(payload) => { payloadRef.current = payload; }}
-                  />
-                ),
+                validate: () => {
+                  for (const [index, group] of groupsRef.current.entries()) {
+                    const label = groupsRef.current.length > 1 ? `선물세트 ${index + 1}의 ` : "";
+                    if (group.uploading) return `${label}이미지 업로드를 완료해 주세요.`;
+                    if (!group.recipient_ids?.length) return `${label}수신자를 선택해 주세요.`;
+                    if (!group.image_url && !group.letter?.trim()) return `${label}이미지 또는 편지를 입력해 주세요.`;
+                  }
+                  const required = groupsRef.current.reduce((total, group) => total + (group.recipient_ids?.length ?? 0), 0);
+                  if (required > remainingUses) return `받는 캐릭터 수만큼 선물 상자가 필요합니다. (필요 ${required}개 / 보유 ${remainingUses}개)`;
+                  return null;
+                },
+                content: <DeliveryGiftForm recipients={recipients} characterId={characterId} availableBoxes={remainingUses}
+                  onChange={(groups) => { groupsRef.current = groups; }} />,
               });
               if (!ok) return;
-              if (!payloadRef.current.recipient_id) {
-                toast("선물 상자를 받을 캐릭터를 선택해 주세요.", "error");
-                return;
-              }
-              if (!payloadRef.current.image_url && !(payloadRef.current.letter || "").trim()) {
-                toast("이미지 또는 편지 중 최소 하나는 입력해 주세요.", "error");
-                return;
-              }
-              onUse({ delivery: payloadRef.current });
+              onUse({ deliveryGroups: groupsRef.current });
               return;
             }
             if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse();

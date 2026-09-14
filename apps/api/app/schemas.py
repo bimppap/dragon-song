@@ -543,6 +543,13 @@ class BulkPurchaseRequest(BaseModel):
     items: list[CartItem]
 
 
+class DeliveryGiftGroup(BaseModel):
+    recipient_ids: list[int] = Field(min_length=1, max_length=500)
+    image_url: str | None = None
+    letter: str | None = None
+    anonymous: bool = False
+
+
 class CharacterRewardBatchRequest(BaseModel):
     source_ids: list[int] = Field(min_length=1, max_length=200)
 
@@ -561,6 +568,8 @@ class UseItemRequest(BaseModel):
     delivery_image_url: str | None = None
     delivery_letter: str | None = None
     delivery_recipient_id: int | None = Field(default=None, gt=0)
+    delivery_anonymous: bool = False
+    delivery_groups: list[DeliveryGiftGroup] | None = Field(default=None, min_length=1, max_length=100)
 
 
 class CharacterStatUpgradeRequest(BaseModel):

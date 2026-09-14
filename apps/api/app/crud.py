@@ -1309,15 +1309,16 @@ def _validate_delivery_date_slot(db: Session, item_id: int, delivery_date: date 
 
 
 def get_delivery_recipients(db: Session) -> list[dict]:
-    return [{"id": character.id, "name": character.name} for character in (
+    return [{"id": character.id, "name": character.name, "faction": character.faction} for character in (
         db.query(Character).join(Member, Character.member_id == Member.id)
         .filter(Member.role.in_(["RUNNER", "STAFF"]))
         .order_by(Character.name, Character.id).all()
     )]
 
 
-def _validate_delivery_freeform(db: Session, recipient_id: int | None, delivery_image_url: str | None, delivery_letter: str | None) -> dict:
-    recipient = next((c for c in get_delivery_recipients(db) if c["id"] == recipient_id), None)
+def _validate_delivery_freeform(db: Session, recipient_id: int | None, delivery_image_url: str | None, delivery_letter: str | None, *, recipients_by_id: dict | None = None) -> dict:
+    recipients = recipients_by_id if recipients_by_id is not None else {c["id"]: c for c in get_delivery_recipients(db)}
+    recipient = recipients.get(recipient_id)
     if recipient is None:
         raise HTTPException(status_code=400, detail="선물 상자를 받을 러너 또는 스태프 캐릭터 1명을 선택해 주세요.")
     image_url = (delivery_image_url or "").strip() or None
@@ -1344,6 +1345,8 @@ def use_item(
     delivery_image_url: str | None = None,
     delivery_letter: str | None = None,
     delivery_recipient_id: int | None = None,
+    delivery_anonymous: bool = False,
+    delivery_groups: list[dict] | None = None,
     mission_id: int | None = None,
     challenge_id: int | None = None,
 ) -> CharacterDetailRead:
@@ -1372,10 +1375,33 @@ def use_item(
     special_stats = {effect.get("stat") for effect in (item.effects or [])}
     # 배달형 아이템은 실제 효과 적용 전에 입력값을 검증해, 잘못된 요청이 아이템만 소모시키지 않게 한다.
     delivery_payload: dict | None = None
+    gift_payloads: list[dict] = []
     if "delivery_date_slot" in special_stats:
         delivery_payload = _validate_delivery_date_slot(db, item_id, delivery_date, delivery_note)
     elif "delivery_freeform" in special_stats:
-        delivery_payload = _validate_delivery_freeform(db, delivery_recipient_id, delivery_image_url, delivery_letter)
+        groups = delivery_groups if delivery_groups is not None else [{
+            "recipient_ids": [delivery_recipient_id], "image_url": delivery_image_url,
+            "letter": delivery_letter, "anonymous": delivery_anonymous,
+        }]
+        if not groups:
+            raise HTTPException(status_code=400, detail="선물 상자를 받을 캐릭터를 선택해 주세요.")
+        if len({bool(group.get("anonymous", False)) for group in groups}) > 1:
+            raise HTTPException(status_code=400, detail="익명 여부는 모든 선물세트에 같게 적용해야 합니다.")
+        recipients_by_id = {recipient["id"]: recipient for recipient in get_delivery_recipients(db)}
+        for group in groups:
+            ids = list(dict.fromkeys(group.get("recipient_ids", [])))
+            if not ids:
+                raise HTTPException(status_code=400, detail="각 선물의 수신자를 선택해 주세요.")
+            recipients = [_validate_delivery_freeform(db, recipient_id, group.get("image_url"), group.get("letter"), recipients_by_id=recipients_by_id) for recipient_id in ids]
+            gift_payloads.append({**recipients[0], "recipient_ids": ids,
+                "recipient_names": [recipient["recipient_name"] for recipient in recipients],
+                "anonymous": bool(group.get("anonymous", False))})
+        # 선물 상자는 선물세트가 아니라 받는 캐릭터 1명당 1개를 소비한다.
+        required_boxes = sum(len(payload["recipient_ids"]) for payload in gift_payloads)
+        available_boxes = owned_quantity - state.used_quantity
+        if required_boxes > available_boxes:
+            raise HTTPException(status_code=400, detail=f"받는 캐릭터 수만큼 선물 상자가 필요합니다. (필요 {required_boxes}개 / 보유 {available_boxes}개)")
+        delivery_payload = gift_payloads[0]
 
     # 역할 변경은 효과 적용 전에 검증해, 잘못된 선택이 아이템만 소모시키지 않게 한다.
     if "full_reset" in special_stats and chosen_faction not in FACTIONS:
@@ -1418,9 +1444,12 @@ def use_item(
         _apply_grade_choice(character, chosen_stats or [], 1)
     elif "grade_choice_2" in special_stats:
         _apply_grade_choice(character, chosen_stats or [], 2)
-    state.used_quantity += 1
+    first_quantity = len(gift_payloads[0]["recipient_ids"]) if gift_payloads else 1
+    for _ in range(first_quantity - 1):
+        _apply_item_effects(character, item.effects or [], sign=1)
+    state.used_quantity += first_quantity
     usage = ItemUsage(
-        character_id=character_id, item_id=item_id, quantity=1,
+        character_id=character_id, item_id=item_id, quantity=first_quantity,
         selected_challenge_id=selected_challenge.id if selected_challenge else None,
         selected_challenge_name=selected_challenge.name if selected_challenge else None,
         selected_mission_id=selected_mission.id if selected_mission else None,
@@ -1438,6 +1467,16 @@ def use_item(
             item_usage_id=usage.id,
             payload=delivery_payload,
         ))
+    for payload in gift_payloads[1:]:
+        quantity = len(payload["recipient_ids"])
+        for _ in range(quantity):
+            _apply_item_effects(character, item.effects or [], sign=1)
+        state.used_quantity += quantity
+        extra_usage = ItemUsage(character_id=character_id, item_id=item_id, quantity=quantity)
+        db.add(extra_usage)
+        db.flush()
+        db.add(DeliveryRequest(character_id=character_id, item_id=item_id,
+                               item_usage_id=extra_usage.id, payload=payload))
     db.commit()
     return get_character_detail(db, character_id)
 

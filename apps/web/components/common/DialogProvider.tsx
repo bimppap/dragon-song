@@ -18,6 +18,7 @@ interface DialogOptions {
   /** Enter 키로 확인되지 않게 한다(확인 버튼 자동 포커스도 끈다).
    *  선물 전송처럼 실수로 보내면 되돌리기 어려운 창에 쓴다. */
   disableEnterConfirm?: boolean;
+  validate?: () => string | null;
 }
 
 type DialogInput = string | DialogOptions;
@@ -46,6 +47,7 @@ function normalize(input: DialogInput): DialogOptions {
 export function DialogProvider({ children }: { children: React.ReactNode }) {
   const [dialog, setDialog] = useState<DialogState | null>(null);
   const [promptValue, setPromptValue] = useState("");
+  const [validationError, setValidationError] = useState<string | null>(null);
 
   const confirm = useCallback(
     (input: DialogInput) =>
@@ -78,11 +80,16 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
   );
 
   const close = useCallback((value: boolean | string | null) => {
+    if (value === true && dialog?.validate) {
+      const error = dialog.validate();
+      if (error) { setValidationError(error); return; }
+    }
+    setValidationError(null);
     setDialog((prev) => {
       prev?.resolve(value);
       return null;
     });
-  }, []);
+  }, [dialog]);
 
   useEffect(() => {
     if (!dialog) return;
@@ -115,6 +122,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               <p className={cn("whitespace-pre-line text-sm text-ivory/85", dialog.title ? "mt-2" : "")}>{dialog.description}</p>
             )}
             {dialog.content}
+            {validationError && <p role="alert" className="mt-3 text-sm text-red-400">{validationError}</p>}
             {dialog.mode === "prompt" && (
               <Input
                 className="mt-4"
