@@ -92,6 +92,7 @@ export function useEditableProgressList<T extends ProgressEntryBase>({
 
   return {
     entries,
+    filterEntries: isEditing && backup ? backup : entries,
     setEntries,
     isEditing,
     saving,

@@ -308,7 +308,7 @@ export function ChallengeAdmin() {
   });
   const activeProgress = progress.entries;
   const visibleProgress = showUnachievedOnly
-    ? activeProgress.filter((entry) => !entry.achieved)
+    ? activeProgress.filter((entry) => progress.filterEntries.some((original) => original.character_id === entry.character_id && !original.achieved))
     : activeProgress;
   const achievedCount = activeProgress.filter((entry) => entry.achieved).length;
 

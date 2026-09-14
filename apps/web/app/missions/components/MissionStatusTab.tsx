@@ -75,7 +75,7 @@ export default function MissionStatusTab() {
   });
   const activeProgress = progress.entries;
   const visibleProgress = showUnachievedOnly
-    ? activeProgress.filter((e) => !e.achieved)
+    ? activeProgress.filter((e) => progress.filterEntries.some((original) => original.character_id === e.character_id && !original.achieved))
     : activeProgress;
   const achievedCount = activeProgress.filter((e) => e.achieved).length;
 
