@@ -25,6 +25,18 @@ DRAFT_PATCH_FIELDS: dict[str, frozenset[str]] = {
 }
 
 
+def _turn_key(session: dict | None) -> tuple | None:
+    return None if session is None else (session.get("round"), session.get("phase"))
+
+
+def _pair_partners(session: dict) -> dict[int, tuple[int, ...]]:
+    return {
+        character_id: tuple(sorted(other for other in pair if other != character_id))
+        for pair in (session.get("pairs") or [])
+        for character_id in pair
+    }
+
+
 class BattleConnectionManager:
     """세션별 WebSocket 커넥션을 메모리에 보관하고 브로드캐스트한다.
 
@@ -37,7 +49,8 @@ class BattleConnectionManager:
     def __init__(self) -> None:
         self._rooms: dict[int, set[WebSocket]] = {}
         self._staff_rooms: dict[int, set[WebSocket]] = {}
-        self._drafts: dict[int, dict[str, dict[int, dict]]] = {}
+        # 세션 → 턴(라운드, 단계) → 초안 유형 → 대상 id → 패치
+        self._drafts: dict[int, dict[tuple | None, dict[str, dict[int, dict]]]] = {}
         self._sessions: dict[int, dict] = {}
         self._previews: dict[int, dict] = {}
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -67,10 +80,25 @@ class BattleConnectionManager:
             {key: value for key, value in previous.items() if key not in formation_fields}
             == {key: value for key, value in session.items() if key not in formation_fields}
         )
-        if not same_combat_state:
+        if session.get("status") != "in_progress":
             self.clear_drafts(session_id)
+        elif not same_combat_state:
+            # 난입·되돌리기 등으로 전투 상태가 바뀌어도 턴별 초안은 유지한다.
+            # 되돌리기로 이전 턴에 돌아가면 그 턴에 입력했던 초안이 다시 복원된다.
+            self._previews.pop(session_id, None)
+            if previous is not None:
+                self._drop_repaired_character_drafts(session_id, previous, session)
         self._sessions[session_id] = session
         return True
+
+    def _drop_repaired_character_drafts(self, session_id: int, previous: dict, session: dict) -> None:
+        # 페어가 바뀐 캐릭터는 빌린 스탯·기술이 달라지므로 그 캐릭터의 초안만 버린다.
+        drafts = self._drafts.get(session_id, {}).get(_turn_key(session), {}).get("character")
+        if not drafts:
+            return
+        before, after = _pair_partners(previous), _pair_partners(session)
+        for character_id in [cid for cid in drafts if before.get(cid) != after.get(cid)]:
+            drafts.pop(character_id)
 
     def session_message(self, session_id: int, *, is_staff: bool = False) -> dict:
         message = {
@@ -86,8 +114,11 @@ class BattleConnectionManager:
         session = self._sessions.get(session_id)
         return bool(session and session["status"] == "in_progress" and session["updated_at"] == version)
 
+    def _turn_drafts(self, session_id: int) -> dict[str, dict[int, dict]]:
+        return self._drafts.setdefault(session_id, {}).setdefault(_turn_key(self._sessions.get(session_id)), {})
+
     def apply_preview(self, session_id: int, draft: dict, sources: dict) -> dict | None:
-        saved = self._drafts.get(session_id, {}).get("character", {})
+        saved = self._drafts.get(session_id, {}).get(_turn_key(self._sessions.get(session_id)), {}).get("character", {})
         previous = self._previews.get(session_id, {})
         next_preview = dict(previous)
         for character_id, entry in draft.items():
@@ -106,12 +137,11 @@ class BattleConnectionManager:
         return next_preview
 
     def apply_draft_patch(self, session_id: int, draft_type: str, entity_id: int, patch: dict) -> None:
-        session_drafts = self._drafts.setdefault(session_id, {})
-        drafts_by_type = session_drafts.setdefault(draft_type, {})
+        drafts_by_type = self._turn_drafts(session_id).setdefault(draft_type, {})
         drafts_by_type.setdefault(entity_id, {}).update(patch)
 
     def draft_snapshot(self, session_id: int) -> dict[str, dict[str, dict]]:
-        session_drafts = self._drafts.get(session_id)
+        session_drafts = self._drafts.get(session_id, {}).get(_turn_key(self._sessions.get(session_id)))
         if not session_drafts:
             return {}
         return {

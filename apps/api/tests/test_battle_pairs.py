@@ -119,6 +119,15 @@ class BattlePairsTest(unittest.TestCase):
         self.assertEqual(restored.pairs, [[1, 2], [3]])
         self.assertEqual([p["character_id"] for p in restored.participants], [1, 2, 3])
 
+    def test_join_keeps_drafts_except_for_newly_paired_character(self):
+        result = self.start(count=3, pair_battle=True, pairs=[[1, 2], [3]])
+        manager = BattleConnectionManager()
+        manager.remember_session(result.id, result.model_dump(mode="json"))
+        for character_id in (1, 3):
+            manager.apply_draft_patch(result.id, "character", character_id, {"kind": "defend"})
+        joined = crud.join_battle(self.db, result.id, BattleJoinRequest(character_id=4))
+        manager.remember_session(result.id, joined.model_dump(mode="json"))
+        self.assertEqual(manager.draft_snapshot(result.id), {"character": {"1": {"kind": "defend"}}})
     def test_pair_update_clears_drafts_when_borrowed_stats_and_skills_change(self):
         result = self.start(pair_battle=True, pairs=[[1, 2], [3, 4]])
         manager = BattleConnectionManager()
@@ -130,7 +139,7 @@ class BattlePairsTest(unittest.TestCase):
         updated = crud.update_battle_pairs(self.db, result.id, BattlePairsRequest(pairs=[[1, 3], [2, 4]]))
         manager.remember_session(result.id, updated.model_dump(mode="json"))
         message = manager.session_message(result.id, is_staff=True)
-        self.assertEqual(message["draft"], {})
+        self.assertEqual(message["draft"], {"character": {}, "enemy": {"1": {"kind": "none"}}})
         self.assertIsNone(message["preview"])
         self.assertEqual(message["session"]["pairs"], [[1, 3], [2, 4]])
         self.assertNotIn("draft", manager.session_message(result.id))

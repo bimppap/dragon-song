@@ -61,7 +61,7 @@ import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
 import BattlePairGrid from "./BattlePairGrid";
-import { reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
+import { changedPairPartnerIds, reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
 
 function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect[] {
   const result: BattleStatusEffect[] = [];
@@ -173,6 +173,10 @@ function describePreviousTurn(session: BattleSession): string | null {
   if (session.phase === "enemy") return `라운드 ${session.round} · 아군 턴`;
   if (session.round > 1) return `라운드 ${session.round - 1} · 에너미 턴`;
   return null;
+}
+
+function battleTurnKey(session: BattleSession): string {
+  return `${session.id}:${session.round}:${session.phase}`;
 }
 
 /** 이번 라운드에 난입한 캐릭터는 행동할 수 없고, 공격/치유 대상도 될 수 없다. */
@@ -772,6 +776,8 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   const [charDrafts, setCharDrafts] = useState<Record<number, CharDraft>>({});
   const [bulkActionKind, setBulkActionKind] = useState<CharacterActionKind>("attack");
   const [telegraphDrafts, setTelegraphDrafts] = useState<Record<number, TelegraphDraft>>({});
+  // 턴(라운드·단계)별로 마지막 초안을 기억해, 난입 등으로 세션이 바뀌거나 턴을 되돌려도 입력한 행동을 복원한다.
+  const turnDraftsRef = useRef<Record<string, { character: Record<number, CharDraft>; enemy: Record<number, TelegraphDraft> }>>({});
   const [itemsByCharacter, setItemsByCharacter] = useState<Record<number, CharacterOwnedItem[]>>({});
   const itemsLoadPromiseRef = useRef<Promise<void> | null>(null);
   const itemsLoadedRef = useRef(false);
@@ -1071,7 +1077,12 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
     return () => clearTimeout(timer);
   }, [charDrafts, readOnly, controlled, session, skillsByCharacter, itemsByCharacter, sendBattleWs, battleSocketConnected, socketVersion]);
 
-  function resetCharDrafts(data: BattleSession, patches: BattleDraftSnapshot["character"] = {}) {
+  useEffect(() => {
+    if (session) turnDraftsRef.current[battleTurnKey(session)] = { character: charDrafts, enemy: telegraphDrafts };
+  }, [session, charDrafts, telegraphDrafts]);
+
+  function resetCharDrafts(data: BattleSession, patches: BattleDraftSnapshot["character"] = {}, repairedIds = new Set<number>()) {
+    const cached = turnDraftsRef.current[battleTurnKey(data)]?.character ?? {};
     const next: Record<number, CharDraft> = {};
     for (const p of data.participants) {
       if (!isTargetable(p, data.round)) continue;
@@ -1083,6 +1094,7 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
         target_character_id: p.character_id,
         protect_target_character_id: p.character_id,
         item_id: null,
+        ...(repairedIds.has(p.character_id) ? undefined : cached[p.character_id]),
         ...(patches[p.character_id] as Partial<CharDraft>),
       };
     }
@@ -1090,10 +1102,11 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
   }
 
   function resetTelegraphDrafts(data: BattleSession, patches: BattleDraftSnapshot["enemy"] = {}) {
+    const cached = turnDraftsRef.current[battleTurnKey(data)]?.enemy ?? {};
     const next: Record<number, TelegraphDraft> = {};
     for (const enemy of data.enemies) {
       if (enemy.hp <= 0 || enemy.joined_round === data.round) continue;
-      const saved = patches[enemy.enemy_id] as Partial<TelegraphDraft & TelegraphActionDraft> | undefined;
+      const saved = (patches[enemy.enemy_id] ?? cached[enemy.enemy_id]) as Partial<TelegraphDraft & TelegraphActionDraft> | undefined;
       const count = enemy.action_count ?? 1;
       next[enemy.enemy_id] = {
         actions: Array.from({ length: count }, (_, index) => {
@@ -1130,7 +1143,9 @@ export default function BattleArena({ sessionId, readOnly = false, onExit, exter
       editingCloseTimersRef.current = {};
     }
     if ((changed && !formationOnly) || snapshot !== undefined) {
-      resetCharDrafts(data, snapshot?.character);
+      const sameTurn = previous != null && battleTurnKey(previous) === battleTurnKey(data);
+      const repairedIds = changed && sameTurn ? changedPairPartnerIds(previous, data) : undefined;
+      resetCharDrafts(data, snapshot?.character, repairedIds);
       resetTelegraphDrafts(data, snapshot?.enemy);
     }
     return true;

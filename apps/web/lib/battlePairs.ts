@@ -8,6 +8,16 @@ export function sameBattleCombatState(previous: BattleSession, next: BattleSessi
   return JSON.stringify(combatState(previous)) === JSON.stringify(combatState(next));
 }
 
+/** 짝이 달라진 캐릭터 id. 빌린 스탯·기술이 바뀌므로 해당 캐릭터의 초안은 다시 만든다. */
+export function changedPairPartnerIds(previous: BattleSession, next: BattleSession): Set<number> {
+  const partners = (session: BattleSession) => new Map(session.pairs.flatMap((pair) =>
+    pair.map((id) => [id, pair.filter((other) => other !== id).toSorted((a, b) => a - b).join(",")] as const),
+  ));
+  const before = partners(previous);
+  const after = partners(next);
+  return new Set([...before.keys(), ...after.keys()].filter((id) => before.get(id) !== after.get(id)));
+}
+
 /** 완성된 페어는 유지하고, 빠지거나 추가된 캐릭터만 다시 연결한다. */
 export function reconcileBattlePairs(pairs: number[][], characterIds: number[]): number[][] {
   const remaining = new Set(characterIds);

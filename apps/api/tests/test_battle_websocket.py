@@ -275,6 +275,30 @@ class BattleWebSocketTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(runner.messages[-1], {"type": "battle_update", "session": updated, "preview": None})
         self.assertEqual(manager.draft_snapshot(1), {})
 
+    async def test_same_turn_update_keeps_drafts_and_undo_restores_previous_turn(self):
+        manager = BattleConnectionManager()
+        ally = battle_session(round=2)
+        manager.remember_session(1, ally)
+        manager.apply_draft_patch(1, "character", 12, {"kind": "retreat"})
+        manager.apply_preview(1, {"12": {"kind": "retreat"}}, {"12": {"kind": "retreat"}})
+
+        joined = battle_session("2026-09-08T12:01:00+09:00", round=2, participants=[{"character_id": 20}])
+        await manager.publish_session_message(1, {"type": "battle_update", "session": joined})
+        self.assertEqual(manager.draft_snapshot(1), {"character": {"12": {"kind": "retreat"}}})
+        self.assertIsNone(manager.session_message(1)["preview"])
+
+        enemy_turn = battle_session("2026-09-08T12:02:00+09:00", round=2, phase="enemy")
+        await manager.publish_session_message(1, {"type": "battle_update", "session": enemy_turn})
+        self.assertEqual(manager.draft_snapshot(1), {})
+
+        undone = battle_session("2026-09-08T12:03:00+09:00", round=2)
+        await manager.publish_session_message(1, {"type": "battle_update", "session": undone})
+        self.assertEqual(manager.draft_snapshot(1), {"character": {"12": {"kind": "retreat"}}})
+
+        finished = battle_session("2026-09-08T12:04:00+09:00", round=2, status="victory")
+        await manager.publish_session_message(1, {"type": "battle_update", "session": finished})
+        self.assertNotIn(1, manager._drafts)
+
     async def test_late_messages_from_previous_turn_are_ignored(self):
         manager = BattleConnectionManager()
         manager.remember_session(1, battle_session("2026-09-08T12:01:00+09:00"))
