@@ -68,6 +68,7 @@ import RewardComposer, { rewardAmountToDisplay, rewardAmountToStored, type Rewar
 import RewardSummary from "@/components/common/RewardSummary";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
+import CharacterRewardBatch from "@/components/common/CharacterRewardBatch";
 import { useEditableProgressList } from "@/lib/useEditableProgressList";
 import { orderChapterNamesLatestFirst } from "@/lib/chapterOrder";
 
@@ -279,6 +280,7 @@ export function ChallengeAdmin() {
   const [modalOpen, setModalOpen] = useState(false);
   const [selectedChapter, setSelectedChapter] = useState("");
   const [selectedChallengeId, setSelectedChallengeId] = useState<number | null>(null);
+  const [rewardView, setRewardView] = useState<"reward" | "character">("reward");
   const [showUnachievedOnly, setShowUnachievedOnly] = useState(false);
   const [loadingChallenges, setLoadingChallenges] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(false);
@@ -408,7 +410,7 @@ export function ChallengeAdmin() {
     // progress 객체 전체는 매 렌더마다 새로 만들어져 의존성에 넣으면 매번 재실행되므로
     // 실제로 쓰는 안정적인 멤버(resetEditing/setEntries)만 넣는다.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedChallengeId, toast, progress.resetEditing, progress.setEntries]);
+  }, [selectedChallengeId, rewardView, toast, progress.resetEditing, progress.setEntries]);
 
   function handleFormChange<K extends keyof ChallengeFormState>(
     key: K,
@@ -828,7 +830,13 @@ export function ChallengeAdmin() {
         </section>
       ) : (
         <section className="flex flex-col gap-6">
-          <div className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
+          <div className="flex gap-2" role="group" aria-label="보상 지급 기준">
+            <Button disabled={progress.isEditing} variant={rewardView === "reward" ? "default" : "outline"} aria-pressed={rewardView === "reward"} onClick={() => setRewardView("reward")}>보상 기준</Button>
+            <Button disabled={progress.isEditing} variant={rewardView === "character" ? "default" : "outline"} aria-pressed={rewardView === "character"} onClick={() => setRewardView("character")}>캐릭터 기준</Button>
+          </div>
+          {rewardView === "character" && <CharacterRewardBatch kind="challenge" sources={challenges} items={items} />}
+
+          <div className={rewardView === "reward" ? "grid gap-6 xl:grid-cols-[0.92fr_1.08fr]" : "hidden"}>
             <Card>
               <CardHeader className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div className="flex flex-col gap-1.5">

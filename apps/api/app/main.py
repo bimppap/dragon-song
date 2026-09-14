@@ -30,6 +30,7 @@ from app.ws import broadcast_battle_deleted, broadcast_battle_update, handle_ws_
 from app.schemas import (
     AccessTokenResponse,
     AdminGiftRequest,
+    CharacterRewardBatchRequest,
     AttendanceEntryCreate,
     AttendanceEntryRead,
     AttendanceRewardPayResult,
@@ -1580,3 +1581,19 @@ async def upload_character_skill_image(
 
     # 캐릭터 이미지 업로드와 동일하게 버전 쿼리를 붙여 브라우저/CDN의 오래된 캐시를 우회한다.
     return crud.set_character_skill_image(db, character_id, node_id, f"{result['public_url']}?v={int(time.time())}")
+
+
+@app.post("/characters/{character_id}/rewards/{kind}/batch", response_model=RewardPayResult)
+def grant_character_reward_batch(
+    character_id: int, kind: Literal["mission", "challenge"], data: CharacterRewardBatchRequest,
+    member: Member = Depends(require_admin), db: Session = Depends(get_db),
+):
+    return crud.grant_character_reward_batch(db, character_id, kind, data.source_ids)
+
+
+@app.get("/characters/{character_id}/rewards/{kind}/paid", response_model=list[int])
+def get_character_paid_source_ids(
+    character_id: int, kind: Literal["mission", "challenge"],
+    member: Member = Depends(require_admin), db: Session = Depends(get_db),
+):
+    return crud.get_character_paid_source_ids(db, character_id, kind)

@@ -543,6 +543,10 @@ class BulkPurchaseRequest(BaseModel):
     items: list[CartItem]
 
 
+class CharacterRewardBatchRequest(BaseModel):
+    source_ids: list[int] = Field(min_length=1, max_length=200)
+
+
 class UseItemRequest(BaseModel):
     """가능성/잠재성의 메달처럼 사용 시점에 선택이 필요한 아이템을 위한 선택값. 그 외 아이템은 무시된다."""
     chosen_stats: list[str] = Field(default_factory=list)

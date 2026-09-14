@@ -3042,7 +3042,7 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
     return reward_reads
 
 
-def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
+def pay_challenge_rewards(db: Session, challenge_id: int, *, character_ids: set[int] | None = None, commit: bool = True) -> RewardPayResult:
     challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
     if not challenge:
         raise HTTPException(status_code=404, detail="도전과제를 찾을 수 없습니다.")
@@ -3066,6 +3066,8 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
     }
 
     to_pay = achieved_ids - already_paid_ids
+    if character_ids is not None:
+        to_pay &= character_ids
     if not to_pay:
         return RewardPayResult(paid_count=0, rewards=[])
 
@@ -3106,7 +3108,8 @@ def pay_challenge_rewards(db: Session, challenge_id: int) -> RewardPayResult:
     db.flush()
     item_names = _reward_item_names(db, created_rewards)
     rewards_read = [_to_reward_read(r, item_names) for r in created_rewards]
-    db.commit()
+    if commit:
+        db.commit()
     return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
 
 
@@ -3283,7 +3286,7 @@ def update_mission_progress(
     return _read_mission_progress(db, mission_id)
 
 
-def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
+def pay_mission_rewards(db: Session, mission_id: int, *, character_ids: set[int] | None = None, commit: bool = True) -> RewardPayResult:
     mission = db.query(Mission).filter(Mission.id == mission_id).first()
     if not mission:
         raise HTTPException(status_code=404, detail="임무를 찾을 수 없습니다.")
@@ -3307,6 +3310,8 @@ def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
     }
 
     to_pay = achieved_ids - already_paid_ids
+    if character_ids is not None:
+        to_pay &= character_ids
     if not to_pay:
         return RewardPayResult(paid_count=0, rewards=[])
 
@@ -3346,7 +3351,8 @@ def pay_mission_rewards(db: Session, mission_id: int) -> RewardPayResult:
     db.flush()
     item_names = _reward_item_names(db, created_rewards)
     rewards_read = [_to_reward_read(r, item_names) for r in created_rewards]
-    db.commit()
+    if commit:
+        db.commit()
     return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
 
 
@@ -8794,3 +8800,39 @@ def set_character_skill_image(db: Session, character_id: int, node_id: int, imag
 def get_character_skill_unlock_image(db: Session, character_id: int, node_id: int) -> str | None:
     _, unlock = _get_character_skill_unlock_or_404(db, character_id, node_id)
     return unlock.custom_image_url
+
+
+def grant_character_reward_batch(db: Session, character_id: int, kind: str, source_ids: list[int]) -> RewardPayResult:
+    """선택한 캐릭터만 완료 처리하고 여러 보상을 하나의 트랜잭션으로 지급한다."""
+    character = db.query(Character).filter(Character.id == character_id).with_for_update().first()
+    if character is None:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    model, progress_model = (Mission, MissionProgress) if kind == "mission" else (Challenge, ChallengeProgress)
+    ids = set(source_ids)
+    sources = db.query(model).filter(model.id.in_(ids)).all()
+    if not ids or len(sources) != len(ids):
+        raise HTTPException(status_code=400, detail="유효한 보상을 선택해 주세요.")
+    rewards = []
+    try:
+        for source_id in sorted(ids):
+            filters = {"character_id": character_id, f"{kind}_id": source_id}
+            progress = db.query(progress_model).filter_by(**filters).first()
+            if progress is None:
+                progress = progress_model(**filters)
+                db.add(progress)
+            progress.achieved = True
+            db.flush()
+            pay = pay_mission_rewards if kind == "mission" else pay_challenge_rewards
+            rewards.extend(pay(db, source_id, character_ids={character_id}, commit=False).rewards)
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return RewardPayResult(paid_count=len(rewards), rewards=rewards)
+
+
+def get_character_paid_source_ids(db: Session, character_id: int, kind: str) -> list[int]:
+    if db.get(Character, character_id) is None:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    return [source_id for source_id, in db.query(Reward.source_id)
+            .filter(Reward.character_id == character_id, Reward.type == kind).distinct().all()]

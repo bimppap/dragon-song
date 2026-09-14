@@ -2263,3 +2263,17 @@ export interface CharacterCardDetails {
 export async function fetchCharacterCardDetails(): Promise<CharacterCardDetails[]> {
   return request("/characters/card-details", undefined, "캐릭터 상세 슬롯 조회 실패");
 }
+
+
+export async function grantCharacterRewardBatch(characterId: number, kind: "mission" | "challenge", sourceIds: number[]): Promise<RewardPayResult> {
+  const result = await request<RewardPayResult>(`/characters/${characterId}/rewards/${kind}/batch`, {
+    method: "POST", body: JSON.stringify({ source_ids: sourceIds }),
+  }, "캐릭터 보상 지급 실패");
+  invalidateApiCache("characters:", "items:", "rewards:", "missions:", "challenges:");
+  return result;
+}
+
+
+export async function fetchCharacterPaidSourceIds(characterId: number, kind: "mission" | "challenge"): Promise<number[]> {
+  return request<number[]>(`/characters/${characterId}/rewards/${kind}/paid`, {}, "보상 현황 조회 실패");
+}
