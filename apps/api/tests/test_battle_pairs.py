@@ -12,7 +12,7 @@ from app import crud
 from app.db import Base
 from app.models import BattleSession, Character, Enemy
 from app.migrations import ensure_schema
-from app.schemas import BattleJoinRequest, BattlePairsRequest, BattleStartRequest
+from app.schemas import BattleEnemyJoinRequest, BattleJoinRequest, BattlePairsRequest, BattleStartRequest
 from app.ws import BattleConnectionManager
 
 
@@ -119,6 +119,30 @@ class BattlePairsTest(unittest.TestCase):
         self.assertEqual(restored.pairs, [[1, 2], [3]])
         self.assertEqual([p["character_id"] for p in restored.participants], [1, 2, 3])
 
+    def test_joins_are_logged_and_undo_keeps_only_joins_before_restored_turn(self):
+        result = self.start(count=3)
+        other_enemy = Enemy(name="증원", base_hp=100, attack=1)
+        self.db.add(other_enemy)
+        self.db.commit()
+        crud.join_battle(self.db, result.id, BattleJoinRequest(character_id=4))
+        joined = crud.join_battle_enemy(self.db, result.id, BattleEnemyJoinRequest(enemy_id=other_enemy.id))
+        self.assertEqual(joined.log, [{"round": 1, "phase": "telegraph", "kind": "join", "events": [
+            "🚪 캐릭터 3 난입 · 다음 라운드부터 행동", "💀 증원 전투 참가 · 다음 라운드부터 행동",
+        ], "metrics": joined.log[0]["metrics"]}])
+
+        # 암시 확정 시점의 스냅샷에는 앞선 난입이 포함되고, 아군 턴 난입은 포함되지 않는다.
+        session = self.db.get(BattleSession, result.id)
+        session.round_snapshots = [{"round": 1, "phase": "telegraph", "participants": session.participants,
+                                    "enemies": session.enemies, "summons": [], "pending_enemy_actions": []}]
+        session.phase = "ally"
+        session.log = [*session.log, {"round": 1, "phase": "telegraph", "events": ["🔮 암시"]}]
+        self.db.commit()
+        crud.join_battle(self.db, result.id, BattleJoinRequest(character_id=5))
+        restored = crud.undo_last_turn(self.db, result.id)
+        self.assertEqual([entry.get("kind") for entry in restored.log], ["join"])
+        self.assertEqual(len(restored.log[0]["events"]), 2)
+        self.assertEqual([p["character_id"] for p in restored.participants], [1, 2, 3, 4])
+
     def test_join_keeps_drafts_except_for_newly_paired_character(self):
         result = self.start(count=3, pair_battle=True, pairs=[[1, 2], [3]])
         manager = BattleConnectionManager()
@@ -128,6 +152,7 @@ class BattlePairsTest(unittest.TestCase):
         joined = crud.join_battle(self.db, result.id, BattleJoinRequest(character_id=4))
         manager.remember_session(result.id, joined.model_dump(mode="json"))
         self.assertEqual(manager.draft_snapshot(result.id), {"character": {"1": {"kind": "defend"}}})
+
     def test_pair_update_clears_drafts_when_borrowed_stats_and_skills_change(self):
         result = self.start(pair_battle=True, pairs=[[1, 2], [3, 4]])
         manager = BattleConnectionManager()

@@ -1730,6 +1730,8 @@ export interface BattleParticipant {
 export interface BattleLogRound {
   round: number;
   phase?: BattlePhase;
+  /** 턴 결과가 아닌 난입·에너미 참가 기록 */
+  kind?: "join";
   events: string[];
   metrics?: BattleLogMetrics;
   /** 이벤트 문자열을 키로 하는, 계산 당시 실제 피연산자가 대입된 결과식. */

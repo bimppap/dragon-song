@@ -5749,6 +5749,17 @@ def terminate_battle(db: Session, session_id: int) -> BattleSessionRead:
     return _commit_battle_session(db, session)
 
 
+def _append_battle_join_log(session: BattleSession, event: str) -> None:
+    """난입은 턴 결과와 섞지 않고 난입한 단계에 별도 항목으로 남긴다. 같은 단계의 연속 난입은 한 항목에 모은다."""
+    log = list(session.log)
+    last = log[-1] if log else None
+    if last and last.get("kind") == "join" and last.get("round") == session.round and last.get("phase") == session.phase:
+        log[-1] = {**last, "events": [*last["events"], event]}
+    else:
+        log.append({"round": session.round, "phase": session.phase, "kind": "join", "events": [event]})
+    session.log = log
+
+
 def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> BattleSessionRead:
     session = _get_battle_for_update(db, session_id)
     if not session:
@@ -5774,6 +5785,7 @@ def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> Battle
         rollback_state = _get_battle_rollback_state(session)
         if rollback_state.get("version") == 1:
             session.rollback_state = _remember_battle_character_state(rollback_state, character)
+    _append_battle_join_log(session, f"🚪 {snapshot['name']} 난입 · 다음 라운드부터 행동")
     return _commit_battle_session(db, session)
 
 
@@ -5799,6 +5811,7 @@ def join_battle_enemy(db: Session, session_id: int, data: BattleEnemyJoinRequest
     snapshot["joined_round"] = session.round
     enemies.append(snapshot)
     session.enemies = enemies
+    _append_battle_join_log(session, f"💀 {snapshot['name']} 전투 참가 · 다음 라운드부터 행동")
     return _commit_battle_session(db, session)
 
 
@@ -7941,9 +7954,11 @@ def undo_last_turn(db: Session, session_id: int) -> BattleSessionRead:
     session.round = target_round
     session.phase = target_phase
     cutoff = (target_round, _TURN_PHASE_ORDER[target_phase])
+    # 되돌아간 단계에서 일어난 난입은 스냅샷 전이라 참가자가 남으므로 로그도 남긴다.
     session.log = [
         entry for entry in session.log
         if (entry["round"], _TURN_PHASE_ORDER[entry["phase"]]) < cutoff
+        or (entry.get("kind") == "join" and (entry["round"], _TURN_PHASE_ORDER[entry["phase"]]) == cutoff)
     ]
     session.round_snapshots = snapshots[:-1]
 

@@ -1471,7 +1471,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
   }
 
   async function handleCopyTurnLog(round: number, entry: BattleSession["log"][number]) {
-    const label = entry.phase ? PHASE_LABEL[entry.phase] : `라운드 ${round}`;
+    const label = entry.kind === "join" ? `라운드 ${round} 난입` : entry.phase ? PHASE_LABEL[entry.phase] : `라운드 ${round}`;
     try {
       await navigator.clipboard.writeText(entry.events.join("\n"));
       toast(`${label} 로그를 복사했습니다.`, "success");
@@ -2583,8 +2583,8 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               {[...group.entries].reverse().map((entry, entryIndex) => (
                 <div key={entryIndex} className="space-y-1 pl-2">
                   <div className="flex items-center gap-1.5">
-                    {entry.phase && (
-                      <span className="text-[11px] font-semibold text-gold/90">{PHASE_LABEL[entry.phase]}</span>
+                    {(entry.kind === "join" || entry.phase) && (
+                      <span className="text-[11px] font-semibold text-gold/90">{entry.kind === "join" ? "난입" : PHASE_LABEL[entry.phase!]}</span>
                     )}
                     <button
                       type="button"
