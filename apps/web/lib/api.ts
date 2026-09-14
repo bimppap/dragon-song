@@ -1496,6 +1496,9 @@ export interface EnemySkill {
   environment_id?: number | null;
   environment_stack_count?: number;
   on_hit_dot?: boolean;
+  on_hit_effect?: "dot" | "stat";
+  debuff_direction?: "increase" | "decrease";
+  debuff_color?: string;
   dot_name?: string;
   dot_damage?: number;
   debuff_stat?: string;
@@ -1684,6 +1687,10 @@ export interface BattleSummonState {
 }
 
 export interface BattleStatusEffect {
+  color?: string;
+  stat?: string;
+  applied_delta?: number;
+  damage?: number;
   skill_image_url?: string | null;
   skill_description?: string | null;
   source_character_id?: number | null;

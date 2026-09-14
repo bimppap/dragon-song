@@ -70,6 +70,26 @@ class EnemyEffectsTest(unittest.TestCase):
         self.assertEqual(battle.participants[0]["hp"], 73)
         self.assertEqual(battle.participants[1]["hp"], 100)
 
+    def test_on_hit_stat_debuff_increases_or_decreases_chosen_stat_and_cleanses(self):
+        for direction, stat, amount, expected in (("decrease", "atk", 15, 85), ("increase", "attn", 20, 20), ("increase", "dmg_r", 10, 0.1)):
+            with self.subTest(direction=direction, stat=stat):
+                skill = EnemySkill(skill_type="지정 공격", name="저주 발톱", target_count=1, damage_percent=0,
+                                   on_hit_dot=True, on_hit_effect="stat", dot_name="저주", debuff_stat=stat,
+                                   debuff_direction=direction, debuff_amount=amount, debuff_color="#22d3ee")
+                battle = self.battle([skill])
+                target_id = self.party[0]["character_id"]
+                before = battle.participants[0][stat]
+                self.telegraph(battle, 0, [target_id])
+                self.enemy_turn(battle)
+                effect = battle.participants[0]["status_effects"][0]
+                self.assertAlmostEqual(battle.participants[0][stat], before + expected if stat != "atk" else expected)
+                self.assertEqual((effect["effect_type"], effect["affinity"], effect["color"], effect["source_name"]),
+                                 ("stat_modifier", "debuff", "#22d3ee", "에너미"))
+                self.assertEqual(battle.participants[1][stat], self.party[1][stat])
+                participants = copy.deepcopy(battle.participants)
+                self.assertEqual(crud._cleanse_combat_debuffs(self.db, participants[0], 1), (1, ["저주"]))
+                self.assertAlmostEqual(participants[0][stat], before)
+
     def test_environment_alive_dead_conditions_and_existing_stacks(self):
         alive = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="생존", enemy_condition="alive", condition_enemy_id=1, stacks_per_round=2, damage_per_stack=3))
         dead = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="사망", enemy_condition="dead", condition_enemy_id=1))

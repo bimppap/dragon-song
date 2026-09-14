@@ -846,6 +846,9 @@ class EnemySkill(BaseModel):
     manual_target_count: bool = False
     auto_target_mode: Literal["attention", "random"] = "attention"
     on_hit_dot: bool = False
+    on_hit_effect: Literal["dot", "stat"] = "dot"
+    debuff_direction: Literal["increase", "decrease"] = "decrease"
+    debuff_color: str = Field(default="#e879f9", pattern=HEX_COLOR_PATTERN)
     dot_name: str = "지속 피해"
     dot_damage: int = Field(default=1, ge=1)
     debuff_stat: str = "atk"
@@ -869,7 +872,7 @@ class EnemySkill(BaseModel):
     @field_validator("debuff_stat", "summon_effect_stat")
     @classmethod
     def valid_combat_stat(cls, value: str) -> str:
-        if value not in {"atk", "atk_p", "def", "def_p", "def_eff", "dmg_p", "dmg_r", "heal_eff", "attn", "presence", "skill_eff_fixed", "skill_eff_true", "skill_target", "hp_regen_true", "hp_regen_fixed", "mp_regen"}:
+        if value not in {"atk", "atk_p", "def", "def_p", "def_eff", "dmg_p", "dmg_r", "heal_eff", "attn", "presence", "skill_eff_fixed", "skill_eff_true", "skill_target", "skill_lv", "skill_cost", "sh", "hp_regen_true", "hp_regen_fixed", "mp_regen"}:
             raise ValueError("전투에 적용할 수 없는 능력치입니다.")
         return value
 
@@ -878,9 +881,9 @@ class EnemySkill(BaseModel):
         self.dot_name = self.dot_name.strip()
         if self.on_hit_dot:
             if self.skill_type not in ("지정 공격", "광역 공격"):
-                raise ValueError("피격 지속 피해는 공격 스킬에만 설정할 수 있습니다.")
+                raise ValueError("피격 디버프는 공격 스킬에만 설정할 수 있습니다.")
             if not self.dot_name:
-                raise ValueError("지속 피해 디버프 이름을 입력해 주세요.")
+                raise ValueError("피격 디버프 이름을 입력해 주세요.")
         if self.skill_type == "환경" and self.environment_id is None:
             raise ValueError("환경 스킬에는 적용할 환경을 선택해 주세요.")
         if self.skill_type != "환경":

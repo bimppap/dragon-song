@@ -4377,7 +4377,7 @@ def _cleanse_combat_debuffs(db: Session, target: dict, count: int) -> tuple[int,
     return removed, names
 
 
-def _add_combat_stat_stack(target: dict, *, source: str, name: str, stat: str, amount: float, percent: bool, stackable: bool, debuff: bool = True) -> bool:
+def _add_combat_stat_stack(target: dict, *, source: str, name: str, stat: str, amount: float, percent: bool, stackable: bool, debuff: bool = True, direction: str | None = None, color: str | None = None, source_name: str | None = None) -> bool:
     effects = list(_ensure_status_effects(target))
     matching = [effect for effect in effects if effect.get("stack_source") == source]
     if matching and not stackable:
@@ -4391,13 +4391,15 @@ def _add_combat_stat_stack(target: dict, *, source: str, name: str, stat: str, a
     delta = abs(base) * amount / 100 if percent else amount
     if isinstance(current, int):
         delta = _floor_amount(delta)
-    delta = -delta if debuff else delta
-    if debuff:
+    decreasing = direction == "decrease" if direction is not None else debuff
+    delta = -delta if decreasing else delta
+    if decreasing:
         delta = max(-current, delta)
     target[stat] = current + delta
     target["status_effects"] = effects + [{
         "effect_type": "stat_modifier", "affinity": "debuff" if debuff else "buff", "skill_name": name,
         "stack_source": source, "stat": stat, "applied_delta": delta, "stackable": stackable, "stacks": 1,
+        "color": color, "source_name": source_name,
     }]
     return True
 
@@ -7739,8 +7741,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 ratio_stat = ITEM_EFFECT_STAT_TYPES.get(stat) is float
                 for target in targets:
                     applied = _add_combat_stat_stack(target, source=f"enemy:{enemy['enemy_id']}:skill:{skill_index}", name=skill["name"], stat=stat,
-                        amount=amount / 100 if ratio_stat else amount, percent=False, stackable=skill.get("debuff_stackable", False))
-                    events.append(f"🔻 {enemy['name']}의 {skill['name']} → {target['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} -{amount}{'%' if ratio_stat else ''}{' (이미 적용 또는 방지)' if not applied else ''}")
+                        amount=amount / 100 if ratio_stat else amount, percent=False, stackable=skill.get("debuff_stackable", False),
+                        direction=skill.get("debuff_direction", "decrease"), color=skill.get("debuff_color", "#e879f9"), source_name=enemy["name"])
+                    events.append(f"🔻 {enemy['name']}의 {skill['name']} → {target['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} {'+' if skill.get('debuff_direction') == 'increase' else '-'}{amount}{'%' if ratio_stat else ''}{' (이미 적용 또는 방지)' if not applied else ''}")
                 continue
             if skill["skill_type"] == "환경":
                 environment = environment_by_id.get(int(skill.get("environment_id") or 0))
@@ -7781,11 +7784,25 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 )
                 if skill.get("on_hit_dot") and _combatant_active(recipient):
                     source = f"enemy:{enemy_id}:skill:{skill_index}:dot"
-                    if not any(effect.get("stack_source") == source for effect in _ensure_status_effects(recipient)):
+                    if skill.get("on_hit_effect", "dot") == "stat":
+                        stat = skill.get("debuff_stat", "atk")
+                        amount = skill.get("debuff_amount", 0)
+                        ratio_stat = ITEM_EFFECT_STAT_TYPES.get(stat) is float
+                        applied = _add_combat_stat_stack(recipient, source=source,
+                            name=skill.get("dot_name") or skill["name"], stat=stat,
+                            amount=amount / 100 if ratio_stat else amount, percent=False,
+                            stackable=skill.get("debuff_stackable", False),
+                            direction=skill.get("debuff_direction", "decrease"),
+                            color=skill.get("debuff_color", "#e879f9"), source_name=enemy["name"])
+                        if applied:
+                            sign = "+" if skill.get("debuff_direction") == "increase" else "-"
+                            events.append(f"🔻 {enemy['name']}의 {skill.get('dot_name') or skill['name']} → {recipient['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} {sign}{amount}{'%' if ratio_stat else ''}")
+                    elif not any(effect.get("stack_source") == source for effect in _ensure_status_effects(recipient)):
                         _add_status_effect(recipient, {
                             "effect_type": "ongoing_damage", "affinity": "debuff",
                             "trigger_phase": "telegraph", "damage": skill.get("dot_damage", 1),
                             "skill_name": skill.get("dot_name") or "지속 피해", "source_name": enemy["name"],
+                            "color": skill.get("debuff_color", "#e879f9"),
                             "stack_source": source, "stackable": False,
                         }, participants=participants, enemies=enemies)
                 redirect_note = f" (→ {recipient['name']}이(가) 대신 방어)" if redirected else ""

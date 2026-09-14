@@ -43,7 +43,7 @@ const EFFECT_STATS = [
   ["atk", "공격력"], ["atk_p", "공격력 증가율 (%)"], ["def", "방어력"], ["def_p", "방어력 증가율 (%)"],
   ["def_eff", "방어 효율 (%)"], ["dmg_p", "피해 증가율 (%)"], ["dmg_r", "피해 감소율 (%)"], ["heal_eff", "치유 효율 (%)"],
   ["attn", "주목도"], ["presence", "존재감 (%)"], ["skill_eff_fixed", "기술 효율 (%)"], ["skill_eff_true", "고정 기술 효율"],
-  ["skill_target", "기술 대상 수"], ["hp_regen_true", "고정 체력 재생"], ["hp_regen_fixed", "체력 재생률 (%)"], ["mp_regen", "마나 재생"],
+  ["skill_lv", "기술 레벨"], ["skill_cost", "기술 비용"], ["sh", "보호막"], ["skill_target", "기술 대상 수"], ["hp_regen_true", "고정 체력 재생"], ["hp_regen_fixed", "체력 재생률 (%)"], ["mp_regen", "마나 재생"],
 ];
 const EMPTY_SETTING_VALUE = "__empty_setting__";
 const EMPTY_ENVIRONMENT_DRAFT = {
@@ -80,6 +80,9 @@ type SkillFormEntry = {
   environment_id: string;
   environment_stack_count: string;
   on_hit_dot: boolean;
+  on_hit_effect: "dot" | "stat";
+  debuff_direction: "increase" | "decrease";
+  debuff_color: string;
   dot_name: string;
   dot_damage: string;
   debuff_stat: string;
@@ -120,6 +123,7 @@ type EnemyFormState = {
 };
 
 const EMPTY_SKILL: SkillFormEntry = {
+  on_hit_effect: "dot", debuff_direction: "decrease", debuff_color: "#e879f9",
   on_hit_dot: false, dot_name: "지속 피해", dot_damage: "1",
   manual_target_count: false, auto_target_mode: "attention", environment_id: "", environment_stack_count: "1", debuff_stat: "atk", debuff_amount: "0", debuff_stackable: false,
   summon_action_type: "attack", summon_trigger_phase: "enemy", summon_effect_stat: "atk",
@@ -159,6 +163,7 @@ function toPayload(form: EnemyFormState): EnemyCreate {
       environment_id: isEnvironment && s.environment_id ? Number(s.environment_id) : null,
       environment_stack_count: isEnvironment ? Math.max(1, parsePositiveInt(s.environment_stack_count) || 1) : 1,
       on_hit_dot: !isSummon && !isEnvironment && s.skill_type !== "지속 디버프" && s.on_hit_dot,
+      on_hit_effect: s.on_hit_effect, debuff_direction: s.debuff_direction, debuff_color: s.debuff_color,
       dot_name: s.dot_name.trim() || "지속 피해", dot_damage: Math.max(1, parsePositiveInt(s.dot_damage)),
       debuff_stat: s.debuff_stat, debuff_amount: Number(s.debuff_amount) || 0, debuff_stackable: s.debuff_stackable,
       summon_action_type: s.summon_action_type, summon_trigger_phase: s.summon_trigger_phase,
@@ -204,6 +209,7 @@ function enemyToForm(enemy: Enemy): EnemyFormState {
           auto_target_mode: s.auto_target_mode ?? "attention",
           environment_id: s.environment_id != null ? String(s.environment_id) : "",
           environment_stack_count: String(s.environment_stack_count ?? 1),
+          on_hit_effect: s.on_hit_effect ?? "dot", debuff_direction: s.debuff_direction ?? "decrease", debuff_color: s.debuff_color ?? "#e879f9",
           on_hit_dot: s.on_hit_dot ?? false, dot_name: s.dot_name ?? "지속 피해", dot_damage: String(s.dot_damage ?? 1),
           debuff_stat: s.debuff_stat ?? "atk", debuff_amount: String(s.debuff_amount ?? 0), debuff_stackable: s.debuff_stackable ?? false,
           summon_action_type: s.summon_action_type ?? "attack", summon_trigger_phase: s.summon_trigger_phase ?? "enemy",
@@ -697,7 +703,7 @@ export default function EnemyTab() {
                         </span>
                       ) : (
                         <span className="text-muted">
-                          {skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} -${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
+                          {skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
                         </span>
                       )}
                         </>;
@@ -1051,11 +1057,18 @@ export default function EnemyTab() {
 
                   {(skill.skill_type === "지정 공격" || skill.skill_type === "광역 공격") && (
                     <div className="space-y-2 rounded-xl border border-line p-3">
-                      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.on_hit_dot} onChange={(event) => updateSkill(idx, "on_hit_dot", event.target.checked)} />피격 대상에게 지속 피해 디버프 부여</label>
+                      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.on_hit_dot} onChange={(event) => updateSkill(idx, "on_hit_dot", event.target.checked)} />피격 대상에게 디버프 부여</label>
                       {skill.on_hit_dot && <>
                         <label className="block text-xs">디버프 이름<Input required value={skill.dot_name} onChange={(event) => updateSkill(idx, "dot_name", event.target.value)} /></label>
-                        <label className="block text-xs">턴마다 고정 피해<Input type="number" min={1} required value={skill.dot_damage} onChange={(event) => updateSkill(idx, "dot_damage", event.target.value)} /></label>
-                        <p className="text-xs text-muted">다음 적의 행동 암시부터 매 턴 피해를 입습니다. 같은 스킬은 중첩되지 않으며 디버프 해제로 제거할 수 있습니다.</p>
+                        <SettingSelect label="디버프 효과" value={skill.on_hit_effect} options={[["dot", "턴마다 고정 피해"], ["stat", "상세 능력치 변경"]]} onChange={(value) => updateSkill(idx, "on_hit_effect", value as SkillFormEntry["on_hit_effect"])} />
+                        {skill.on_hit_effect === "dot" ? <label className="block text-xs">턴마다 고정 피해<Input type="number" min={1} required value={skill.dot_damage} onChange={(event) => updateSkill(idx, "dot_damage", event.target.value)} /></label> : <>
+                          <SettingSelect label="변경할 상세 능력치" value={skill.debuff_stat} options={EFFECT_STATS} onChange={(value) => updateSkill(idx, "debuff_stat", value)} />
+                          <SettingSelect label="증가 / 감소" value={skill.debuff_direction} options={[["decrease", "감소"], ["increase", "증가"]]} onChange={(value) => updateSkill(idx, "debuff_direction", value as SkillFormEntry["debuff_direction"])} />
+                          <label className="block text-xs">변경량 {EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1].includes("%") ? "(%)" : "(수치)"}<Input type="number" min={0} step="any" required value={skill.debuff_amount} onChange={(event) => updateSkill(idx, "debuff_amount", event.target.value)} /></label>
+                          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.debuff_stackable} onChange={(event) => updateSkill(idx, "debuff_stackable", event.target.checked)} />중첩 허용</label>
+                        </>}
+                        <label className="flex items-center gap-2 text-xs">스택 표시색<input type="color" aria-label="피격 디버프 스택 표시색" value={skill.debuff_color} onChange={(event) => updateSkill(idx, "debuff_color", event.target.value)} /></label>
+                        <p className="text-xs text-muted">{skill.on_hit_effect === "dot" ? "다음 적의 행동 암시부터 매 턴 피해를 입습니다. 같은 스킬은 중첩되지 않습니다." : "피격 직후 능력치가 변경되며 해제될 때까지 유지됩니다."} 디버프 해제로 제거할 수 있습니다.</p>
                       </>}
                     </div>
                   )}
@@ -1108,9 +1121,11 @@ export default function EnemyTab() {
                     </div>
                   </div>}
                   {skill.skill_type === "지속 디버프" && <div className="grid gap-2 sm:grid-cols-3">
-                    <SettingSelect label="감소 능력치" value={skill.debuff_stat} options={EFFECT_STATS} onChange={(value) => updateSkill(idx, "debuff_stat", value)} />
-                    <label className="text-xs">감소량 {EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1].includes("%") ? "(%)" : "(수치)"}<Input type="number" min={0} step="any" value={skill.debuff_amount} onChange={(event) => updateSkill(idx, "debuff_amount", event.target.value)} /></label>
+                    <SettingSelect label="변경할 상세 능력치" value={skill.debuff_stat} options={EFFECT_STATS} onChange={(value) => updateSkill(idx, "debuff_stat", value)} />
+                    <SettingSelect label="증가 / 감소" value={skill.debuff_direction} options={[["decrease", "감소"], ["increase", "증가"]]} onChange={(value) => updateSkill(idx, "debuff_direction", value as SkillFormEntry["debuff_direction"])} />
+                    <label className="text-xs">변경량 {EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1].includes("%") ? "(%)" : "(수치)"}<Input type="number" min={0} step="any" value={skill.debuff_amount} onChange={(event) => updateSkill(idx, "debuff_amount", event.target.value)} /></label>
                     <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.debuff_stackable} onChange={(event) => updateSkill(idx, "debuff_stackable", event.target.checked)} />중첩 허용</label>
+                    <label className="flex items-center gap-2 text-xs">스택 표시색<input type="color" aria-label="지속 디버프 스택 표시색" value={skill.debuff_color} onChange={(event) => updateSkill(idx, "debuff_color", event.target.value)} /></label>
                   </div>}
                   {isSummon && (
                     <div className="flex flex-col gap-2">
