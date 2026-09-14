@@ -763,6 +763,12 @@ def list_delivery_recipients(member: Member = Depends(get_current_member), db: S
     return crud.get_delivery_recipients(db)
 
 
+@app.get("/shop/delivery-requests/pending-count")
+def count_pending_delivery_requests(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    # 헤더 알림 배지가 주기적으로 부르므로 요청 목록 대신 개수만 돌려준다.
+    return {"count": crud.count_pending_delivery_requests(db)}
+
+
 @app.get("/shop/delivery-requests", response_model=list[DeliveryRequestRead])
 def list_delivery_requests(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
     return crud.get_delivery_requests(db)

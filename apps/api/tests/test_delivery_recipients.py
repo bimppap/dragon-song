@@ -63,7 +63,9 @@ class DeliveryRecipientsTest(unittest.TestCase):
         self.assertEqual(request.payload["recipient_id"], recipient.id)
         self.assertEqual(request.payload["recipient_name"], recipient.name)
         self.assertEqual(request.payload["letter"], "편지 전문")
+        self.assertEqual(crud.count_pending_delivery_requests(self.db), 1)
         completed = crud.complete_delivery_request(self.db, request.id)
+        self.assertEqual(crud.count_pending_delivery_requests(self.db), 0)
         self.assertEqual(completed.status, "completed")
         self.assertEqual(completed.payload, request.payload)
 

@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, type ReactNode } from "react";
+import { Suspense, useState, useEffect, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Lock, Settings, Unlock } from "lucide-react";
 import ShopGrid from "./components/ShopGrid";
 import Cart from "./components/Cart";
 import type { CartEntry } from "./components/Cart";
 import GiftCart from "./components/GiftCart";
-import ShopAdminPanel from "./components/ShopAdminPanel";
+import ShopAdminPanel, { type ShopAdminTab } from "./components/ShopAdminPanel";
 import {
   fetchCharacterDetail,
   fetchCharacters,
@@ -226,7 +227,23 @@ function AdminShop({
   onShopOpenChange: (isOpen: boolean) => void;
 }) {
   const { confirm, alert } = useDialog();
-  const [managing, setManaging] = useState(false);
+  const router = useRouter();
+  const view = useSearchParams().get("view");
+  const [managing, setManaging] = useState(view === "delivery");
+  const [adminTab, setAdminTab] = useState<ShopAdminTab>(view === "delivery" ? "delivery" : "manage");
+  // 헤더의 배달 요청 바로가기(?view=delivery)는 이미 상점에 있을 때도 배달 탭을 연다.
+  const [handledView, setHandledView] = useState(view);
+  if (view !== handledView) {
+    setHandledView(view);
+    if (view === "delivery") {
+      setManaging(true);
+      setAdminTab("delivery");
+    }
+  }
+  useEffect(() => {
+    // 같은 바로가기를 다시 눌러도 주소가 바뀌도록 처리한 뒤에는 쿼리를 지운다.
+    if (view === "delivery") router.replace("/shop", { scroll: false });
+  }, [view, router]);
   const [mode, setMode] = useState<"purchase" | "gift">(characterId == null ? "gift" : "purchase");
   const purchasing = characterId != null && mode === "purchase";
   const [characters, setCharacters] = useState<Character[]>([]);
@@ -349,7 +366,7 @@ function AdminShop({
       )}
 
       {managing ? (
-        <ShopAdminPanel />
+        <ShopAdminPanel tab={adminTab} onTabChange={setAdminTab} />
       ) : purchasing ? (
         <RunnerShop key={characterId} characterId={characterId} shopOpen={shopOpen} embedded />
       ) : (
@@ -387,6 +404,11 @@ function AdminShop({
 }
 
 export default function ShopPage() {
+  // 관리자 화면이 주소의 view 쿼리를 읽으므로, 프리렌더 시 검색 파라미터를 기다릴 경계를 둔다.
+  return <Suspense fallback={null}><ShopPageContent /></Suspense>;
+}
+
+function ShopPageContent() {
   const member = useRequireMember();
   const memberId = member?.id ?? null;
   const [shopOpen, setShopOpen] = useState(true);

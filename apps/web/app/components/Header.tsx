@@ -9,6 +9,7 @@ import { fetchMyCharacter, type MemberRole } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import ChapterMusicBar from "@/components/common/ChapterMusicBar";
+import DeliveryRequestsButton from "./DeliveryRequestsButton";
 
 const NAV_ITEMS: { href: string; label: string; icon: React.ElementType; roles: MemberRole[] }[] = [
   { href: "/", label: "홈", icon: House, roles: ["RUNNER", "ADMIN", "STAFF"] },
@@ -74,6 +75,7 @@ export default function Header() {
 
     <div className="fixed right-4 top-4 z-50 flex items-center gap-2">
       {member ? <div className="relative flex items-center gap-2">
+        {(isAdmin || isStaff) && <DeliveryRequestsButton />}
         {isStaff && (
           <span className="flex items-center gap-1 rounded-full border border-gold/50 bg-gold/10 px-2 py-1.5 text-xs font-semibold text-gold">
             <UserStar size={13} />

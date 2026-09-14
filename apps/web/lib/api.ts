@@ -1032,6 +1032,7 @@ export async function consumeItem(
     }),
   }, "아이템 사용 실패");
   invalidateApiCache("characters:", "items:", "skills:character:", "challenges:");
+  if (selection.delivery || selection.deliveryGroups) notifyDeliveryRequestsChanged();
   return detail;
 }
 
@@ -1064,10 +1065,24 @@ export async function fetchDeliveryRequests(): Promise<DeliveryRequest[]> {
   return request<DeliveryRequest[]>("/shop/delivery-requests", undefined, "배달 요청 조회 실패");
 }
 
+/** 배달 요청이 새로 생기거나 완료되면 헤더 알림 배지가 즉시 개수를 다시 읽도록 알린다. */
+export const DELIVERY_REQUESTS_CHANGED_EVENT = "delivery-requests-changed";
+
+export async function fetchPendingDeliveryCount(): Promise<number> {
+  const result = await request<{ count: number }>("/shop/delivery-requests/pending-count", undefined, "배달 요청 개수 조회 실패");
+  return result.count;
+}
+
+function notifyDeliveryRequestsChanged() {
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(DELIVERY_REQUESTS_CHANGED_EVENT));
+}
+
 export async function completeDeliveryRequest(requestId: number): Promise<DeliveryRequest> {
-  return request<DeliveryRequest>(`/shop/delivery-requests/${requestId}/complete`, {
+  const updated = await request<DeliveryRequest>(`/shop/delivery-requests/${requestId}/complete`, {
     method: "POST",
   }, "완료 처리 실패");
+  notifyDeliveryRequestsChanged();
+  return updated;
 }
 
 export async function equipItem(characterId: number, itemId: number, selection: UseItemSelection = {}): Promise<CharacterDetail> {

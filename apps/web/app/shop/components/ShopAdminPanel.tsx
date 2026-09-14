@@ -11,7 +11,8 @@ import DeliveryGrid from "./DeliveryGrid";
 import AddItemForm from "./AddItemForm";
 import type { Item } from "@/lib/api";
 
-type Tab = "manage" | "purchases" | "delivery";
+export type ShopAdminTab = "manage" | "purchases" | "delivery";
+type Tab = ShopAdminTab;
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "manage", label: "아이템 관리", icon: Settings2 },
@@ -20,8 +21,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
 ];
 
 /** 상점 페이지의 "상점 관리" 버튼으로 여는 관리자용 아이템 관리/구매내역 패널. */
-export default function ShopAdminPanel() {
-  const [tab, setTab] = useState<Tab>("manage");
+export default function ShopAdminPanel({ tab, onTabChange: setTab }: { tab: Tab; onTabChange: (tab: Tab) => void }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<Item | null>(null);

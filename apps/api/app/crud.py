@@ -1481,6 +1481,10 @@ def use_item(
     return get_character_detail(db, character_id)
 
 
+def count_pending_delivery_requests(db: Session) -> int:
+    return db.query(DeliveryRequest).filter(DeliveryRequest.status == "pending").count()
+
+
 def get_delivery_requests(db: Session) -> list[DeliveryRequestRead]:
     rows = (
         db.query(DeliveryRequest, Character.name.label("character_name"), Item.name.label("item_name"))
