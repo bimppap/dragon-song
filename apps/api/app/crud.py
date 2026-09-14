@@ -7067,8 +7067,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_aid":
-                # 구호는 대상을 고르지 않고 현재 체력이 낮은 순으로 자동 지정한다.
-                targets = _multi_ally_targets(_skill_target_count(selected_skill))
+                # 미지정일 때만 현재 체력이 낮은 순으로 자동 지정한다.
+                targets = _multi_ally_targets(_skill_target_count(selected_skill), action.skill_target_keys or None)
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)

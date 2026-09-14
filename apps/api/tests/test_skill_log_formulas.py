@@ -100,6 +100,24 @@ class SkillLogFormulaTest(unittest.TestCase):
             "(1 + 치유 효율 0)), 잃은 체력 50)",
         )
 
+    def test_aid_explicit_target_overrides_lowest_hp(self):
+        self.aid.target = "1"
+        self.db.commit()
+        result = self._resolve(CharacterActionInput(character_id=self.caster.id, kind="skill",
+            skill_node_id=self.aid.id, skill_target_keys=[f"ally:{self.caster.id}"]))
+        heals = [event for event in result.log[-1]["events"] if "🕊️" in event]
+        self.assertEqual(len(heals), 1)
+        self.assertIn("→ 실험 요정 D", heals[0])
+
+    def test_aid_without_selection_uses_lowest_hp(self):
+        self.aid.target = "1"
+        self.db.commit()
+        result = self._resolve(CharacterActionInput(character_id=self.caster.id, kind="skill",
+            skill_node_id=self.aid.id, skill_target_keys=[]))
+        heals = [event for event in result.log[-1]["events"] if "🕊️" in event]
+        self.assertEqual(len(heals), 1)
+        self.assertIn("→ 실험 요정 A", heals[0])
+
     def test_basic_skills_exclude_flat_skill_efficiency(self):
         # 강타·분쇄·위해·보호·회복·정화는 기술 효율 고정을 계산에 더하지 않는다.
         cases = [
