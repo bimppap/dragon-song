@@ -64,6 +64,7 @@ import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
 import BattlePairGrid from "./BattlePairGrid";
+import EnemyAttackArrows, { enemyAttackColor, type EnemyAttackMark } from "./EnemyAttackArrows";
 import PixelBorderGlow from "./PixelBorderGlow";
 import { changedPairPartnerIds, reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
 
@@ -330,6 +331,12 @@ function enemyDebuffBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
     }
   }
   return [...grouped.values()].map(({ item, effect, delta }) => ({ ...item, detail: enemyDebuffDetail(effect, delta) }));
+}
+
+/** 에너미 행동 줄에 그 공격이 캐릭터 카드 화살표와 같은 색임을 알려주는 점. */
+function AttackColorDot({ color }: { color: string | undefined }) {
+  if (!color) return null;
+  return <span aria-hidden="true" className="size-2.5 shrink-0 rounded-full ring-1 ring-black/50" style={{ backgroundColor: color }} />;
 }
 
 function isEnemyTargetable(enemy: BattleSession["enemies"][number], currentRound: number): boolean {
@@ -670,15 +677,23 @@ function describePendingAction(
         .map((id) => participantsById.get(id)?.name)
         .filter((name): name is string => Boolean(name))
         .join(", ") || "대상 없음";
-  if (skill.skill_type === "지속 디버프") return `예고: ${skill.name} → ${targetLabel} (지속 디버프)`;
+  return `예고: ${skill.name} → ${targetLabel} (${enemySkillSummary(enemy, skill, environmentsById)})`;
+}
+
+/** 에너미 공격 기술이 대상에게 주는 효과를 짧게 요약한다. */
+function enemySkillSummary(
+  enemy: BattleEnemyState,
+  skill: EnemySkill,
+  environmentsById: Map<number, BattleSessionEnvironment>,
+): string {
+  if (skill.skill_type === "지속 디버프") return "지속 디버프";
   if (skill.skill_type === "환경") {
     const environmentName = skill.environment_id != null
       ? environmentsById.get(skill.environment_id)?.name ?? `환경 #${skill.environment_id}`
       : "환경";
-    return `예고: ${skill.name} → ${targetLabel} (${environmentName} +${skill.environment_stack_count ?? 1}스택)`;
+    return `${environmentName} +${skill.environment_stack_count ?? 1}스택`;
   }
-  const base = Math.floor((enemy.attack * skill.damage_percent) / 100);
-  return `예고: ${skill.name} → ${targetLabel} (예상 피해 ${fmt(base)})`;
+  return `예상 피해 ${fmt(Math.floor((enemy.attack * skill.damage_percent) / 100))}`;
 }
 
 interface TargetOption {
@@ -1666,6 +1681,39 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
     () => new Map((session?.environments ?? []).map((environment) => [environment.id, environment])),
     [session?.environments],
   );
+  // 확정된 예고(관리자는 암시 턴에 입력 중인 초안도)에서 캐릭터를 노리는 공격마다 붉은 계열 색을 나눠 준다.
+  const enemyAttacks = useMemo(() => {
+    const byCharacter = new Map<number, EnemyAttackMark[]>();
+    const colorByAction = new Map<string, string>();
+    if (!session || session.status !== "in_progress") return { byCharacter, colorByAction };
+    const drafting = session.phase === "telegraph";
+    if (drafting && readOnly) return { byCharacter, colorByAction };
+    const attacks = session.enemies.flatMap((enemy) => {
+      if (enemy.hp <= 0) return [];
+      const actions = drafting ? telegraphDrafts[enemy.enemy_id]?.actions ?? [] : pendingActionsByEnemy.get(enemy.enemy_id) ?? [];
+      return actions.flatMap((action, index) => {
+        const skill = action.skill_index != null ? enemy.skills[action.skill_index] : undefined;
+        if (action.kind !== "attack" || !skill || skill.skill_type === "소환") return [];
+        const targetIds = isEnemySkillAoe(skill)
+          ? session.participants.filter((p) => isTargetable(p, session.round)).map((p) => p.character_id)
+          : action.target_character_ids;
+        return [{ enemy, skill, index, targetIds }];
+      });
+    });
+    attacks.forEach(({ enemy, skill, index, targetIds }, order) => {
+      const mark: EnemyAttackMark = {
+        key: `${enemy.enemy_id}:${index}`,
+        enemyName: enemy.name,
+        actionNumber: index + 1,
+        skillName: skill.name,
+        summary: enemySkillSummary(enemy, skill, environmentsById),
+        color: enemyAttackColor(order, attacks.length),
+      };
+      colorByAction.set(mark.key, mark.color);
+      for (const id of targetIds) byCharacter.set(id, [...(byCharacter.get(id) ?? []), mark]);
+    });
+    return { byCharacter, colorByAction };
+  }, [session, readOnly, telegraphDrafts, pendingActionsByEnemy, environmentsById]);
   const enemyTitle = useMemo(
     () => (session?.enemies ?? []).map((enemy) => enemy.name).join(", "),
     [session?.enemies],
@@ -1815,7 +1863,10 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                     return (
                       <div key={actionIndex} className="flex flex-col gap-2 rounded-lg border border-line p-2">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-xs font-semibold text-muted">{actionIndex + 1}번째 행동</span>
+                          <span className="flex items-center gap-1.5 text-xs font-semibold text-muted">
+                            <AttackColorDot color={enemyAttacks.colorByAction.get(`${enemy.enemy_id}:${actionIndex}`)} />
+                            {actionIndex + 1}번째 행동
+                          </span>
                           <Select
                             value={draft.kind === "none" ? "none" : `${draft.kind}:${draft.skill_index}`}
                             onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
@@ -1894,6 +1945,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               {pendingActions.map((action, index) => (
                 <div key={index} className="mt-2 flex items-center gap-1.5 text-xs text-amber-300">
                   <Megaphone size={12} className="shrink-0" />
+                  <AttackColorDot color={enemyAttacks.colorByAction.get(`${enemy.enemy_id}:${index}`)} />
                   <span>{index + 1}번째 · {describePendingAction(enemy, action, participantsById, environmentsById)}</span>
                 </div>
               ))}
@@ -1988,6 +2040,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
       <BattlePairGrid
         characters={sortedParticipants.map((participant) => ({ id: participant.character_id, name: participant.name }))}
         pairs={showPairGroups ? session.pairs : null}
+        edgeGutter
         onSwap={canAct && showPairGroups ? handlePairSwap : undefined}
         disabled={savingPairs}
       >
@@ -2308,6 +2361,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               )}
             >
               <AllyTargetBookmarks items={bookmarks} />
+              <EnemyAttackArrows items={enemyAttacks.byCharacter.get(p.character_id) ?? []} />
               <div className="space-y-2.5">
                 <div className="flex gap-2.5">
                   <div className="flex w-16 shrink-0 flex-col gap-1.5 self-start">

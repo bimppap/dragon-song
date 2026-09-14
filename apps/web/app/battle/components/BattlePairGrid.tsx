@@ -11,12 +11,14 @@ interface Props {
   pairs: number[][] | null;
   children: ReactNode[];
   compact?: boolean;
+  /** 카드 왼쪽 바깥에 붙는 표시(에너미 공격 화살표)가 잘리지 않게 여백을 둔다. */
+  edgeGutter?: boolean;
   disabled?: boolean;
   onSwap?: (sourceId: number, targetId: number) => void;
 }
 
 /** 편성 화면과 전투 카드가 같은 페어 배치/드래그 동작을 사용한다. */
-export default function BattlePairGrid({ characters, pairs, children, compact = false, disabled = false, onSwap }: Props) {
+export default function BattlePairGrid({ characters, pairs, children, compact = false, edgeGutter = false, disabled = false, onSwap }: Props) {
   const instructionsId = useId();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [draggedId, setDraggedId] = useState<number | null>(null);
@@ -25,7 +27,7 @@ export default function BattlePairGrid({ characters, pairs, children, compact = 
   const editable = !!onSwap && !disabled;
 
   if (pairs === null) {
-    return <div className="grid grid-cols-1 justify-items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">{children}</div>;
+    return <div className={cn("grid grid-cols-1 justify-items-start gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4", edgeGutter && "gap-x-6 pl-4")}>{children}</div>;
   }
 
   const charactersById = new Map(characters.map((character, index) => [character.id, { ...character, content: children[index] }]));
@@ -57,7 +59,7 @@ export default function BattlePairGrid({ characters, pairs, children, compact = 
       <div className={cn("grid gap-4", compact ? "sm:grid-cols-2 xl:grid-cols-3" : "xl:grid-cols-2")}>
         {groups.map((pair, pairIndex) => (
           <section key={pairIndex} aria-label={pair.length === 2 ? `페어 ${pairIndex + 1}` : "페어 대기"} className="min-w-0">
-            <div className="overflow-x-auto pb-1">
+            <div className={cn("overflow-x-auto pb-1", edgeGutter && "pl-4")}>
               <div className={cn("relative grid grid-cols-2 items-stretch gap-4", !compact && "min-w-[30rem]")}>
                 {pair.length === 2 && <div className="pointer-events-none absolute inset-y-0 left-1/2 z-10 w-4 -translate-x-1/2" aria-label="페어 연결">
                   <span className="absolute left-1/2 top-1/2 flex size-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-line bg-inset text-gold"><ArrowLeftRight size={18} /></span>
