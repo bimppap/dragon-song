@@ -1418,6 +1418,8 @@ def use_item(
             db.add(progress)
         progress.achieved = True
         progress.acquired_via_item = True
+        # 획득 가능 목록에서 이미 보상받은 도전과제는 제외되므로 여기서 바로 지급해도 중복되지 않는다.
+        _grant_challenge_reward(db, selected_challenge, character, _challenge_reward_items_map(db, selected_challenge))
 
     selected_mission = None
     if "mission_exp_recollection" in special_stats:
@@ -3085,6 +3087,30 @@ def send_admin_gift(db: Session, data: AdminGiftRequest) -> list[RewardRead]:
     return reward_reads
 
 
+def _challenge_reward_items_map(db: Session, challenge: Challenge) -> dict[int, Item]:
+    item_ids = [g["item_id"] for g in challenge.reward_items or [] if g.get("type", "item") == "item" and "item_id" in g]
+    return {item.id: item for item in db.query(Item).filter(Item.id.in_(item_ids)).all()} if item_ids else {}
+
+
+def _grant_challenge_reward(db: Session, challenge: Challenge, character: Character, items_map: dict[int, Item]) -> Reward:
+    """도전과제 보상 1건을 캐릭터에게 적용하고 보상 이력을 남긴다. 중복 지급 여부는 호출부에서 확인한다."""
+    item_grant_list = challenge.reward_items or []
+    reward_items: list[dict] = []
+    _apply_stat_rewards(challenge, character, reward_items)
+    _apply_reward_stat_grants(item_grant_list, character, reward_items)
+    _apply_item_grants(db, item_grant_list, items_map, character.id, reward_items)
+    reward = Reward(
+        type="challenge",
+        character_id=character.id,
+        source_id=challenge.id,
+        reward_items=reward_items,
+        rewarded_at=_today(),
+    )
+    db.add(reward)
+    _apply_growth_from_exp(db, character)
+    return reward
+
+
 def pay_challenge_rewards(db: Session, challenge_id: int, *, character_ids: set[int] | None = None, commit: bool = True) -> RewardPayResult:
     challenge = db.query(Challenge).filter(Challenge.id == challenge_id).first()
     if not challenge:
@@ -3119,34 +3145,13 @@ def pay_challenge_rewards(db: Session, challenge_id: int, *, character_ids: set[
         for c in db.query(Character).filter(Character.id.in_(to_pay)).all()
     }
 
-    item_grant_list = challenge.reward_items or []
-    item_ids = [g["item_id"] for g in item_grant_list if g.get("type", "item") == "item" and "item_id" in g]
-    items_map = (
-        {item.id: item for item in db.query(Item).filter(Item.id.in_(item_ids)).all()}
-        if item_ids else {}
-    )
-
+    items_map = _challenge_reward_items_map(db, challenge)
     created_rewards: list[Reward] = []
     for character_id in to_pay:
         character = characters.get(character_id)
         if not character:
             continue
-
-        reward_items: list[dict] = []
-        _apply_stat_rewards(challenge, character, reward_items)
-        _apply_reward_stat_grants(item_grant_list, character, reward_items)
-        _apply_item_grants(db, item_grant_list, items_map, character_id, reward_items)
-
-        reward = Reward(
-            type="challenge",
-            character_id=character_id,
-            source_id=challenge_id,
-            reward_items=reward_items,
-            rewarded_at=_today(),
-        )
-        db.add(reward)
-        created_rewards.append(reward)
-        _apply_growth_from_exp(db, character)
+        created_rewards.append(_grant_challenge_reward(db, challenge, character, items_map))
 
     db.flush()
     item_names = _reward_item_names(db, created_rewards)

@@ -76,7 +76,6 @@ class ChallengeAcquisitionTest(unittest.TestCase):
         self.assertEqual(images[self.challenges[0].id], ("https://example.com/purchased.webp", True))
         self.assertEqual(images[self.challenges[1].id], ("https://example.com/original.webp", False))
         self.assertEqual(crud.get_item_history(self.db, self.character.id)[0].item_name, "도전과제 획득권 - 도전 A")
-        self.assertEqual(self.db.query(Reward).count(), 0)  # 보상 지급은 기존 관리자 흐름 유지
         self.challenges[0].purchase_image_url = None
         self.db.commit()
         entry = next(c for c in crud.get_character_detail(self.db, self.character.id).achieved_challenges if c.challenge_id == self.challenges[0].id)
@@ -87,6 +86,19 @@ class ChallengeAcquisitionTest(unittest.TestCase):
         self.db.add(ChallengeProgress(character_id=other.id, challenge_id=self.challenges[1].id, achieved=True))
         self.db.commit()
         self.assertFalse(crud.get_character_detail(self.db, other.id).achieved_challenges[0].acquired_via_item)
+
+    def test_use_grants_challenge_reward_once(self):
+        self.challenges[0].reward_hp = 3
+        self.challenges[0].reward_items = [{"type": "stat", "stat": "hp_max", "amount": 5.0}]
+        self.character.hp, self.character.hp_max = 20, 30
+        self.db.commit()
+        self.purchase()
+        self.use(self.challenges[0].id)
+        self.assertEqual((self.character.hp_max, self.character.hp), (38, 28))
+        reward = self.db.query(Reward).filter_by(type="challenge").one()
+        self.assertEqual((reward.character_id, reward.source_id), (self.character.id, self.challenges[0].id))
+        self.assertEqual(crud.pay_challenge_rewards(self.db, self.challenges[0].id).paid_count, 0)
+        self.assertEqual(self.character.hp_max, 38)
 
     def test_invalid_duplicate_hidden_and_other_chapter_selection_does_not_consume(self):
         hidden = self.challenge("비공개", public=False)
