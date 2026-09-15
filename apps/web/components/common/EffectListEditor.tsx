@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ITEM_EFFECT_STAT_OPTIONS, type Chapter, type ItemEffect } from "@/lib/api";
+import { ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS, type Chapter, type ItemEffect } from "@/lib/api";
 
 interface Props {
   effects: ItemEffect[];
@@ -27,6 +27,15 @@ const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
   "mission_exp_recollection", "challenge_acquisition",
   "delivery_date_slot", "delivery_freeform",
 ]);
+
+/** 퍼센트형 효과는 비율(0.2)로 저장하지만 입력창에는 퍼센트(20)로 보여준다. 부동소수 오차(0.07*100)는 반올림해 숨긴다. */
+function toDisplayDelta(effect: ItemEffect): number {
+  return PERCENT_EFFECT_STATS.has(effect.stat) ? Math.round(effect.delta * 100 * 1e6) / 1e6 : effect.delta;
+}
+
+function toStoredDelta(stat: ItemEffect["stat"], displayValue: number): number {
+  return PERCENT_EFFECT_STATS.has(stat) ? displayValue / 100 : displayValue;
+}
 
 /** 아이템·기술 등에서 공용으로 쓰는 효과 목록 편집 UI. */
 export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, allowGradeChoice = false, chapters = [] }: Props) {
@@ -59,12 +68,15 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
         <div className="flex flex-col gap-2">
           {effects.map((effect, index) => {
             const isSpecial = SPECIAL_STATS.has(effect.stat);
+            const isPercent = PERCENT_EFFECT_STATS.has(effect.stat);
             return (
               <div key={index} className="flex flex-wrap items-center gap-2">
                 <Select
                   value={effect.stat}
                   onValueChange={(value) => handleUpdate(index, {
                     stat: value as ItemEffect["stat"],
+                    // 입력창에 보이던 숫자는 유지하고, 퍼센트형 여부가 바뀌면 저장값만 다시 환산한다.
+                    delta: toStoredDelta(value as ItemEffect["stat"], toDisplayDelta(effect)),
                     chapter: (value === "mission_exp_recollection" || value === "challenge_acquisition") ? effect.chapter ?? null : null,
                   })}
                 >
@@ -81,15 +93,18 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-                <Input
-                  type="number"
-                  step="any"
-                  value={effect.delta}
-                  onChange={(e) => handleUpdate(index, { delta: Number(e.target.value) })}
-                  placeholder="변동값 (+/-)"
-                  className="w-32"
-                  disabled={isSpecial}
-                />
+                <div className="flex items-center gap-1">
+                  <Input
+                    type="number"
+                    step="any"
+                    value={toDisplayDelta(effect)}
+                    onChange={(e) => handleUpdate(index, { delta: toStoredDelta(effect.stat, Number(e.target.value)) })}
+                    placeholder={isPercent ? "변동값 (%)" : "변동값 (+/-)"}
+                    className="w-32"
+                    disabled={isSpecial}
+                  />
+                  {isPercent && <span className="text-sm text-muted">%</span>}
+                </div>
                 {(effect.stat === "mission_exp_recollection" || effect.stat === "challenge_acquisition") && (
                   <Select
                     value={effect.chapter ?? undefined}
