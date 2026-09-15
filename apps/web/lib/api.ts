@@ -461,6 +461,7 @@ export interface Item {
   effects: ItemEffect[];
   sale_paused: boolean;
   battle_only: boolean;
+  battle_unusable: boolean;
   created_at: string;
   purchased_by_character: number;
   purchased_total: number;
@@ -492,6 +493,7 @@ export interface ItemCreate {
   effects: ItemEffect[];
   sale_paused: boolean;
   battle_only: boolean;
+  battle_unusable: boolean;
 }
 
 export interface ShopStatus {

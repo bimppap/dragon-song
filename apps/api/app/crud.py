@@ -1098,6 +1098,7 @@ def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.effects = [effect.model_dump() for effect in data.effects]
     item.sale_paused = data.sale_paused
     item.battle_only = data.battle_only
+    item.battle_unusable = data.battle_unusable
 
 
 def create_item(db: Session, data: ItemCreate) -> Item:
@@ -1902,6 +1903,7 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
             effects=item.effects or [],
             sale_paused=item.sale_paused,
             battle_only=item.battle_only,
+            battle_unusable=item.battle_unusable,
             created_at=item.created_at,
             purchased_by_character=char_purchased,
             purchased_total=total_purchased,
@@ -5352,7 +5354,7 @@ def get_battle_available_items(db: Session, session_id: int) -> BattleAvailableI
         used_quantity = state.used_quantity if state is not None else 0
         if row.quantity <= used_quantity:
             continue
-        if any(effect.get("stat") == "challenge_acquisition" for effect in (item.effects or [])):
+        if item.battle_unusable or any(effect.get("stat") == "challenge_acquisition" for effect in (item.effects or [])):
             continue
         items_by_character[row.character_id].append(CharacterOwnedItemRead(
             item_id=item.id,
@@ -7491,6 +7493,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
             if _challenge_acquisition_chapter(item) is not None:
                 events.append(f"⚠️ {p['name']}: 도전과제 획득 아이템은 캐릭터 정보에서 사용해 주세요.")
+                continue
+            if item.battle_unusable:
+                events.append(f"⚠️ {p['name']}: {item.name}은(는) 전투 중에 사용할 수 없습니다.")
                 continue
             if session.mode == "real":
                 key = (p["character_id"], item.id)

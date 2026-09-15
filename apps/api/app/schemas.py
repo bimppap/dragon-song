@@ -437,6 +437,7 @@ class ItemCreate(BaseModel):
     effects: list[ItemEffect] = Field(default_factory=list)
     sale_paused: bool = False
     battle_only: bool = False
+    battle_unusable: bool = False
 
     @field_validator("available_from_at", "available_until_at", mode="after")
     @classmethod
@@ -470,11 +471,15 @@ class ItemCreate(BaseModel):
         if self.item_type in ("companion", "accessory"):
             if self.battle_only:
                 raise ValueError("동반자와 장신구는 전투용 소모품으로 설정할 수 없습니다.")
+            if self.battle_unusable:
+                raise ValueError("전투 중 사용 불가는 소모품에만 설정할 수 있습니다.")
             if any(e.stat in (
                 "ap_reset", "stat_reset", "full_reset", "hp_heal_p",
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
+        if self.battle_only and self.battle_unusable:
+            raise ValueError("전투 중에만 사용 가능과 전투 중 사용 불가는 함께 설정할 수 없습니다.")
         grade_choices = [e for e in self.effects if e.stat in ("grade_choice_1", "grade_choice_2")]
         if len(grade_choices) > 1:
             raise ValueError("능력치 선택 효과는 하나만 설정할 수 있습니다.")
@@ -515,6 +520,7 @@ class ItemRead(BaseModel):
     effects: list[ItemEffect] = Field(default_factory=list)
     sale_paused: bool = False
     battle_only: bool = False
+    battle_unusable: bool = False
     created_at: datetime
 
     model_config = {"from_attributes": True}

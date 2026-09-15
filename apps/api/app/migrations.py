@@ -136,6 +136,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE items ADD COLUMN sale_paused BOOLEAN NOT NULL DEFAULT false")
         if "battle_only" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN battle_only BOOLEAN NOT NULL DEFAULT false")
+        if "battle_unusable" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN battle_unusable BOOLEAN NOT NULL DEFAULT false")
         if "sort_order" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
             # 기존 아이템은 지금까지 노출되던 id 순서를 그대로 초기 순서로 삼는다.

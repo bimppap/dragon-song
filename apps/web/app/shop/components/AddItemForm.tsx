@@ -53,6 +53,7 @@ function createEmptyItemForm(): ItemCreate {
     effects: [],
     sale_paused: false,
     battle_only: false,
+    battle_unusable: false,
   };
 }
 
@@ -77,6 +78,7 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     effects: item.effects,
     sale_paused: item.sale_paused,
     battle_only: item.battle_only,
+    battle_unusable: item.battle_unusable,
   };
 }
 
@@ -297,6 +299,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
             ...prev, special_merchant: checked === true,
             item_type: checked === true ? (prev.item_type === "accessory" ? "accessory" : "companion") : "consumable",
             battle_only: checked === true ? false : prev.battle_only,
+            battle_unusable: checked === true ? false : prev.battle_unusable,
           }))}
         />
         특수 상인이 파는 물건입니다.
@@ -372,7 +375,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
                     type="radio"
                     name="item_type"
                     checked={form.item_type === option.value}
-                    onChange={() => setForm((prev) => ({ ...prev, item_type: option.value, battle_only: false }))}
+                    onChange={() => setForm((prev) => ({ ...prev, item_type: option.value, battle_only: false, battle_unusable: false }))}
                   />
                   <span className="font-semibold text-ivory">{option.label}</span>
                 </div>
@@ -570,15 +573,29 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         <span className="text-xs text-muted">즉시 판매가 중단되고, 러너에게는 노출되지 않습니다.</span>
       </label>
 
-      <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
-        <Checkbox
-          disabled={form.item_type !== "consumable"}
-          checked={form.battle_only}
-          onCheckedChange={(checked) => setForm((prev) => ({ ...prev, battle_only: checked === true }))}
-        />
-        <span className="font-semibold">전투 중에만 사용 가능</span>
-        <span className="text-xs text-muted">전투에서만 소비할 수 있습니다.</span>
-      </label>
+      {/* 두 설정은 서로 반대라 하나를 켜면 다른 하나는 꺼진다. */}
+      <div className="grid grid-cols-2 gap-3">
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
+          <Checkbox
+            disabled={form.item_type !== "consumable"}
+            checked={form.battle_only}
+            onCheckedChange={(checked) => setForm((prev) => ({
+              ...prev, battle_only: checked === true, battle_unusable: checked === true ? false : prev.battle_unusable,
+            }))}
+          />
+          <span className="font-semibold">전투 중에만 사용 가능</span>
+        </label>
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
+          <Checkbox
+            disabled={form.item_type !== "consumable"}
+            checked={form.battle_unusable}
+            onCheckedChange={(checked) => setForm((prev) => ({
+              ...prev, battle_unusable: checked === true, battle_only: checked === true ? false : prev.battle_only,
+            }))}
+          />
+          <span className="font-semibold">전투 중에 사용 불가</span>
+        </label>
+      </div>
 
       <div className="flex items-center gap-2">
         <Button type="submit" disabled={loading || deleting} className="flex-1">

@@ -253,6 +253,23 @@ class BattlePairStatsTest(unittest.TestCase):
         self.assertEqual(state.used_quantity, 0)
         self.assertTrue(any("솨: 뫄 전용 물약을(를) 보유하고 있지 않습니다" in e for e in resolved.log[-1]["events"]))
 
+    def test_battle_unusable_item_is_hidden_and_rejected(self):
+        potion = Item(name="평시 물약", item_type="consumable", effects=[{"stat": "hp", "delta": 30}], battle_unusable=True)
+        self.db.add(potion)
+        self.db.flush()
+        self.db.add(Purchase(character_id=self.moa.id, item_id=potion.id, quantity=1, source="reward"))
+        self.db.commit()
+        result = self.start()
+        self.assertEqual(crud.get_battle_available_items(self.db, result.id).items_by_character[self.moa.id], [])
+        session = self.db.get(BattleSession, result.id)
+        session.phase = "ally"
+        self.db.commit()
+        resolved = crud.resolve_battle_ally_turn(self.db, result.id, BattleAllyTurnRequest(character_actions=[
+            CharacterActionInput(character_id=self.moa.id, kind="item", item_id=potion.id),
+        ]))
+        self.assertEqual(self.db.query(ItemUsage).count(), 0)
+        self.assertTrue(any("평시 물약은(는) 전투 중에 사용할 수 없습니다" in e for e in resolved.log[-1]["events"]))
+
     def test_victory_defeat_and_rollback_apply_to_original_character(self):
         result = self.start()
         session = self.change_state(result.id, hp=100)
