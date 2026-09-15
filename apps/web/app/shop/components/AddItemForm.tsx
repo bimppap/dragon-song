@@ -4,11 +4,14 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Image as ImageIcon, PlusCircle, Trash2 } from "lucide-react";
 import { createItem, deleteItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
-import type { Chapter, Item, ItemCreate, ItemType, Mission } from "@/lib/api";
+import type { Chapter, Item, ItemCreate, ItemType, Mission, SalePeriodType } from "@/lib/api";
+import { joinKstDateTime, splitKstDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import DatePicker from "@/components/ui/date-picker";
+import TimePicker from "@/components/ui/time-picker";
 import EffectListEditor from "@/components/common/EffectListEditor";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
@@ -42,6 +45,9 @@ function createEmptyItemForm(): ItemCreate {
     purchase_limit_global: null,
     available_from_chapter: null,
     available_until_chapter: null,
+    sale_period_type: "chapter",
+    available_from_at: null,
+    available_until_at: null,
     item_type: "consumable",
     restricted_mission_id: null,
     effects: [],
@@ -63,6 +69,9 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     purchase_limit_global: item.purchase_limit_global,
     available_from_chapter: item.available_from_chapter,
     available_until_chapter: item.available_until_chapter,
+    sale_period_type: item.sale_period_type,
+    available_from_at: item.available_from_at,
+    available_until_at: item.available_until_at,
     item_type: item.item_type,
     restricted_mission_id: item.restricted_mission_id,
     effects: item.effects,
@@ -70,6 +79,25 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     battle_only: item.battle_only,
   };
 }
+
+/** 날짜 방식 판매기간의 입력 중 값. 날짜와 시각을 따로 고를 수 있어 제출 시점에 ISO로 합친다. */
+interface SaleDateDraft {
+  fromDate: string;
+  fromTime: string;
+  untilDate: string;
+  untilTime: string;
+}
+
+function toSaleDateDraft(item: Item | null | undefined): SaleDateDraft {
+  const from = splitKstDateTime(item?.available_from_at ?? null);
+  const until = splitKstDateTime(item?.available_until_at ?? null);
+  return { fromDate: from.date, fromTime: from.time, untilDate: until.date, untilTime: until.time };
+}
+
+const SALE_PERIOD_TYPE_OPTIONS: { value: SalePeriodType; label: string }[] = [
+  { value: "chapter", label: "챕터" },
+  { value: "date", label: "날짜" },
+];
 
 interface Props {
   item?: Item | null;
@@ -96,6 +124,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
   const { alert, confirm } = useDialog();
   const { toast } = useToast();
   const [form, setForm] = useState<ItemCreate>(() => toItemForm(item));
+  const [saleDates, setSaleDates] = useState<SaleDateDraft>(() => toSaleDateDraft(item));
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
   const [loading, setLoading] = useState(false);
@@ -164,9 +193,24 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
       return;
     }
 
+    let payload = form;
+    if (form.sale_period_type === "date") {
+      if ((saleDates.fromTime && !saleDates.fromDate) || (saleDates.untilTime && !saleDates.untilDate)) {
+        await alert("판매기간의 시각을 지정하려면 날짜도 선택해야 합니다.");
+        return;
+      }
+      const availableFromAt = joinKstDateTime(saleDates.fromDate, saleDates.fromTime);
+      const availableUntilAt = joinKstDateTime(saleDates.untilDate, saleDates.untilTime);
+      if (availableFromAt && availableUntilAt && new Date(availableFromAt) >= new Date(availableUntilAt)) {
+        await alert("판매 시작 일시는 종료 일시보다 빨라야 합니다.");
+        return;
+      }
+      payload = { ...form, available_from_at: availableFromAt, available_until_at: availableUntilAt };
+    }
+
     setLoading(true);
     try {
-      const saved = editingItemId != null ? await updateItem(editingItemId, form) : await createItem(form);
+      const saved = editingItemId != null ? await updateItem(editingItemId, payload) : await createItem(payload);
       if (editingItemId == null) setCreatedItemId(saved.id);
       if (imageFile) {
         await uploadItemImage(saved.id, imageFile);
@@ -178,6 +222,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         setAfterImageFile(null);
         setAfterImagePreview(null);
         setForm(createEmptyItemForm());
+        setSaleDates(toSaleDateDraft(null));
         setImageFile(null);
         setImagePreview(null);
       }
@@ -369,57 +414,123 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         </Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="시작 챕터">
-          <Select
-            value={form.available_from_chapter ?? NO_CHAPTER_LIMIT}
-            onValueChange={(value) =>
-              setForm((prev) => ({
-                ...prev,
-                available_from_chapter: value === NO_CHAPTER_LIMIT ? null : value,
-              }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="제한 없음" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
-                {chapters.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
-        <Field label="종료 챕터">
-          <Select
-            value={form.available_until_chapter ?? NO_CHAPTER_LIMIT}
-            onValueChange={(value) =>
-              setForm((prev) => ({
-                ...prev,
-                available_until_chapter: value === NO_CHAPTER_LIMIT ? null : value,
-              }))
-            }
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="제한 없음" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectGroup>
-                <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
-                {chapters.map((c) => (
-                  <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </Field>
+      <div className="space-y-3 rounded-xl border border-line px-4 py-4">
+        <div className="flex items-center justify-between gap-3">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ivory/85">판매기간</span>
+          <div className="flex gap-1">
+            {SALE_PERIOD_TYPE_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                type="button"
+                variant={form.sale_period_type === option.value ? "default" : "outline"}
+                aria-pressed={form.sale_period_type === option.value}
+                onClick={() => setForm((prev) => ({ ...prev, sale_period_type: option.value }))}
+                className="h-7 px-3 text-xs"
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        {form.sale_period_type === "chapter" ? (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="시작 챕터">
+                <Select
+                  value={form.available_from_chapter ?? NO_CHAPTER_LIMIT}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      available_from_chapter: value === NO_CHAPTER_LIMIT ? null : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="제한 없음" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
+                      {chapters.map((c) => (
+                        <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+              <Field label="종료 챕터">
+                <Select
+                  value={form.available_until_chapter ?? NO_CHAPTER_LIMIT}
+                  onValueChange={(value) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      available_until_chapter: value === NO_CHAPTER_LIMIT ? null : value,
+                    }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="제한 없음" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
+                      {chapters.map((c) => (
+                        <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+            <p className="text-xs text-muted">
+              둘 다 제한 없음이면 항상 구매 가능. 시작 챕터만 지정하면 해당 챕터부터, 둘 다 같은 챕터로 지정하면 그 챕터에서만 구매 가능합니다.
+            </p>
+          </>
+        ) : (
+          <>
+            <Field label="시작 일시">
+              <div className="flex items-center gap-2">
+                <DatePicker
+                  className="min-w-0 flex-1"
+                  placeholder="제한 없음"
+                  clearable
+                  value={saleDates.fromDate || null}
+                  onChange={(value) => setSaleDates((prev) => ({ ...prev, fromDate: value, fromTime: value ? prev.fromTime : "" }))}
+                />
+                <TimePicker
+                  className="w-32 shrink-0"
+                  placeholder="00:00"
+                  minuteStep={1}
+                  value={saleDates.fromTime}
+                  onChange={(value) => setSaleDates((prev) => ({ ...prev, fromTime: value }))}
+                />
+              </div>
+            </Field>
+            <Field label="종료 일시">
+              <div className="flex items-center gap-2">
+                <DatePicker
+                  className="min-w-0 flex-1"
+                  placeholder="제한 없음"
+                  clearable
+                  value={saleDates.untilDate || null}
+                  onChange={(value) => setSaleDates((prev) => ({ ...prev, untilDate: value, untilTime: value ? prev.untilTime : "" }))}
+                />
+                <TimePicker
+                  className="w-32 shrink-0"
+                  placeholder="00:00"
+                  minuteStep={1}
+                  value={saleDates.untilTime}
+                  onChange={(value) => setSaleDates((prev) => ({ ...prev, untilTime: value }))}
+                />
+              </div>
+            </Field>
+            <p className="text-xs text-muted">
+              한국 시간 기준입니다. 시작 일시부터 구매할 수 있고, 종료 일시가 되면 판매가 끝납니다. 시각을 비우면 00:00으로 저장되며, 초는 항상 00초입니다.
+            </p>
+          </>
+        )}
       </div>
-      <p className="text-xs text-muted -mt-3">
-        둘 다 제한 없음이면 항상 구매 가능. 시작 챕터만 지정하면 해당 챕터부터, 둘 다 같은 챕터로 지정하면 그 챕터에서만 구매 가능합니다.
-      </p>
 
       <Field label="구매 제한 임무">
         <Select

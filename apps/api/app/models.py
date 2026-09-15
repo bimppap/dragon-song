@@ -187,6 +187,10 @@ class Item(Base):
     purchase_limit_global: Mapped[int | None] = mapped_column(Integer, nullable=True)
     available_from_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
     available_until_chapter: Mapped[str | None] = mapped_column(String, nullable=True)
+    # 판매기간 지정 방식. "chapter"면 위 챕터 범위, "date"면 아래 KST 일시 범위(시작 포함, 종료 미포함)로 판정한다.
+    sale_period_type: Mapped[str] = mapped_column(String, nullable=False, default="chapter", server_default=text("'chapter'"))
+    available_from_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    available_until_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     item_type: Mapped[str] = mapped_column(
         String, nullable=False, default="consumable", server_default=text("'consumable'")
     )  # "consumable"(일반 아이템 전용) | "companion" | "accessory"(특수 상인 아이템 전용)

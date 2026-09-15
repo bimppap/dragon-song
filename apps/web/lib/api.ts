@@ -450,6 +450,10 @@ export interface Item {
   purchase_limit_global: number | null;
   available_from_chapter: string | null;
   available_until_chapter: string | null;
+  sale_period_type: SalePeriodType;
+  /** KST 기준 판매 시작/종료 일시(ISO). 날짜 방식일 때만 값이 있다. 종료 시각은 판매에 포함되지 않는다. */
+  available_from_at: string | null;
+  available_until_at: string | null;
   item_type: ItemType;
   restricted_mission_id: number | null;
   image_url: string | null;
@@ -466,6 +470,8 @@ export interface Item {
   eligible_missions: RecollectionMission[];
 }
 
+export type SalePeriodType = "chapter" | "date";
+
 export interface ItemCreate {
   name: string;
   price_gold: number | null;
@@ -477,6 +483,10 @@ export interface ItemCreate {
   purchase_limit_global: number | null;
   available_from_chapter: string | null;
   available_until_chapter: string | null;
+  sale_period_type: SalePeriodType;
+  /** KST 기준 판매 시작/종료 일시(ISO). 날짜 방식일 때만 값이 있다. 종료 시각은 판매에 포함되지 않는다. */
+  available_from_at: string | null;
+  available_until_at: string | null;
   item_type: ItemType;
   restricted_mission_id: number | null;
   effects: ItemEffect[];

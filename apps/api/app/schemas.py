@@ -4,6 +4,7 @@ from typing import Literal, get_args
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.game_data import MAX_CHARACTER_LEVEL
+from app.models import KST
 
 EnemySkillType = Literal["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"]
 Faction = Literal["공격", "수비", "치유"]
@@ -74,6 +75,7 @@ ItemEffectStat = Literal[
     "mission_exp_recollection", "challenge_acquisition",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
+SalePeriodType = Literal["chapter", "date"]
 
 LEGACY_ENEMY_SKILL_TYPE_MAP: dict[str, EnemySkillType] = {
     "지정 공격A": "지정 공격",
@@ -427,11 +429,37 @@ class ItemCreate(BaseModel):
     purchase_limit_global: int | None = None
     available_from_chapter: str | None = None
     available_until_chapter: str | None = None
+    sale_period_type: SalePeriodType = "chapter"
+    available_from_at: datetime | None = None
+    available_until_at: datetime | None = None
     item_type: ItemType = "consumable"
     restricted_mission_id: int | None = None  # 이 임무의 보상 수령자는 구매 불가
     effects: list[ItemEffect] = Field(default_factory=list)
     sale_paused: bool = False
     battle_only: bool = False
+
+    @field_validator("available_from_at", "available_until_at", mode="after")
+    @classmethod
+    def normalize_sale_datetime(cls, v: datetime | None) -> datetime | None:
+        # 판매 일시는 분 단위까지만 쓴다. 시간대가 없으면 게임 기준 시간대(KST)로 본다.
+        if v is None:
+            return None
+        if v.tzinfo is None:
+            v = v.replace(tzinfo=KST)
+        return v.astimezone(KST).replace(second=0, microsecond=0)
+
+    @model_validator(mode="after")
+    def check_sale_period(self):
+        # 선택하지 않은 방식의 값은 남기지 않아, 저장된 판매기간이 한 방식으로만 해석되게 한다.
+        if self.sale_period_type == "date":
+            self.available_from_chapter = None
+            self.available_until_chapter = None
+            if self.available_from_at and self.available_until_at and self.available_from_at >= self.available_until_at:
+                raise ValueError("판매 시작 일시는 종료 일시보다 빨라야 합니다.")
+        else:
+            self.available_from_at = None
+            self.available_until_at = None
+        return self
 
     @model_validator(mode="after")
     def check_at_least_one_price(self):
@@ -478,6 +506,9 @@ class ItemRead(BaseModel):
     purchase_limit_global: int | None
     available_from_chapter: str | None
     available_until_chapter: str | None
+    sale_period_type: SalePeriodType = "chapter"
+    available_from_at: datetime | None = None
+    available_until_at: datetime | None = None
     item_type: ItemType
     restricted_mission_id: int | None = None
     image_url: str | None = None

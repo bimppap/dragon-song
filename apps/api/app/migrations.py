@@ -118,6 +118,12 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE items ADD COLUMN available_from_chapter VARCHAR")
         if "available_until_chapter" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN available_until_chapter VARCHAR")
+        if "sale_period_type" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN sale_period_type VARCHAR NOT NULL DEFAULT 'chapter'")
+        if "available_from_at" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN available_from_at TIMESTAMP WITH TIME ZONE")
+        if "available_until_at" not in item_columns:
+            statements.append("ALTER TABLE items ADD COLUMN available_until_at TIMESTAMP WITH TIME ZONE")
         if "item_type" not in item_columns:
             statements.append("ALTER TABLE items ADD COLUMN item_type VARCHAR NOT NULL DEFAULT 'consumable'")
         if "effects" not in item_columns:

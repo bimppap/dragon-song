@@ -665,6 +665,8 @@ def list_items(
                 update={
                     "available_from_chapter": None,
                     "available_until_chapter": None,
+                    "available_from_at": None,
+                    "available_until_at": None,
                     "restricted_mission_id": None,
                 }
             )

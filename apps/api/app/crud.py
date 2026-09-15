@@ -1004,6 +1004,11 @@ def update_shop_status(db: Session, is_open: bool) -> ShopState:
     return state
 
 
+def _as_kst(value: datetime) -> datetime:
+    """SQLite 등에서 시간대 없이 읽힌 일시는 저장 기준(KST)으로 간주한다."""
+    return value.replace(tzinfo=KST) if value.tzinfo is None else value
+
+
 def _is_item_purchasable(
     item: Item,
     chapters_by_name: dict[str, Chapter],
@@ -1011,6 +1016,13 @@ def _is_item_purchasable(
 ) -> bool:
     if item.sale_paused:
         return False
+    if item.sale_period_type == "date":
+        now = now_kst()
+        if item.available_from_at and now < _as_kst(item.available_from_at):
+            return False
+        if item.available_until_at and now >= _as_kst(item.available_until_at):
+            return False
+        return True
     if item.available_from_chapter is None and item.available_until_chapter is None:
         return True
     if active_chapter is None:
@@ -1078,6 +1090,9 @@ def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.purchase_limit_global = data.purchase_limit_global
     item.available_from_chapter = data.available_from_chapter
     item.available_until_chapter = data.available_until_chapter
+    item.sale_period_type = data.sale_period_type
+    item.available_from_at = data.available_from_at
+    item.available_until_at = data.available_until_at
     item.item_type = data.item_type
     item.restricted_mission_id = data.restricted_mission_id
     item.effects = [effect.model_dump() for effect in data.effects]
@@ -1878,6 +1893,9 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
             purchase_limit_global=item.purchase_limit_global,
             available_from_chapter=item.available_from_chapter,
             available_until_chapter=item.available_until_chapter,
+            sale_period_type=item.sale_period_type,
+            available_from_at=item.available_from_at,
+            available_until_at=item.available_until_at,
             item_type=item.item_type,
             restricted_mission_id=item.restricted_mission_id,
             image_url=(item.image_after_purchase_url if item.special_merchant and char_purchased > 0 and not admin else item.image_url),

@@ -12,6 +12,7 @@ import type { Item } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useDialog } from "@/components/common/DialogProvider";
+import { formatKstDateTime } from "@/lib/utils";
 
 ModuleRegistry.registerModules([AllCommunityModule]);
 
@@ -35,6 +36,13 @@ function StockBadge({ value }: { value: number | null }) {
 }
 
 function formatAvailability(item: Item): string {
+  if (item.sale_period_type === "date") {
+    const { available_from_at: fromAt, available_until_at: untilAt } = item;
+    if (!fromAt && !untilAt) return "전체";
+    if (fromAt && untilAt) return `${formatKstDateTime(fromAt)} ~ ${formatKstDateTime(untilAt)}`;
+    if (fromAt) return `${formatKstDateTime(fromAt)}부터`;
+    return `~${formatKstDateTime(untilAt!)}`;
+  }
   const { available_from_chapter: from, available_until_chapter: until } = item;
   if (!from && !until) return "전체";
   if (from && until && from === until) return `${from}만`;

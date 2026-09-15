@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { fetchChapters, fetchItems, formatEffect, type Chapter, type Item } from "@/lib/api";
+import { formatKstDateTime } from "@/lib/utils";
 
 interface Props {
   characterId?: number;
@@ -76,6 +77,9 @@ function ItemTooltip({ item }: { item: Item }) {
 /** 아이템이 아직 시작되지 않은 챕터부터 판매되는(=곧 열릴) 상태인지 판정한다.
  *  종료 챕터가 이미 지났거나(만료) 활성 챕터가 없으면(판정 불가) 곧 열림으로 표시하지 않는다. */
 function isUpcoming(item: Item, chaptersByName: Map<string, Chapter>, activeChapter: Chapter | null): boolean {
+  if (item.sale_period_type === "date") {
+    return item.available_from_at != null && Date.now() < new Date(item.available_from_at).getTime();
+  }
   if (!item.available_from_chapter || !activeChapter) return false;
   const fromChapter = chaptersByName.get(item.available_from_chapter);
   if (!fromChapter || activeChapter.start_date >= fromChapter.start_date) return false;
@@ -141,7 +145,11 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
                   </div>
                 ) : notYetAvailable && (
                   <div className="absolute inset-0 flex items-center justify-center bg-primary/40">
-                    <Badge variant="secondary">{item.available_from_chapter}~</Badge>
+                    <Badge variant="secondary">
+                      {item.sale_period_type === "date" && item.available_from_at
+                        ? `${formatKstDateTime(item.available_from_at)}~`
+                        : `${item.available_from_chapter}~`}
+                    </Badge>
                   </div>
                 )}
               </div>
