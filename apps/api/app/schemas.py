@@ -432,6 +432,7 @@ class ItemCreate(BaseModel):
     price_cp: int | None = Field(default=None, ge=0)
     description_user: str = ""
     special_merchant: bool = False
+    name_after_purchase: str = ""
     description_after_purchase: str = ""
     purchase_limit_per_character: int | None = None
     purchase_limit_global: int | None = None
@@ -515,6 +516,7 @@ class ItemRead(BaseModel):
     price_cp: int | None
     description_user: str
     special_merchant: bool = False
+    name_after_purchase: str = ""
     description_after_purchase: str = ""
     image_after_purchase_url: str | None = None
     purchase_limit_per_character: int | None

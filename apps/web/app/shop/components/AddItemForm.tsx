@@ -40,6 +40,7 @@ function createEmptyItemForm(): ItemCreate {
     price_cp: null,
     description_user: "",
     special_merchant: false,
+    name_after_purchase: "",
     description_after_purchase: "",
     purchase_limit_per_character: null,
     purchase_limit_global: null,
@@ -65,6 +66,7 @@ function toItemForm(item: Item | null | undefined): ItemCreate {
     price_cp: item.price_cp,
     description_user: item.description_user,
     special_merchant: item.special_merchant,
+    name_after_purchase: item.name_after_purchase,
     description_after_purchase: item.description_after_purchase,
     purchase_limit_per_character: item.purchase_limit_per_character,
     purchase_limit_global: item.purchase_limit_global,
@@ -258,7 +260,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         </div>
       )}
 
-      <Field label="아이템명" required>
+      <Field label={form.special_merchant ? "아이템명 (구매 전)" : "아이템명"} required>
         <Input
           name="name"
           required
@@ -305,6 +307,12 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         특수 상인이 파는 물건입니다.
       </label>
 
+      {form.special_merchant && (
+        <Field label="아이템명 (구매 후)">
+          <Input name="name_after_purchase" placeholder={form.name ? `비워두면 "${form.name}"` : "비워두면 구매 전 이름"} value={form.name_after_purchase} onChange={handleChange} />
+        </Field>
+      )}
+
       <Field label={form.special_merchant ? "유저용 설명 (구매 전)" : "유저용 설명"}>
         <Textarea
           name="description_user"
@@ -317,7 +325,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
 
       {form.special_merchant && (
         <Field label="유저용 설명 (구매 후)">
-          <Textarea name="description_after_purchase" placeholder="구매 후 보유 목록과 슬롯에 표시될 설명" value={form.description_after_purchase} onChange={handleChange} rows={2} />
+          <Textarea name="description_after_purchase" placeholder="구매 후 보유 목록과 슬롯에 표시될 설명 (비워두면 구매 전 설명)" value={form.description_after_purchase} onChange={handleChange} rows={2} />
         </Field>
       )}
 
@@ -349,11 +357,14 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
             <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
               {afterImagePreview ? <Image src={afterImagePreview} alt="구매 후 이미지 미리보기" fill unoptimized className="object-cover" /> : <ImageIcon size={22} className="text-muted" />}
             </div>
-            <input type="file" accept="image/*" aria-label="구매 후 아이템 이미지" className="min-w-0 text-sm" onChange={(event) => {
-              const file = event.target.files?.[0] ?? null;
-              setAfterImageFile(file);
-              setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
-            }} />
+            <div className="min-w-0 space-y-1">
+              <input type="file" accept="image/*" aria-label="구매 후 아이템 이미지" className="min-w-0 text-sm" onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                setAfterImageFile(file);
+                setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
+              }} />
+              <p className="text-xs text-muted">비워두면 구매 전 이미지를 사용합니다.</p>
+            </div>
           </div>
         </Field>
       )}

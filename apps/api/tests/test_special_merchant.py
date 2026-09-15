@@ -80,6 +80,28 @@ class SpecialMerchantTest(unittest.TestCase):
         self.assertEqual(owned.item_id, item.id)
         self.assertEqual((owned.item_description, owned.item_image_url), ("revealed", "after.webp"))
 
+    def test_after_purchase_name_and_empty_values_fall_back_to_before(self):
+        named = crud.create_item(self.db, ItemCreate(
+            name="gift", name_after_purchase="  golden cat  ", price_gold=10, item_type="accessory", special_merchant=True,
+            description_user="wrapped", effects=[],
+        ))
+        named.image_url = "before.webp"
+        self.db.add(Purchase(character_id=self.character.id, item_id=named.id, quantity=1))
+        self.db.commit()
+        self.assertEqual(named.name_after_purchase, "golden cat")
+        before = crud.get_items_with_stock(self.db, self.other.id, admin=False)[0]
+        self.assertEqual(before.name, "gift")
+        after = crud.get_items_with_stock(self.db, self.character.id, admin=False)[0]
+        self.assertEqual((after.name, after.description_user, after.image_url), ("golden cat", "wrapped", "before.webp"))
+        owned = crud.get_character_detail(self.db, self.character.id).owned_items[0]
+        self.assertEqual((owned.item_name, owned.item_description, owned.item_image_url), ("golden cat", "wrapped", "before.webp"))
+        named.name_after_purchase = ""
+        self.db.commit()
+        owned = crud.get_character_detail(self.db, self.character.id).owned_items[0]
+        self.assertEqual(owned.item_name, "gift")
+        admin = crud.get_items_with_stock(self.db, admin=True)[0]
+        self.assertEqual((admin.name, admin.name_after_purchase), ("gift", ""))
+
     def test_invalid_special_merchant_configuration(self):
         with self.assertRaises(ValidationError):
             ItemCreate(name="invalid", price_gold=10, item_type="consumable", special_merchant=True)

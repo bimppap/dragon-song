@@ -769,9 +769,9 @@ def get_character_card_details(db: Session, *, admin: bool = False) -> list[Char
     ).order_by(*ITEM_DISPLAY_ORDER).all()
     for state, item in equipment:
         result[state.character_id].equipment.append(CharacterCardItemRead(
-            item_id=item.id, item_type=item.item_type, name=item.name,
-            description=item.description_after_purchase if item.special_merchant else item.description_user,
-            image_url=item.image_after_purchase_url if item.special_merchant else item.image_url,
+            item_id=item.id, item_type=item.item_type, name=_item_owned_name(item),
+            description=_item_owned_description(item),
+            image_url=_item_owned_image_url(item),
             effects=item.effects or [],
         ))
     return list(result.values())
@@ -883,9 +883,9 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         owned_items=[
             CharacterOwnedItemRead(
                 item_id=row.item_id,
-                item_name=row.item_name,
-                item_description=(items_by_id[row.item_id].description_after_purchase if items_by_id[row.item_id].special_merchant else row.item_description),
-                item_image_url=(items_by_id[row.item_id].image_after_purchase_url if items_by_id[row.item_id].special_merchant else items_by_id[row.item_id].image_url),
+                item_name=_item_owned_name(items_by_id[row.item_id]),
+                item_description=_item_owned_description(items_by_id[row.item_id]),
+                item_image_url=_item_owned_image_url(items_by_id[row.item_id]),
                 item_type=items_by_id[row.item_id].item_type,
                 effects=items_by_id[row.item_id].effects or [],
                 quantity=row.quantity,
@@ -1079,12 +1079,26 @@ def _validate_item_acquisition_chapter(db: Session, data: ItemCreate) -> None:
             raise HTTPException(status_code=400, detail="도전과제 획득 효과에 지정된 챕터가 존재하지 않습니다.")
 
 
+def _item_owned_name(item: Item) -> str:
+    """구매한 캐릭터에게 보이는 이름. 특수 상인 아이템의 구매 후 값이 비어 있으면 구매 전 값을 쓴다."""
+    return (item.name_after_purchase or "").strip() or item.name if item.special_merchant else item.name
+
+
+def _item_owned_description(item: Item) -> str:
+    return (item.description_after_purchase or "").strip() or item.description_user if item.special_merchant else item.description_user
+
+
+def _item_owned_image_url(item: Item) -> str | None:
+    return item.image_after_purchase_url or item.image_url if item.special_merchant else item.image_url
+
+
 def _apply_item_data(item: Item, data: ItemCreate) -> None:
     item.name = data.name
     item.price_gold = data.price_gold
     item.price_cp = data.price_cp
     item.description_user = data.description_user
     item.special_merchant = data.special_merchant
+    item.name_after_purchase = data.name_after_purchase.strip()
     item.description_after_purchase = data.description_after_purchase
     item.purchase_limit_per_character = data.purchase_limit_per_character
     item.purchase_limit_global = data.purchase_limit_global
@@ -1883,11 +1897,12 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
                 acquisition_available = remaining > 0
         result.append(ItemWithStock(
             id=item.id,
-            name=item.name,
+            name=(_item_owned_name(item) if char_purchased > 0 and not admin else item.name),
             price_gold=item.price_gold,
             price_cp=item.price_cp,
-            description_user=(item.description_after_purchase if item.special_merchant and char_purchased > 0 and not admin else item.description_user),
+            description_user=(_item_owned_description(item) if char_purchased > 0 and not admin else item.description_user),
             special_merchant=item.special_merchant,
+            name_after_purchase=item.name_after_purchase if admin else "",
             description_after_purchase=item.description_after_purchase if admin else "",
             image_after_purchase_url=item.image_after_purchase_url if admin else None,
             purchase_limit_per_character=item.purchase_limit_per_character,
@@ -1899,7 +1914,7 @@ def get_items_with_stock(db: Session, character_id: int | None = None, *, admin:
             available_until_at=item.available_until_at,
             item_type=item.item_type,
             restricted_mission_id=item.restricted_mission_id,
-            image_url=(item.image_after_purchase_url if item.special_merchant and char_purchased > 0 and not admin else item.image_url),
+            image_url=(_item_owned_image_url(item) if char_purchased > 0 and not admin else item.image_url),
             effects=item.effects or [],
             sale_paused=item.sale_paused,
             battle_only=item.battle_only,
@@ -4234,14 +4249,15 @@ def _attach_battle_item_passives(db: Session, participants: list[dict]) -> None:
     }
     if character_ids:
         rows = (
-            db.query(CharacterItemState.character_id, Item.name, Item.effects)
+            db.query(CharacterItemState.character_id, Item)
             .join(Item, Item.id == CharacterItemState.item_id)
             .filter(CharacterItemState.character_id.in_(character_ids), CharacterItemState.equipped.is_(True))
             .order_by(Item.sort_order, Item.id)
             .all()
         )
-        for character_id, item_name, effects in rows:
-            for effect in effects or []:
+        for character_id, item in rows:
+            item_name = _item_owned_name(item)
+            for effect in item.effects or []:
                 stat = effect.get("stat")
                 if stat == "battle_revive_once":
                     passives[character_id]["revive_once"].append(item_name)
@@ -5562,9 +5578,9 @@ def get_battle_available_items(db: Session, session_id: int) -> BattleAvailableI
             continue
         items_by_character[row.character_id].append(CharacterOwnedItemRead(
             item_id=item.id,
-            item_name=item.name,
-            item_description=(item.description_after_purchase if item.special_merchant else item.description_user),
-            item_image_url=(item.image_after_purchase_url if item.special_merchant else item.image_url),
+            item_name=_item_owned_name(item),
+            item_description=_item_owned_description(item),
+            item_image_url=_item_owned_image_url(item),
             item_type=item.item_type,
             effects=item.effects or [],
             quantity=int(row.quantity),

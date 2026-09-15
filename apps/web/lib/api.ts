@@ -454,6 +454,8 @@ export interface Item {
   price_cp: number | null;
   description_user: string;
   special_merchant: boolean;
+  /** 특수 상인 아이템의 구매 후 이름. 비어 있으면 구매 전 이름을 쓴다. */
+  name_after_purchase: string;
   description_after_purchase: string;
   purchase_limit_per_character: number | null;
   purchase_limit_global: number | null;
@@ -488,6 +490,8 @@ export interface ItemCreate {
   price_cp: number | null;
   description_user: string;
   special_merchant: boolean;
+  /** 특수 상인 아이템의 구매 후 이름. 비어 있으면 구매 전 이름을 쓴다. */
+  name_after_purchase: string;
   description_after_purchase: string;
   purchase_limit_per_character: number | null;
   purchase_limit_global: number | null;

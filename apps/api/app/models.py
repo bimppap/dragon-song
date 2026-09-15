@@ -181,6 +181,8 @@ class Item(Base):
     description_user: Mapped[str] = mapped_column(String, nullable=False, default="")
     description_internal: Mapped[str] = mapped_column(String, nullable=False, default="")
     special_merchant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # 특수 상인 아이템의 구매 후 표시값. 비어 있으면 구매 전 이름/설명/이미지를 그대로 쓴다.
+    name_after_purchase: Mapped[str] = mapped_column(String, nullable=False, default="", server_default=text("''"))
     description_after_purchase: Mapped[str] = mapped_column(String, nullable=False, default="", server_default=text("''"))
     image_after_purchase_url: Mapped[str | None] = mapped_column(String, nullable=True)
     purchase_limit_per_character: Mapped[int | None] = mapped_column(Integer, nullable=True)
