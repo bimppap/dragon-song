@@ -11,7 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS, type Chapter, type ItemEffect } from "@/lib/api";
+import { EQUIP_PASSIVE_EFFECT_STATS, ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS, type Chapter, type ItemEffect } from "@/lib/api";
 
 interface Props {
   effects: ItemEffect[];
@@ -19,6 +19,8 @@ interface Props {
   /** ap_reset 등 아이템 전용 특수 효과 노출 여부. */
   allowSpecialStats?: boolean;
   allowGradeChoice?: boolean;
+  /** 부활·기술 재발동처럼 장착해야 동작하는 전투 패시브 효과 노출 여부(동반자·장신구). */
+  allowEquipPassives?: boolean;
   chapters?: Chapter[];
 }
 
@@ -26,6 +28,7 @@ const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
   "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
   "mission_exp_recollection", "challenge_acquisition",
   "delivery_date_slot", "delivery_freeform",
+  "battle_revive_once", "battle_auto_revive",
 ]);
 
 /** 퍼센트형 효과는 비율(0.2)로 저장하지만 입력창에는 퍼센트(20)로 보여준다. 부동소수 오차(0.07*100)는 반올림해 숨긴다. */
@@ -38,10 +41,12 @@ function toStoredDelta(stat: ItemEffect["stat"], displayValue: number): number {
 }
 
 /** 아이템·기술 등에서 공용으로 쓰는 효과 목록 편집 UI. */
-export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, allowGradeChoice = false, chapters = [] }: Props) {
-  const options = allowSpecialStats
-    ? ITEM_EFFECT_STAT_OPTIONS
-    : ITEM_EFFECT_STAT_OPTIONS.filter((option) => !SPECIAL_STATS.has(option.value) || (allowGradeChoice && (option.value === "grade_choice_1" || option.value === "grade_choice_2")));
+export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, allowGradeChoice = false, allowEquipPassives = false, chapters = [] }: Props) {
+  const options = ITEM_EFFECT_STAT_OPTIONS.filter((option) => {
+    if (EQUIP_PASSIVE_EFFECT_STATS.has(option.value)) return allowEquipPassives;
+    if (allowSpecialStats) return true;
+    return !SPECIAL_STATS.has(option.value) || (allowGradeChoice && (option.value === "grade_choice_1" || option.value === "grade_choice_2"));
+  });
 
   function handleAdd() {
     onChange([...effects, { stat: options[0].value, delta: 0 }]);

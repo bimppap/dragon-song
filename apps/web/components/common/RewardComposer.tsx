@@ -25,7 +25,10 @@ interface Props {
   onChange: (entries: RewardFormEntry[]) => void;
 }
 
-const EXCLUDED_STATS = new Set<ItemEffectStat>(["ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "challenge_acquisition"]);
+const EXCLUDED_STATS = new Set<ItemEffectStat>([
+  "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "challenge_acquisition",
+  "battle_revive_once", "battle_auto_revive", "skill_recast",
+]);
 const STAT_OPTIONS = ITEM_EFFECT_STAT_OPTIONS.filter((option) => !EXCLUDED_STATS.has(option.value)) as {
   value: RewardableStat;
   label: string;

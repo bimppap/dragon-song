@@ -332,7 +332,8 @@ export type ItemEffectStat =
   | "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "cleanse_debuffs"
   | "mission_exp_recollection"
   | "challenge_acquisition"
-  | "delivery_date_slot" | "delivery_freeform";
+  | "delivery_date_slot" | "delivery_freeform"
+  | "battle_revive_once" | "battle_auto_revive" | "skill_recast";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -384,7 +385,13 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "mission_exp_recollection", label: "이전 챕터 미완료 임무의 경험치 취득" },
   { value: "delivery_date_slot", label: "출석부 지문 1회 작성 가능 (사이트 외 기능)" },
   { value: "delivery_freeform", label: "이미지 또는 편지 또는 둘 다 배달 (사이트 외 기능)" },
+  { value: "battle_revive_once", label: "전투 당 1회 부활" },
+  { value: "battle_auto_revive", label: "전투 이후 자동 부활" },
+  { value: "skill_recast", label: "기술 재발동(%)" },
 ];
+
+/** 장착한 동반자·장신구에서만 동작하는 전투 패시브 효과. 소모품에는 설정할 수 없다. */
+export const EQUIP_PASSIVE_EFFECT_STATS = new Set<ItemEffectStat>(["battle_revive_once", "battle_auto_revive", "skill_recast"]);
 
 /** ItemEffectStat → 한글 라벨 조회 맵. */
 export const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
@@ -401,7 +408,7 @@ export const SELECTION_REQUIRED_EFFECT_STATS = new Set<ItemEffectStat>([
 export const PERCENT_EFFECT_STATS = new Set<ItemEffectStat>([
   "hp_max_p", "hp_heal_p", "hp_regen_fixed",
   "atk_p", "def_p", "def_eff", "presence", "heal_eff",
-  "dmg_p", "dmg_r", "skill_eff_fixed",
+  "dmg_p", "dmg_r", "skill_eff_fixed", "skill_recast",
 ]);
 
 /** 효과 하나를 "라벨 +N" 형태의 문자열로 표현한다. */
@@ -412,7 +419,9 @@ export function formatEffect(effect: ItemEffect): string {
     effect.stat === "ap_reset" || effect.stat === "stat_reset" || effect.stat === "full_reset"
     || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2"
     || effect.stat === "cleanse_debuffs" || effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform"
+    || effect.stat === "battle_revive_once" || effect.stat === "battle_auto_revive"
   ) return label;
+  if (effect.stat === "skill_recast") return `기술 재발동 ${Math.round(effect.delta * 1000) / 10}% 위력`;
   const sign = effect.delta >= 0 ? "+" : "";
   if (PERCENT_EFFECT_STATS.has(effect.stat)) {
     const percentValue = Math.round(effect.delta * 1000) / 10;

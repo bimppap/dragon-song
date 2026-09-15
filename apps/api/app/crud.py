@@ -4220,7 +4220,202 @@ def _mark_combatant_downed(target: dict) -> bool:
     target["env_stacks"] = {}
     target["env_stack_order"] = []
     target["status_effects"] = persistent
+    if newly_downed:
+        _try_battle_revive_once(target)
     return newly_downed
+
+
+# ── 장착 아이템 전투 패시브(부활·기술 재발동) ──
+def _attach_battle_item_passives(db: Session, participants: list[dict]) -> None:
+    """장착 중인 동반자·장신구의 전투 패시브를 참가자 스냅샷에 붙인다. 턴마다 다시 읽어 장착 변경을 반영한다."""
+    character_ids = [p["character_id"] for p in participants]
+    passives: dict[int, dict] = {
+        character_id: {"revive_once": [], "auto_revive": [], "skill_recast": []} for character_id in character_ids
+    }
+    if character_ids:
+        rows = (
+            db.query(CharacterItemState.character_id, Item.name, Item.effects)
+            .join(Item, Item.id == CharacterItemState.item_id)
+            .filter(CharacterItemState.character_id.in_(character_ids), CharacterItemState.equipped.is_(True))
+            .order_by(Item.sort_order, Item.id)
+            .all()
+        )
+        for character_id, item_name, effects in rows:
+            for effect in effects or []:
+                stat = effect.get("stat")
+                if stat == "battle_revive_once":
+                    passives[character_id]["revive_once"].append(item_name)
+                elif stat == "battle_auto_revive":
+                    passives[character_id]["auto_revive"].append(item_name)
+                elif stat == "skill_recast" and float(effect.get("delta") or 0) > 0:
+                    passives[character_id]["skill_recast"].append({"item_name": item_name, "ratio": float(effect["delta"])})
+    for p in participants:
+        p["item_passives"] = passives.get(p["character_id"], {"revive_once": [], "auto_revive": [], "skill_recast": []})
+
+
+def _revive_hp_amount(max_hp: int, revive_hp: float | None) -> int:
+    return max(1, _floor_amount(max_hp * float(revive_hp or 0)))
+
+
+def _try_battle_revive_once(target: dict) -> None:
+    item_names = (target.get("item_passives") or {}).get("revive_once") or []
+    if not item_names or target.get("revive_once_used"):
+        return
+    target["revive_once_used"] = True
+    target["hp"] = _revive_hp_amount(target["max_hp"], target.get("revive_hp"))
+    target["downed"] = False
+    # 기절 로그를 남기는 호출부 뒤에 붙도록 _flush_battle_revive_events에서 이벤트로 옮긴다.
+    target.setdefault("_revive_events", []).append(
+        f"✨ {target['name']}의 {item_names[0]} 발동 → 부활 [HP {target['hp']}/{target['max_hp']}]"
+    )
+
+
+def _flush_battle_revive_events(participants: list[dict], events: list[str]) -> None:
+    for p in participants:
+        pending = p.pop("_revive_events", None)
+        if pending:
+            events.extend(pending)
+
+
+_RECAST_EFFECT_KEYS = (
+    "applied_delta", "value", "value_fixed", "value_true", "damage", "damage_bonus_per_stack",
+    "damage_reduction", "counter_damage",
+)
+
+
+def _capture_skill_recast_state(participants: list[dict], enemies: list[dict], summons: list[dict]) -> dict:
+    """기술 발동 전 상태. 효과 dict는 참조째 보관해 발동 후 같은 객체의 수치 변화를 비교한다."""
+    effects = []
+    for target in [*participants, *enemies, *summons]:
+        for effect in _ensure_status_effects(target):
+            effects.append((effect, {key: effect[key] for key in _RECAST_EFFECT_KEYS if isinstance(effect.get(key), (int, float)) and not isinstance(effect.get(key), bool)}))
+    return {
+        "allies": {id(p): (p["hp"], p.get("shield", 0), bool(p.get("revive_once_used"))) for p in participants},
+        "enemies": {id(e): e["hp"] for e in enemies},
+        "summons": {id(s): s["hp"] for s in summons},
+        "effects": effects,
+    }
+
+
+def _apply_skill_recast(
+    actor: dict, skill_name: str, before: dict,
+    participants: list[dict], enemies: list[dict], summons: list[dict],
+    events: list[str], calculations: dict,
+) -> None:
+    """기술 발동 결과(발동 전후 차이)를 장착 아이템마다 각각 비율만큼 한 번 더 적용한다."""
+    recasts = (actor.get("item_passives") or {}).get("skill_recast") or []
+    if not recasts:
+        return
+    damaged = [("enemy", e, before["enemies"][id(e)] - e["hp"]) for e in enemies if id(e) in before["enemies"]]
+    damaged += [("summon", s, before["summons"][id(s)] - s["hp"]) for s in summons if id(s) in before["summons"]]
+    damaged = [(kind, target, amount) for kind, target, amount in damaged if amount > 0]
+    healed, shielded = [], []
+    for p in participants:
+        if id(p) not in before["allies"]:
+            continue
+        hp_before, shield_before, revive_used_before = before["allies"][id(p)]
+        # 아이템 부활로 생긴 체력은 기술 결과가 아니므로 제외한다.
+        if p["hp"] > hp_before and revive_used_before == bool(p.get("revive_once_used")):
+            healed.append((p, p["hp"] - hp_before))
+        if p.get("shield", 0) > shield_before:
+            shielded.append((p, p.get("shield", 0) - shield_before))
+    previous = {id(effect): values for effect, values in before["effects"]}
+    owners = {id(effect): target for target in [*participants, *enemies, *summons] for effect in _ensure_status_effects(target)}
+    boosted = []
+    for target in [*participants, *enemies, *summons]:
+        for effect in _ensure_status_effects(target):
+            old_values = previous.get(id(effect), {})
+            changes = {
+                key: effect[key] - old_values.get(key, 0)
+                for key in _RECAST_EFFECT_KEYS
+                if isinstance(effect.get(key), (int, float)) and not isinstance(effect.get(key), bool)
+                and effect[key] != old_values.get(key, 0)
+            }
+            if effect.get("effect_type") == "stat_modifier":
+                changes = {key: value for key, value in changes.items() if key == "applied_delta"}
+            if changes and owners.get(id(effect)) is target:
+                boosted.append((target, effect, changes))
+
+    for recast in recasts:
+        ratio = float(recast["ratio"])
+        percent = _formula_number(ratio * 100)
+        lines: list[str] = []
+        total_dealt = 0
+        for kind, target, amount in damaged:
+            if target["hp"] <= 0:
+                continue
+            extra = _floor_amount(amount * ratio)
+            if extra <= 0:
+                continue
+            dealt, _overkill = _apply_damage_to_enemy(target, extra)
+            total_dealt += dealt
+            name = f"하수인 {_summon_log_name(target)}" if kind == "summon" else target["name"]
+            lines.append(f"　↳ {name} {dealt} 피해 [{target['hp']}/{target['max_hp']}]")
+            calculations[lines[-1]] = f"min(floor(기술 피해 {amount} × 재발동 {percent}%), 남은 체력 {target['hp'] + dealt})"
+            if target["hp"] <= 0:
+                lines.append(f"💀 {name} {'처치' if kind == 'summon' else '격파'}")
+        heal_values: list[int] = []
+        for target, amount in healed:
+            extra = _floor_amount(amount * ratio)
+            if extra <= 0:
+                continue
+            before_hp = target["hp"]
+            gained, revived = _apply_skill_heal(actor, target, extra, allow_overheal=target["hp"] > target["max_hp"], grant_attention=False)
+            if gained <= 0:
+                continue
+            heal_values.append(gained)
+            lines.append(f"　↳ {target['name']} {gained} 치유{' (부활)' if revived else ''} [{before_hp}→{target['hp']}/{target['max_hp']}]")
+            calculations[lines[-1]] = f"floor(기술 치유 {amount} × 재발동 {percent}%)"
+        for target, amount in shielded:
+            extra = _floor_amount(amount * ratio)
+            if extra <= 0:
+                continue
+            target["shield"] = target.get("shield", 0) + extra
+            lines.append(f"　↳ {target['name']} {extra} 보호막 부여")
+            calculations[lines[-1]] = f"floor(기술 보호막 {amount} × 재발동 {percent}%)"
+        for target, effect, changes in boosted:
+            if effect not in _ensure_status_effects(target):
+                continue
+            notes: list[str] = []
+            for key, change in changes.items():
+                if effect.get("effect_type") == "stat_modifier":
+                    stat = effect.get("stat")
+                    if not isinstance(stat, str):
+                        continue
+                    integer = isinstance(target.get(stat), int) and not isinstance(target.get(stat), bool)
+                    extra = _floor_amount(change * ratio) if integer else round(change * ratio, 6)
+                    if extra == 0:
+                        continue
+                    effect["applied_delta"] = effect.get("applied_delta", 0) + extra
+                    target[stat] = target.get(stat, 0) + extra
+                    label = BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)
+                    shown = f"{extra:+d}" if integer else f"{'+' if extra >= 0 else ''}{_formula_number(round(extra * 100, 4))}%p"
+                    notes.append(f"{label} {shown}")
+                else:
+                    integer = isinstance(effect[key], int)
+                    extra = _floor_amount(change * ratio) if integer else round(change * ratio, 6)
+                    if extra == 0:
+                        continue
+                    effect[key] = effect[key] + extra
+                    shown = f"{extra:+d}" if integer else f"{'+' if extra >= 0 else ''}{_formula_number(round(extra * 100, 4))}%p"
+                    notes.append(f"{effect.get('skill_name') or '효과'} {shown}")
+            if notes:
+                lines.append(f"　↳ {target['name']} {', '.join(dict.fromkeys(notes))}")
+        if not lines:
+            continue
+        events.append(f"🔁 {actor['name']}의 {recast['item_name']} → {skill_name} 재발동 ({percent}% 위력)")
+        events.extend(lines)
+        if total_dealt > 0:
+            _apply_damage_attn(actor, total_dealt)
+        _apply_multi_heal_attn(actor, heal_values)
+
+
+def _apply_battle_auto_revive(p: dict, character: Character) -> str | None:
+    item_names = (p.get("item_passives") or {}).get("auto_revive") or []
+    if not item_names or not p.get("downed") or p.get("retreated") or character.hp > 0:
+        return None
+    character.hp = _revive_hp_amount(character.hp_max, character.revive_hp)
+    return f"✨ {p['name']}의 {item_names[0]} 발동 → 전투 후 부활 [HP {character.hp}/{character.hp_max}]"
 
 
 def _legacy_join_reward_was_counted(session: BattleSession, participant: dict) -> bool:
@@ -5827,7 +6022,7 @@ def terminate_battle(db: Session, session_id: int) -> BattleSessionRead:
         "events": ["⏹️ 전투 조기 종료"],
     }]
     if session.mode == "real":
-        _finalize_real_battle(db, list(session.participants))
+        _finalize_real_battle(db, session, list(session.participants))
 
     return _commit_battle_session(db, session)
 
@@ -5898,12 +6093,16 @@ def join_battle_enemy(db: Session, session_id: int, data: BattleEnemyJoinRequest
     return _commit_battle_session(db, session)
 
 
-def _finalize_real_battle(db: Session, participants: list[dict]) -> None:
-    """실전 종료: 페어는 잔여 HP 비율을 본래 최대 HP로 환산한다. MP는 기존대로 전부 회복한다."""
+def _finalize_real_battle(db: Session, session: BattleSession, participants: list[dict]) -> None:
+    """실전 종료: 페어는 잔여 HP 비율을 본래 최대 HP로 환산한다. MP는 기존대로 전부 회복한다.
+    기절한 채 끝난 캐릭터가 전투 후 자동 부활 아이템을 장착했다면 부활 후 체력으로 되살리고 마지막 로그에 남긴다."""
     character_ids = [p["character_id"] for p in participants]
     characters_by_id = {
         c.id: c for c in db.query(Character).filter(Character.id.in_(character_ids)).all()
     } if character_ids else {}
+    participants = [dict(p) for p in participants]
+    _attach_battle_item_passives(db, participants)
+    revive_events: list[str] = []
     for p in participants:
         character = characters_by_id.get(p["character_id"])
         if character is None:
@@ -5913,6 +6112,13 @@ def _finalize_real_battle(db: Session, participants: list[dict]) -> None:
         else:
             character.hp = max(0, min(p["hp"], character.hp_max))
         character.mp = character.mp_max
+        revive_event = _apply_battle_auto_revive(p, character)
+        if revive_event:
+            revive_events.append(revive_event)
+    if revive_events and session.log:
+        log = list(session.log)
+        log[-1] = {**log[-1], "events": [*log[-1].get("events", []), *revive_events]}
+        session.log = log
 
 
 def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraphRequest) -> BattleSessionRead:
@@ -5931,6 +6137,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     summons = [dict(s) for s in session.summons]
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
+    _attach_battle_item_passives(db, participants)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
 
@@ -6010,8 +6217,10 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             participant["hp"] -= damage
             events.append(f"☠️ {effect.get('skill_name', '지속 피해')} → {participant['name']} {damage} 지속 피해 · [{participant['hp']}/{participant['max_hp']}]")
             _mark_combatant_downed(participant)
+    _flush_battle_revive_events(participants, events)
     _apply_ongoing_telegraph_skill_effects(enemies, events, calculations)
     _apply_sparge_telegraph(participants, enemies, summons, round_no, events, calculations)
+    _flush_battle_revive_events(participants, events)
     if all(enemy["hp"] <= 0 for enemy in enemies):
         session.status = "victory"
         events.append("🏆 지속 효과로 전투 승리")
@@ -6020,7 +6229,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         session.summons = [summon for summon in summons if summon["hp"] > 0]
         session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
         if session.mode == "real":
-            _finalize_real_battle(db, participants)
+            _finalize_real_battle(db, session, participants)
         return _commit_battle_session(db, session)
 
     # 환경 효과: 이번 라운드에 이미 보유한 스택으로 고정 피해를 먼저 입힌 뒤 스택을 쌓는다.
@@ -6073,6 +6282,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         if newly_downed_names:
             events.append(f"💫 {', '.join(sorted(newly_downed_names))} 기절")
 
+    _flush_battle_revive_events(participants, events)
     if not any(_combatant_active(p) for p in participants):
         session.status = "defeat"
         events.append("💀 전투 패배")
@@ -6081,7 +6291,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
         session.summons = [summon for summon in summons if summon["hp"] > 0]
         session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
         if session.mode == "real":
-            _finalize_real_battle(db, participants)
+            _finalize_real_battle(db, session, participants)
         return _commit_battle_session(db, session)
 
     events.append("📣 적의 행동 암시!")
@@ -6186,6 +6396,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 "skill_index": None, "target_character_ids": [],
             })
 
+    _flush_battle_revive_events(participants, events)
     session.pending_enemy_actions = pending_actions
     session.phase = "ally"
     session.participants = participants
@@ -6213,6 +6424,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     rollback_state = _get_battle_rollback_state(session) if session.mode == "real" else None
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
+    _attach_battle_item_passives(db, participants)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
 
@@ -6561,8 +6773,20 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 item_states_by_character_item[key] = state
 
     # 2) 위에서 매긴 발동 순서(priority)대로 행동을 처리한다.
+    # 기술 발동 직후 재발동하도록, 발동 전 상태를 들고 있다가 다음 행동 처리 직전(또는 루프 종료 후)에 적용한다.
+    # 기술 분기가 곳곳에서 continue로 빠져나가므로 루프 경계에서 처리하는 편이 모든 분기를 빠짐없이 덮는다.
+    pending_recast: list[tuple[dict, str, dict]] = []
+
+    def _finish_pending_recast() -> None:
+        _flush_battle_revive_events(participants, events)
+        while pending_recast:
+            actor, recast_skill_name, recast_before = pending_recast.pop()
+            _apply_skill_recast(actor, recast_skill_name, recast_before, participants, enemies, summons, events, calculations)
+            _flush_battle_revive_events(participants, events)
+
     for _priority, _order_index, p, action, selected_skill in queued_actions:
         _flush_mp_note()
+        _finish_pending_recast()
         if p["retreated"]:
             continue
 
@@ -6584,6 +6808,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if p["mp"] < skill_cost:
                 events.append(f"⚠️ {p['name']}의 {selected_skill['display_name']} 사용 실패 (MP 부족)")
                 continue
+            if (p.get("item_passives") or {}).get("skill_recast"):
+                pending_recast.append((p, str(selected_skill["display_name"]), _capture_skill_recast_state(participants, enemies, summons)))
 
         if supported_skill:
             skill_name = str(selected_skill["display_name"])
@@ -7594,6 +7820,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             )
 
     _flush_mp_note()
+    _finish_pending_recast()
 
     # 격려·개선처럼 해당 라운드에만 유효한 아군 효과는 아군 행동이 모두 끝나면 소멸한다.
     # (개선/복제가 적용한 임시 기술 효율 보정도 여기서 원상 복구한다.)
@@ -7637,7 +7864,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         session.round_snapshots = list(session.round_snapshots) + [turn_snapshot]
 
     if session.status != "in_progress" and session.mode == "real":
-        _finalize_real_battle(db, participants)
+        _finalize_real_battle(db, session, participants)
 
     return _commit_battle_session(db, session)
 
@@ -7658,6 +7885,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     summons = [dict(s) for s in session.summons]
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
+    _attach_battle_item_passives(db, participants)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
 
@@ -7925,6 +8153,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     break
             if newly_downed_names:
                 events.append(f"💫 {', '.join(sorted(newly_downed_names))} 기절")
+            _flush_battle_revive_events(participants, events)
             if all(value["hp"] <= 0 for value in enemies):
                 break
         elif enemy_action.get("kind") == "summon":
@@ -7954,6 +8183,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             _apply_eruption_reaction(recipient, enemies, round_no, events, calculations)
             if _mark_combatant_downed(recipient):
                 events.append(f"💫 {recipient['name']} 기절")
+            _flush_battle_revive_events(participants, events)
             for counter in counter_results:
                 events.append(
                     f"↩️ {counter['counterattacker_name']}의 {counter['skill_name']} → 하수인 {_summon_log_name(summon)} "
@@ -7963,6 +8193,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             if summon["hp"] <= 0:
                 events.append(f"💀 하수인 {_summon_log_name(summon)} 처치")
 
+    _flush_battle_revive_events(participants, events)
     # 쇠약처럼 이번 라운드 한정인 적 상태이상은 에너미 턴까지 유지되다가 여기서 소멸한다.
     _expire_round_status_effects(enemies, round_no)
 
@@ -7991,7 +8222,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     }]
 
     if session.status != "in_progress" and session.mode == "real":
-        _finalize_real_battle(db, participants)
+        _finalize_real_battle(db, session, participants)
 
     return _commit_battle_session(db, session)
 

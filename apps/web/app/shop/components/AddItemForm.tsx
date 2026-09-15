@@ -391,6 +391,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
         onChange={(effects) => setForm((prev) => ({ ...prev, effects }))}
         allowSpecialStats={form.item_type === "consumable"}
         allowGradeChoice={form.item_type === "accessory"}
+        allowEquipPassives={form.item_type !== "consumable"}
         chapters={chapters}
       />
 

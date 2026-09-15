@@ -57,6 +57,11 @@ ITEM_EFFECT_SPECIAL_STATS = {
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform", "mission_exp_recollection", "challenge_acquisition",
 }
+# 장착한 동반자·장신구에서만 동작하는 전투 패시브 효과. 캐릭터 능력치를 바꾸지 않는다.
+# "battle_revive_once": 전투마다 한 번, 기절하는 즉시 부활 후 체력(revive_hp) 비율로 되살아난다.
+# "battle_auto_revive": 실전이 끝났을 때 기절 상태면 부활 후 체력 비율로 되살아난 채 전투를 마친다.
+# "skill_recast": 기술을 쓰면 직후 그 기술 결과(피해·치유·보호막·강화/약화 수치)의 delta 비율(0.2=20%)만큼 한 번 더 적용한다.
+ITEM_EFFECT_EQUIP_PASSIVE_STATS = {"battle_revive_once", "battle_auto_revive", "skill_recast"}
 # 사용 시 기술/능력치를 초기화하고 SP·AP를 환급하는 효과. 사용 이력에 환급량이 남는다.
 ITEM_EFFECT_RESET_STATS = {"ap_reset", "stat_reset", "full_reset"}
 ItemEffectStat = Literal[
@@ -73,6 +78,7 @@ ItemEffectStat = Literal[
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform",
     "mission_exp_recollection", "challenge_acquisition",
+    "battle_revive_once", "battle_auto_revive", "skill_recast",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
 SalePeriodType = Literal["chapter", "date"]
@@ -94,6 +100,8 @@ class ItemEffect(BaseModel):
     def validate_chapter(self):
         if self.stat in {"mission_exp_recollection", "challenge_acquisition"} and not (self.chapter or "").strip():
             raise ValueError("챕터 대상 효과에는 챕터를 선택해야 합니다.")
+        if self.stat == "skill_recast" and self.delta <= 0:
+            raise ValueError("기술 재발동 위력은 0%보다 커야 합니다.")
         if self.stat not in {"mission_exp_recollection", "challenge_acquisition"}:
             self.chapter = None
         else:
@@ -115,7 +123,7 @@ def _validate_reward_entries(entries: list[dict]) -> list[dict]:
             continue
         if entry_type == "stat":
             effect = ItemEffect(stat=entry.get("stat"), delta=entry.get("amount", 0))
-            if effect.stat in ITEM_EFFECT_SPECIAL_STATS:
+            if effect.stat in ITEM_EFFECT_SPECIAL_STATS or effect.stat in ITEM_EFFECT_EQUIP_PASSIVE_STATS:
                 raise ValueError("보상으로 지급할 수 없는 특수 효과입니다.")
             if effect.delta <= 0:
                 raise ValueError("능력치 보상 수치는 0보다 커야 합니다.")
@@ -478,6 +486,8 @@ class ItemCreate(BaseModel):
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
+        if self.item_type == "consumable" and any(e.stat in ITEM_EFFECT_EQUIP_PASSIVE_STATS for e in self.effects):
+            raise ValueError("부활·기술 재발동 효과는 장착하는 동반자·장신구에만 설정할 수 있습니다.")
         if self.battle_only and self.battle_unusable:
             raise ValueError("전투 중에만 사용 가능과 전투 중 사용 불가는 함께 설정할 수 없습니다.")
         grade_choices = [e for e in self.effects if e.stat in ("grade_choice_1", "grade_choice_2")]
