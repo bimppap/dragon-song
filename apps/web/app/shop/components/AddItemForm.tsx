@@ -147,12 +147,25 @@ interface Props {
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="space-y-1.5">
-      <label className="block text-xs font-semibold text-muted uppercase tracking-wide">
+      <label className="block text-[13px] font-semibold text-ivory/90">
         {label}
         {required && <span className="ml-1 text-red-400">*</span>}
       </label>
       {children}
     </div>
+  );
+}
+
+/** 입력 묶음. 모달 바탕(surface)과 확실히 구분되도록 어두운 인셋 바탕과 진한 테두리, 금색 표식이 붙은 제목을 쓴다. */
+function Section({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return (
+    <section className="space-y-4 rounded-xl border border-primary bg-inset p-4">
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <h3 className="border-l-2 border-gold pl-2 text-sm font-bold text-ivory">{title}</h3>
+        {action}
+      </div>
+      {children}
+    </section>
   );
 }
 
@@ -271,7 +284,7 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-3 border-b border-line pb-4">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <h2 className="text-base font-bold text-ivory">{title}</h2>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
@@ -317,80 +330,87 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
       {/* 넓은 화면에서는 기본 정보·이미지(왼쪽)와 효과·판매 조건(오른쪽)을 나란히 두어 스크롤 없이 한 번에 보이게 한다. */}
       <div className="grid gap-5 lg:grid-cols-2 lg:gap-x-8">
         <div className="min-w-0 space-y-5">
-          <div className={form.special_merchant ? "grid grid-cols-2 gap-4" : undefined}>
-            <Field label={form.special_merchant ? "아이템명 (구매 전)" : "아이템명"} required>
-              <Input
-                name="name"
-                required
-                placeholder="ex) 체력 포션"
-                value={form.name}
-                onChange={handleChange}
-              />
-            </Field>
-            {form.special_merchant && (
-              <Field label="아이템명 (구매 후)">
-                <Input name="name_after_purchase" placeholder={form.name ? `비워두면 "${form.name}"` : "비워두면 구매 전 이름"} value={form.name_after_purchase} onChange={handleChange} />
-              </Field>
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="가격 (골드)">
-              <Input
-                name="price_gold"
-                type="number"
-                min={0}
-                placeholder="미사용"
-                value={form.price_gold ?? ""}
-                onChange={handleChange}
-              />
-            </Field>
-            <Field label="가격 (CP)">
-              <Input
-                name="price_cp"
-                type="number"
-                min={0}
-                placeholder="미사용"
-                value={form.price_cp ?? ""}
-                onChange={handleChange}
-              />
-            </Field>
-          </div>
-          <p className="text-xs text-muted -mt-3">골드 또는 CP 중 하나 이상은 반드시 입력해야 합니다.</p>
-
-          <Field label={form.special_merchant ? "유저용 설명 (구매 전)" : "유저용 설명"}>
-            <Textarea
-              name="description_user"
-              placeholder="유저에게 표시될 설명"
-              value={form.description_user}
-              onChange={handleChange}
-              rows={2}
-            />
-          </Field>
-
-          {form.special_merchant && (
-            <Field label="유저용 설명 (구매 후)">
-              <Textarea name="description_after_purchase" placeholder="구매 후 보유 목록과 슬롯에 표시될 설명 (비워두면 구매 전 설명)" value={form.description_after_purchase} onChange={handleChange} rows={2} />
-            </Field>
-          )}
-
-          <div className={form.special_merchant ? "grid grid-cols-2 gap-4" : undefined}>
-            <Field label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"}>
-              <ItemImageInput label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"} previewUrl={imagePreview} onFileChange={handleImageChange} />
-            </Field>
-            {form.special_merchant && (
-              <Field label="아이템 이미지 (구매 후)">
-                <ItemImageInput
-                  label="아이템 이미지 (구매 후)"
-                  previewUrl={afterImagePreview}
-                  onFileChange={(file) => {
-                    setAfterImageFile(file);
-                    setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
-                  }}
+          <Section title="기본 정보">
+            <div className={form.special_merchant ? "grid grid-cols-2 gap-4" : undefined}>
+              <Field label={form.special_merchant ? "아이템명 (구매 전)" : "아이템명"} required>
+                <Input
+                  name="name"
+                  required
+                  placeholder="ex) 체력 포션"
+                  value={form.name}
+                  onChange={handleChange}
                 />
               </Field>
-            )}
-          </div>
+              {form.special_merchant && (
+                <Field label="아이템명 (구매 후)">
+                  <Input name="name_after_purchase" placeholder={form.name ? `비워두면 "${form.name}"` : "비워두면 구매 전 이름"} value={form.name_after_purchase} onChange={handleChange} />
+                </Field>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="가격 (골드)">
+                <Input
+                  name="price_gold"
+                  type="number"
+                  min={0}
+                  placeholder="미사용"
+                  value={form.price_gold ?? ""}
+                  onChange={handleChange}
+                />
+              </Field>
+              <Field label="가격 (CP)">
+                <Input
+                  name="price_cp"
+                  type="number"
+                  min={0}
+                  placeholder="미사용"
+                  value={form.price_cp ?? ""}
+                  onChange={handleChange}
+                />
+              </Field>
+            </div>
+            <p className="-mt-2 text-xs text-muted">골드 또는 CP 중 하나 이상은 반드시 입력해야 합니다.</p>
+          </Section>
+
+          <Section title="설명">
+            <div className={form.special_merchant ? "grid grid-cols-2 gap-4" : undefined}>
+              <Field label={form.special_merchant ? "유저용 설명 (구매 전)" : "유저용 설명"}>
+                <Textarea
+                  name="description_user"
+                  placeholder="유저에게 표시될 설명"
+                  value={form.description_user}
+                  onChange={handleChange}
+                  rows={3}
+                />
+              </Field>
+              {form.special_merchant && (
+                <Field label="유저용 설명 (구매 후)">
+                  <Textarea name="description_after_purchase" placeholder="비워두면 구매 전 설명" value={form.description_after_purchase} onChange={handleChange} rows={3} />
+                </Field>
+              )}
+            </div>
+          </Section>
+
+          <Section title="이미지">
+            <div className={form.special_merchant ? "grid grid-cols-2 gap-4" : undefined}>
+              <Field label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"}>
+                <ItemImageInput label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"} previewUrl={imagePreview} onFileChange={handleImageChange} />
+              </Field>
+              {form.special_merchant && (
+                <Field label="아이템 이미지 (구매 후)">
+                  <ItemImageInput
+                    label="아이템 이미지 (구매 후)"
+                    previewUrl={afterImagePreview}
+                    onFileChange={(file) => {
+                      setAfterImageFile(file);
+                      setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
+                    }}
+                  />
+                </Field>
+              )}
+            </div>
+          </Section>
         </div>
 
         <div className="min-w-0 space-y-5">
@@ -403,32 +423,63 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
             chapters={chapters}
           />
 
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="캐릭터별 구매 한도">
-              <Input
-                name="purchase_limit_per_character"
-                type="number"
-                min={1}
-                placeholder="무제한"
-                value={form.purchase_limit_per_character ?? ""}
-                onChange={handleChange}
-              />
-            </Field>
-            <Field label="전체 구매 한도">
-              <Input
-                name="purchase_limit_global"
-                type="number"
-                min={1}
-                placeholder="무제한"
-                value={form.purchase_limit_global ?? ""}
-                onChange={handleChange}
-              />
-            </Field>
-          </div>
+          <Section title="구매 조건">
+            <div className="grid grid-cols-2 gap-4">
+              <Field label="캐릭터별 구매 한도">
+                <Input
+                  name="purchase_limit_per_character"
+                  type="number"
+                  min={1}
+                  placeholder="무제한"
+                  value={form.purchase_limit_per_character ?? ""}
+                  onChange={handleChange}
+                />
+              </Field>
+              <Field label="전체 구매 한도">
+                <Input
+                  name="purchase_limit_global"
+                  type="number"
+                  min={1}
+                  placeholder="무제한"
+                  value={form.purchase_limit_global ?? ""}
+                  onChange={handleChange}
+                />
+              </Field>
+            </div>
 
-          <div className="space-y-3 rounded-xl border border-line px-4 py-4">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-xs font-semibold uppercase tracking-wide text-ivory/85">판매기간</span>
+            <Field label="구매 제한 임무">
+              <Select
+                value={form.restricted_mission_id != null ? String(form.restricted_mission_id) : NO_MISSION_LIMIT}
+                onValueChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    restricted_mission_id: value === NO_MISSION_LIMIT ? null : Number(value),
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="제한 없음" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    <SelectItem value={NO_MISSION_LIMIT}>제한 없음</SelectItem>
+                    {missions.map((mission) => (
+                      <SelectItem key={mission.id} value={String(mission.id)}>
+                        {mission.chapter}|{mission.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+            </Field>
+            <p className="-mt-2 text-xs text-muted">
+              임무를 지정하면 해당 임무의 보상을 받은 캐릭터는 이 아이템을 구매할 수 없습니다.
+            </p>
+          </Section>
+
+          <Section
+            title="판매기간"
+            action={
               <div className="flex gap-1">
                 {SALE_PERIOD_TYPE_OPTIONS.map((option) => (
                   <Button
@@ -443,172 +494,145 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
                   </Button>
                 ))}
               </div>
+            }
+          >
+              {form.sale_period_type === "chapter" ? (
+                <>
+                  <div className="grid grid-cols-2 gap-4">
+                    <Field label="시작 챕터">
+                      <Select
+                        value={form.available_from_chapter ?? NO_CHAPTER_LIMIT}
+                        onValueChange={(value) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            available_from_chapter: value === NO_CHAPTER_LIMIT ? null : value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="제한 없음" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
+                            {chapters.map((c) => (
+                              <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                    <Field label="종료 챕터">
+                      <Select
+                        value={form.available_until_chapter ?? NO_CHAPTER_LIMIT}
+                        onValueChange={(value) =>
+                          setForm((prev) => ({
+                            ...prev,
+                            available_until_chapter: value === NO_CHAPTER_LIMIT ? null : value,
+                          }))
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="제한 없음" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
+                            {chapters.map((c) => (
+                              <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                    </Field>
+                  </div>
+                  <p className="-mt-2 text-xs text-muted">
+                    둘 다 제한 없음이면 항상 구매 가능. 시작 챕터만 지정하면 해당 챕터부터, 둘 다 같은 챕터로 지정하면 그 챕터에서만 구매 가능합니다.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Field label="시작 일시">
+                    <div className="flex items-center gap-2">
+                      <DatePicker
+                        className="min-w-0 flex-1"
+                        placeholder="제한 없음"
+                        clearable
+                        value={saleDates.fromDate || null}
+                        onChange={(value) => setSaleDates((prev) => ({ ...prev, fromDate: value, fromTime: value ? prev.fromTime : "" }))}
+                      />
+                      <TimePicker
+                        className="w-32 shrink-0"
+                        placeholder="00:00"
+                        minuteStep={1}
+                        value={saleDates.fromTime}
+                        onChange={(value) => setSaleDates((prev) => ({ ...prev, fromTime: value }))}
+                      />
+                    </div>
+                  </Field>
+                  <Field label="종료 일시">
+                    <div className="flex items-center gap-2">
+                      <DatePicker
+                        className="min-w-0 flex-1"
+                        placeholder="제한 없음"
+                        clearable
+                        value={saleDates.untilDate || null}
+                        onChange={(value) => setSaleDates((prev) => ({ ...prev, untilDate: value, untilTime: value ? prev.untilTime : "" }))}
+                      />
+                      <TimePicker
+                        className="w-32 shrink-0"
+                        placeholder="00:00"
+                        minuteStep={1}
+                        value={saleDates.untilTime}
+                        onChange={(value) => setSaleDates((prev) => ({ ...prev, untilTime: value }))}
+                      />
+                    </div>
+                  </Field>
+                  <p className="-mt-2 text-xs text-muted">
+                    한국 시간 기준입니다. 시작 일시부터 구매할 수 있고, 종료 일시가 되면 판매가 끝납니다. 시각을 비우면 00:00으로 저장되며, 초는 항상 00초입니다.
+                  </p>
+                </>
+              )}
+          </Section>
+
+          <Section title="공개·사용 설정">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
+              <Checkbox
+                checked={form.sale_paused}
+                onCheckedChange={(checked) => setForm((prev) => ({ ...prev, sale_paused: checked === true }))}
+              />
+              <span className="font-semibold">비공개</span>
+              <span className="text-xs text-muted">판매를 멈추고 러너에게 노출하지 않습니다.</span>
+            </label>
+
+            {/* 두 설정은 서로 반대라 하나를 켜면 다른 하나는 꺼진다. */}
+            <div className="grid grid-cols-2 gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
+                <Checkbox
+                  disabled={form.item_type !== "consumable"}
+                  checked={form.battle_only}
+                  onCheckedChange={(checked) => setForm((prev) => ({
+                    ...prev, battle_only: checked === true, battle_unusable: checked === true ? false : prev.battle_unusable,
+                  }))}
+                />
+                <span className="font-semibold">전투 중에만 사용 가능</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
+                <Checkbox
+                  disabled={form.item_type !== "consumable"}
+                  checked={form.battle_unusable}
+                  onCheckedChange={(checked) => setForm((prev) => ({
+                    ...prev, battle_unusable: checked === true, battle_only: checked === true ? false : prev.battle_only,
+                  }))}
+                />
+                <span className="font-semibold">전투 중에 사용 불가</span>
+              </label>
             </div>
-
-            {form.sale_period_type === "chapter" ? (
-              <>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="시작 챕터">
-                    <Select
-                      value={form.available_from_chapter ?? NO_CHAPTER_LIMIT}
-                      onValueChange={(value) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          available_from_chapter: value === NO_CHAPTER_LIMIT ? null : value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="제한 없음" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
-                          {chapters.map((c) => (
-                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                  <Field label="종료 챕터">
-                    <Select
-                      value={form.available_until_chapter ?? NO_CHAPTER_LIMIT}
-                      onValueChange={(value) =>
-                        setForm((prev) => ({
-                          ...prev,
-                          available_until_chapter: value === NO_CHAPTER_LIMIT ? null : value,
-                        }))
-                      }
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="제한 없음" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectGroup>
-                          <SelectItem value={NO_CHAPTER_LIMIT}>제한 없음</SelectItem>
-                          {chapters.map((c) => (
-                            <SelectItem key={c.id} value={c.name}>{c.name}</SelectItem>
-                          ))}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </Field>
-                </div>
-                <p className="text-xs text-muted">
-                  둘 다 제한 없음이면 항상 구매 가능. 시작 챕터만 지정하면 해당 챕터부터, 둘 다 같은 챕터로 지정하면 그 챕터에서만 구매 가능합니다.
-                </p>
-              </>
-            ) : (
-              <>
-                <Field label="시작 일시">
-                  <div className="flex items-center gap-2">
-                    <DatePicker
-                      className="min-w-0 flex-1"
-                      placeholder="제한 없음"
-                      clearable
-                      value={saleDates.fromDate || null}
-                      onChange={(value) => setSaleDates((prev) => ({ ...prev, fromDate: value, fromTime: value ? prev.fromTime : "" }))}
-                    />
-                    <TimePicker
-                      className="w-32 shrink-0"
-                      placeholder="00:00"
-                      minuteStep={1}
-                      value={saleDates.fromTime}
-                      onChange={(value) => setSaleDates((prev) => ({ ...prev, fromTime: value }))}
-                    />
-                  </div>
-                </Field>
-                <Field label="종료 일시">
-                  <div className="flex items-center gap-2">
-                    <DatePicker
-                      className="min-w-0 flex-1"
-                      placeholder="제한 없음"
-                      clearable
-                      value={saleDates.untilDate || null}
-                      onChange={(value) => setSaleDates((prev) => ({ ...prev, untilDate: value, untilTime: value ? prev.untilTime : "" }))}
-                    />
-                    <TimePicker
-                      className="w-32 shrink-0"
-                      placeholder="00:00"
-                      minuteStep={1}
-                      value={saleDates.untilTime}
-                      onChange={(value) => setSaleDates((prev) => ({ ...prev, untilTime: value }))}
-                    />
-                  </div>
-                </Field>
-                <p className="text-xs text-muted">
-                  한국 시간 기준입니다. 시작 일시부터 구매할 수 있고, 종료 일시가 되면 판매가 끝납니다. 시각을 비우면 00:00으로 저장되며, 초는 항상 00초입니다.
-                </p>
-              </>
-            )}
-          </div>
-
-          <Field label="구매 제한 임무">
-            <Select
-              value={form.restricted_mission_id != null ? String(form.restricted_mission_id) : NO_MISSION_LIMIT}
-              onValueChange={(value) =>
-                setForm((prev) => ({
-                  ...prev,
-                  restricted_mission_id: value === NO_MISSION_LIMIT ? null : Number(value),
-                }))
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="제한 없음" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectGroup>
-                  <SelectItem value={NO_MISSION_LIMIT}>제한 없음</SelectItem>
-                  {missions.map((mission) => (
-                    <SelectItem key={mission.id} value={String(mission.id)}>
-                      {mission.chapter}|{mission.name}
-                    </SelectItem>
-                  ))}
-                </SelectGroup>
-              </SelectContent>
-            </Select>
-          </Field>
-          <p className="text-xs text-muted -mt-3">
-            임무를 지정하면 해당 임무의 보상을 받은 캐릭터는 이 아이템을 구매할 수 없습니다.
-          </p>
-
-          <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
-            <Checkbox
-              checked={form.sale_paused}
-              onCheckedChange={(checked) => setForm((prev) => ({ ...prev, sale_paused: checked === true }))}
-            />
-            <span className="font-semibold">비공개</span>
-            <span className="text-xs text-muted">즉시 판매가 중단되고, 러너에게는 노출되지 않습니다.</span>
-          </label>
-
-          {/* 두 설정은 서로 반대라 하나를 켜면 다른 하나는 꺼진다. */}
-          <div className="grid grid-cols-2 gap-3">
-            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
-              <Checkbox
-                disabled={form.item_type !== "consumable"}
-                checked={form.battle_only}
-                onCheckedChange={(checked) => setForm((prev) => ({
-                  ...prev, battle_only: checked === true, battle_unusable: checked === true ? false : prev.battle_unusable,
-                }))}
-              />
-              <span className="font-semibold">전투 중에만 사용 가능</span>
-            </label>
-            <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-line px-3 py-3 text-sm text-ivory">
-              <Checkbox
-                disabled={form.item_type !== "consumable"}
-                checked={form.battle_unusable}
-                onCheckedChange={(checked) => setForm((prev) => ({
-                  ...prev, battle_unusable: checked === true, battle_only: checked === true ? false : prev.battle_only,
-                }))}
-              />
-              <span className="font-semibold">전투 중에 사용 불가</span>
-            </label>
-          </div>
+          </Section>
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 border-t border-line pt-4">
         <Button type="submit" disabled={loading || deleting} className="flex-1">
           <PlusCircle size={15} />
           {loading

@@ -61,9 +61,9 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
   }
 
   return (
-    <div className="flex flex-col gap-2 rounded-xl border border-line bg-inset px-4 py-4">
-      <div className="flex items-center justify-between">
-        <label className="text-xs font-semibold uppercase tracking-wide text-ivory/85">효과</label>
+    <div className="flex flex-col gap-3 rounded-xl border border-primary bg-inset p-4">
+      <div className="flex min-h-7 items-center justify-between">
+        <label className="border-l-2 border-gold pl-2 text-sm font-bold text-ivory">효과</label>
         <Button type="button" variant="outline" onClick={handleAdd} className="h-7 px-3 text-xs">
           <Plus size={12} />
           효과 추가
