@@ -80,13 +80,13 @@ export default function ShopAdminPanel({ tab, onTabChange: setTab }: { tab: Tab;
       <Modal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
-        title={editingItem ? "아이템 수정" : "아이템 추가"}
         className="max-h-[92vh] max-w-5xl"
       >
         <AddItemForm
           key={editingItem?.id ?? "create"}
           item={editingItem}
-          hideHeader
+          title={editingItem ? "아이템 수정" : "아이템 추가"}
+          onClose={() => setModalOpen(false)}
           onSubmitted={() => {
             setRefreshKey((k) => k + 1);
             setModalOpen(false);

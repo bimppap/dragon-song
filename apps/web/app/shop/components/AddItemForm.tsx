@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Image as ImageIcon, PlusCircle, Trash2 } from "lucide-react";
+import { Image as ImageIcon, PlusCircle, Trash2, X } from "lucide-react";
 import { createItem, deleteItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
 import type { Chapter, Item, ItemCreate, ItemType, Mission, SalePeriodType } from "@/lib/api";
 import { joinKstDateTime, splitKstDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import DatePicker from "@/components/ui/date-picker";
@@ -28,10 +29,37 @@ const NO_CHAPTER_LIMIT = "__no_limit__";
 const NO_MISSION_LIMIT = "__no_mission__";
 
 /** 특수 상인 아이템에서만 선택할 수 있다(일반 아이템은 항상 소모형). */
-const SPECIAL_MERCHANT_ITEM_TYPE_OPTIONS: { value: ItemType; label: string; description: string }[] = [
-  { value: "companion", label: "동반자", description: "캐릭터당 한 명만 동행할 수 있습니다." },
-  { value: "accessory", label: "장신구", description: "캐릭터당 하나만 장착할 수 있습니다." },
+const SPECIAL_MERCHANT_ITEM_TYPE_OPTIONS: { value: ItemType; label: string }[] = [
+  { value: "companion", label: "동반자" },
+  { value: "accessory", label: "장신구" },
 ];
+
+/** 구매 전/후 이미지 입력에 같은 모양을 쓰기 위한 미리보기+파일 선택 칸. */
+function ItemImageInput({ label, previewUrl, onFileChange }: {
+  label: string;
+  previewUrl: string | null;
+  onFileChange: (file: File | null) => void;
+}) {
+  return (
+    <div className="flex items-center gap-4">
+      <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
+        {previewUrl ? (
+          // blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다.
+          <Image src={previewUrl} alt={`${label} 미리보기`} fill unoptimized className="object-cover" />
+        ) : (
+          <ImageIcon size={22} className="text-muted" />
+        )}
+      </div>
+      <input
+        type="file"
+        accept="image/*"
+        aria-label={label}
+        onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+        className="block min-w-0 text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
+      />
+    </div>
+  );
+}
 
 function createEmptyItemForm(): ItemCreate {
   return {
@@ -106,10 +134,10 @@ const SALE_PERIOD_TYPE_OPTIONS: { value: SalePeriodType; label: string }[] = [
 interface Props {
   item?: Item | null;
   onSubmitted: () => void;
-  onCancelEdit?: () => void;
   onDeleted?: () => void;
-  /** 모달 등 자체 제목이 있는 컨테이너 안에서 쓸 때 내부 제목/설명 블록을 숨긴다. */
-  hideHeader?: boolean;
+  /** 머리글 제목. 제목 옆에 특수 상인 설정을, 오른쪽 끝에 닫기 버튼을 둔다(모달 자체 제목 대신 사용). */
+  title: string;
+  onClose?: () => void;
 }
 
 function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
@@ -124,7 +152,7 @@ function Field({ label, required, children }: { label: string; required?: boolea
   );
 }
 
-export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, onDeleted, hideHeader = false }: Props) {
+export default function AddItemForm({ item = null, onSubmitted, onDeleted, title, onClose }: Props) {
   const { alert, confirm } = useDialog();
   const { toast } = useToast();
   const [form, setForm] = useState<ItemCreate>(() => toItemForm(item));
@@ -163,8 +191,7 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
     }
   }
 
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
+  function handleImageChange(file: File | null) {
     setImageFile(file);
     setImagePreview(file ? URL.createObjectURL(file) : item?.image_url ?? null);
   }
@@ -240,38 +267,68 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
-      {!hideHeader && (
-        <div className="flex items-start justify-between gap-3">
-          <div className="space-y-1">
-            <h2 className="text-lg font-semibold text-ivory">
-              {isEditMode ? "아이템 수정" : "아이템 추가"}
-            </h2>
-            <p className="text-sm text-muted">
-              {editingItemId != null
-                ? `아이템 #${editingItemId}의 정보를 수정합니다.`
-                : "상점에 새 아이템을 등록합니다."}
-            </p>
-          </div>
-          {isEditMode && (
-            <Button type="button" variant="outline" onClick={onCancelEdit}>
-              새 아이템 입력
-            </Button>
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <h2 className="text-base font-bold text-ivory">{title}</h2>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
+            <Checkbox
+              checked={form.special_merchant}
+              onCheckedChange={(checked) => setForm((prev) => ({
+                ...prev, special_merchant: checked === true,
+                item_type: checked === true ? (prev.item_type === "accessory" ? "accessory" : "companion") : "consumable",
+                battle_only: checked === true ? false : prev.battle_only,
+                battle_unusable: checked === true ? false : prev.battle_unusable,
+              }))}
+            />
+            특수 상인 판매 물건
+          </label>
+          {form.special_merchant && (
+            <RadioGroup
+              aria-label="아이템 종류"
+              className="flex gap-4"
+              value={form.item_type}
+              onValueChange={(value) => setForm((prev) => ({ ...prev, item_type: value as ItemType, battle_only: false, battle_unusable: false }))}
+            >
+              {SPECIAL_MERCHANT_ITEM_TYPE_OPTIONS.map((option) => (
+                <label key={option.value} className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
+                  <RadioGroupItem value={option.value} />
+                  {option.label}
+                </label>
+              ))}
+            </RadioGroup>
           )}
         </div>
-      )}
+        {onClose && (
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1 text-muted transition-colors hover:bg-primary-light/20 hover:text-ivory"
+            aria-label="닫기"
+          >
+            <X size={18} />
+          </button>
+        )}
+      </div>
 
       {/* 넓은 화면에서는 기본 정보·이미지(왼쪽)와 효과·판매 조건(오른쪽)을 나란히 두어 스크롤 없이 한 번에 보이게 한다. */}
       <div className="grid gap-5 lg:grid-cols-2 lg:gap-x-8">
         <div className="min-w-0 space-y-5">
-          <Field label={form.special_merchant ? "아이템명 (구매 전)" : "아이템명"} required>
-            <Input
-              name="name"
-              required
-              placeholder="ex) 체력 포션"
-              value={form.name}
-              onChange={handleChange}
-            />
-          </Field>
+          <div className={form.special_merchant ? "grid grid-cols-2 gap-4" : undefined}>
+            <Field label={form.special_merchant ? "아이템명 (구매 전)" : "아이템명"} required>
+              <Input
+                name="name"
+                required
+                placeholder="ex) 체력 포션"
+                value={form.name}
+                onChange={handleChange}
+              />
+            </Field>
+            {form.special_merchant && (
+              <Field label="아이템명 (구매 후)">
+                <Input name="name_after_purchase" placeholder={form.name ? `비워두면 "${form.name}"` : "비워두면 구매 전 이름"} value={form.name_after_purchase} onChange={handleChange} />
+              </Field>
+            )}
+          </div>
 
           <div className="grid grid-cols-2 gap-4">
             <Field label="가격 (골드)">
@@ -297,25 +354,6 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
           </div>
           <p className="text-xs text-muted -mt-3">골드 또는 CP 중 하나 이상은 반드시 입력해야 합니다.</p>
 
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
-            <Checkbox
-              checked={form.special_merchant}
-              onCheckedChange={(checked) => setForm((prev) => ({
-                ...prev, special_merchant: checked === true,
-                item_type: checked === true ? (prev.item_type === "accessory" ? "accessory" : "companion") : "consumable",
-                battle_only: checked === true ? false : prev.battle_only,
-                battle_unusable: checked === true ? false : prev.battle_unusable,
-              }))}
-            />
-            특수 상인이 파는 물건입니다.
-          </label>
-
-          {form.special_merchant && (
-            <Field label="아이템명 (구매 후)">
-              <Input name="name_after_purchase" placeholder={form.name ? `비워두면 "${form.name}"` : "비워두면 구매 전 이름"} value={form.name_after_purchase} onChange={handleChange} />
-            </Field>
-          )}
-
           <Field label={form.special_merchant ? "유저용 설명 (구매 전)" : "유저용 설명"}>
             <Textarea
               name="description_user"
@@ -333,70 +371,19 @@ export default function AddItemForm({ item = null, onSubmitted, onCancelEdit, on
           )}
 
           <Field label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"}>
-            <div className="flex items-center gap-4">
-              <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
-                {imagePreview ? (
-                  // blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다.
-                  <Image src={imagePreview} alt="아이템 이미지 미리보기" fill unoptimized className="object-cover" />
-                ) : (
-                  <ImageIcon size={22} className="text-muted" />
-                )}
-              </div>
-              <div className="space-y-1">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
-                />
-                <p className="text-xs text-muted">업로드 시 자동으로 WebP로 변환되며, 5MB를 넘으면 실패합니다.</p>
-              </div>
-            </div>
+            <ItemImageInput label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"} previewUrl={imagePreview} onFileChange={handleImageChange} />
           </Field>
 
           {form.special_merchant && (
             <Field label="아이템 이미지 (구매 후)">
-              <div className="flex items-center gap-4">
-                <div className="relative flex size-20 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-inset">
-                  {afterImagePreview ? <Image src={afterImagePreview} alt="구매 후 이미지 미리보기" fill unoptimized className="object-cover" /> : <ImageIcon size={22} className="text-muted" />}
-                </div>
-                <div className="min-w-0 space-y-1">
-                  <input type="file" accept="image/*" aria-label="구매 후 아이템 이미지" className="min-w-0 text-sm" onChange={(event) => {
-                    const file = event.target.files?.[0] ?? null;
-                    setAfterImageFile(file);
-                    setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
-                  }} />
-                  <p className="text-xs text-muted">비워두면 구매 전 이미지를 사용합니다.</p>
-                </div>
-              </div>
-            </Field>
-          )}
-
-          {form.special_merchant && (
-            <Field label="아이템 종류" required>
-              <div className="grid grid-cols-2 gap-3">
-                {SPECIAL_MERCHANT_ITEM_TYPE_OPTIONS.map((option) => (
-                  <label
-                    key={option.value}
-                    className={`flex cursor-pointer flex-col gap-1 rounded-xl border px-3 py-3 transition-colors ${
-                      form.item_type === option.value
-                        ? "border-gold bg-gold/10"
-                        : "border-line hover:border-line"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="radio"
-                        name="item_type"
-                        checked={form.item_type === option.value}
-                        onChange={() => setForm((prev) => ({ ...prev, item_type: option.value, battle_only: false, battle_unusable: false }))}
-                      />
-                      <span className="font-semibold text-ivory">{option.label}</span>
-                    </div>
-                    <span className="text-xs text-muted">{option.description}</span>
-                  </label>
-                ))}
-              </div>
+              <ItemImageInput
+                label="아이템 이미지 (구매 후)"
+                previewUrl={afterImagePreview}
+                onFileChange={(file) => {
+                  setAfterImageFile(file);
+                  setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
+                }}
+              />
             </Field>
           )}
         </div>
