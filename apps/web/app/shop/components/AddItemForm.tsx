@@ -50,13 +50,17 @@ function ItemImageInput({ label, previewUrl, onFileChange }: {
           <ImageIcon size={22} className="text-muted" />
         )}
       </div>
-      <input
-        type="file"
-        accept="image/*"
-        aria-label={label}
-        onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
-        className="block min-w-0 text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
-      />
+      {/* 선택한 파일명은 미리보기로 충분해 보여주지 않는다. 기본 파일 입력은 숨기고 버튼 모양 label로 연다. */}
+      <label className="shrink-0 cursor-pointer rounded-lg bg-gold/10 px-3 py-1.5 text-sm font-semibold text-gold transition-colors hover:bg-gold/15 focus-within:ring-2 focus-within:ring-gold">
+        이미지 선택
+        <input
+          type="file"
+          accept="image/*"
+          aria-label={label}
+          onChange={(event) => onFileChange(event.target.files?.[0] ?? null)}
+          className="sr-only"
+        />
+      </label>
     </div>
   );
 }
@@ -370,22 +374,23 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
             </Field>
           )}
 
-          <Field label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"}>
-            <ItemImageInput label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"} previewUrl={imagePreview} onFileChange={handleImageChange} />
-          </Field>
-
-          {form.special_merchant && (
-            <Field label="아이템 이미지 (구매 후)">
-              <ItemImageInput
-                label="아이템 이미지 (구매 후)"
-                previewUrl={afterImagePreview}
-                onFileChange={(file) => {
-                  setAfterImageFile(file);
-                  setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
-                }}
-              />
+          <div className={form.special_merchant ? "grid grid-cols-2 gap-4" : undefined}>
+            <Field label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"}>
+              <ItemImageInput label={form.special_merchant ? "아이템 이미지 (구매 전)" : "아이템 이미지"} previewUrl={imagePreview} onFileChange={handleImageChange} />
             </Field>
-          )}
+            {form.special_merchant && (
+              <Field label="아이템 이미지 (구매 후)">
+                <ItemImageInput
+                  label="아이템 이미지 (구매 후)"
+                  previewUrl={afterImagePreview}
+                  onFileChange={(file) => {
+                    setAfterImageFile(file);
+                    setAfterImagePreview(file ? URL.createObjectURL(file) : item?.image_after_purchase_url ?? null);
+                  }}
+                />
+              </Field>
+            )}
+          </div>
         </div>
 
         <div className="min-w-0 space-y-5">
