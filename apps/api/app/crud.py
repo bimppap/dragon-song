@@ -1945,6 +1945,15 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
     # 장바구니 아이템 조회 및 한도 체크용 구매 합계를 한 번에 집계한다(아이템별 반복 쿼리 방지).
     item_ids = [cart_item.item_id for cart_item in data.items]
     items_by_id = {i.id: i for i in db.query(Item).filter(Item.id.in_(item_ids)).all()} if item_ids else {}
+    # 전체 한도가 있는 아이템은 행을 잠근 뒤 판매 합계를 읽어, 다른 캐릭터가 동시에 사도 한도를 넘지 않게 한다.
+    # 잠금 순서를 캐릭터 → 아이템 id 오름차순으로 고정해 요청끼리 교착되지 않는다.
+    limited_item_ids = sorted(item.id for item in items_by_id.values() if item.purchase_limit_global is not None)
+    if limited_item_ids:
+        for item in (
+            db.query(Item).filter(Item.id.in_(limited_item_ids)).order_by(Item.id)
+            .with_for_update().populate_existing().all()
+        ):
+            items_by_id[item.id] = item
     per_character_sums = dict(
         db.query(Purchase.item_id, func.coalesce(func.sum(Purchase.quantity), 0))
         .filter(Purchase.character_id == character.id, Purchase.item_id.in_(item_ids))
