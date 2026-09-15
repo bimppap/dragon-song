@@ -81,6 +81,7 @@ export default function ShopAdminPanel({ tab, onTabChange: setTab }: { tab: Tab;
         open={modalOpen}
         onClose={() => setModalOpen(false)}
         title={editingItem ? "아이템 수정" : "아이템 추가"}
+        className="max-h-[92vh] max-w-5xl"
       >
         <AddItemForm
           key={editingItem?.id ?? "create"}
