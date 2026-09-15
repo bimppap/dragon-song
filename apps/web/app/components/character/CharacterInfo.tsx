@@ -120,7 +120,7 @@ const DETAIL_STATS: {
     "atk" | "atk_p" | "def" | "def_p" | "def_eff" | "presence" | "hp_max" |
     "hp_max_p" | "hp_regen_true" | "hp_regen_fixed" | "heal_eff" |
     "mp_max" | "mp_regen" | "sh" | "dmg_p" | "dmg_r" | "skill_eff_true" |
-    "skill_eff_fixed" | "attn" | "skill_lv" | "skill_cost" | "skill_target"
+    "skill_eff_fixed"
   >;
   label: string;
   description: string;
@@ -128,10 +128,6 @@ const DETAIL_STATS: {
   /** true면 값 자체를 ×100%로 표시(예: 0.3 → 30%). 기본은 (1+값)×100%(예: 0 → 100%, 증폭류 스탯). */
   rawPercent?: boolean;
 }[] = [
-  { key: "attn", label: "주목도", description: "적의 공격 대상 선정에 사용하는 주목도입니다." },
-  { key: "skill_lv", label: "기술 레벨", description: "캐릭터의 기술 레벨입니다." },
-  { key: "skill_cost", label: "기술 비용", description: "기술 사용 비용 보정값입니다." },
-  { key: "skill_target", label: "기술 대상", description: "기술 대상 수 보정값입니다." },
   { key: "atk", label: "공격력", description: "공격 행동 시 에너미에게 주는 기본 피해량입니다." },
   { key: "atk_p", label: "공격력 증폭(%)", isFloat: true, rawPercent: true, description: "공격력에 곱해지는 증폭 배율입니다. 높을수록 공격 피해가 커집니다." },
   { key: "def", label: "방어력", description: "수비할 때 받는 피해를 고정으로 줄여 주는 값입니다." },
