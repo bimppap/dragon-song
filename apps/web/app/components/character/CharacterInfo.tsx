@@ -1618,7 +1618,8 @@ export default function CharacterInfo({
             <CardContent className="flex flex-col gap-3">
               <div className="flex flex-wrap gap-4">
                 <GroupBadgeTile />
-                {selectedDetail.owned_items.map((item) => (
+                {/* 장착 중인 동반자·장신구는 슬롯에서 관리하므로 보유 목록에서는 감춘다. */}
+                {selectedDetail.owned_items.filter((item) => !item.equipped).map((item) => (
                   <OwnedItemTile
                     key={item.item_id}
                     item={item}

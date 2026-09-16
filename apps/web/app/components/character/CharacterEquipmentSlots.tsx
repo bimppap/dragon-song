@@ -80,7 +80,13 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
       if (!items.length) return null;
       const equipped = items.find((item) => item.equipped);
       if (readOnly && !equipped) return null;
-      return <InfoTooltip key={type} content={equipped ? <ItemDetails item={equipped} /> : `${ITEM_TYPE_LABELS[type]} 선택`}>
+      return <InfoTooltip key={type} content={equipped
+        ? <div className="flex max-w-64 flex-col gap-2">
+            <ItemDetails item={equipped} />
+            {!readOnly && <Button type="button" size="sm" variant="secondary" disabled={pending}
+              onClick={(event) => { event.stopPropagation(); void select(equipped); }}>해제</Button>}
+          </div>
+        : `${ITEM_TYPE_LABELS[type]} 선택`}>
         <button type="button" aria-label={readOnly ? `${ITEM_TYPE_LABELS[type]}: ${equipped?.item_name}` : `${ITEM_TYPE_LABELS[type]} 선택${equipped ? `: ${equipped.item_name}` : ""}`}
           aria-haspopup={readOnly ? undefined : "dialog"}
           onClick={readOnly ? undefined : () => { setError(null); setChoiceItem(null); setSelectedType(type); }}
