@@ -658,13 +658,36 @@ def update_character(db: Session, character_id: int, data: CharacterCreate) -> C
     return _to_character_read(character)
 
 
-def _character_stat_upgrades(character: Character) -> dict:
+def _grade_bonus_from_states(states) -> dict[str, int]:
+    """장착 중인 동반자·장신구가 올려 준 등급 수(능력치별).
+
+    이 몫은 AP로 올린 등급이 아니므로 AP 한도(6등급)·AP 환급 계산에서 빼고 본다.
+    덕분에 6등급에서 장신구를 끼면 7등급이 되고, 5등급에서 장신구를 껴 6등급이 된 뒤에도
+    AP로 본래 등급을 6까지 올려 7등급에 도달할 수 있다.
+    """
+    bonus: dict[str, int] = {}
+    for state in states:
+        if not state.equipped:
+            continue
+        for stat in state.chosen_stats or []:
+            bonus[stat] = bonus.get(stat, 0) + 1
+    return bonus
+
+
+def _equipment_grade_bonus(db: Session, character_id: int) -> dict[str, int]:
+    return _grade_bonus_from_states(
+        db.query(CharacterItemState).filter(CharacterItemState.character_id == character_id).all()
+    )
+
+
+def _character_stat_upgrades(character: Character, grade_bonus: dict[str, int] | None = None) -> dict:
     grades = {stat: getattr(character, stat) for stat in GRADE_STAT_FIELDS}
+    bonus = grade_bonus or {}
     before = calculate_stat_grade_totals(**grades)
     result = {}
     for stat, grade in grades.items():
         try:
-            cost = get_stat_upgrade_ap_cost(grade, 1, unrestricted=character.member_id is None)
+            cost = get_stat_upgrade_ap_cost(max(0, grade - bonus.get(stat, 0)), 1, unrestricted=character.member_id is None)
         except ValueError:
             continue
         after = calculate_stat_grade_totals(**{**grades, stat: grade + 1})
@@ -879,7 +902,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
 
     return CharacterDetailRead(
         **_character_read_kwargs(character),
-        stat_upgrades=_character_stat_upgrades(character),
+        stat_upgrades=_character_stat_upgrades(character, _grade_bonus_from_states(item_states_by_id.values())),
         owned_items=[
             CharacterOwnedItemRead(
                 item_id=row.item_id,
@@ -1281,8 +1304,10 @@ def upgrade_character_stat_with_ap(db: Session, character_id: int, stat: str, am
         raise HTTPException(status_code=400, detail="1 이상 입력해야 합니다.")
 
     character = _get_character_or_404(db, character_id)
+    # 장신구로 올라간 등급은 AP 한도 밖이라, AP로 올릴 수 있는 범위는 본래 등급 기준으로 따진다.
+    base_grade = max(0, getattr(character, stat) - _equipment_grade_bonus(db, character_id).get(stat, 0))
     try:
-        ap_cost = get_stat_upgrade_ap_cost(getattr(character, stat), amount, unrestricted=character.member_id is None)
+        ap_cost = get_stat_upgrade_ap_cost(base_grade, amount, unrestricted=character.member_id is None)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if character.ap < ap_cost:
@@ -1467,7 +1492,7 @@ def use_item(
     # 특수 효과: 능력치 변경(용기/인내/자애/지혜 0등급화 + 투자한 AP 환급).
     refunded_ap = 0
     if special_stats & {"stat_reset", "full_reset"}:
-        refunded_ap = _reset_character_stats(character)
+        refunded_ap = _reset_character_stats(character, _equipment_grade_bonus(db, character_id))
     # 특수 효과: 역할 변경. 능력치 초기화 뒤에 적용해야 역할별 피해 감소 기본값이 남는다.
     if "full_reset" in special_stats:
         _change_character_faction(character, chosen_faction)
@@ -9054,20 +9079,25 @@ def _change_character_faction(character: Character, faction: str) -> None:
     character.faction = faction
 
 
-def _reset_character_stats(character: Character) -> int:
-    """용기/인내/자애/지혜를 전부 0등급으로 되돌리고, 투자했던 AP를 전부 환급한다.
+def _reset_character_stats(character: Character, grade_bonus: dict[str, int] | None = None) -> int:
+    """용기/인내/자애/지혜를 AP로 올리기 전 등급으로 되돌리고, 투자했던 AP를 전부 환급한다.
 
     가입 시 무료로 받았던 2포인트분도 같은 단가로 환산해 AP로 돌려준다.
+    장착 중인 장신구가 올려 준 등급은 AP로 얻은 것이 아니므로 그대로 남긴다.
     등급에서 파생되는 스탯(공격력·최대 체력 등)은 upgrade_character_stat_with_ap()와
     같은 방식으로 감소분만 되돌린다. 환급한 AP 총량을 반환한다.
     """
-    refunded_ap = sum(get_stat_grade_refund_ap(getattr(character, stat)) for stat in GRADE_STAT_FIELDS)
+    bonus = grade_bonus or {}
+    refunded_ap = sum(
+        get_stat_grade_refund_ap(max(0, getattr(character, stat) - bonus.get(stat, 0)))
+        for stat in GRADE_STAT_FIELDS
+    )
 
     before = calculate_stat_grade_totals(
         character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
     )
     for stat in GRADE_STAT_FIELDS:
-        setattr(character, stat, 0)
+        setattr(character, stat, bonus.get(stat, 0))
     after = calculate_stat_grade_totals(
         character.stat_courage, character.stat_endurance, character.stat_charity, character.stat_wisdom,
     )
