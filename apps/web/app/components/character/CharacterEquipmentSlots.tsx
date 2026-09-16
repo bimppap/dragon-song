@@ -14,7 +14,7 @@ const SLOT_TYPES: SlotType[] = ["companion", "accessory"];
 function ItemDetails({ item }: { item: CharacterOwnedItem }) {
   return <div className="flex flex-col gap-2 text-left">
     <strong>{item.item_name}</strong>
-    <p className="whitespace-pre-wrap text-xs text-muted">{item.item_description}</p>
+    {item.item_description && <p className="whitespace-pre-wrap text-xs text-muted">{item.item_description}</p>}
     <p className="text-xs">효과: {item.effects.length ? item.effects.map(formatEffect).join(", ") : "효과 없음"}</p>
   </div>;
 }
@@ -64,8 +64,9 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
               onClick={() => void unequip(equipped)}>해제</Button>}
           </div>
         : `장착한 ${ITEM_TYPE_LABELS[type]} 없음`}>
-        <span aria-label={equipped ? `${ITEM_TYPE_LABELS[type]}: ${equipped.item_name}` : `${ITEM_TYPE_LABELS[type]} 없음`}
-          className="flex w-10 shrink-0 cursor-default flex-col items-center gap-1 text-center">
+        {/* 키보드로도 설명·해제 버튼을 열 수 있게 포커스를 받는다. */}
+        <span tabIndex={0} aria-label={equipped ? `${ITEM_TYPE_LABELS[type]}: ${equipped.item_name}` : `${ITEM_TYPE_LABELS[type]} 없음`}
+          className="flex w-10 shrink-0 cursor-default flex-col items-center gap-1 text-center focus-visible:outline-2 focus-visible:outline-gold">
           <span className={cn("relative flex size-9 items-center justify-center border-2 bg-gold/10 text-gold", equipped ? "border-gold" : "border-line")}>
             <ItemIcon item={equipped} type={type} />
           </span>
