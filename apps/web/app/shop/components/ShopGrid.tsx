@@ -18,15 +18,6 @@ interface Props {
   refreshKey: number;
 }
 
-/** 무제한이 아니면 남은 구매 수, 무제한이면 null. */
-function remainingStock(item: Item): number | null {
-  if (item.remaining_global !== null && item.remaining_per_character !== null)
-    return Math.min(item.remaining_global, item.remaining_per_character);
-  if (item.remaining_global !== null) return item.remaining_global;
-  if (item.remaining_per_character !== null) return item.remaining_per_character;
-  return null;
-}
-
 function PriceText({ item }: { item: Item }) {
   return (
     <span className="font-num text-sm font-semibold">
@@ -70,6 +61,9 @@ function ItemTooltip({ item }: { item: Item }) {
         <span className="font-semibold text-ivory">효과 </span>
         {item.effects.length > 0 ? item.effects.map(formatEffect).join(", ") : "효과 없음"}
       </div>
+      {item.purchase_limit_per_character !== null && (
+        <p className="text-xs text-muted">1인당 {item.purchase_limit_per_character}개 구매 가능</p>
+      )}
     </div>
   );
 }
@@ -125,8 +119,10 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {items.map((item) => {
-        const stock = remainingStock(item);
+        // 카드에는 전체 구매한도의 잔여 수량만 보여주고, 1인당 한도는 툴팁으로 안내한다.
+        const stock = item.remaining_global;
         const soldOut = stock === 0;
+        const limitReached = item.remaining_per_character === 0;
         const inCart = cartItemIds.has(item.id);
         const notYetAvailable = !item.sale_paused && !item.purchasable && isUpcoming(item, chaptersByName, activeChapter);
         const dimmed = item.sale_paused || notYetAvailable;
@@ -165,12 +161,12 @@ export default function ShopGrid({ characterId, cartItemIds, onAddToCart, refres
                   <Button
                     className="ml-auto shrink-0"
                     size="sm"
-                    variant={inCart ? "secondary" : soldOut ? "outline" : "default"}
-                    disabled={soldOut}
+                    variant={inCart ? "secondary" : soldOut || limitReached ? "outline" : "default"}
+                    disabled={soldOut || limitReached}
                     onClick={() => onAddToCart(item)}
                   >
                     <ShoppingCart size={13} />
-                    {soldOut ? "품절" : inCart ? "추가" : "담기"}
+                    {soldOut ? "품절" : limitReached ? "구매 완료" : inCart ? "추가" : "담기"}
                   </Button>
                 </div>
               </div>
