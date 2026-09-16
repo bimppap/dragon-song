@@ -2061,7 +2061,8 @@ def bulk_purchase(db: Session, data: BulkPurchaseRequest, is_admin: bool = False
                 remain = max(0, item.purchase_limit_global - already_global)
                 raise HTTPException(
                     status_code=400,
-                    detail=f"'{item.name}' 전체 구매 한도 초과 (남은 수량: {remain}개)"
+                    detail=f"'{item.name}'은(는) 품절되었습니다." if remain == 0
+                    else f"'{item.name}'은(는) {remain}개만 남아 있습니다."
                 )
 
         validated.append((item, qty))

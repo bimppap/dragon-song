@@ -4,6 +4,7 @@ SQLite는 FOR UPDATE를 무시해 실제 동시 구매 경합은 재현되지 �
 """
 import unittest
 
+from fastapi import HTTPException
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session
 
@@ -47,6 +48,23 @@ class PurchaseLimitLockTest(unittest.TestCase):
         ]))
         self.assertEqual(self.locked_entities(), [Character, Item])
         self.assertEqual(self.db.query(Purchase).count(), 2)
+
+    def test_sold_out_and_partial_stock_messages(self):
+        self.db.add(Purchase(character_id=self.character.id, item_id=self.limited.id, quantity=4))
+        self.db.commit()
+        with self.assertRaises(HTTPException) as error:
+            crud.bulk_purchase(self.db, BulkPurchaseRequest(character_id=self.character.id, items=[
+                {"item_id": self.limited.id, "quantity": 2},
+            ]))
+        self.assertEqual(error.exception.detail, "'한정'은(는) 1개만 남아 있습니다.")
+
+        self.db.add(Purchase(character_id=self.character.id, item_id=self.limited.id, quantity=1))
+        self.db.commit()
+        with self.assertRaises(HTTPException) as error:
+            crud.bulk_purchase(self.db, BulkPurchaseRequest(character_id=self.character.id, items=[
+                {"item_id": self.limited.id, "quantity": 1},
+            ]))
+        self.assertEqual(error.exception.detail, "'한정'은(는) 품절되었습니다.")
 
     def test_unlimited_items_do_not_take_item_lock(self):
         crud.bulk_purchase(self.db, BulkPurchaseRequest(character_id=self.character.id, items=[
