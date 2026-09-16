@@ -20,12 +20,34 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: "create", label: "캐릭터 생성", icon: UserPlus },
 ];
 
+type ListLayout = "card" | "table";
+
+/** 목록을 표/카드 중 무엇으로 볼지 바꾸는 버튼. 관리자·러너 화면이 같은 문구를 쓴다. */
+function ListLayoutToggle({ layout, onChange }: { layout: ListLayout; onChange: (next: ListLayout) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(layout === "table" ? "card" : "table")}
+      className="text-sm font-semibold text-muted transition-colors hover:text-gold"
+    >
+      {layout === "table" ? "카드로 확인하기" : "표로 확인하기"}
+    </button>
+  );
+}
+
 function AdminCharacterConsole() {
   const { toast } = useToast();
   const [tab, setTab] = useState<Tab>("list");
+  // 관리자는 표 보기가 기본이고, 필요할 때 러너와 같은 카드 보기로 바꾼다.
+  const [listLayout, setListLayout] = useState<ListLayout>("table");
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loadingCharacters, setLoadingCharacters] = useState(true);
   const [focusCharacterId, setFocusCharacterId] = useState<number | null>(null);
+
+  function openCharacter(character: Character) {
+    setFocusCharacterId(character.id);
+    setTab("info");
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -42,16 +64,26 @@ function AdminCharacterConsole() {
   return <PageContainer max="4xl" className="space-y-8">
     <TabBar tabs={TABS} active={tab} onChange={setTab} />
     {tab === "list" && (
-      <CharacterList
-        characters={characters}
-        loading={loadingCharacters}
-        showAdminFlags
-        editableAdminFlags
-        onSelectCharacter={(character) => {
-          setFocusCharacterId(character.id);
-          setTab("info");
-        }}
-      />
+      <div className="space-y-4">
+        <div className="flex justify-end">
+          <ListLayoutToggle layout={listLayout} onChange={setListLayout} />
+        </div>
+        {listLayout === "table" ? (
+          <CharacterList
+            characters={characters}
+            loading={loadingCharacters}
+            showAdminFlags
+            editableAdminFlags
+            onSelectCharacter={openCharacter}
+          />
+        ) : (
+          <CharacterCardGrid
+            characters={characters}
+            loading={loadingCharacters}
+            onSelectCharacter={openCharacter}
+          />
+        )}
+      </div>
     )}
     {tab === "info" && (
       <CharacterInfo
@@ -76,12 +108,10 @@ type RunnerView =
   | { mode: "list" }
   | { mode: "other"; character: Character };
 
-type RunnerListLayout = "card" | "table";
-
 function MyCharacterConsole({ role }: { role: MemberRole }) {
   const { toast } = useToast();
   const [view, setView] = useState<RunnerView>({ mode: "mine" });
-  const [listLayout, setListLayout] = useState<RunnerListLayout>("card");
+  const [listLayout, setListLayout] = useState<ListLayout>("card");
   const [character, setCharacter] = useState<Character | null>(null);
   const [loading, setLoading] = useState(true);
   const [others, setOthers] = useState<Character[]>([]);
@@ -138,23 +168,7 @@ function MyCharacterConsole({ role }: { role: MemberRole }) {
           &lt;&lt; 내 캐릭터로 돌아가기
         </button>
         <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          {listLayout === "table" ? (
-            <button
-              type="button"
-              onClick={() => setListLayout("card")}
-              className="text-sm font-semibold text-muted transition-colors hover:text-gold"
-            >
-              카드로 확인하기
-            </button>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setListLayout("table")}
-              className="text-sm font-semibold text-muted transition-colors hover:text-gold"
-            >
-              표로 확인하기
-            </button>
-          )}
+          <ListLayoutToggle layout={listLayout} onChange={setListLayout} />
         </div>
       </div>
       {listLayout === "table" ? (
