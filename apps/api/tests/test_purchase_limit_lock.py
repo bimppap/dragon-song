@@ -66,6 +66,15 @@ class PurchaseLimitLockTest(unittest.TestCase):
             ]))
         self.assertEqual(error.exception.detail, "'한정'은(는) 품절되었습니다.")
 
+    def test_sold_out_item_stays_visible_to_runners_during_sale(self):
+        """전체 한도를 다 판 아이템도 판매 기간에는 목록에 남아 "품절"로 보여야 한다."""
+        self.db.add(Purchase(character_id=self.character.id, item_id=self.limited.id, quantity=5))
+        self.db.commit()
+        listed = {item.id: item for item in crud.get_items_with_stock(self.db, self.character.id)}
+        self.assertEqual(listed[self.limited.id].remaining_global, 0)
+        # 러너 목록은 purchasable 한 아이템만 내려주므로(main.list_items), 이 값이 True여야 계속 보인다.
+        self.assertTrue(listed[self.limited.id].purchasable)
+
     def test_unlimited_items_do_not_take_item_lock(self):
         crud.bulk_purchase(self.db, BulkPurchaseRequest(character_id=self.character.id, items=[
             {"item_id": self.unlimited.id, "quantity": 1},
