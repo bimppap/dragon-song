@@ -155,6 +155,22 @@ class EnemyActionCountTest(unittest.TestCase):
                 self.character.hp = 100
                 self.db.commit()
 
+    def test_practice_battle_rolls_back_a_turn(self):
+        """모의전도 실전과 같이 직전 턴을 되돌릴 수 있어야 한다."""
+        result = crud.start_battle(self.db, self.admin, BattleStartRequest(
+            mode="practice", enemy_ids=[self.enemy.id], character_ids=[self.character.id, self.other.id],
+        ))
+        battle = self.db.get(BattleSession, result.id)
+        self.telegraph(battle, [1, 1])
+        before = [p["hp"] for p in battle.participants]
+        after = self.enemy_turn(battle)
+        self.assertNotEqual([p["hp"] for p in after.participants], before)
+
+        restored = crud.undo_last_turn(self.db, battle.id)
+        self.assertEqual((restored.round, restored.phase), (1, "enemy"))
+        self.assertEqual([p["hp"] for p in restored.participants], before)
+        self.assertEqual([entry["phase"] for entry in restored.log], ["telegraph", "ally"])
+
     def test_undo_restores_the_complete_ordered_plan(self):
         battle = self.start()
         telegraph = self.telegraph(battle, [0, 1])

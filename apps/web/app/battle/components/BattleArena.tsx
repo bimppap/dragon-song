@@ -2551,7 +2551,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               {submitting ? "진행 중..." : `라운드 ${session.round} · 에너미의 턴 진행`}
             </Button>
           )}
-          {session.mode === "real" && describePreviousTurn(session) != null && (
+          {describePreviousTurn(session) != null && (
             <Button
               variant="outline"
               onClick={handleUndoTurn}
