@@ -140,6 +140,8 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
       onPurchased();
     } catch (e) {
       await alert(e instanceof Error ? e.message : "구매 실패");
+      // 한도 초과처럼 다른 사람의 구매로 재고가 바뀐 경우가 있어, 실패 뒤에도 목록을 새로 읽는다.
+      onPurchased();
     } finally {
       setCartLoading(false);
     }
