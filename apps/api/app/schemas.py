@@ -755,6 +755,8 @@ class CharacterDetailRead(CharacterRead):
     item_history: list[ItemHistoryEntry]
     reward_history: list[RewardRead]
     attendance_streak: int = 0
+    # 진행 중인 실전 전투 참가자면 아이템 사용·장착을 막는다(화면에서도 버튼을 감춘다).
+    in_live_battle: bool = False
 
 
 class ChallengeCreate(BaseModel):

@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app import crud
 from app.db import Base
-from app.models import Character, Member, Purchase, CharacterItemState
+from app.models import BattleSession, Character, Member, Purchase, CharacterItemState
 from app.schemas import ItemCreate
 
 
@@ -77,6 +77,40 @@ class AccessoryGradeChoiceTest(unittest.TestCase):
             crud.upgrade_character_stat_with_ap(self.db, c.id, 'stat_courage', 1)
         crud.unequip_item(self.db, c.id, self.items[0].id)
         self.assertEqual(c.stat_courage, 6)
+
+    def start_live_real_battle(self):
+        battle = BattleSession(mode="real", chapter="1장", phase="ally", round=1, status="in_progress",
+                               participants=[{"character_id": self.character.id, "name": "장착자"}],
+                               enemies=[], summons=[], log=[])
+        self.db.add(battle)
+        self.db.commit()
+        return battle
+
+    def test_live_real_battle_blocks_equip_unequip_and_use(self):
+        c = self.character
+        crud.equip_item(self.db, c.id, self.items[0].id, ['stat_courage'])
+        battle = self.start_live_real_battle()
+        self.assertTrue(crud.get_character_detail(self.db, c.id).in_live_battle)
+        with self.assertRaises(HTTPException):
+            crud.unequip_item(self.db, c.id, self.items[0].id)
+        with self.assertRaises(HTTPException):
+            crud.equip_item(self.db, c.id, self.items[1].id, ['stat_endurance', 'stat_wisdom'])
+        self.assertEqual(c.stat_courage, 2)
+
+        potion = crud.create_item(self.db, ItemCreate(name='물약', price_gold=1, item_type='consumable',
+            effects=[{'stat': 'hp', 'delta': 1}]))
+        self.db.add(Purchase(character_id=c.id, item_id=potion.id, quantity=1))
+        self.db.commit()
+        with self.assertRaises(HTTPException):
+            crud.use_item(self.db, c.id, potion.id)
+
+        # 모의전은 막지 않고, 실전이 끝나면 다시 풀린다.
+        battle.mode = "practice"
+        self.db.commit()
+        self.assertFalse(crud.get_character_detail(self.db, c.id).in_live_battle)
+        crud.unequip_item(self.db, c.id, self.items[0].id)
+        self.assertEqual(c.stat_courage, 1)
+        crud.use_item(self.db, c.id, potion.id)
 
     def test_invalid_choice_and_delete_equipped_item(self):
         c = self.character

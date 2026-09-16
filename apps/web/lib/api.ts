@@ -663,6 +663,8 @@ export interface CharacterDetail extends Character {
   item_history: ItemHistoryEntry[];
   reward_history: Reward[];
   attendance_streak: number;
+  /** 진행 중인 실전 전투 참가자면 true. 아이템 사용·장착 변경이 막힌다. */
+  in_live_battle: boolean;
 }
 
 export type RewardGrant =

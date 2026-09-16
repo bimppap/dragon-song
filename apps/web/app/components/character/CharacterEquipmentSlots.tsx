@@ -1,19 +1,18 @@
 "use client";
 
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
-import { Gem, PawPrint, X } from "lucide-react";
+import { Gem, PawPrint } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { Button } from "@/components/ui/button";
-import { equipItem, unequipItem, formatEffect, ITEM_TYPE_LABELS, type CharacterDetail, type CharacterOwnedItem } from "@/lib/api";
-import { GRADE_CHOICE_STAT_OPTIONS } from "@/lib/api";
+import { unequipItem, formatEffect, ITEM_TYPE_LABELS, type CharacterDetail, type CharacterOwnedItem } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type SlotType = "companion" | "accessory";
 const SLOT_TYPES: SlotType[] = ["companion", "accessory"];
 
 function ItemDetails({ item }: { item: CharacterOwnedItem }) {
-  return <div className="flex max-w-64 flex-col gap-2 text-left">
+  return <div className="flex flex-col gap-2 text-left">
     <strong>{item.item_name}</strong>
     <p className="whitespace-pre-wrap text-xs text-muted">{item.item_description}</p>
     <p className="text-xs">효과: {item.effects.length ? item.effects.map(formatEffect).join(", ") : "효과 없음"}</p>
@@ -27,48 +26,26 @@ function ItemIcon({ item, type }: { item?: CharacterOwnedItem; type: SlotType })
     : <Icon size={18} />;
 }
 
-export default function CharacterEquipmentSlots({ character, onUpdated, readOnly = false }: {
+/** 장착 중인 동반자·장신구 슬롯. 장착은 "보유 중인 아이템"에서 하고, 여기서는 해제만 한다. */
+export default function CharacterEquipmentSlots({ character, onUpdated, readOnly = false, locked = false }: {
   character: CharacterDetail;
   onUpdated: (detail: CharacterDetail) => void;
-  /** 다른 러너의 캐릭터를 열람할 때: 장착된 동반자/장신구 정보만 보여주고 장착 변경은 막는다. */
+  /** 다른 러너의 캐릭터를 열람할 때: 장착된 동반자/장신구 정보만 보여주고 해제는 막는다. */
   readOnly?: boolean;
+  /** 실전 전투 중처럼 장착 변경이 금지된 상태. */
+  locked?: boolean;
 }) {
-  const titleId = useId();
-  const [choiceItem, setChoiceItem] = useState<CharacterOwnedItem | null>(null);
-  const [chosenStats, setChosenStats] = useState<string[]>([]);
-  const [selectedType, setSelectedType] = useState<SlotType | null>(null);
-  const [portalContainer, setPortalContainer] = useState<HTMLDialogElement | null>(null);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const dialog = useRef<HTMLDialogElement>(null);
-  const attachDialog = useCallback((element: HTMLDialogElement | null) => {
-    dialog.current = element;
-    setPortalContainer(element);
-  }, []);
   const owned = character.owned_items.filter((item) => item.quantity > 0);
-  const choices = owned.filter((item) => item.item_type === selectedType);
 
-  useEffect(() => {
-    if (selectedType) dialog.current?.showModal();
-    else dialog.current?.close();
-  }, [selectedType]);
-
-  async function select(item: CharacterOwnedItem, selected?: string[]) {
-    if (!item.equipped && selected === undefined && item.effects.some((effect) => effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2")) {
-      setChoiceItem(item);
-      setChosenStats([]);
-      return;
-    }
-    setChoiceItem(null);
+  async function unequip(item: CharacterOwnedItem) {
     setPending(true);
     setError(null);
     try {
-      const next = await (item.equipped ? unequipItem : equipItem)(character.id, item.item_id, { chosenStats: selected ?? [] });
-      onUpdated(next);
-      setSelectedType(null);
-      setChoiceItem(null);
+      onUpdated(await unequipItem(character.id, item.item_id));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "장착 변경 실패");
+      setError(e instanceof Error ? e.message : "해제 실패");
     } finally {
       setPending(false);
     }
@@ -83,45 +60,18 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
       return <InfoTooltip key={type} content={equipped
         ? <div className="flex max-w-64 flex-col gap-2">
             <ItemDetails item={equipped} />
-            {!readOnly && <Button type="button" size="sm" variant="secondary" disabled={pending}
-              onClick={(event) => { event.stopPropagation(); void select(equipped); }}>해제</Button>}
+            {!readOnly && !locked && <Button type="button" size="sm" variant="secondary" disabled={pending}
+              onClick={() => void unequip(equipped)}>해제</Button>}
           </div>
-        : `${ITEM_TYPE_LABELS[type]} 선택`}>
-        <button type="button" aria-label={readOnly ? `${ITEM_TYPE_LABELS[type]}: ${equipped?.item_name}` : `${ITEM_TYPE_LABELS[type]} 선택${equipped ? `: ${equipped.item_name}` : ""}`}
-          aria-haspopup={readOnly ? undefined : "dialog"}
-          onClick={readOnly ? undefined : () => { setError(null); setChoiceItem(null); setSelectedType(type); }}
-          className={cn("flex w-10 shrink-0 flex-col items-center gap-1 text-center", readOnly ? "cursor-default" : "cursor-pointer")}>
+        : `장착한 ${ITEM_TYPE_LABELS[type]} 없음`}>
+        <span aria-label={equipped ? `${ITEM_TYPE_LABELS[type]}: ${equipped.item_name}` : `${ITEM_TYPE_LABELS[type]} 없음`}
+          className="flex w-10 shrink-0 cursor-default flex-col items-center gap-1 text-center">
           <span className={cn("relative flex size-9 items-center justify-center border-2 bg-gold/10 text-gold", equipped ? "border-gold" : "border-line")}>
             <ItemIcon item={equipped} type={type} />
           </span>
-        </button>
+        </span>
       </InfoTooltip>;
     })}
-    <dialog ref={attachDialog} aria-labelledby={titleId} onClose={() => setSelectedType(null)} onCancel={(event) => { if (pending) event.preventDefault(); }}
-      onClick={(event) => { if (event.target === event.currentTarget && !pending) setSelectedType(null); }}
-      className="m-auto w-[min(36rem,calc(100%-2rem))] border border-line bg-surface p-5 text-ivory backdrop:bg-black/60">
-      <div className="mb-4 flex items-center justify-between gap-3">
-        <h2 id={titleId} className="font-semibold">보유 중인 {selectedType ? ITEM_TYPE_LABELS[selectedType] : "아이템"}</h2>
-        <Button type="button" variant="ghost" size="icon" aria-label="닫기" disabled={pending} onClick={() => setSelectedType(null)}><X /></Button>
-      </div>
-      <p className="mb-3 text-xs text-muted">하나를 선택하면 기존 장착이 교체됩니다. 장착 중인 항목을 다시 선택하면 해제합니다.</p>
-      <div className="flex gap-3 overflow-x-auto pb-3">
-        {choices.map((item) => <InfoTooltip key={item.item_id} portalContainer={portalContainer} content={<ItemDetails item={item} />}>
-          <button type="button" disabled={pending} aria-pressed={item.equipped} onClick={() => select(item)}
-            className={cn("flex w-24 shrink-0 cursor-pointer flex-col items-center gap-2 rounded-lg border p-2 disabled:opacity-50", item.equipped ? "border-gold bg-gold/10" : "border-line")}>
-            <span className="relative flex size-16 items-center justify-center text-gold"><ItemIcon item={item} type={selectedType ?? "companion"} /></span>
-            <span className="text-xs font-semibold">{item.item_name}</span>
-            <span className="text-[10px] text-muted">{item.equipped ? "장착 중 · 해제" : "장착"}</span>
-          </button>
-        </InfoTooltip>)}
-      </div>
-      {choiceItem && <div className="space-y-2">
-        <p className="text-xs">{choiceItem.item_name}: 능력치를 {choiceItem.effects.some((e) => e.stat === "grade_choice_2") ? 2 : 1}개 선택하세요.</p>
-        <div className="flex flex-wrap gap-3">{GRADE_CHOICE_STAT_OPTIONS.map((option) => <label key={option.value} className="text-xs"><input type="checkbox" checked={chosenStats.includes(option.value)} onChange={(event) => setChosenStats((prev) => event.target.checked ? [...prev, option.value] : prev.filter((stat) => stat !== option.value))} />{option.label}</label>)}</div>
-        <Button type="button" disabled={pending || chosenStats.length !== (choiceItem.effects.some((e) => e.stat === "grade_choice_2") ? 2 : 1)} onClick={() => select(choiceItem, chosenStats)}>선택한 능력치로 장착</Button>
-      </div>}
-      {pending && <p role="status" className="text-xs text-muted">장착 변경 중...</p>}
-      {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
-    </dialog>
+    {error && <p role="alert" className="text-xs text-red-500">{error}</p>}
   </>;
 }

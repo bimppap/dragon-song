@@ -752,6 +752,7 @@ function OwnedItemTile({
   currentFaction,
   loading,
   readOnly = false,
+  locked = false,
   onUse,
   onEquip,
   onUnequip,
@@ -761,6 +762,8 @@ function OwnedItemTile({
   currentFaction: Faction | null;
   loading: boolean;
   readOnly?: boolean;
+  /** 실전 전투 중처럼 아이템 사용·장착이 금지된 상태. */
+  locked?: boolean;
   onUse: (selection?: UseItemSelection) => void;
   onEquip: (selection?: UseItemSelection) => void;
   onUnequip: () => void;
@@ -815,7 +818,7 @@ function OwnedItemTile({
           )}
         </div>
       </InfoTooltip>
-      {readOnly || item.battle_only ? null : isConsumable ? (
+      {readOnly || locked || item.battle_only ? null : isConsumable ? (
         <Button
           size="sm"
           variant="outline"
@@ -1420,7 +1423,7 @@ export default function CharacterInfo({
                 <div className="flex items-start gap-2">
                   <CharacterOwnedSkills key={`skills:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
                   <CharacterClonedSkills key={`cloned:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} />
-                  <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
+                  <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} locked={selectedDetail.in_live_battle} />
                 </div>
               </div>
 
@@ -1616,6 +1619,9 @@ export default function CharacterInfo({
               </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
+              {selectedDetail.in_live_battle && !readOnly && (
+                <p className="text-xs text-gold">실전 전투가 진행 중입니다. 전투가 끝날 때까지 아이템 사용과 장착 변경을 할 수 없습니다.</p>
+              )}
               <div className="flex flex-wrap gap-4">
                 <GroupBadgeTile />
                 {/* 장착 중인 동반자·장신구는 슬롯에서 관리하므로 보유 목록에서는 감춘다. */}
@@ -1625,6 +1631,7 @@ export default function CharacterInfo({
                     item={item}
                     characterId={selectedDetail.id}
                     readOnly={readOnly}
+                    locked={selectedDetail.in_live_battle}
                     loading={itemActionLoadingId === item.item_id}
                     currentFaction={selectedDetail.faction}
                     onUse={(selection) => handleItemAction(item.item_id, consumeItem, selection)}

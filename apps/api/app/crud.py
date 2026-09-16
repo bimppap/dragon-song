@@ -829,6 +829,27 @@ def delete_character(db: Session, character_id: int) -> str | None:
     return image_url
 
 
+def _live_real_battle_character_ids(db: Session) -> set[int]:
+    """진행 중인 실전 전투에 참가 중인 캐릭터 id. 전투 중에는 캐릭터 정보 화면의 아이템 조작을 막는다."""
+    rows = db.query(BattleSession.participants).filter(
+        BattleSession.mode == "real", BattleSession.status == "in_progress",
+    ).all()
+    return {
+        participant["character_id"]
+        for (participants,) in rows
+        for participant in participants or []
+        if participant.get("character_id") is not None
+    }
+
+
+def _assert_not_in_live_real_battle(db: Session, character_id: int) -> None:
+    if character_id in _live_real_battle_character_ids(db):
+        raise HTTPException(
+            status_code=400,
+            detail="실전 전투가 진행 중인 동안에는 아이템을 사용하거나 장착을 바꿀 수 없습니다.",
+        )
+
+
 def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
     """도전과제/캐릭터 생성 시 이미 진행도 행을 함께 만들어두므로(create_character_for_member,
     create_character, create_challenge) 여기서 다시 시드할 필요가 없다."""
@@ -903,6 +924,7 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
     return CharacterDetailRead(
         **_character_read_kwargs(character),
         stat_upgrades=_character_stat_upgrades(character, _grade_bonus_from_states(item_states_by_id.values())),
+        in_live_battle=character.id in _live_real_battle_character_ids(db),
         owned_items=[
             CharacterOwnedItemRead(
                 item_id=row.item_id,
@@ -1421,6 +1443,7 @@ def use_item(
         raise HTTPException(status_code=400, detail="소모형 아이템만 사용할 수 있습니다.")
     if item.battle_only:
         raise HTTPException(status_code=400, detail="전투 중에만 사용할 수 있는 아이템입니다.")
+    _assert_not_in_live_real_battle(db, character_id)
 
     owned_quantity = _sum_quantity(db, item_id, character_id)
     state = _get_or_create_item_state(db, character_id, item_id)
@@ -1599,6 +1622,7 @@ def equip_item(db: Session, character_id: int, item_id: int, chosen_stats: list[
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
     if item.item_type not in ("companion", "accessory"):
         raise HTTPException(status_code=400, detail="동반자 또는 장신구만 장착할 수 있습니다.")
+    _assert_not_in_live_real_battle(db, character_id)
 
     owned_quantity = _sum_quantity(db, item_id, character_id)
     if owned_quantity <= 0:
@@ -1646,6 +1670,7 @@ def unequip_item(db: Session, character_id: int, item_id: int) -> CharacterDetai
     if not item:
         raise HTTPException(status_code=404, detail="아이템을 찾을 수 없습니다.")
 
+    _assert_not_in_live_real_battle(db, character_id)
     state = _get_or_create_item_state(db, character_id, item_id)
     if not state.equipped:
         raise HTTPException(status_code=400, detail="장착 중인 아이템이 아닙니다.")
