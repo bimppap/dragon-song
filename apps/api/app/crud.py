@@ -5396,6 +5396,8 @@ def _query_active_battle_skills_by_character(db: Session, character_ids: list[in
             skill_lv=skill_levels.get(character_id, 0),
             custom_name=unlock.custom_name,
             custom_image_url=unlock.custom_image_url,
+            custom_description=unlock.custom_description,
+            custom_description_color=unlock.custom_description_color,
         )
     _expand_clone_skills(db, by_character)
     return by_character
@@ -5407,6 +5409,8 @@ def _battle_skill_dict(
     skill_lv: int,
     custom_name: str | None = None,
     custom_image_url: str | None = None,
+    custom_description: str | None = None,
+    custom_description_color: str | None = None,
 ) -> dict:
     return {
         "id": node.id,
@@ -5428,6 +5432,9 @@ def _battle_skill_dict(
         "cleanse_count": _resolved_skill_node_value(node, "cleanse_count"),
         "formula": _resolved_skill_node_value(node, "formula"),
         "description": _resolved_skill_node_value(node, "description"),
+        # 러너가 직접 쓴 설명. 원본 설명을 대체하지 않고 전투 툴팁에 함께 보여준다.
+        "custom_description": custom_description,
+        "custom_description_color": custom_description_color,
         "var_name": _resolved_skill_node_value(node, "var_name"),
     }
 
@@ -5733,6 +5740,8 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
                 if skill:
                     effect["skill_image_url"] = skill.get("image_url")
                     effect["skill_description"] = skill.get("description")
+                    effect["skill_custom_description"] = skill.get("custom_description")
+                    effect["skill_custom_description_color"] = skill.get("custom_description_color")
     return BattleSessionRead(
         id=session.id,
         mode=session.mode,
@@ -6922,11 +6931,15 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         existing_guard[0]["skill_name"] = skill_name
                         existing_guard[0]["skill_image_url"] = selected_skill.get("image_url")
                         existing_guard[0]["skill_description"] = selected_skill.get("description")
+                        existing_guard[0]["skill_custom_description"] = selected_skill.get("custom_description")
+                        existing_guard[0]["skill_custom_description_color"] = selected_skill.get("custom_description_color")
                     else:
                         _add_action_status_effect(target, {
                             "effect_type": "escort_guard", "affinity": "buff",
                             "skill_image_url": selected_skill.get("image_url"),
                             "skill_description": selected_skill.get("description"),
+                            "skill_custom_description": selected_skill.get("custom_description"),
+                            "skill_custom_description_color": selected_skill.get("custom_description_color"),
                             "source_character_id": p["character_id"], "source_name": p["name"],
                             "skill_name": skill_name, "var_name": var_name, "stackable": True,
                         }, participants=participants, enemies=enemies)

@@ -42,6 +42,16 @@ class SkillCustomDescriptionTest(unittest.TestCase):
     def set_description(self, description, color=""):
         return self.customize(custom_description=description, custom_description_color=color)
 
+    def test_battle_skill_payload_carries_custom_description(self):
+        """전투 화면(러너 관전 포함) 툴팁이 쓰도록 활성 기술 응답에도 커스텀 설명을 싣는다."""
+        self.set_description("붉은 '검기'가 흐른다", "#ff8800")
+        with patch.object(crud, "_seed_skill_tree_if_empty"):
+            skills = crud._query_active_battle_skills_by_character(self.db, [self.runner.id])
+        skill = skills[self.runner.id][self.node.id]
+        self.assertEqual(skill["description"], "대상에게 30% 피해")
+        self.assertEqual(skill["custom_description"], "붉은 '검기'가 흐른다")
+        self.assertEqual(skill["custom_description_color"], "#ff8800")
+
     def test_custom_description_and_color_are_saved_alongside_original_description(self):
         node = self.set_description("붉은 '검기'가 흐른다", "#ff8800")
         self.assertEqual(node.custom_description, "붉은 '검기'가 흐른다")

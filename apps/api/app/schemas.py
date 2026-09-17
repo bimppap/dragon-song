@@ -1133,6 +1133,8 @@ class BattleActiveSkillRead(BaseModel):
     activation_order: int | None = None
     cleanse_count: int | None = None
     description: str | None = None
+    custom_description: str | None = None
+    custom_description_color: str | None = None
 
 
 class BattleActiveSkillsRead(BaseModel):

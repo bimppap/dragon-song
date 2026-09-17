@@ -1736,6 +1736,8 @@ export interface BattleSummonState {
 }
 
 export interface BattleStatusEffect {
+  skill_custom_description?: string | null;
+  skill_custom_description_color?: string | null;
   color?: string;
   stat?: string;
   applied_delta?: number;
@@ -2099,6 +2101,9 @@ export interface BattleActiveSkill {
   activation_order: number | null;
   cleanse_count: number | null;
   description: string | null;
+  /** 러너가 직접 쓴 설명. 원본 설명과 함께 보여준다. */
+  custom_description: string | null;
+  custom_description_color: string | null;
 }
 
 export interface BattleActiveSkills {

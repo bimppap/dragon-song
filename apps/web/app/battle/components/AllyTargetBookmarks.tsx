@@ -2,6 +2,7 @@
 
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import InfoTooltip from "@/components/common/InfoTooltip";
+import { QuotedDescription } from "@/components/skill/SkillTreeGrid";
 
 export interface AllyTargetBookmark {
   key: string;
@@ -9,8 +10,13 @@ export interface AllyTargetBookmark {
   name: string;
   imageUrl?: string | null;
   description?: string | null;
+  /** 러너가 직접 쓴 기술 설명(과 따옴표 강조색). 원본 설명과 함께 보여준다. */
+  customDescription?: string | null;
+  customDescriptionColor?: string | null;
   pending?: boolean;
 }
+
+const CUSTOM_DESCRIPTION_ACCENT = { text: "text-gold", border: "", line: "" };
 
 /** DOM 순서로 겹치고, hover/focus 동안만 해당 북마크를 앞으로 올린다. */
 export default function AllyTargetBookmarks({ items }: { items: AllyTargetBookmark[] }) {
@@ -23,6 +29,11 @@ export default function AllyTargetBookmarks({ items }: { items: AllyTargetBookma
             <p className="font-semibold">{item.casterName} · {item.name}</p>
             <p className="text-xs text-muted">{item.pending ? "행동 선택 중" : "효과 적용 중"}</p>
             {item.description && <p className="mt-1 whitespace-pre-line">{item.description}</p>}
+            {item.customDescription && (
+              <p className="mt-1 whitespace-pre-line border-t border-line pt-1 text-ivory/85">
+                <QuotedDescription text={item.customDescription} color={item.customDescriptionColor} accent={CUSTOM_DESCRIPTION_ACCENT} />
+              </p>
+            )}
           </div>
         }>
           <button type="button" aria-label={`${item.casterName}의 ${item.name}`} className="relative h-14 w-11 shrink-0 cursor-help hover:z-10 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-gold">
