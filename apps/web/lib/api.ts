@@ -2084,6 +2084,8 @@ export interface BattleActiveSkill {
   book: SkillBook;
   tier: number;
   default_name: string;
+  /** 기술 종류 식별자(예: 충전 = "ab_charge"). 이름은 등급 표기가 붙어 달라질 수 있다. */
+  var_name: string | null;
   display_name: string;
   image_url: string | null;
   trigger_type: SkillTriggerType | null;

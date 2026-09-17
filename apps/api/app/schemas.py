@@ -1118,6 +1118,8 @@ class BattleActiveSkillRead(BaseModel):
     book: str
     tier: int
     default_name: str
+    # 기술 이름은 등급에 따라 "충전 III"처럼 달라지므로, 화면은 이 식별자로 기술 종류를 구분한다.
+    var_name: str | None = None
     display_name: str
     image_url: str | None = None
     trigger_type: SkillTriggerType | None = None

@@ -432,6 +432,15 @@ const AUTO_ALLY_TARGET_SKILL_NAMES = new Set([...ALL_ALLY_TARGET_SKILL_NAMES]);
 // 충전은 기절한 아군에게는 걸 수 없고 시전자 자신도 대상이 되지 않는다(서버 ab_charge와 동일 조건).
 const ACTIVE_ALLY_SKILL_NAMES = new Set(["충전", "재생"]);
 const SELF_EXCLUDED_SKILL_NAMES = new Set(["충전"]);
+// 기술 이름에는 "충전 III"처럼 등급이 붙어 이름만으로는 종류를 알 수 없어, 충전은 식별자로 가린다.
+const CHARGE_VAR_NAME = "ab_charge";
+function isChargeSkill(skill: BattleActiveSkill): boolean {
+  return skill.var_name === CHARGE_VAR_NAME;
+}
+/** 기절한 아군은 대상이 되지 않는 기술(서버 active_only와 같은 조건). */
+function targetsActiveAlliesOnly(skill: BattleActiveSkill): boolean {
+  return skill.category === "강화" || ACTIVE_ALLY_SKILL_NAMES.has(skill.default_name) || isChargeSkill(skill);
+}
 
 type BattleSkillTargetMode = "enemy-single" | "enemy-multi" | "ally-single" | "ally-multi" | "self" | "none";
 
@@ -481,12 +490,12 @@ function skillTargetChoices(actor: BattleParticipant, skill: BattleActiveSkill, 
     return { count, options: session.enemies.filter((enemy) => isEnemyTargetable(enemy, session.round)).map((enemy) => ({ key: `enemy:${enemy.enemy_id}`, label: enemy.name })) };
   }
   if (mode === "none") return { count, options: [{ key: `ally:${actor.character_id}`, label: "본인" }] };
-  const eligible = skill.category === "강화" || ACTIVE_ALLY_SKILL_NAMES.has(skill.default_name) ? isTargetable : isHealable;
+  const eligible = targetsActiveAlliesOnly(skill) ? isTargetable : isHealable;
   return {
     count,
     options: session.participants
       .filter((target) => eligible(target, session.round)
-        && (!SELF_EXCLUDED_SKILL_NAMES.has(skill.default_name) || target.character_id !== actor.character_id))
+        && (!(SELF_EXCLUDED_SKILL_NAMES.has(skill.default_name) || isChargeSkill(skill)) || target.character_id !== actor.character_id))
       .map((target) => ({ key: `ally:${target.character_id}`, label: `${target.name}${target.downed ? " (기절)" : ""}` })),
   };
 }
@@ -577,7 +586,7 @@ function draftAllyTargetIds(actor: BattleParticipant, draft: CharDraft, skill: B
   if (draft.kind !== "skill" || !skill) return [];
   if (isAllSkillTarget(skill.target)) {
     return skill.target === "아군 전원"
-      ? session.participants.filter((p) => (skill.category === "강화" || ACTIVE_ALLY_SKILL_NAMES.has(skill.default_name)) ? isTargetable(p, session.round) : isHealable(p, session.round)).map((p) => p.character_id)
+      ? session.participants.filter((p) => targetsActiveAlliesOnly(skill) ? isTargetable(p, session.round) : isHealable(p, session.round)).map((p) => p.character_id)
       : [];
   }
   const keys = resolvedSkillTargetKeys(actor, draft, skill, session);
@@ -621,8 +630,6 @@ function affordableBattleSkills(skills: BattleActiveSkill[], p: BattleParticipan
   return skills.filter((skill) => p.mp >= battleSkillCost(skill, p));
 }
 
-const CHARGE_SKILL_NAME = "충전";
-
 /**
  * 이번 턴에 아군의 충전으로 받을 마나. 서버는 같은 발동 순서에서 충전을 먼저 처리하므로,
  * 충전받을 마나까지 더해 이번 턴에 쓸 수 있는 기술을 고를 수 있다.
@@ -641,7 +648,7 @@ function plannedChargeMp(
     if (draft?.kind !== "skill") continue;
     const affordable = affordableBattleSkills(skillsByCharacter[actor.character_id] ?? [], actor);
     const skill = (draft.skill_node_id != null ? affordable.find((entry) => entry.id === draft.skill_node_id) : null) ?? affordable[0] ?? null;
-    if (skill?.default_name !== CHARGE_SKILL_NAME) continue;
+    if (!skill || !isChargeSkill(skill)) continue;
     if (!draftAllyTargetIds(actor, draft, skill, session).includes(target.character_id)) continue;
     restored += Math.max(0, Math.floor(skill.power ?? 0));
   }
