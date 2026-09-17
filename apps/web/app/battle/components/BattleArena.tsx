@@ -621,6 +621,38 @@ function affordableBattleSkills(skills: BattleActiveSkill[], p: BattleParticipan
   return skills.filter((skill) => p.mp >= battleSkillCost(skill, p));
 }
 
+const CHARGE_SKILL_NAME = "충전";
+
+/**
+ * 이번 턴에 아군의 충전으로 받을 마나. 서버는 같은 발동 순서에서 충전을 먼저 처리하므로,
+ * 충전받을 마나까지 더해 이번 턴에 쓸 수 있는 기술을 고를 수 있다.
+ * 시전자가 충전 비용을 못 내면 충전도 실패하므로 세지 않고, 충전이 충전을 부르는 연쇄는 보지 않는다.
+ */
+function plannedChargeMp(
+  target: BattleParticipant,
+  drafts: Record<number, CharDraft>,
+  skillsByCharacter: Record<number, BattleActiveSkill[]>,
+  session: BattleSession,
+): number {
+  let restored = 0;
+  for (const actor of session.participants) {
+    if (actor.character_id === target.character_id || !isTargetable(actor, session.round)) continue;
+    const draft = drafts[actor.character_id];
+    if (draft?.kind !== "skill") continue;
+    const affordable = affordableBattleSkills(skillsByCharacter[actor.character_id] ?? [], actor);
+    const skill = (draft.skill_node_id != null ? affordable.find((entry) => entry.id === draft.skill_node_id) : null) ?? affordable[0] ?? null;
+    if (skill?.default_name !== CHARGE_SKILL_NAME) continue;
+    if (!draftAllyTargetIds(actor, draft, skill, session).includes(target.character_id)) continue;
+    restored += Math.max(0, Math.floor(skill.power ?? 0));
+  }
+  return restored;
+}
+
+/** 충전받을 마나까지 더해 이번 턴에 쓸 수 있는 마나로 본 참가자. */
+function withPlannedMp(p: BattleParticipant, plannedMp: number | undefined): BattleParticipant {
+  return plannedMp == null || plannedMp === p.mp ? p : { ...p, mp: plannedMp };
+}
+
 function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
   switch (kind) {
     case "attack":
@@ -1090,8 +1122,10 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
       setCharDrafts((prev) => {
         let changed = false;
         const next = { ...prev };
-        for (const participant of session.participants) {
-        if (!isTargetable(participant, session.round)) continue;
+        for (const raw of session.participants) {
+        if (!isTargetable(raw, session.round)) continue;
+        // 충전을 받을 예정이면 그 마나까지 쓸 수 있는 것으로 보고 판단한다.
+        const participant = withPlannedMp(raw, Math.min(raw.max_mp, raw.mp + plannedChargeMp(raw, prev, skillsByCharacter, session)));
         const draft = next[participant.character_id];
         if (!draft) continue;
         const battleSkills = skillsByCharacter[participant.character_id];
@@ -1334,7 +1368,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
       const p = participantsById.get(numericCharacterId);
       const battleSkills = skillsByCharacter[numericCharacterId] ?? [];
       if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) continue;
-      const affordableSkills = affordableBattleSkills(battleSkills, p);
+      const affordableSkills = affordableBattleSkills(battleSkills, withUsableMp(p));
       if (bulkActionKind === "skill" && affordableSkills.length === 0) continue;
       patchChar(numericCharacterId, {
         kind: bulkActionKind,
@@ -1645,13 +1679,28 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
     () => new Map((session?.participants ?? []).map((participant) => [participant.character_id, participant])),
     [session?.participants],
   );
+  // 이번 턴에 아군의 충전으로 받을 마나까지 더한, 캐릭터별 사용 가능 마나.
+  const usableMpById = useMemo(() => {
+    const usable = new Map<number, number>();
+    if (!session) return usable;
+    for (const participant of session.participants) {
+      const planned = plannedChargeMp(participant, charDrafts, skillsByCharacter, session);
+      if (planned > 0) usable.set(participant.character_id, Math.min(participant.max_mp, participant.mp + planned));
+    }
+    return usable;
+  }, [session, charDrafts, skillsByCharacter]);
+  const withUsableMp = useCallback(
+    (p: BattleParticipant) => withPlannedMp(p, usableMpById.get(p.character_id)),
+    [usableMpById],
+  );
+
   /** 캐릭터 카드와 같은 규칙으로 이 캐릭터가 사용할 기술을 찾는다. */
   const resolveSelectedSkill = useCallback((characterId: number, skillNodeId: number | null) => {
     const participant = participantsById.get(characterId);
     if (!participant) return null;
-    const affordable = affordableBattleSkills(skillsByCharacter[characterId] ?? [], participant);
+    const affordable = affordableBattleSkills(skillsByCharacter[characterId] ?? [], withUsableMp(participant));
     return (skillNodeId != null ? affordable.find((skill) => skill.id === skillNodeId) : null) ?? affordable[0] ?? null;
-  }, [participantsById, skillsByCharacter]);
+  }, [participantsById, skillsByCharacter, withUsableMp]);
   const targetableParticipants = useMemo(
     () => (session?.participants ?? []).filter((participant) => isTargetable(participant, session?.round ?? 0)),
     [session?.participants, session?.round],
@@ -2048,7 +2097,9 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           const draft = charDrafts[p.character_id];
           const active = isActive(p);
           const battleSkills = skillsByCharacter[p.character_id] ?? [];
-          const affordableSkills = affordableBattleSkills(battleSkills, p);
+          // 아군의 충전을 받을 예정이면 그 마나까지 쓸 수 있는 것으로 보고 고른다.
+          const usableMp = usableMpById.get(p.character_id) ?? p.mp;
+          const affordableSkills = affordableBattleSkills(battleSkills, withUsableMp(p));
           const items = itemsByCharacter[p.character_id] ?? [];
           const showActionUi = canAct && phase === "ally" && active && draft;
           const actionPreview = readOnly && phase === "ally" && active ? draftPreview?.[p.character_id] : undefined;
@@ -2209,7 +2260,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   onChange={(value) => patchChar(p.character_id, { protect_target_character_id: Number(value) })}
                   options={targetableParticipants.map((target) => {
                     const isSelf = target.character_id === p.character_id;
-                    const disabled = !isSelf && p.mp < 1;
+                    const disabled = !isSelf && usableMp < 1;
                     return {
                       key: String(target.character_id),
                       label: isSelf ? "본인" : disabled ? `${target.name} (MP 부족)` : target.name,
@@ -2260,7 +2311,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                           </SelectItem>
                         ));
                         const skillUnavailable = kind === "skill" && affordableSkills.length === 0;
-                        const healUnavailable = kind === "heal" && p.mp < 1;
+                        const healUnavailable = kind === "heal" && usableMp < 1;
                         const unavailable = skillUnavailable || healUnavailable;
                         return (
                           <SelectItem key={kind} value={kind} disabled={unavailable}>

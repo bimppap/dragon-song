@@ -56,15 +56,38 @@ class SkillMultiTargetTest(unittest.TestCase):
         self.db.close()
         self.engine.dispose()
 
-    def _skill_node(self, book, branch, name, category, var_name, *, power, target):
+    def _skill_node(self, book, branch, name, category, var_name, *, power, target, cost=1):
         node = SkillNode(
             book=book, branch=branch, col=0, tier=1, default_name=name,
             trigger_type="즉발형", category=category, stackable=False, var_name=var_name,
-            cost=1, power=power, target=target, target_side="ALLY", activation_order=1, is_public=True,
+            cost=cost, power=power, target=target, target_side="ALLY", activation_order=1, is_public=True,
         )
         self.db.add(node)
         self.db.flush()
         return node
+
+    def test_charge_lets_the_target_use_a_skill_in_the_same_turn(self):
+        """충전은 같은 발동 순서에서 먼저 처리되어, 받은 마나를 그 턴에 바로 쓸 수 있다."""
+        # 충전 대상이 시전자보다 먼저 행동하는 순서로 두어도 충전이 앞선다.
+        caster, ally_a, ally_b = self.battle.participants
+        self.battle.participants = [ally_a, caster, ally_b]
+        heal = self._skill_node("헌신의 서", 2, "회복2", "회복", "ab_cure", power=0.5, target="1", cost=2)
+        self.db.add(CharacterSkillUnlock(character_id=self.ally_a.id, node_id=heal.id))
+        self.db.commit()
+
+        result = crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(character_actions=[
+            CharacterActionInput(character_id=self.caster.id, kind="skill", skill_node_id=self.charge.id,
+                                 skill_target_keys=[f"ally:{self.ally_a.id}", f"ally:{self.ally_b.id}"]),
+            CharacterActionInput(character_id=self.ally_a.id, kind="skill", skill_node_id=heal.id,
+                                 skill_target_keys=[f"ally:{self.ally_b.id}"]),
+        ]))
+
+        events = result.log[-1]["events"]
+        self.assertEqual([event for event in events if "MP 부족" in event], [])
+        by_name = {p["name"]: p for p in result.participants}
+        self.assertEqual(by_name["아군 A"]["mp"], 0)  # 충전 2 → 회복2 비용 2
+        self.assertEqual(by_name["아군 B"]["mp"], 2)
+        self.assertGreater(by_name["아군 B"]["hp"], 50)
 
     def _resolve(self, skill, keys):
         return crud.resolve_battle_ally_turn(

@@ -6777,7 +6777,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         else:
             priority = BATTLE_ACTION_KIND_PRIORITY.get(action.kind, BATTLE_ACTION_KIND_PRIORITY["attack"])
         queued_actions.append((priority, order_index, p, action, selected_skill))
-    queued_actions.sort(key=lambda entry: (entry[0], entry[1]))
+    # 같은 발동 순서에서는 충전을 먼저 처리해, 충전으로 채운 마나를 그 턴에 바로 쓸 수 있게 한다.
+    queued_actions.sort(key=lambda entry: (
+        entry[0], 0 if (entry[4] or {}).get("var_name") == "ab_charge" else 1, entry[1],
+    ))
 
     # 아이템 사용 행동에 쓰일 아이템을 미리 한 번에 조회해 행동 처리 루프에서의 개별 조회(N+1)를 없앤다.
     item_action_ids = {
