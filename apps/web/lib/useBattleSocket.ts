@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { BattleDraftOutbox } from "./battleDraftOutbox";
 import { getToken } from "@/lib/token";
-import type { BattleSession, CharacterActionKind } from "@/lib/api";
+import type { BattleSession, CharacterActionKind, SkillBook } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -16,6 +16,8 @@ export interface BattleDraftPreviewEntry {
   skill_image_url: string | null;
   /** 러너 화면은 기술 목록을 받지 않아 노드 id로 설명을 찾을 수 없다. 이름·이미지와 같이 실어 보낸다. */
   skill_description: string | null;
+  /** 커스텀 설명의 강조색을 정하지 않았을 때 쓸 기본색(서별 색)을 찾기 위한 값. */
+  skill_book?: SkillBook | null;
   /** 러너가 직접 쓴 설명(과 강조색). 원본 설명과 함께 보여준다. */
   skill_custom_description?: string | null;
   skill_custom_description_color?: string | null;

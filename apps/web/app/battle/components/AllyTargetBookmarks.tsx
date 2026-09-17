@@ -3,6 +3,8 @@
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { QuotedDescription } from "@/components/skill/SkillTreeGrid";
+import { skillBookAccent } from "@/components/skill/bookAccent";
+import type { SkillBook } from "@/lib/api";
 
 export interface AllyTargetBookmark {
   key: string;
@@ -10,13 +12,13 @@ export interface AllyTargetBookmark {
   name: string;
   imageUrl?: string | null;
   description?: string | null;
+  /** 커스텀 설명의 강조색을 정하지 않았을 때 쓸 서(book)별 기본색. */
+  book?: SkillBook | null;
   /** 러너가 직접 쓴 기술 설명(과 따옴표 강조색). 원본 설명과 함께 보여준다. */
   customDescription?: string | null;
   customDescriptionColor?: string | null;
   pending?: boolean;
 }
-
-const CUSTOM_DESCRIPTION_ACCENT = { text: "text-gold", border: "", line: "" };
 
 /** DOM 순서로 겹치고, hover/focus 동안만 해당 북마크를 앞으로 올린다. */
 export default function AllyTargetBookmarks({ items }: { items: AllyTargetBookmark[] }) {
@@ -31,7 +33,7 @@ export default function AllyTargetBookmarks({ items }: { items: AllyTargetBookma
             {item.description && <p className="mt-1 whitespace-pre-line">{item.description}</p>}
             {item.customDescription && (
               <p className="mt-1 whitespace-pre-line border-t border-line pt-1 text-ivory/85">
-                <QuotedDescription text={item.customDescription} color={item.customDescriptionColor} accent={CUSTOM_DESCRIPTION_ACCENT} />
+                <QuotedDescription text={item.customDescription} color={item.customDescriptionColor} accent={skillBookAccent(item.book)} />
               </p>
             )}
           </div>

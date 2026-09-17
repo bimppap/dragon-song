@@ -16,3 +16,10 @@ export const BOOK_ACCENT: Record<SkillBook, BookAccent> = {
   "헌신의 서": { text: "text-green-400", border: "border-green-500/60 text-green-400", line: "#4ade80" },
   "탐구의 서": { text: "text-purple-400", border: "border-purple-500/60 text-purple-400", line: "#c084fc" },
 };
+
+/** 서를 알 수 없을 때(전투 툴팁 등) 쓰는 기본 강조색. */
+export const DEFAULT_BOOK_ACCENT: BookAccent = { text: "text-gold", border: "border-gold/60 text-gold", line: "#e8c936" };
+
+export function skillBookAccent(book: SkillBook | null | undefined): BookAccent {
+  return (book && BOOK_ACCENT[book]) || DEFAULT_BOOK_ACCENT;
+}

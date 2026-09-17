@@ -5740,6 +5740,7 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
                 if skill:
                     effect["skill_image_url"] = skill.get("image_url")
                     effect["skill_description"] = skill.get("description")
+                    effect["skill_book"] = skill.get("book")
                     effect["skill_custom_description"] = skill.get("custom_description")
                     effect["skill_custom_description_color"] = skill.get("custom_description_color")
     return BattleSessionRead(
@@ -6931,6 +6932,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         existing_guard[0]["skill_name"] = skill_name
                         existing_guard[0]["skill_image_url"] = selected_skill.get("image_url")
                         existing_guard[0]["skill_description"] = selected_skill.get("description")
+                        existing_guard[0]["skill_book"] = selected_skill.get("book")
                         existing_guard[0]["skill_custom_description"] = selected_skill.get("custom_description")
                         existing_guard[0]["skill_custom_description_color"] = selected_skill.get("custom_description_color")
                     else:
@@ -6938,6 +6940,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             "effect_type": "escort_guard", "affinity": "buff",
                             "skill_image_url": selected_skill.get("image_url"),
                             "skill_description": selected_skill.get("description"),
+                            "skill_book": selected_skill.get("book"),
                             "skill_custom_description": selected_skill.get("custom_description"),
                             "skill_custom_description_color": selected_skill.get("custom_description_color"),
                             "source_character_id": p["character_id"], "source_name": p["name"],

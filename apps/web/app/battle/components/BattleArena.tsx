@@ -51,6 +51,7 @@ import {
   type Enemy,
   type EnemyActionKind,
   type BattleSessionEnvironment,
+  type SkillBook,
 } from "@/lib/api";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import AlertBanner from "@/components/common/AlertBanner";
@@ -65,7 +66,7 @@ import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
 import BattlePairGrid from "./BattlePairGrid";
 import { QuotedDescription } from "@/components/skill/SkillTreeGrid";
-import type { BookAccent } from "@/components/skill/bookAccent";
+import { skillBookAccent } from "@/components/skill/bookAccent";
 import EnemyAttackArrows, { enemyAttackColor, type EnemyAttackMark } from "./EnemyAttackArrows";
 import PixelBorderGlow from "./PixelBorderGlow";
 import { changedPairPartnerIds, reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
@@ -183,15 +184,12 @@ function describePreviousTurn(session: BattleSession): string | null {
   return null;
 }
 
-// 커스텀 설명의 따옴표 강조색을 지정하지 않았을 때 쓰는 기본 강조색.
-const CUSTOM_DESCRIPTION_ACCENT: BookAccent = { text: "text-gold", border: "", line: "" };
-
-/** 러너가 직접 쓴 기술 설명. 원본 설명 아래에 이어 붙인다. */
-function CustomSkillDescription({ text, color }: { text?: string | null; color?: string | null }) {
+/** 러너가 직접 쓴 기술 설명. 원본 설명 아래에 이어 붙이고, 강조색을 정하지 않았으면 서(book) 색을 쓴다. */
+function CustomSkillDescription({ text, color, book }: { text?: string | null; color?: string | null; book?: SkillBook | null }) {
   if (!text) return null;
   return (
     <div className="mt-1 whitespace-pre-line border-t border-line pt-1 text-ivory/85">
-      <QuotedDescription text={text} color={color} accent={CUSTOM_DESCRIPTION_ACCENT} />
+      <QuotedDescription text={text} color={color} accent={skillBookAccent(book)} />
     </div>
   );
 }
@@ -1239,6 +1237,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           skill_name: skill?.display_name ?? null,
           skill_image_url: skill?.image_url ?? null,
           skill_description: skill?.description ?? null,
+          skill_book: skill?.book ?? null,
           skill_custom_description: skill?.custom_description ?? null,
           skill_custom_description_color: skill?.custom_description_color ?? null,
           item_id: charDraft.item_id,
@@ -2149,12 +2148,13 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                 name: actionPreview.skill_name ?? "기술",
                 imageUrl: actionPreview.skill_image_url,
                 description: actionPreview.skill_description,
+                book: actionPreview.skill_book,
                 customDescription: actionPreview.skill_custom_description,
                 customDescriptionColor: actionPreview.skill_custom_description_color,
               }
             : actionPreview?.kind === "item" && actionPreview.item_id != null
               ? { name: actionPreview.item_name ?? "아이템", imageUrl: actionPreview.item_image_url, description: null,
-                  customDescription: null, customDescriptionColor: null }
+                  book: null, customDescription: null, customDescriptionColor: null }
               : null;
           const kindOptions = allowedKinds(p, hasDowned, battleSkills.length > 0);
           const selectedSkill = draft?.skill_node_id != null
@@ -2385,6 +2385,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               name: effect.skill_name ?? "경호",
               imageUrl: effect.skill_image_url,
               description: effect.skill_description,
+              book: effect.skill_book,
               customDescription: effect.skill_custom_description,
               customDescriptionColor: effect.skill_custom_description_color,
             }));
@@ -2398,6 +2399,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   name: preview.kind === "skill" ? preview.skill_name ?? "기술" : CHAR_ACTION_LABEL[preview.kind],
                   imageUrl: preview.kind === "skill" ? preview.skill_image_url : FACTION_POSITION_IMAGE[preview.kind === "defend" ? "수비" : "치유"],
                   description: preview.kind === "skill" ? preview.skill_description : preview.kind === "defend" ? "대상 아군이 받을 공격을 대신 방어합니다." : "대상 아군의 체력을 회복합니다.",
+                  book: preview.kind === "skill" ? preview.skill_book : null,
                   customDescription: preview.kind === "skill" ? preview.skill_custom_description : null,
                   customDescriptionColor: preview.kind === "skill" ? preview.skill_custom_description_color : null, pending: true });
               } else {
@@ -2409,6 +2411,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   name: skill?.display_name ?? CHAR_ACTION_LABEL[action.kind],
                   imageUrl: skill ? skill.image_url : FACTION_POSITION_IMAGE[action.kind === "defend" ? "수비" : "치유"],
                   description: skill ? skill.description : action.kind === "defend" ? "대상 아군이 받을 공격을 대신 방어합니다." : "대상 아군의 체력을 회복합니다.",
+                  book: skill?.book ?? null,
                   customDescription: skill?.custom_description ?? null,
                   customDescriptionColor: skill?.custom_description_color ?? null, pending: true });
               }
@@ -2484,7 +2487,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                             {previewIcon.description && (
                               <div className="mt-1 whitespace-pre-line text-muted">{previewIcon.description}</div>
                             )}
-                            <CustomSkillDescription text={previewIcon.customDescription} color={previewIcon.customDescriptionColor} />
+                            <CustomSkillDescription text={previewIcon.customDescription} color={previewIcon.customDescriptionColor} book={previewIcon.book} />
                           </div>
                         }
                       >

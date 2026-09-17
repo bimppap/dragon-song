@@ -1736,6 +1736,7 @@ export interface BattleSummonState {
 }
 
 export interface BattleStatusEffect {
+  skill_book?: SkillBook | null;
   skill_custom_description?: string | null;
   skill_custom_description_color?: string | null;
   color?: string;
