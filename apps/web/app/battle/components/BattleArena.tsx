@@ -364,6 +364,7 @@ function ResourceBar({
   max,
   color,
   shield = 0,
+  pending = 0,
 }: {
   icon: LucideIcon;
   iconClassName?: string;
@@ -371,14 +372,18 @@ function ResourceBar({
   max: number;
   color: string;
   shield?: number;
+  /** 이번 턴에 채워질 예정인 양(충전 마나). 최대치를 넘지 않는 만큼만 흰 구간으로 덧붙인다. */
+  pending?: number;
 }) {
   const current = Math.max(0, value);
   const currentShield = Math.max(0, shield);
   // 최대 체력을 넘는 보호막도 잘리지 않게 HP와 보호막을 같은 비율로 표시한다.
   const scale = currentShield > 0 ? Math.max(max, current + currentShield) : max;
+  const pendingAmount = Math.max(0, Math.min(pending, scale - current - currentShield));
   const pct = scale > 0 ? Math.min(100, (current / scale) * 100) : 0;
   const shieldPct = scale > 0 ? (currentShield / scale) * 100 : 0;
-  const label = `${fmt(value)}/${fmt(max)}${currentShield > 0 ? ` + ${fmt(currentShield)}` : ""}`;
+  const pendingPct = scale > 0 ? (pendingAmount / scale) * 100 : 0;
+  const label = `${fmt(value)}/${fmt(max)}${currentShield > 0 ? ` + ${fmt(currentShield)}` : ""}${pendingAmount > 0 ? ` + ${fmt(pendingAmount)}` : ""}`;
 
   return (
     <div className="flex items-center gap-2">
@@ -386,11 +391,14 @@ function ResourceBar({
       <div className="relative h-[18px] flex-1 overflow-hidden rounded-full border border-line bg-white/10" aria-label={label} title={label}>
         <div className="flex h-full">
           <div
-            className={cn("h-full shrink-0 transition-all", currentShield > 0 ? "rounded-l-full" : "rounded-full", color)}
+            className={cn("h-full shrink-0 transition-all", currentShield > 0 || pendingAmount > 0 ? "rounded-l-full" : "rounded-full", color)}
             style={{ width: `${pct}%` }}
           />
           {currentShield > 0 && (
-            <div className="h-full shrink-0 rounded-r-full bg-gold transition-all" style={{ width: `${shieldPct}%` }} />
+            <div className={cn("h-full shrink-0 bg-gold transition-all", pendingAmount > 0 ? "" : "rounded-r-full")} style={{ width: `${shieldPct}%` }} />
+          )}
+          {pendingAmount > 0 && (
+            <div className="h-full shrink-0 rounded-r-full bg-white/60 transition-all" style={{ width: `${pendingPct}%` }} />
           )}
         </div>
         <span className="pointer-events-none absolute inset-0 flex items-center justify-center font-num text-[10px] font-semibold text-ivory [text-shadow:0_1px_2px_black]">
@@ -421,25 +429,34 @@ const PHASE_LABEL: Record<BattleSession["phase"], string> = {
   enemy: "에너미 턴",
 };
 
-const SELF_TARGET_SKILL_NAMES = new Set(["모루", "불굴"]);
-const SINGLE_ENEMY_SKILL_NAMES = new Set(["강타", "격류", "위해"]);
-const MULTI_ENEMY_SKILL_NAMES = new Set(["분쇄", "파괴"]);
-const SINGLE_ALLY_SKILL_NAMES = new Set(["반격", "보호", "수호", "회복", "생명", "정화", "승화"]);
-const MULTI_ALLY_SKILL_NAMES = new Set(["구호"]);
+// 기술 이름에는 "충전 III"처럼 등급이 붙어 이름만으로는 종류를 알 수 없다.
+// 그래서 서버와 같은 기술 식별자(var_name)로 가린다. 괄호 안은 그 식별자를 쓰는 기술 이름이다.
+const SELF_TARGET_SKILL_VARS = new Set(["ab_anvil"]);                                  // 모루·불굴
+const SINGLE_ENEMY_SKILL_VARS = new Set(["ab_strike", "ab_harm"]);                     // 강타·격류·위해
+const MULTI_ENEMY_SKILL_VARS = new Set(["ab_crushing"]);                               // 분쇄·파괴
+const SINGLE_ALLY_SKILL_VARS = new Set(["ab_counter", "ab_protect", "ab_cure", "ab_purification"]); // 반격·보호·수호·회복·생명·정화·승화
 // 구호는 대상을 지정할 수 있고, 미지정 시 체력이 낮은 순으로 자동 지정한다.
-const ALL_ALLY_TARGET_SKILL_NAMES = new Set(["후광", "장막"]);
-const AUTO_ALLY_TARGET_SKILL_NAMES = new Set([...ALL_ALLY_TARGET_SKILL_NAMES]);
+const AID_SKILL_VAR = "ab_aid";                                                        // 구호
+const MULTI_ALLY_SKILL_VARS = new Set([AID_SKILL_VAR]);
+const ALL_ALLY_TARGET_SKILL_VARS = new Set(["ab_halo", "ab_veil"]);                    // 후광·장막
+const AUTO_ALLY_TARGET_SKILL_VARS = new Set([...ALL_ALLY_TARGET_SKILL_VARS]);
 // 충전은 기절한 아군에게는 걸 수 없고 시전자 자신도 대상이 되지 않는다(서버 ab_charge와 동일 조건).
-const ACTIVE_ALLY_SKILL_NAMES = new Set(["충전", "재생"]);
-const SELF_EXCLUDED_SKILL_NAMES = new Set(["충전"]);
-// 기술 이름에는 "충전 III"처럼 등급이 붙어 이름만으로는 종류를 알 수 없어, 충전은 식별자로 가린다.
-const CHARGE_VAR_NAME = "ab_charge";
+const CHARGE_SKILL_VAR = "ab_charge";                                                  // 충전
+const ACTIVE_ALLY_SKILL_VARS = new Set([CHARGE_SKILL_VAR, "ab_regeneration"]);         // 충전·재생
+const SELF_EXCLUDED_SKILL_VARS = new Set([CHARGE_SKILL_VAR]);
+
+function isSkillVar(skill: BattleActiveSkill, vars: Set<string>): boolean {
+  return skill.var_name != null && vars.has(skill.var_name);
+}
 function isChargeSkill(skill: BattleActiveSkill): boolean {
-  return skill.var_name === CHARGE_VAR_NAME;
+  return skill.var_name === CHARGE_SKILL_VAR;
+}
+function isAidSkill(skill: BattleActiveSkill | null | undefined): boolean {
+  return skill?.var_name === AID_SKILL_VAR;
 }
 /** 기절한 아군은 대상이 되지 않는 기술(서버 active_only와 같은 조건). */
 function targetsActiveAlliesOnly(skill: BattleActiveSkill): boolean {
-  return skill.category === "강화" || ACTIVE_ALLY_SKILL_NAMES.has(skill.default_name) || isChargeSkill(skill);
+  return skill.category === "강화" || isSkillVar(skill, ACTIVE_ALLY_SKILL_VARS);
 }
 
 type BattleSkillTargetMode = "enemy-single" | "enemy-multi" | "ally-single" | "ally-multi" | "self" | "none";
@@ -452,21 +469,21 @@ function skillTargetCount(target: string | null): number | null {
 
 function getBattleSkillTargetMode(skill: BattleActiveSkill): BattleSkillTargetMode {
   if (isAllSkillTarget(skill.target)) return skill.target === "아군 전원" ? "ally-multi" : "enemy-multi";
-  if (SELF_TARGET_SKILL_NAMES.has(skill.default_name) || skill.target === "SELF") return "self";
+  if (isSkillVar(skill, SELF_TARGET_SKILL_VARS) || skill.target === "SELF") return "self";
   const configuredCount = skillTargetCount(skill.target);
   const multi = configuredCount != null && configuredCount > 1;
   if (skill.target_side === "ENEMY") return multi ? "enemy-multi" : "enemy-single";
   if (skill.target_side === "ALLY") return multi ? "ally-multi" : "ally-single";
-  if (MULTI_ALLY_SKILL_NAMES.has(skill.default_name)) return "ally-multi";
-  if (MULTI_ENEMY_SKILL_NAMES.has(skill.default_name)) return "enemy-multi";
+  if (isSkillVar(skill, MULTI_ALLY_SKILL_VARS)) return "ally-multi";
+  if (isSkillVar(skill, MULTI_ENEMY_SKILL_VARS)) return "enemy-multi";
   if (
-    SINGLE_ENEMY_SKILL_NAMES.has(skill.default_name)
+    isSkillVar(skill, SINGLE_ENEMY_SKILL_VARS)
     || (skill.category === "피해" && skill.target === "1")
   ) {
     return "enemy-single";
   }
   if (
-    SINGLE_ALLY_SKILL_NAMES.has(skill.default_name)
+    isSkillVar(skill, SINGLE_ALLY_SKILL_VARS)
     || skill.category === "회복"
     || skill.category === "강화"
   ) {
@@ -482,7 +499,7 @@ function getBattleSkillTargetCount(skill: BattleActiveSkill): number {
 
 /** 기술 대상 지정 팝업의 후보와 인원. 전원·자동·본인 기술처럼 대상을 고르지 않는 기술은 null. */
 function skillTargetChoices(actor: BattleParticipant, skill: BattleActiveSkill, session: BattleSession): { options: TargetOption[]; count: number } | null {
-  if (isAllSkillTarget(skill.target) || AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name)) return null;
+  if (isAllSkillTarget(skill.target) || isSkillVar(skill, AUTO_ALLY_TARGET_SKILL_VARS)) return null;
   const mode = getBattleSkillTargetMode(skill);
   if (mode === "self") return null;
   const count = mode === "enemy-multi" || mode === "ally-multi" ? getBattleSkillTargetCount(skill) : 1;
@@ -495,7 +512,7 @@ function skillTargetChoices(actor: BattleParticipant, skill: BattleActiveSkill, 
     count,
     options: session.participants
       .filter((target) => eligible(target, session.round)
-        && (!(SELF_EXCLUDED_SKILL_NAMES.has(skill.default_name) || isChargeSkill(skill)) || target.character_id !== actor.character_id))
+        && (!isSkillVar(skill, SELF_EXCLUDED_SKILL_VARS) || target.character_id !== actor.character_id))
       .map((target) => ({ key: `ally:${target.character_id}`, label: `${target.name}${target.downed ? " (기절)" : ""}` })),
   };
 }
@@ -557,10 +574,10 @@ function draftTargetNames(
     }
     case "skill": {
       if (skill && isAllSkillTarget(skill.target)) return [skill.target];
-      if (skill && ALL_ALLY_TARGET_SKILL_NAMES.has(skill.default_name)) return ["아군 전체"];
+      if (skill && isSkillVar(skill, ALL_ALLY_TARGET_SKILL_VARS)) return ["아군 전체"];
       const keys = resolvedSkillTargetKeys(actor, draft, skill, session) ?? [];
       if (keys.length > 0) return keys.map(nameForKey).filter(notNull);
-      if (skill?.default_name === "구호") return draftAllyTargetIds(actor, draft, skill, session).map(allyName).filter(notNull);
+      if (isAidSkill(skill)) return draftAllyTargetIds(actor, draft, skill, session).map(allyName).filter(notNull);
       const mode = skill ? getBattleSkillTargetMode(skill) : null;
       return mode === "self" || mode === "none" ? ["본인"] : [];
     }
@@ -590,9 +607,9 @@ function draftAllyTargetIds(actor: BattleParticipant, draft: CharDraft, skill: B
       : [];
   }
   const keys = resolvedSkillTargetKeys(actor, draft, skill, session);
-  if (AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name) || (skill.default_name === "구호" && !keys?.length)) {
+  if (isSkillVar(skill, AUTO_ALLY_TARGET_SKILL_VARS) || (isAidSkill(skill) && !keys?.length)) {
     const candidates = session.participants.filter((p) => isHealable(p, session.round));
-    return (ALL_ALLY_TARGET_SKILL_NAMES.has(skill.default_name) ? candidates : [...candidates].sort((a, b) => a.hp - b.hp || b.attn - a.attn || a.name.localeCompare(b.name, "ko")).slice(0, getBattleSkillTargetCount(skill))).map((p) => p.character_id);
+    return (isSkillVar(skill, ALL_ALLY_TARGET_SKILL_VARS) ? candidates : [...candidates].sort((a, b) => a.hp - b.hp || b.attn - a.attn || a.name.localeCompare(b.name, "ko")).slice(0, getBattleSkillTargetCount(skill))).map((p) => p.character_id);
   }
   const mode = getBattleSkillTargetMode(skill);
   if (mode === "self") return [actor.character_id];
@@ -1427,14 +1444,14 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
       // 기술 대상이 SELF인 기술은 대상을 고르지 않고 시전자 본인으로 자동 지정한다.
       const skill = draft.kind === "skill" ? resolveSelectedSkill(characterId, draft.skill_node_id) : null;
       const selfTargeted = skill != null && getBattleSkillTargetMode(skill) === "self";
-      const autoTargeted = skill != null && (isAllSkillTarget(skill.target) || AUTO_ALLY_TARGET_SKILL_NAMES.has(skill.default_name));
+      const autoTargeted = skill != null && (isAllSkillTarget(skill.target) || isSkillVar(skill, AUTO_ALLY_TARGET_SKILL_VARS));
       const actor = participantsById.get(characterId);
       const skillTargetKeys = actor ? resolvedSkillTargetKeys(actor, draft, skill, session) : draft.skill_target_keys;
       return {
         character_id: characterId,
         kind: draft.kind,
         skill_node_id: draft.kind === "skill" ? (draft.skill_node_id ?? undefined) : undefined,
-        skill_target_keys: draft.kind !== "skill" || autoTargeted || (skill?.default_name === "구호" && !skillTargetKeys?.length)
+        skill_target_keys: draft.kind !== "skill" || autoTargeted || (isAidSkill(skill) && !skillTargetKeys?.length)
           ? undefined
           : (selfTargeted ? [`ally:${characterId}`] : skillTargetKeys),
         target_enemy_id: draft.target_enemy_id ?? undefined,
@@ -2136,13 +2153,13 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           const targetInputId = `character:${p.character_id}:target`;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
 
-          if (draft?.kind === "skill" && selectedSkill && (isAllSkillTarget(selectedSkill.target) || AUTO_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name))) {
+          if (draft?.kind === "skill" && selectedSkill && (isAllSkillTarget(selectedSkill.target) || isSkillVar(selectedSkill, AUTO_ALLY_TARGET_SKILL_VARS))) {
             extraControls.push({
               key: "skill-target",
               icon: Sparkles,
               control: (
                 <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
-                  {isAllSkillTarget(selectedSkill.target) ? `${selectedSkill.target} 자동 지정` : ALL_ALLY_TARGET_SKILL_NAMES.has(selectedSkill.default_name) ? "아군 전체 자동 지정" : `체력 낮은 순 ${getBattleSkillTargetCount(selectedSkill)}명 자동 지정`}
+                  {isAllSkillTarget(selectedSkill.target) ? `${selectedSkill.target} 자동 지정` : isSkillVar(selectedSkill, ALL_ALLY_TARGET_SKILL_VARS) ? "아군 전체 자동 지정" : `체력 낮은 순 ${getBattleSkillTargetCount(selectedSkill)}명 자동 지정`}
                 </div>
               ),
             });
@@ -2165,7 +2182,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               </div>
             ) :
               <SkillTargetPicker values={draft.skill_target_keys ?? []} options={options} count={count}
-                emptyLabel={selectedSkill.default_name === "구호" ? `체력 낮은 순 ${count}명 (클릭해 지정)` : undefined}
+                emptyLabel={isAidSkill(selectedSkill) ? `체력 낮은 순 ${count}명 (클릭해 지정)` : undefined}
                 editingClassName={editingClassName(targetInputId, "target")}
                 onOpenChange={(open) => updateEditingState(targetInputId, "target", open)}
                 onChange={(keys) => patchChar(p.character_id, { skill_target_keys: keys,
@@ -2492,11 +2509,9 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                         value={p.mp}
                         max={p.max_mp}
                         color="bg-sky-500"
+                        // 충전을 받을 예정이면 그 마나까지 이번 턴 행동에 쓸 수 있다.
+                        pending={usableMp - p.mp}
                       />
-                      {/* 충전을 받을 예정이면 그 마나까지 이번 턴 행동에 쓸 수 있다. */}
-                      {usableMp > p.mp && (
-                        <p className="font-num text-[10px] text-sky-400">충전 +{fmt(usableMp - p.mp)} 예정</p>
-                      )}
                     </div>
 
                     {actionPreview && (
