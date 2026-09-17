@@ -12,6 +12,8 @@ const DEFAULT_ACCENT: BookAccent = {
   text: "text-emerald-400",
   border: "border-emerald-500/60 text-emerald-500",
   line: "#e2e8f0",
+  badgeEdge: "bg-emerald-400",
+  badgeFill: "bg-emerald-950",
 };
 
 export interface SkillTreeGridNode extends SkillNode {
