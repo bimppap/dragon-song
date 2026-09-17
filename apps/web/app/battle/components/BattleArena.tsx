@@ -2486,6 +2486,10 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                         max={p.max_mp}
                         color="bg-sky-500"
                       />
+                      {/* 충전을 받을 예정이면 그 마나까지 이번 턴 행동에 쓸 수 있다. */}
+                      {usableMp > p.mp && (
+                        <p className="font-num text-[10px] text-sky-400">충전 +{fmt(usableMp - p.mp)} 예정</p>
+                      )}
                     </div>
 
                     {actionPreview && (
