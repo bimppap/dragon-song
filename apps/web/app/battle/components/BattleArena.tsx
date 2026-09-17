@@ -2159,7 +2159,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               icon: Sparkles,
               control: (
                 <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
-                  {isAllSkillTarget(selectedSkill.target) ? `${selectedSkill.target} 자동 지정` : isSkillVar(selectedSkill, ALL_ALLY_TARGET_SKILL_VARS) ? "아군 전체 자동 지정" : `체력 낮은 순 ${getBattleSkillTargetCount(selectedSkill)}명 자동 지정`}
+                  {isAllSkillTarget(selectedSkill.target) ? selectedSkill.target : isSkillVar(selectedSkill, ALL_ALLY_TARGET_SKILL_VARS) ? "아군 전체" : `체력 낮은 순 ${getBattleSkillTargetCount(selectedSkill)}명`}
                 </div>
               ),
             });
@@ -2169,7 +2169,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               icon: Sparkles,
               control: (
                 <div className="flex h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 text-[11px] text-muted">
-                  본인 자동 지정
+                  본인
                 </div>
               ),
             });
@@ -2178,7 +2178,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
             const autoKeys = autoSkillTargetKeys(p, selectedSkill, session);
             extraControls.push({ key: "skill-target", icon: Sparkles, control: autoKeys ? (
               <div className="flex min-h-8 w-full items-center rounded-lg border border-line bg-surface px-2.5 py-1 text-[11px] text-muted">
-                {options.map((option) => option.label).join(", ")} 자동 지정
+                {options.map((option) => option.label).join(", ")}
               </div>
             ) :
               <SkillTargetPicker values={draft.skill_target_keys ?? []} options={options} count={count}
