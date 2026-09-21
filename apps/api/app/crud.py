@@ -8586,6 +8586,7 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         has_cleanse_count=skill_has_cleanse_count(_resolved_skill_node_value(node, "var_name")),
         formula=_resolved_skill_node_value(node, "formula"),
         description=_resolved_skill_node_value(node, "description"),
+        tier6_effect=node.tier6_effect if node.tier == 6 else None,
         is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")),
         is_public=node.is_public,
         is_derived=spec_var_name in DERIVED_VARS,
@@ -8836,6 +8837,11 @@ def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> Skill
     node = db.get(SkillNode, node_id)
     if not node:
         raise HTTPException(status_code=404, detail="기술을 찾을 수 없습니다.")
+    if "tier6_effect" in data.model_fields_set:
+        effect = (data.tier6_effect or "").strip() or None
+        if node.tier != 6 and effect is not None:
+            raise HTTPException(status_code=400, detail="6단계 효과는 6단계 기술에만 설정할 수 있습니다.")
+        node.tier6_effect = effect
     spec = _skill_spec_for_node(node) or {}
     if spec.get("var_name") in DERIVED_VARS:
         return _update_derived_skill_node(db, node, data, spec)
@@ -8932,6 +8938,7 @@ def _to_character_skill_node_read(node: SkillNode, unlock: CharacterSkillUnlock 
         has_cleanse_count=skill_has_cleanse_count(_resolved_skill_node_value(node, "var_name")) if is_public else False,
         formula=_resolved_skill_node_value(node, "formula") if is_public else None,
         description=_resolved_skill_node_value(node, "description") if is_public else None,
+        tier6_effect=node.tier6_effect if is_public and node.tier == 6 else None,
         is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")) if is_public else False,
         is_public=is_public,
         unlocked=unlocked,

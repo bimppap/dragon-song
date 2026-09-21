@@ -492,6 +492,10 @@ def ensure_schema(engine: Engine) -> None:
         if "settings_overrides" not in {col["name"] for col in inspector.get_columns("skill_nodes")}:
             statements.append("ALTER TABLE skill_nodes ADD COLUMN settings_overrides JSON NOT NULL DEFAULT '{}'")
 
+    if "skill_nodes" in table_names:
+        if "tier6_effect" not in {col["name"] for col in inspector.get_columns("skill_nodes")}:
+            statements.append("ALTER TABLE skill_nodes ADD COLUMN tier6_effect VARCHAR")
+
     if not statements:
         return
 

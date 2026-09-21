@@ -2051,6 +2051,7 @@ export interface SkillNode {
   has_cleanse_count: boolean;
   formula: string | null;
   description: string | null;
+  tier6_effect: string | null;
   is_placeholder: boolean;
   is_public: boolean;
   /** 파생기 여부. 편집 화면에서 같은 기술의 depth별 노드로 이동할 수 있다. */
@@ -2151,6 +2152,7 @@ export async function updateSkillNode(
   data: {
     default_name: string;
     description: string | null;
+    tier6_effect?: string | null;
     trigger_type?: SkillTriggerType;
     category?: SkillCategory;
     stackable?: boolean;

@@ -284,6 +284,7 @@ class SkillNode(Base):
     cleanse_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     formula: Mapped[str | None] = mapped_column(String, nullable=True)  # 계산 공식 (관리자 전용 표시)
     description: Mapped[str | None] = mapped_column(String, nullable=True)  # 개요 (관리자 전용 표시)
+    tier6_effect: Mapped[str | None] = mapped_column(String, nullable=True)  # 6단계 전용 추가 효과 설명
     # 파생기(설명이 depth로 자동 생성되는 기술)에서 관리자가 직접 쓴 설명. 없으면 자동 생성 설명을 쓴다.
     description_override: Mapped[str | None] = mapped_column(String, nullable=True)
     # 파생기의 고정 스펙과 구분해 관리자가 명시적으로 바꾼 설정만 보관한다.

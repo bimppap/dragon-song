@@ -63,6 +63,37 @@ class SkillAdminUpdateTest(unittest.TestCase):
         self.assertEqual(updated.cost, 4)
         self.assertEqual(updated.power, 1.25)
 
+    def test_tier6_effect_persists_for_base_and_derived_nodes(self):
+        nodes = crud.get_skill_nodes(self.db, "불굴의 서")
+        for col in (0, 1):
+            node = next(n for n in nodes if n.branch == 0 and n.col == col and n.tier == 6)
+            update_skill_node(self.db, node.id, SkillNodeUpdate(
+                default_name=node.default_name, tier6_effect="  추가 효과\n두 번째 줄  ",
+            ))
+            self.db.expire_all()
+            reloaded = next(n for n in crud.get_skill_nodes(self.db, node.book) if n.id == node.id)
+            self.assertEqual(reloaded.tier6_effect, "추가 효과\n두 번째 줄")
+            renamed = update_skill_node(self.db, node.id, SkillNodeUpdate(default_name=node.default_name))
+            self.assertEqual(renamed.tier6_effect, reloaded.tier6_effect)
+            cleared = update_skill_node(self.db, node.id, SkillNodeUpdate(
+                default_name=node.default_name, tier6_effect="  ",
+            ))
+            self.assertIsNone(cleared.tier6_effect)
+
+    def test_tier6_effect_rejects_other_depths(self):
+        with self.assertRaises(HTTPException):
+            update_skill_node(self.db, self.node_id, SkillNodeUpdate(
+                default_name="기존 기술", tier6_effect="추가 효과",
+            ))
+
+    def test_existing_database_gets_tier6_effect_column(self):
+        with self.engine.begin() as connection:
+            connection.execute(text("ALTER TABLE skill_nodes DROP COLUMN tier6_effect"))
+        ensure_schema(self.engine)
+        ensure_schema(self.engine)
+        self.db.expire_all()
+        self.assertIsNone(self.db.get(SkillNode, self.node_id).tier6_effect)
+
     def test_derived_metadata_and_powers_persist_only_at_edited_depth(self):
         nodes = crud.get_skill_nodes(self.db, "불굴의 서")
         node = next(n for n in nodes if n.branch == 0 and n.col == 1 and n.tier == 3)

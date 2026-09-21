@@ -201,6 +201,14 @@ export function SkillTooltipContent({
           <DescriptionText text={node.description} className={accent.text} />
         </p>
       )}
+      {node.tier === 6 && (variant === "admin" || node.is_public) && (
+        <div className="border-t border-ivory/10 pt-2">
+          <p className="mb-1 text-xs font-semibold text-ivory/60">6단계 효과</p>
+          <p className="whitespace-pre-wrap text-sm text-ivory/90">
+            {node.tier6_effect ? <DescriptionText text={node.tier6_effect} className={accent.text} /> : "등록된 효과가 없습니다."}
+          </p>
+        </div>
+      )}
       {node.custom_description && (
         <p className="mt-1.5 whitespace-pre-line border-t border-line pt-1.5 text-ivory/85">
           <QuotedDescription text={node.custom_description} color={node.custom_description_color} accent={accent} />

@@ -56,6 +56,7 @@ const TARGET_SIDES: { value: SkillTargetSide; label: string }[] = [
 interface Draft {
   name: string;
   description: string;
+  tier6Effect: string;
   triggerType: SkillTriggerType | "";
   category: SkillCategory | "";
   stackable: boolean;
@@ -72,6 +73,7 @@ interface Draft {
 const EMPTY_DRAFT: Draft = {
   name: "",
   description: "",
+  tier6Effect: "",
   triggerType: "",
   category: "",
   stackable: false,
@@ -128,6 +130,7 @@ export default function AdminSkillEditor() {
     setDraft({
       name: node.default_name,
       description: node.description ?? "",
+      tier6Effect: node.tier6_effect ?? "",
       triggerType: node.trigger_type ?? "",
       category: node.category ?? "",
       stackable: node.stackable ?? false,
@@ -192,6 +195,7 @@ export default function AdminSkillEditor() {
       let updated = await updateSkillNode(editing.id, {
         default_name: draft.name,
         description: draft.description.trim() || null,
+        ...(editing.tier === 6 ? { tier6_effect: draft.tier6Effect.trim() || null } : {}),
         ...skillMetadata,
       });
       if (imageFile) {
@@ -565,6 +569,20 @@ export default function AdminSkillEditor() {
               {isDerived && " 비워두면 depth에 맞춰 자동으로 쓰인 설명을 그대로 씁니다."}
             </p>
           </div>
+
+          {editing.tier === 6 && (
+            <div className="space-y-1.5">
+              <label htmlFor="skill-tier6-effect" className="block text-xs font-semibold uppercase tracking-wide text-muted">6단계 효과</label>
+              <Textarea
+                id="skill-tier6-effect"
+                value={draft.tier6Effect}
+                onChange={(e) => setDraft((prev) => ({ ...prev, tier6Effect: e.target.value }))}
+                placeholder="6단계에서 추가되는 효과를 입력하세요."
+                maxLength={2000}
+                rows={4}
+              />
+            </div>
+          )}
 
           {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
           <div className="flex items-center justify-end gap-2">

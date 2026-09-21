@@ -1332,6 +1332,7 @@ class SkillNodeRead(BaseModel):
     has_cleanse_count: bool = False
     formula: str | None = None
     description: str | None = None
+    tier6_effect: str | None = None
     is_placeholder: bool = False
     is_public: bool = True
     # 파생기 여부. 편집 화면에서 같은 기술의 depth별 노드로 이동할 수 있다.
@@ -1350,6 +1351,7 @@ class SkillNodeRead(BaseModel):
 
 
 class SkillNodeUpdate(BaseModel):
+    tier6_effect: str | None = Field(default=None, max_length=2000)
     default_name: str = Field(min_length=1, max_length=50)
     description: str | None = Field(default=None, max_length=2000)
     trigger_type: SkillTriggerType | None = None
