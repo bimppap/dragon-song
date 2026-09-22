@@ -844,6 +844,10 @@ function OwnedItemTile({
                   toast("보유한 정령석이 모두 품절된 정령석이라 교환할 수 없습니다.", "error");
                   return;
                 }
+                if (!options.some((option) => !option.owned && !option.sold_out)) {
+                  toast("받을 수 있는 정령석이 없습니다.", "error");
+                  return;
+                }
                 const selection: { current: { fromItemId: number | null; toItemId: number | null } } = { current: { fromItemId: null, toItemId: null } };
                 const ok = await confirm({
                   title: "정령석 교환",
