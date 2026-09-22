@@ -1608,10 +1608,17 @@ def count_pending_delivery_requests(db: Session) -> int:
     return db.query(DeliveryRequest).filter(DeliveryRequest.status == "pending").count()
 
 
+def _spirit_stone_sold_out(db: Session, item: Item) -> bool:
+    return item.purchase_limit_global is not None and _sum_quantity(db, item.id) >= item.purchase_limit_global
+
+
 def _validate_spirit_stone_exchange(db: Session, character_id: int, from_item_id: int | None, to_item_id: int | None) -> tuple[Item, Item]:
     from_item = db.get(Item, from_item_id) if from_item_id else None
     if from_item is None or not _is_spirit_stone(from_item) or _sum_quantity(db, from_item.id, character_id) <= 0:
         raise HTTPException(status_code=400, detail="교환할 보유 정령석을 선택해 주세요.")
+    # 품절된 한정 정령석은 내놓을 수도 없다(교환으로 재고가 풀리지 않게 한다).
+    if _spirit_stone_sold_out(db, from_item):
+        raise HTTPException(status_code=400, detail=f"'{from_item.name}'은(는) 품절된 정령석이라 교환할 수 없습니다.")
     # 받을 정령석은 전체 구매 한도를 동시에 넘지 않도록 행을 잠근 뒤 판매 합계를 읽는다.
     to_item = (
         db.query(Item).filter(Item.id == to_item_id).with_for_update().populate_existing().first()
@@ -1623,10 +1630,8 @@ def _validate_spirit_stone_exchange(db: Session, character_id: int, from_item_id
         raise HTTPException(status_code=400, detail="같은 정령석으로는 교환할 수 없습니다.")
     if _sum_quantity(db, to_item.id, character_id) > 0:
         raise HTTPException(status_code=400, detail=f"'{to_item.name}'은(는) 이미 보유 중입니다.")
-    if to_item.purchase_limit_global is not None:
-        sold = db.query(func.coalesce(func.sum(Purchase.quantity), 0)).filter(Purchase.item_id == to_item.id).scalar()
-        if sold >= to_item.purchase_limit_global:
-            raise HTTPException(status_code=400, detail=f"'{to_item.name}'은(는) 품절되었습니다.")
+    if _spirit_stone_sold_out(db, to_item):
+        raise HTTPException(status_code=400, detail=f"'{to_item.name}'은(는) 품절되었습니다.")
     return from_item, to_item
 
 

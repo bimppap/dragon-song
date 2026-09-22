@@ -21,7 +21,10 @@ export default function SpiritStoneExchangeForm({ owned, options, onChange }: {
   options: SpiritStoneOption[];
   onChange: (selection: { fromItemId: number | null; toItemId: number | null }) => void;
 }) {
-  const [fromItemId, setFromItemId] = useState<number | null>(owned.length === 1 ? owned[0].item_id : null);
+  // 품절된 한정 정령석은 가지고 있어도 내놓을 수 없다.
+  const soldOutIds = new Set(options.filter((option) => option.sold_out).map((option) => option.item_id));
+  const exchangeable = owned.filter((item) => !soldOutIds.has(item.item_id));
+  const [fromItemId, setFromItemId] = useState<number | null>(exchangeable.length === 1 ? exchangeable[0].item_id : null);
   const [toItemId, setToItemId] = useState<number | null>(null);
   const from = owned.find((item) => item.item_id === fromItemId) ?? null;
 
@@ -32,15 +35,19 @@ export default function SpiritStoneExchangeForm({ owned, options, onChange }: {
       <section className="space-y-2">
         <p className="text-xs font-semibold text-muted">교환할 보유 정령석</p>
         <div className="flex gap-2 overflow-x-auto pb-1">
-          {owned.map((item) => (
-            <button key={item.item_id} type="button" aria-pressed={fromItemId === item.item_id} onClick={() => setFromItemId(item.item_id)}
-              className={cn("flex w-28 shrink-0 flex-col items-center gap-1.5 rounded-lg border p-2 text-center",
-                fromItemId === item.item_id ? "border-gold bg-gold/10" : "border-line")}>
-              <StoneImage url={item.item_image_url} alt={item.item_name} />
-              <span className="text-xs font-semibold text-ivory">{item.item_name}</span>
-              {item.equipped && <Badge variant="outline" className="text-[10px]">장착 중</Badge>}
-            </button>
-          ))}
+          {owned.map((item) => {
+            const soldOut = soldOutIds.has(item.item_id);
+            return (
+              <button key={item.item_id} type="button" disabled={soldOut} aria-pressed={fromItemId === item.item_id} onClick={() => setFromItemId(item.item_id)}
+                className={cn("flex w-28 shrink-0 flex-col items-center gap-1.5 rounded-lg border p-2 text-center disabled:opacity-40",
+                  fromItemId === item.item_id ? "border-gold bg-gold/10" : "border-line")}>
+                <StoneImage url={item.item_image_url} alt={item.item_name} />
+                <span className="text-xs font-semibold text-ivory">{item.item_name}</span>
+                {soldOut ? <Badge variant="destructive" className="text-[10px]">품절 · 교환 불가</Badge>
+                  : item.equipped && <Badge variant="outline" className="text-[10px]">장착 중</Badge>}
+              </button>
+            );
+          })}
         </div>
         {from?.equipped && <p className="text-xs text-gold">장착 중인 정령석은 해제된 뒤 교환되고, 새 정령석은 장착되지 않은 상태로 받습니다.</p>}
       </section>

@@ -643,7 +643,8 @@ class ItemCustomizationUpdate(BaseModel):
 
 
 class SpiritStoneOptionRead(BaseModel):
-    """정령석 교환 창에 보여줄 정령석. 이미 가진 정령석과 품절된 정령석은 고를 수 없다."""
+    """정령석 교환 창에 보여줄 정령석. 이미 가진 정령석과 품절된 정령석은 받을 수 없고,
+    품절된 정령석은 가지고 있어도 내놓을 수 없다."""
     item_id: int
     name: str
     description: str

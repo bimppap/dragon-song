@@ -110,15 +110,24 @@ class SpiritStoneItemsTest(unittest.TestCase):
                 crud.use_item(self.db, self.character.id, self.exchange.id, exchange_from_item_id=from_id, exchange_to_item_id=to_id)
         self.assertEqual(self.exchange_uses(), 0)
 
-    def test_exchanged_away_stone_returns_to_global_stock(self):
-        self.give(self.earth)
+    def test_sold_out_stone_cannot_be_exchanged_away(self):
+        self.give(self.earth)  # 전체 한도 1개를 이 캐릭터가 가져 품절
         options = {option.item_id: option for option in crud.get_spirit_stone_options(self.db, self.character.id)}
         self.assertTrue(options[self.earth.id].owned and options[self.earth.id].sold_out)
         self.assertNotIn(self.pet.id, options)
+        with self.assertRaises(HTTPException):
+            crud.use_item(self.db, self.character.id, self.exchange.id,
+                          exchange_from_item_id=self.earth.id, exchange_to_item_id=self.mystic.id)
+        self.assertEqual(self.exchange_uses(), 0)
+
+    def test_limited_stone_with_stock_left_returns_to_stock_when_exchanged(self):
+        healing = crud.create_item(self.db, ItemCreate(name="치유의 정령석", purchase_limit_global=2, price_gold=1,
+                                                       special_merchant=True, item_type="companion"))
+        self.give(healing)  # 2개 중 1개만 팔려 품절 아님
         crud.use_item(self.db, self.character.id, self.exchange.id,
-                      exchange_from_item_id=self.earth.id, exchange_to_item_id=self.mystic.id)
+                      exchange_from_item_id=healing.id, exchange_to_item_id=self.mystic.id)
         options = {option.item_id: option for option in crud.get_spirit_stone_options(self.db, self.character.id)}
-        self.assertFalse(options[self.earth.id].owned or options[self.earth.id].sold_out)
+        self.assertFalse(options[healing.id].owned or options[healing.id].sold_out)
         self.assertTrue(options[self.mystic.id].owned)
 
     def test_item_validation(self):

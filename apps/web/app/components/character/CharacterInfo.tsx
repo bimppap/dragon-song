@@ -838,6 +838,11 @@ function OwnedItemTile({
               if (!spiritStones.length) { toast("교환할 수 있는 보유 정령석이 없습니다.", "error"); return; }
               try {
                 const options = await fetchSpiritStoneOptions(characterId);
+                const soldOutIds = new Set(options.filter((option) => option.sold_out).map((option) => option.item_id));
+                if (spiritStones.every((stone) => soldOutIds.has(stone.item_id))) {
+                  toast("보유한 정령석이 모두 품절된 정령석이라 교환할 수 없습니다.", "error");
+                  return;
+                }
                 const selection: { current: { fromItemId: number | null; toItemId: number | null } } = { current: { fromItemId: null, toItemId: null } };
                 const ok = await confirm({
                   title: "정령석 교환",
