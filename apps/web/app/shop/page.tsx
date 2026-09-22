@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import PageContainer from "@/components/common/PageContainer";
 import TabBar from "@/components/common/TabBar";
 import { useRequireMember } from "@/lib/auth";
+import { SPIRIT_STONE_CUSTOMIZE_GUIDE, unlocksSpiritStoneCustomization } from "@/lib/spiritStone";
 import { useDialog } from "@/components/common/DialogProvider";
 
 function useCartEntries() {
@@ -131,7 +132,10 @@ function usePurchaseCart(characterId: number | null, shopOpen: boolean, onPurcha
           }
         } else if (item.item_type === "consumable") {
           if (await confirm({ title: "아이템 사용", description: `'${item.name}'을(를) 지금 사용하시겠습니까?` })) {
-            try { await consumeItem(characterId, item.id); }
+            try {
+              await consumeItem(characterId, item.id);
+              if (unlocksSpiritStoneCustomization(item.effects)) await alert(SPIRIT_STONE_CUSTOMIZE_GUIDE);
+            }
             catch (e) { await alert(e instanceof Error ? e.message : "사용 실패"); }
           }
         }

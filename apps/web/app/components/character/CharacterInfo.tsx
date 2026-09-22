@@ -28,6 +28,7 @@ import CharacterClonedSkills from "./CharacterClonedSkills";
 import CharacterEquipmentSlots from "./CharacterEquipmentSlots";
 import SpiritStoneCustomizeModal from "./SpiritStoneCustomizeModal";
 import SpiritStoneExchangeForm from "./SpiritStoneExchangeForm";
+import { SPIRIT_STONE_CUSTOMIZE_GUIDE, unlocksSpiritStoneCustomization } from "@/lib/spiritStone";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import Modal from "@/components/common/Modal";
@@ -1186,7 +1187,7 @@ export default function CharacterInfo({
 }: Props) {
   const canViewHistory = showHistory ?? !readOnly;
   const { toast } = useToast();
-  const { confirm } = useDialog();
+  const { confirm, alert } = useDialog();
   const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
   const [customizingItemId, setCustomizingItemId] = useState<number | null>(null);
@@ -1259,14 +1260,19 @@ export default function CharacterInfo({
   ) {
     if (selectedDetail == null) return;
     setItemActionLoadingId(itemId);
+    const item = selectedDetail.owned_items.find((owned) => owned.item_id === itemId);
+    let unlockedCustomization = false;
     try {
       const nextDetail = await action(selectedDetail.id, itemId, selection);
       setDetail(nextDetail);
+      unlockedCustomization = action === consumeItem && item != null && unlocksSpiritStoneCustomization(item.effects);
     } catch (error) {
       toast(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.", "error");
     } finally {
       setItemActionLoadingId(null);
     }
+    // 정령석 커스텀 기능을 해방하면 어디서 어떻게 커스텀하는지 바로 알려준다.
+    if (unlockedCustomization) await alert(SPIRIT_STONE_CUSTOMIZE_GUIDE);
   }
 
   const canAdminEdit = adminMode && !readOnly && selectedDetail?.member_id === null;
