@@ -27,7 +27,7 @@ from app.game_data import (
     skill_power_slots,
 )
 from app.models import KST, now_kst
-from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterClonedSkill, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode
+from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterClonedSkill, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode, Trait
 from app.schemas import (
     ALL_SKILL_TARGETS,
     FACTIONS,
@@ -104,6 +104,7 @@ from app.schemas import (
     SignupRequest,
     SkillNodeRead,
     SpiritStoneOptionRead,
+    TraitCreate,
     SkillNodeUpdate,
     SkillPowerSlot,
     SkillVisibilityUpdate,
@@ -9381,3 +9382,50 @@ def get_character_paid_source_ids(db: Session, character_id: int, kind: str) -> 
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
     return [source_id for source_id, in db.query(Reward.source_id)
             .filter(Reward.character_id == character_id, Reward.type == kind).distinct().all()]
+
+
+
+# ── Trait ────────────────────────────────────────────────────────────────────
+
+def list_traits(db: Session) -> list[Trait]:
+    return db.query(Trait).order_by(Trait.id).all()
+
+
+def _get_trait_or_404(db: Session, trait_id: int) -> Trait:
+    trait = db.get(Trait, trait_id)
+    if trait is None:
+        raise HTTPException(status_code=404, detail="특성을 찾을 수 없습니다.")
+    return trait
+
+
+def create_trait(db: Session, data: TraitCreate) -> Trait:
+    trait = Trait(name=data.name, effect=data.effect, description=data.description)
+    db.add(trait)
+    db.commit()
+    db.refresh(trait)
+    return trait
+
+
+def update_trait(db: Session, trait_id: int, data: TraitCreate) -> Trait:
+    trait = _get_trait_or_404(db, trait_id)
+    trait.name, trait.effect, trait.description = data.name, data.effect, data.description
+    db.commit()
+    db.refresh(trait)
+    return trait
+
+
+def set_trait_image(db: Session, trait_id: int, image_url: str) -> Trait:
+    trait = _get_trait_or_404(db, trait_id)
+    trait.image_url = image_url
+    db.commit()
+    db.refresh(trait)
+    return trait
+
+
+def delete_trait(db: Session, trait_id: int) -> str | None:
+    """특성을 지우고, 스토리지에서도 지울 수 있게 이미지 주소를 돌려준다."""
+    trait = _get_trait_or_404(db, trait_id)
+    image_url = trait.image_url
+    db.delete(trait)
+    db.commit()
+    return image_url

@@ -11,6 +11,18 @@ def now_kst() -> datetime:
     return datetime.now(KST)
 
 
+class Trait(Base):
+    """캐릭터 특성. 관리 페이지 "특성" 탭에서 이미지·이름·효과·설명을 관리한다."""
+    __tablename__ = "traits"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    effect: Mapped[str] = mapped_column(String, nullable=False, default="", server_default=text("''"))
+    description: Mapped[str] = mapped_column(String, nullable=False, default="", server_default=text("''"))
+    image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_kst)
+
+
 class Chapter(Base):
     __tablename__ = "chapters"
 

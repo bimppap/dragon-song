@@ -1511,3 +1511,31 @@ class SkillCustomizationUpdate(BaseModel):
     custom_description: str | None = Field(default=None, max_length=300)
     # 설명에서 작은따옴표로 감싼 구간을 칠할 단일 색. 빈 값이면 서(book) 기본 색으로 되돌린다.
     custom_description_color: str | None = Field(default=None, pattern=OPTIONAL_HEX_COLOR_PATTERN)
+
+
+class TraitCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=50)
+    effect: str = Field(default="", max_length=2000)
+    description: str = Field(default="", max_length=2000)
+
+    @field_validator("name", "effect", "description")
+    @classmethod
+    def strip_text(cls, value: str) -> str:
+        return value.strip()
+
+    @model_validator(mode="after")
+    def require_name(self):
+        if not self.name:
+            raise ValueError("특성 이름을 입력해 주세요.")
+        return self
+
+
+class TraitRead(BaseModel):
+    id: int
+    name: str
+    effect: str
+    description: str
+    image_url: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}

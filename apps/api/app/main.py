@@ -107,6 +107,8 @@ from app.schemas import (
     UseItemRequest,
     ItemCustomizationUpdate,
     SpiritStoneOptionRead,
+    TraitCreate,
+    TraitRead,
     AdminCharacterUpdate,
     CharacterStatUpgradeRequest,
 )
@@ -1660,3 +1662,47 @@ def get_character_paid_source_ids(
     member: Member = Depends(require_admin), db: Session = Depends(get_db),
 ):
     return crud.get_character_paid_source_ids(db, character_id, kind)
+
+
+# ── 특성 ─────────────────────────────────────────────────────────────────────
+
+@app.get("/traits", response_model=list[TraitRead])
+def list_traits(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.list_traits(db)
+
+
+@app.post("/traits", response_model=TraitRead)
+def create_trait(data: TraitCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.create_trait(db, data)
+
+
+@app.put("/traits/{trait_id}", response_model=TraitRead)
+def update_trait(trait_id: int, data: TraitCreate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.update_trait(db, trait_id, data)
+
+
+@app.post("/traits/{trait_id}/image", response_model=TraitRead)
+async def upload_trait_image(
+    trait_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """특성 이미지를 trait/ 디렉토리에 저장하고 기존 이미지는 교체한다."""
+    trait = crud._get_trait_or_404(db, trait_id)
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("trait", trait.id, trait.name), await file.read(),
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
+    old_path = storage.public_url_to_path(trait.image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+    return crud.set_trait_image(db, trait.id, f"{result['public_url']}?v={int(time.time())}")
+
+
+@app.delete("/traits/{trait_id}")
+async def delete_trait(trait_id: int, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    path = storage.public_url_to_path(crud.delete_trait(db, trait_id))
+    if path:
+        await storage.delete_from_bucket(path)
+    return {"deleted": True}

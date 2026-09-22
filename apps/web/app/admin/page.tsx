@@ -10,6 +10,7 @@ import {
   Settings,
   Skull,
   Sparkles,
+  Star,
   Trophy,
   UserStar,
 } from "lucide-react";
@@ -21,12 +22,13 @@ import HealTab from "./components/HealTab";
 import NaverSessionTab from "./components/NaverSessionTab";
 import PermissionTab from "./components/PermissionTab";
 import RewardAdminTab from "./components/RewardAdminTab";
+import TraitTab from "./components/TraitTab";
 import EnemyTab from "@/app/battle/components/EnemyTab";
 import AdminSkillEditor from "@/app/battle/components/AdminSkillEditor";
 import { ChallengeAdmin } from "@/app/challenges/page";
 import { MissionAdmin } from "@/app/missions/page";
 
-type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "heal" | "skill" | "permission" | "naver";
+type PageTab = "chapter" | "reward" | "challenge" | "mission" | "enemy" | "heal" | "skill" | "trait" | "permission" | "naver";
 
 const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "mission", label: "임무", icon: ScrollText },
@@ -35,6 +37,7 @@ const PAGE_TABS: { id: PageTab; label: string; icon: React.ElementType }[] = [
   { id: "heal", label: "치유", icon: HeartPulse },
   { id: "reward", label: "보상", icon: Gift },
   { id: "skill", label: "기술트리", icon: Sparkles },
+  { id: "trait", label: "특성", icon: Star },
   { id: "chapter", label: "챕터", icon: BookMarked },
   { id: "permission", label: "권한", icon: UserStar },
   { id: "naver", label: "쿠키", icon: Cookie },
@@ -80,6 +83,7 @@ export default function AdminPage() {
         {tab === "enemy" && <EnemyTab />}
         {tab === "heal" && <HealTab />}
         {tab === "skill" && <AdminSkillEditor />}
+        {tab === "trait" && <TraitTab />}
         {tab === "permission" && member.role === "ADMIN" && <PermissionTab />}
         {tab === "naver" && member.role === "ADMIN" && <NaverSessionTab />}
       </div>

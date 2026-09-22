@@ -2387,3 +2387,41 @@ export async function grantCharacterRewardBatch(characterId: number, kind: "miss
 export async function fetchCharacterPaidSourceIds(characterId: number, kind: "mission" | "challenge"): Promise<number[]> {
   return request<number[]>(`/characters/${characterId}/rewards/${kind}/paid`, {}, "보상 현황 조회 실패");
 }
+
+
+// ── 특성 ──────────────────────────────────────────────────────────────────────
+
+export interface Trait {
+  id: number;
+  name: string;
+  effect: string;
+  description: string;
+  image_url: string | null;
+  created_at: string;
+}
+
+export interface TraitInput {
+  name: string;
+  effect: string;
+  description: string;
+}
+
+export async function fetchTraits(): Promise<Trait[]> {
+  return request<Trait[]>("/traits", undefined, "특성 목록 조회 실패");
+}
+
+export async function createTrait(data: TraitInput): Promise<Trait> {
+  return request<Trait>("/traits", { method: "POST", body: JSON.stringify(data) }, "특성 추가 실패");
+}
+
+export async function updateTrait(traitId: number, data: TraitInput): Promise<Trait> {
+  return request<Trait>(`/traits/${traitId}`, { method: "PUT", body: JSON.stringify(data) }, "특성 수정 실패");
+}
+
+export async function uploadTraitImage(traitId: number, file: File): Promise<Trait> {
+  return uploadFile<Trait>(`/traits/${traitId}/image`, file, "file", "특성 이미지 업로드 실패");
+}
+
+export async function deleteTrait(traitId: number): Promise<void> {
+  await request(`/traits/${traitId}`, { method: "DELETE" }, "특성 삭제 실패");
+}
