@@ -27,13 +27,15 @@ function ItemIcon({ item, type }: { item?: CharacterOwnedItem; type: SlotType })
 }
 
 /** 장착 중인 동반자·장신구 슬롯. 장착은 "보유 중인 아이템"에서 하고, 여기서는 해제만 한다. */
-export default function CharacterEquipmentSlots({ character, onUpdated, readOnly = false, locked = false }: {
+export default function CharacterEquipmentSlots({ character, onUpdated, readOnly = false, locked = false, onCustomize }: {
   character: CharacterDetail;
   onUpdated: (detail: CharacterDetail) => void;
   /** 다른 러너의 캐릭터를 열람할 때: 장착된 동반자/장신구 정보만 보여주고 해제는 막는다. */
   readOnly?: boolean;
   /** 실전 전투 중처럼 장착 변경이 금지된 상태. */
   locked?: boolean;
+  /** 커스텀이 해방된 정령석에서 "커스텀하기"를 눌렀을 때. 장착 중인 정령석은 보유 목록에 없어 여기서 연다. */
+  onCustomize?: (item: CharacterOwnedItem) => void;
 }) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -60,6 +62,8 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
       return <InfoTooltip key={type} content={equipped
         ? <div className="flex max-w-64 flex-col gap-2">
             <ItemDetails item={equipped} />
+            {!readOnly && equipped.customizable && onCustomize && <Button type="button" size="sm" variant="outline"
+              onClick={() => onCustomize(equipped)}>커스텀하기</Button>}
             {!readOnly && !locked && <Button type="button" size="sm" variant="secondary" disabled={pending}
               onClick={() => void unequip(equipped)}>해제</Button>}
           </div>

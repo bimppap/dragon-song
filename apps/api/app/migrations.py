@@ -18,6 +18,10 @@ def ensure_schema(engine: Engine) -> None:
         state_columns = {col["name"] for col in inspector.get_columns("character_item_states")}
         if "chosen_stats" not in state_columns:
             statements.append("ALTER TABLE character_item_states ADD COLUMN chosen_stats JSON NOT NULL DEFAULT '[]'")
+        if "custom_image_url" not in state_columns:
+            statements.append("ALTER TABLE character_item_states ADD COLUMN custom_image_url VARCHAR")
+        if "custom_description" not in state_columns:
+            statements.append("ALTER TABLE character_item_states ADD COLUMN custom_description VARCHAR")
 
     character_columns = {col["name"] for col in inspector.get_columns("characters")}
 
@@ -97,6 +101,8 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN caution BOOLEAN NOT NULL DEFAULT false")
     if "warning_count" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0")
+    if "spirit_stone_custom_unlocked" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN spirit_stone_custom_unlocked BOOLEAN NOT NULL DEFAULT false")
 
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}

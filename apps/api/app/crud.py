@@ -103,6 +103,7 @@ from app.schemas import (
     SettlementTargetRead,
     SignupRequest,
     SkillNodeRead,
+    SpiritStoneOptionRead,
     SkillNodeUpdate,
     SkillPowerSlot,
     SkillVisibilityUpdate,
@@ -791,10 +792,11 @@ def get_character_card_details(db: Session, *, admin: bool = False) -> list[Char
         Item.item_type.in_(["companion", "accessory"]),
     ).order_by(*ITEM_DISPLAY_ORDER).all()
     for state, item in equipment:
+        description, image_url = _item_display_for_character(item, state)
         result[state.character_id].equipment.append(CharacterCardItemRead(
             item_id=item.id, item_type=item.item_type, name=_item_owned_name(item),
-            description=_item_owned_description(item),
-            image_url=_item_owned_image_url(item),
+            description=description,
+            image_url=image_url,
             effects=item.effects or [],
         ))
     return list(result.values())
@@ -848,6 +850,27 @@ def _assert_not_in_live_real_battle(db: Session, character_id: int) -> None:
             status_code=400,
             detail="실전 전투가 진행 중인 동안에는 아이템을 사용하거나 장착을 바꿀 수 없습니다.",
         )
+
+
+def _owned_item_read(character: Character, item: Item, quantity: int, state: CharacterItemState | None) -> CharacterOwnedItemRead:
+    description, image_url = _item_display_for_character(item, state)
+    spirit_stone = _is_spirit_stone(item)
+    return CharacterOwnedItemRead(
+        item_id=item.id,
+        item_name=_item_owned_name(item),
+        item_description=description,
+        item_image_url=image_url,
+        item_type=item.item_type,
+        effects=item.effects or [],
+        quantity=quantity,
+        used_quantity=state.used_quantity if state else 0,
+        equipped=state.equipped if state else False,
+        battle_only=item.battle_only,
+        is_spirit_stone=spirit_stone,
+        customizable=spirit_stone and character.spirit_stone_custom_unlocked,
+        custom_image_url=state.custom_image_url if state and spirit_stone else None,
+        custom_description=state.custom_description if state and spirit_stone else None,
+    )
 
 
 def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
@@ -925,19 +948,9 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         **_character_read_kwargs(character),
         stat_upgrades=_character_stat_upgrades(character, _grade_bonus_from_states(item_states_by_id.values())),
         in_live_battle=character.id in _live_real_battle_character_ids(db),
+        spirit_stone_custom_unlocked=character.spirit_stone_custom_unlocked,
         owned_items=[
-            CharacterOwnedItemRead(
-                item_id=row.item_id,
-                item_name=_item_owned_name(items_by_id[row.item_id]),
-                item_description=_item_owned_description(items_by_id[row.item_id]),
-                item_image_url=_item_owned_image_url(items_by_id[row.item_id]),
-                item_type=items_by_id[row.item_id].item_type,
-                effects=items_by_id[row.item_id].effects or [],
-                quantity=row.quantity,
-                used_quantity=item_states_by_id[row.item_id].used_quantity if row.item_id in item_states_by_id else 0,
-                equipped=item_states_by_id[row.item_id].equipped if row.item_id in item_states_by_id else False,
-                battle_only=items_by_id[row.item_id].battle_only,
-            )
+            _owned_item_read(character, items_by_id[row.item_id], row.quantity, item_states_by_id.get(row.item_id))
             for row in owned_item_rows
             if _remaining_owned(row) > 0
         ],
@@ -1135,6 +1148,23 @@ def _item_owned_description(item: Item) -> str:
 
 def _item_owned_image_url(item: Item) -> str | None:
     return item.image_after_purchase_url or item.image_url if item.special_merchant else item.image_url
+
+
+SPIRIT_STONE_KEYWORD = "정령석"
+
+
+def _is_spirit_stone(item: Item) -> bool:
+    """정령석: 이름에 "정령석"이 들어간 장착형(동반자·장신구) 아이템. 커스텀·교환 대상이다."""
+    return item.item_type in ("companion", "accessory") and SPIRIT_STONE_KEYWORD in (item.name or "")
+
+
+def _item_display_for_character(item: Item, state: CharacterItemState | None) -> tuple[str, str | None]:
+    """캐릭터에게 보일 아이템 설명·이미지. 정령석은 캐릭터가 직접 바꾼 값을 우선한다."""
+    description, image_url = _item_owned_description(item), _item_owned_image_url(item)
+    if state is not None and _is_spirit_stone(item):
+        description = state.custom_description or description
+        image_url = state.custom_image_url or image_url
+    return description, image_url
 
 
 def _apply_item_data(item: Item, data: ItemCreate) -> None:
@@ -1426,6 +1456,8 @@ def use_item(
     delivery_groups: list[dict] | None = None,
     mission_id: int | None = None,
     challenge_id: int | None = None,
+    exchange_from_item_id: int | None = None,
+    exchange_to_item_id: int | None = None,
 ) -> CharacterDetailRead:
     character = (
         db.query(Character)
@@ -1481,6 +1513,13 @@ def use_item(
             raise HTTPException(status_code=400, detail=f"받는 캐릭터 수만큼 선물 상자가 필요합니다. (필요 {required_boxes}개 / 보유 {available_boxes}개)")
         delivery_payload = gift_payloads[0]
 
+    # 정령석 효과도 적용 전에 검증해, 쓸 수 없는 상태에서 아이템만 소모되지 않게 한다.
+    if "spirit_stone_customize" in special_stats and character.spirit_stone_custom_unlocked:
+        raise HTTPException(status_code=400, detail="이미 정령석 커스텀 기능이 해방된 캐릭터입니다.")
+    spirit_stone_exchange = None
+    if "spirit_stone_exchange" in special_stats:
+        spirit_stone_exchange = _validate_spirit_stone_exchange(db, character_id, exchange_from_item_id, exchange_to_item_id)
+
     # 역할 변경은 효과 적용 전에 검증해, 잘못된 선택이 아이템만 소모시키지 않게 한다.
     if "full_reset" in special_stats and chosen_faction not in FACTIONS:
         raise HTTPException(status_code=400, detail="바꿀 역할(공격/수비/치유)을 선택해 주세요.")
@@ -1524,6 +1563,10 @@ def use_item(
         _apply_grade_choice(character, chosen_stats or [], 1)
     elif "grade_choice_2" in special_stats:
         _apply_grade_choice(character, chosen_stats or [], 2)
+    if "spirit_stone_customize" in special_stats:
+        character.spirit_stone_custom_unlocked = True
+    if spirit_stone_exchange is not None:
+        _exchange_spirit_stone(db, character, *spirit_stone_exchange)
     first_quantity = len(gift_payloads[0]["recipient_ids"]) if gift_payloads else 1
     for _ in range(first_quantity - 1):
         _apply_item_effects(character, item.effects or [], sign=1)
@@ -1563,6 +1606,99 @@ def use_item(
 
 def count_pending_delivery_requests(db: Session) -> int:
     return db.query(DeliveryRequest).filter(DeliveryRequest.status == "pending").count()
+
+
+def _validate_spirit_stone_exchange(db: Session, character_id: int, from_item_id: int | None, to_item_id: int | None) -> tuple[Item, Item]:
+    from_item = db.get(Item, from_item_id) if from_item_id else None
+    if from_item is None or not _is_spirit_stone(from_item) or _sum_quantity(db, from_item.id, character_id) <= 0:
+        raise HTTPException(status_code=400, detail="교환할 보유 정령석을 선택해 주세요.")
+    # 받을 정령석은 전체 구매 한도를 동시에 넘지 않도록 행을 잠근 뒤 판매 합계를 읽는다.
+    to_item = (
+        db.query(Item).filter(Item.id == to_item_id).with_for_update().populate_existing().first()
+        if to_item_id else None
+    )
+    if to_item is None or not _is_spirit_stone(to_item):
+        raise HTTPException(status_code=400, detail="받을 정령석을 선택해 주세요.")
+    if to_item.id == from_item.id:
+        raise HTTPException(status_code=400, detail="같은 정령석으로는 교환할 수 없습니다.")
+    if _sum_quantity(db, to_item.id, character_id) > 0:
+        raise HTTPException(status_code=400, detail=f"'{to_item.name}'은(는) 이미 보유 중입니다.")
+    if to_item.purchase_limit_global is not None:
+        sold = db.query(func.coalesce(func.sum(Purchase.quantity), 0)).filter(Purchase.item_id == to_item.id).scalar()
+        if sold >= to_item.purchase_limit_global:
+            raise HTTPException(status_code=400, detail=f"'{to_item.name}'은(는) 품절되었습니다.")
+    return from_item, to_item
+
+
+def _exchange_spirit_stone(db: Session, character: Character, from_item: Item, to_item: Item) -> None:
+    """보유 정령석 1개를 내놓고 다른 정령석 1개를 받는다. 내놓은 정령석을 장착 중이었다면 먼저 해제한다."""
+    remaining = _sum_quantity(db, from_item.id, character.id) - 1
+    from_state = _get_or_create_item_state(db, character.id, from_item.id)
+    if remaining <= 0 and from_state.equipped:
+        _apply_item_effects(character, from_item.effects or [], sign=-1)
+        if from_state.chosen_stats:
+            _apply_grade_choice(character, from_state.chosen_stats, len(from_state.chosen_stats), sign=-1)
+        from_state.chosen_stats = []
+        from_state.equipped = False
+    # 소유 수량은 구매 기록 합계라, 내놓은 쪽은 -1, 받은 쪽은 +1 기록을 남긴다(구매 이력에는 보이지 않는다).
+    db.add(Purchase(character_id=character.id, item_id=from_item.id, quantity=-1, source="exchange"))
+    db.add(Purchase(character_id=character.id, item_id=to_item.id, quantity=1, source="exchange"))
+
+
+def get_spirit_stone_options(db: Session, character_id: int) -> list[SpiritStoneOptionRead]:
+    """교환 창에 보여줄 정령석 전체. 판매 기간과 무관하게 모든 정령석을 보여준다."""
+    _get_character_or_404(db, character_id)
+    stones = [item for item in db.query(Item).order_by(*ITEM_DISPLAY_ORDER).all() if _is_spirit_stone(item)]
+    ids = [item.id for item in stones]
+    sold = dict(
+        db.query(Purchase.item_id, func.coalesce(func.sum(Purchase.quantity), 0))
+        .filter(Purchase.item_id.in_(ids)).group_by(Purchase.item_id).all()
+    ) if ids else {}
+    owned = dict(
+        db.query(Purchase.item_id, func.coalesce(func.sum(Purchase.quantity), 0))
+        .filter(Purchase.item_id.in_(ids), Purchase.character_id == character_id).group_by(Purchase.item_id).all()
+    ) if ids else {}
+    return [
+        SpiritStoneOptionRead(
+            item_id=item.id, name=item.name, description=item.description_user or "", image_url=item.image_url,
+            owned=owned.get(item.id, 0) > 0,
+            sold_out=item.purchase_limit_global is not None and sold.get(item.id, 0) >= item.purchase_limit_global,
+        )
+        for item in stones
+    ]
+
+
+def _customizable_spirit_stone_state(db: Session, character_id: int, item_id: int) -> CharacterItemState:
+    character = _get_character_or_404(db, character_id)
+    item = db.get(Item, item_id)
+    if item is None or not _is_spirit_stone(item) or _sum_quantity(db, item_id, character_id) <= 0:
+        raise HTTPException(status_code=400, detail="보유 중인 정령석만 커스텀할 수 있습니다.")
+    if not character.spirit_stone_custom_unlocked:
+        raise HTTPException(status_code=400, detail="정령석 커스텀 기능이 해방되지 않았습니다.")
+    return _get_or_create_item_state(db, character_id, item_id)
+
+
+def update_spirit_stone_customization(db: Session, character_id: int, item_id: int, fields: dict) -> tuple[CharacterDetailRead, str | None]:
+    """정령석 설명을 바꾸거나 이미지를 원래대로 되돌린다. 지운 이미지 주소를 함께 돌려줘 스토리지에서 지우게 한다."""
+    state = _customizable_spirit_stone_state(db, character_id, item_id)
+    if "custom_description" in fields:
+        state.custom_description = (fields["custom_description"] or "").strip() or None
+    removed_image_url = None
+    if fields.get("clear_image"):
+        removed_image_url, state.custom_image_url = state.custom_image_url, None
+    db.commit()
+    return get_character_detail(db, character_id), removed_image_url
+
+
+def get_spirit_stone_custom_image(db: Session, character_id: int, item_id: int) -> str | None:
+    return _customizable_spirit_stone_state(db, character_id, item_id).custom_image_url
+
+
+def set_spirit_stone_custom_image(db: Session, character_id: int, item_id: int, image_url: str) -> CharacterDetailRead:
+    state = _customizable_spirit_stone_state(db, character_id, item_id)
+    state.custom_image_url = image_url
+    db.commit()
+    return get_character_detail(db, character_id)
 
 
 def get_delivery_requests(db: Session) -> list[DeliveryRequestRead]:

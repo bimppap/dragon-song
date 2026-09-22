@@ -105,6 +105,8 @@ from app.schemas import (
     DeliveryRequestRead,
     TokenResponse,
     UseItemRequest,
+    ItemCustomizationUpdate,
+    SpiritStoneOptionRead,
     AdminCharacterUpdate,
     CharacterStatUpgradeRequest,
 )
@@ -736,10 +738,61 @@ def use_item(
         delivery_groups=[group.model_dump() for group in data.delivery_groups] if data and data.delivery_groups is not None else None,
         mission_id=data.mission_id if data else None,
         challenge_id=data.challenge_id if data else None,
+        exchange_from_item_id=data.exchange_from_item_id if data else None,
+        exchange_to_item_id=data.exchange_to_item_id if data else None,
     )
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
     return detail
+
+
+@app.get("/characters/{character_id}/spirit-stones", response_model=list[SpiritStoneOptionRead])
+def list_spirit_stone_options(character_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """정령석 교환 창에 보여줄 정령석 목록."""
+    _require_own_character_or_admin(db, member, character_id)
+    return crud.get_spirit_stone_options(db, character_id)
+
+
+@app.put("/characters/{character_id}/items/{item_id}/customization", response_model=CharacterDetailRead)
+async def customize_spirit_stone(
+    character_id: int,
+    item_id: int,
+    data: ItemCustomizationUpdate,
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """정령석 설명을 바꾸거나 직접 올린 이미지를 원래대로 되돌린다."""
+    _require_own_character_or_admin(db, member, character_id)
+    detail, removed_image_url = crud.update_spirit_stone_customization(
+        db, character_id, item_id, data.model_dump(exclude_unset=True),
+    )
+    removed_path = storage.public_url_to_path(removed_image_url)
+    if removed_path:
+        await storage.delete_from_bucket(removed_path)
+    return detail if is_admin_role(member.role) else crud.scrub_admin_only_stats(detail)
+
+
+@app.post("/characters/{character_id}/items/{item_id}/custom-image", response_model=CharacterDetailRead)
+async def upload_spirit_stone_image(
+    character_id: int,
+    item_id: int,
+    file: UploadFile = File(...),
+    member: Member = Depends(get_current_member),
+    db: Session = Depends(get_db),
+):
+    """정령석 이미지를 직접 올린다. 이전에 올린 이미지는 스토리지에서 지운다."""
+    _require_own_character_or_admin(db, member, character_id)
+    old_image_url = crud.get_spirit_stone_custom_image(db, character_id, item_id)
+    data = await file.read()
+    result = await storage.upload_image_to_bucket(
+        storage.make_key("character-item", character_id, f"{item_id}"), data,
+        cache_control=storage.LONG_LIVED_CACHE_CONTROL,
+    )
+    old_path = storage.public_url_to_path(old_image_url)
+    if old_path and old_path != result["path"]:
+        await storage.delete_from_bucket(old_path)
+    detail = crud.set_spirit_stone_custom_image(db, character_id, item_id, f"{result['public_url']}?v={int(time.time())}")
+    return detail if is_admin_role(member.role) else crud.scrub_admin_only_stats(detail)
 
 
 @app.get("/characters/{character_id}/items/{item_id}/recollection-missions")

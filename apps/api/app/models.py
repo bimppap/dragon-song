@@ -162,6 +162,9 @@ class Character(Base):
     caution: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     warning_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
+    # "정령석 커스텀 기능 해방" 아이템을 쓰면 켜진다. 보유한 정령석의 이미지·설명을 직접 바꿀 수 있다.
+    spirit_stone_custom_unlocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+
     # 관리자 전용 능력치 (RUNNER에게는 노출되지 않음)
     start_sh: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     revive_hp: Mapped[float] = mapped_column(Float, nullable=False, default=0.1, server_default=text("0.1"))
@@ -242,6 +245,9 @@ class CharacterItemState(Base):
     used_quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     chosen_stats: Mapped[list] = mapped_column(JSON, nullable=False, default=list, server_default=text("'[]'"))
     equipped: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    # 정령석 커스텀: 캐릭터가 직접 바꾼 이미지·설명. 비어 있으면 아이템 원래 값을 쓴다.
+    custom_image_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    custom_description: Mapped[str | None] = mapped_column(String, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,

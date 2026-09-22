@@ -333,6 +333,7 @@ export type ItemEffectStat =
   | "mission_exp_recollection"
   | "challenge_acquisition"
   | "delivery_date_slot" | "delivery_freeform"
+  | "spirit_stone_customize" | "spirit_stone_exchange"
   | "battle_revive_once" | "battle_auto_revive" | "skill_recast";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
@@ -385,6 +386,8 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "mission_exp_recollection", label: "이전 챕터 미완료 임무의 경험치 취득" },
   { value: "delivery_date_slot", label: "출석부 지문 1회 작성 가능 (사이트 외 기능)" },
   { value: "delivery_freeform", label: "이미지 또는 편지 또는 둘 다 배달 (사이트 외 기능)" },
+  { value: "spirit_stone_customize", label: "정령석 커스텀 기능 해방" },
+  { value: "spirit_stone_exchange", label: "정령석 교환" },
   { value: "battle_revive_once", label: "전투 당 1회 부활" },
   { value: "battle_auto_revive", label: "전투 이후 자동 부활" },
   { value: "skill_recast", label: "기술 재발동(%)" },
@@ -401,7 +404,7 @@ export const EFFECT_STAT_LABELS: Record<string, string> = Object.fromEntries(
 /** 사용 시점에 선택 창이 필요해, 값 없이 그냥 사용할 수 없는 효과 스탯. */
 export const SELECTION_REQUIRED_EFFECT_STATS = new Set<ItemEffectStat>([
   "mission_exp_recollection", "challenge_acquisition", "full_reset",
-  "grade_choice_1", "grade_choice_2", "delivery_date_slot", "delivery_freeform",
+  "grade_choice_1", "grade_choice_2", "delivery_date_slot", "delivery_freeform", "spirit_stone_exchange",
 ]);
 
 /** 값 자체가 비율(예: 0.1 = 10%)로 다뤄지는 효과 스탯. */
@@ -419,6 +422,7 @@ export function formatEffect(effect: ItemEffect): string {
     effect.stat === "ap_reset" || effect.stat === "stat_reset" || effect.stat === "full_reset"
     || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2"
     || effect.stat === "cleanse_debuffs" || effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform"
+    || effect.stat === "spirit_stone_customize" || effect.stat === "spirit_stone_exchange"
     || effect.stat === "battle_revive_once" || effect.stat === "battle_auto_revive"
   ) return label;
   if (effect.stat === "skill_recast") return `기술 재발동 ${Math.round(effect.delta * 1000) / 10}% 위력`;
@@ -632,6 +636,13 @@ export interface CharacterOwnedItem {
   used_quantity: number;
   equipped: boolean;
   battle_only: boolean;
+  /** 이름에 "정령석"이 들어간 장착형 아이템. */
+  is_spirit_stone: boolean;
+  /** 정령석 커스텀이 해방된 캐릭터의 정령석이면 true. */
+  customizable: boolean;
+  /** 캐릭터가 직접 바꾼 값(편집 창 초기값). item_image_url·item_description은 이를 반영한 최종 값이다. */
+  custom_image_url: string | null;
+  custom_description: string | null;
 }
 
 export interface CharacterAchievedChallenge {
@@ -665,11 +676,12 @@ export interface CharacterDetail extends Character {
   attendance_streak: number;
   /** 진행 중인 실전 전투 참가자면 true. 아이템 사용·장착 변경이 막힌다. */
   in_live_battle: boolean;
+  spirit_stone_custom_unlocked: boolean;
 }
 
 export type RewardGrant =
   | { type: "item"; item_id: number; quantity: number }
-  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition">; amount: number };
+  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition" | "spirit_stone_customize" | "spirit_stone_exchange">; amount: number };
 
 export type ChallengeRewardItemGrant = RewardGrant;
 
@@ -1034,6 +1046,8 @@ export interface UseItemSelection {
   deliveryGroups?: DeliveryPayload[];
   missionId?: number;
   challengeId?: number;
+  /** "정령석 교환": 내놓을 보유 정령석과 받을 정령석. */
+  exchange?: { fromItemId: number; toItemId: number };
 }
 
 // "use"로 시작하면 React Hook으로 오인되어 rules-of-hooks 린트 오탐이 발생하므로 consumeItem으로 명명한다.
@@ -1056,6 +1070,8 @@ export async function consumeItem(
       delivery_recipient_id: selection.delivery?.recipient_id ?? null,
       delivery_anonymous: selection.delivery?.anonymous ?? false,
       delivery_groups: selection.deliveryGroups ?? null,
+      exchange_from_item_id: selection.exchange?.fromItemId ?? null,
+      exchange_to_item_id: selection.exchange?.toItemId ?? null,
     }),
   }, "아이템 사용 실패");
   invalidateApiCache("characters:", "items:", "skills:character:", "challenges:");
@@ -1086,6 +1102,41 @@ export async function uploadDeliveryImage(characterId: number, file: File): Prom
     `/characters/${characterId}/delivery-image`, file, "file", "이미지 업로드 실패",
   );
   return result.url;
+}
+
+/** 정령석 교환 창의 정령석. 이미 가진 정령석과 품절된 정령석은 고를 수 없다. */
+export interface SpiritStoneOption {
+  item_id: number;
+  name: string;
+  description: string;
+  image_url: string | null;
+  owned: boolean;
+  sold_out: boolean;
+}
+
+export async function fetchSpiritStoneOptions(characterId: number): Promise<SpiritStoneOption[]> {
+  return request<SpiritStoneOption[]>(`/characters/${characterId}/spirit-stones`, undefined, "정령석 목록 조회 실패");
+}
+
+/** 정령석 설명을 바꾸거나(빈 값이면 원래 설명) 직접 올린 이미지를 원래대로 되돌린다. */
+export async function updateSpiritStoneCustomization(
+  characterId: number,
+  itemId: number,
+  data: { custom_description?: string | null; clear_image?: boolean },
+): Promise<CharacterDetail> {
+  const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/customization`, {
+    method: "PUT", body: JSON.stringify(data),
+  }, "정령석 커스텀 저장 실패");
+  invalidateApiCache("characters:");
+  return detail;
+}
+
+export async function uploadSpiritStoneImage(characterId: number, itemId: number, file: File): Promise<CharacterDetail> {
+  const detail = await uploadFile<CharacterDetail>(
+    `/characters/${characterId}/items/${itemId}/custom-image`, file, "file", "정령석 이미지 업로드 실패",
+  );
+  invalidateApiCache("characters:");
+  return detail;
 }
 
 export async function fetchDeliveryRequests(): Promise<DeliveryRequest[]> {

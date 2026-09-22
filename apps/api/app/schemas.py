@@ -53,9 +53,13 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 # "delivery_date_slot"/"delivery_freeform": 사이트 밖에서 관리자가 수동 처리하는 배달 요청을 만든다
 #   (질문권=날짜 지정형, 선물 상자=자유 형식). 사용 시 DeliveryRequest 행이 생성되고, 관리자가
 #   상점 관리 "배달" 탭에서 완료 처리하기 전까지 구매/사용 이력에 "대기"로 표시된다.
+# "spirit_stone_customize": ("정령석 커스텀 기능 해방") 사용한 캐릭터가 보유한 정령석의 이미지·설명을 직접 바꿀 수 있게 된다.
+# "spirit_stone_exchange": ("정령석 교환") 사용 시 보유한 정령석 하나를 다른 정령석으로 바꾼다.
+#   정령석은 이름에 "정령석"이 들어간 장착형(동반자·장신구) 아이템이다.
 ITEM_EFFECT_SPECIAL_STATS = {
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform", "mission_exp_recollection", "challenge_acquisition",
+    "spirit_stone_customize", "spirit_stone_exchange",
 }
 # 장착한 동반자·장신구에서만 동작하는 전투 패시브 효과. 캐릭터 능력치를 바꾸지 않는다.
 # "battle_revive_once": 전투마다 한 번, 기절하는 즉시 부활 후 체력(revive_hp) 비율로 되살아난다.
@@ -78,6 +82,7 @@ ItemEffectStat = Literal[
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform",
     "mission_exp_recollection", "challenge_acquisition",
+    "spirit_stone_customize", "spirit_stone_exchange",
     "battle_revive_once", "battle_auto_revive", "skill_recast",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
@@ -485,6 +490,7 @@ class ItemCreate(BaseModel):
             if any(e.stat in (
                 "ap_reset", "stat_reset", "full_reset", "hp_heal_p",
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
+                "spirit_stone_customize", "spirit_stone_exchange",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
         if self.item_type == "consumable" and any(e.stat in ITEM_EFFECT_EQUIP_PASSIVE_STATS for e in self.effects):
@@ -504,6 +510,11 @@ class ItemCreate(BaseModel):
                 raise ValueError("도전과제 획득 아이템은 전투 전용으로 설정할 수 없습니다.")
             if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
                 raise ValueError("도전과제 획득 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
+        if any(e.stat in ("spirit_stone_customize", "spirit_stone_exchange") for e in self.effects):
+            if self.battle_only:
+                raise ValueError("정령석 커스텀·교환 아이템은 전투 전용으로 설정할 수 없습니다.")
+            if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
+                raise ValueError("정령석 커스텀·교환 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
         if not self.price_gold and not self.price_cp:
             raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
         return self
@@ -619,6 +630,26 @@ class UseItemRequest(BaseModel):
     delivery_recipient_id: int | None = Field(default=None, gt=0)
     delivery_anonymous: bool = False
     delivery_groups: list[DeliveryGiftGroup] | None = Field(default=None, min_length=1, max_length=100)
+    # "spirit_stone_exchange" 아이템 사용 시: 내놓을 보유 정령석과 받을 정령석.
+    exchange_from_item_id: int | None = Field(default=None, gt=0)
+    exchange_to_item_id: int | None = Field(default=None, gt=0)
+
+
+class ItemCustomizationUpdate(BaseModel):
+    """정령석 커스텀. 보내지 않은 필드는 그대로 두고, 빈 설명은 원래 설명으로 되돌린다."""
+    custom_description: str | None = Field(default=None, max_length=300)
+    # true면 직접 올린 이미지를 지우고 원래 이미지로 되돌린다.
+    clear_image: bool = False
+
+
+class SpiritStoneOptionRead(BaseModel):
+    """정령석 교환 창에 보여줄 정령석. 이미 가진 정령석과 품절된 정령석은 고를 수 없다."""
+    item_id: int
+    name: str
+    description: str
+    image_url: str | None = None
+    owned: bool
+    sold_out: bool
 
 
 class CharacterStatUpgradeRequest(BaseModel):
@@ -709,6 +740,12 @@ class CharacterOwnedItemRead(BaseModel):
     used_quantity: int
     equipped: bool
     battle_only: bool = False
+    is_spirit_stone: bool = False
+    # 정령석 커스텀이 해방된 캐릭터의 정령석이면 true. 이미지·설명을 바꿀 수 있다.
+    customizable: bool = False
+    # 캐릭터가 직접 바꾼 값(편집 창 초기값). item_image_url·item_description은 이를 반영한 최종 값이다.
+    custom_image_url: str | None = None
+    custom_description: str | None = None
 
     @field_validator("effects", mode="before")
     @classmethod
@@ -757,6 +794,7 @@ class CharacterDetailRead(CharacterRead):
     attendance_streak: int = 0
     # 진행 중인 실전 전투 참가자면 아이템 사용·장착을 막는다(화면에서도 버튼을 감춘다).
     in_live_battle: bool = False
+    spirit_stone_custom_unlocked: bool = False
 
 
 class ChallengeCreate(BaseModel):

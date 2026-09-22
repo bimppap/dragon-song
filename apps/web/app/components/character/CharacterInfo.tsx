@@ -26,6 +26,8 @@ import {
 import CharacterOwnedSkills from "./CharacterOwnedSkills";
 import CharacterClonedSkills from "./CharacterClonedSkills";
 import CharacterEquipmentSlots from "./CharacterEquipmentSlots";
+import SpiritStoneCustomizeModal from "./SpiritStoneCustomizeModal";
+import SpiritStoneExchangeForm from "./SpiritStoneExchangeForm";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import Modal from "@/components/common/Modal";
@@ -53,7 +55,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
-import { MAX_CHARACTER_LEVEL, patchAdminCharacter, formatEffect, consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
+import { MAX_CHARACTER_LEVEL, patchAdminCharacter, formatEffect, consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, fetchSpiritStoneOptions, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemEffect, ItemHistoryEntry, Reward, RewardGrant, UseItemSelection } from "@/lib/api";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import DatePicker from "@/components/ui/date-picker";
@@ -753,6 +755,8 @@ function OwnedItemTile({
   loading,
   readOnly = false,
   locked = false,
+  spiritStones = [],
+  onCustomize,
   onUse,
   onEquip,
   onUnequip,
@@ -764,6 +768,10 @@ function OwnedItemTile({
   readOnly?: boolean;
   /** 실전 전투 중처럼 아이템 사용·장착이 금지된 상태. */
   locked?: boolean;
+  /** "정령석 교환"에서 내놓을 수 있는 보유 정령석. */
+  spiritStones?: CharacterOwnedItem[];
+  /** 커스텀이 해방된 정령석에서 "커스텀하기"를 눌렀을 때. */
+  onCustomize?: () => void;
   onUse: (selection?: UseItemSelection) => void;
   onEquip: (selection?: UseItemSelection) => void;
   onUnequip: () => void;
@@ -795,6 +803,9 @@ function OwnedItemTile({
             {item.battle_only && (
               <div className="mt-1 text-gold">전투 중에만 사용할 수 있는 아이템입니다.</div>
             )}
+            {item.customizable && !readOnly && onCustomize && (
+              <Button type="button" size="sm" variant="secondary" className="mt-2 w-full" onClick={onCustomize}>커스텀하기</Button>
+            )}
           </div>
         }
       >
@@ -823,6 +834,26 @@ function OwnedItemTile({
           size="sm"
           variant="outline"
           onClick={async () => {
+            if (item.effects.some((effect) => effect.stat === "spirit_stone_exchange")) {
+              if (!spiritStones.length) { toast("교환할 수 있는 보유 정령석이 없습니다.", "error"); return; }
+              try {
+                const options = await fetchSpiritStoneOptions(characterId);
+                const selection: { current: { fromItemId: number | null; toItemId: number | null } } = { current: { fromItemId: null, toItemId: null } };
+                const ok = await confirm({
+                  title: "정령석 교환",
+                  confirmText: "교환하기",
+                  maxWidthClassName: "max-w-3xl",
+                  disableEnterConfirm: true,
+                  validate: () => !selection.current.fromItemId
+                    ? "교환할 보유 정령석을 골라 주세요."
+                    : !selection.current.toItemId ? "받을 정령석을 골라 주세요." : null,
+                  content: <SpiritStoneExchangeForm owned={spiritStones} options={options} onChange={(next) => { selection.current = next; }} />,
+                });
+                const { fromItemId, toItemId } = selection.current;
+                if (ok && fromItemId && toItemId) onUse({ exchange: { fromItemId, toItemId } });
+              } catch (error) { toast(error instanceof Error ? error.message : "정령석 목록 조회 실패", "error"); }
+              return;
+            }
             if (item.effects.some((effect) => effect.stat === "challenge_acquisition")) {
               try {
                 const challenges = await fetchAcquisitionChallenges(characterId, item.item_id);
@@ -1153,6 +1184,7 @@ export default function CharacterInfo({
   const { confirm } = useDialog();
   const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
+  const [customizingItemId, setCustomizingItemId] = useState<number | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [statUpgradeLoading, setStatUpgradeLoading] = useState<GradeStat | null>(null);
   const [adminSaving, setAdminSaving] = useState(false);
@@ -1176,6 +1208,7 @@ export default function CharacterInfo({
     : (characters[0]?.id ?? null);
   const selectedDetail =
     detail != null && detail.id === selectedCharacterId ? detail : null;
+  const customizingItem = selectedDetail?.owned_items.find((owned) => owned.item_id === customizingItemId && owned.customizable) ?? null;
 
   useEffect(() => {
     const characterId = selectedCharacterId;
@@ -1423,7 +1456,8 @@ export default function CharacterInfo({
                 <div className="flex items-start gap-2">
                   <CharacterOwnedSkills key={`skills:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
                   <CharacterClonedSkills key={`cloned:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} />
-                  <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} locked={selectedDetail.in_live_battle} />
+                  <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} locked={selectedDetail.in_live_battle}
+                    onCustomize={(item) => setCustomizingItemId(item.item_id)} />
                 </div>
               </div>
 
@@ -1634,12 +1668,18 @@ export default function CharacterInfo({
                     locked={selectedDetail.in_live_battle}
                     loading={itemActionLoadingId === item.item_id}
                     currentFaction={selectedDetail.faction}
+                    spiritStones={selectedDetail.owned_items.filter((owned) => owned.is_spirit_stone)}
+                    onCustomize={() => setCustomizingItemId(item.item_id)}
                     onUse={(selection) => handleItemAction(item.item_id, consumeItem, selection)}
                     onEquip={(selection) => handleItemAction(item.item_id, equipItem, selection)}
                     onUnequip={() => handleItemAction(item.item_id, unequipItem)}
                   />
                 ))}
               </div>
+              {customizingItem && !readOnly && (
+                <SpiritStoneCustomizeModal key={customizingItem.item_id} characterId={selectedDetail.id} item={customizingItem}
+                  onClose={() => setCustomizingItemId(null)} onUpdated={setDetail} />
+              )}
             </CardContent>
           </Card>
 
