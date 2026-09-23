@@ -53,7 +53,7 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 # "delivery_date_slot"/"delivery_freeform": 사이트 밖에서 관리자가 수동 처리하는 배달 요청을 만든다
 #   (질문권=날짜 지정형, 선물 상자=자유 형식). 사용 시 DeliveryRequest 행이 생성되고, 관리자가
 #   상점 관리 "배달" 탭에서 완료 처리하기 전까지 구매/사용 이력에 "대기"로 표시된다.
-# "spirit_stone_customize": ("정령석 커스텀 기능 해방") 사용한 캐릭터가 보유한 정령석의 이미지·설명을 직접 바꿀 수 있게 된다.
+# "spirit_stone_customize": ("정령석 커스텀 기능 해방") 사용한 캐릭터가 보유한 정령석의 이름·이미지·설명을 직접 바꿀 수 있게 된다.
 # "spirit_stone_exchange": ("정령석 교환") 사용 시 보유한 정령석 하나를 다른 정령석으로 바꾼다.
 #   정령석은 이름에 "정령석"이 들어간 장착형(동반자·장신구) 아이템이다.
 ITEM_EFFECT_SPECIAL_STATS = {
@@ -636,7 +636,8 @@ class UseItemRequest(BaseModel):
 
 
 class ItemCustomizationUpdate(BaseModel):
-    """정령석 커스텀. 보내지 않은 필드는 그대로 두고, 빈 설명은 원래 설명으로 되돌린다."""
+    """정령석 커스텀. 보내지 않은 필드는 그대로 두고, 빈 이름·설명은 원래 값으로 되돌린다."""
+    custom_name: str | None = Field(default=None, max_length=50)
     custom_description: str | None = Field(default=None, max_length=300)
     # true면 직접 올린 이미지를 지우고 원래 이미지로 되돌린다.
     clear_image: bool = False
@@ -742,9 +743,10 @@ class CharacterOwnedItemRead(BaseModel):
     equipped: bool
     battle_only: bool = False
     is_spirit_stone: bool = False
-    # 정령석 커스텀이 해방된 캐릭터의 정령석이면 true. 이미지·설명을 바꿀 수 있다.
+    # 정령석 커스텀이 해방된 캐릭터의 정령석이면 true. 이름·이미지·설명을 바꿀 수 있다.
     customizable: bool = False
-    # 캐릭터가 직접 바꾼 값(편집 창 초기값). item_image_url·item_description은 이를 반영한 최종 값이다.
+    # 캐릭터가 직접 바꾼 값(편집 창 초기값). item_name·item_image_url·item_description은 이를 반영한 최종 값이다.
+    custom_name: str | None = None
     custom_image_url: str | None = None
     custom_description: str | None = None
 

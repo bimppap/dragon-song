@@ -126,6 +126,20 @@ class ItemBattlePassivesTest(unittest.TestCase):
         crud._mark_combatant_downed(participant)
         self.assertEqual((participant["downed"], participant["hp"]), (True, 0))
 
+    def test_revive_log_uses_the_custom_spirit_stone_name(self):
+        item = self.equip(self.hero, "불꽃의 정령석", [{"stat": "battle_revive_once", "delta": 0}])
+        state = self.db.query(CharacterItemState).filter_by(character_id=self.hero.id, item_id=item.id).one()
+        state.custom_name = "화염"
+        self.db.commit()
+        participant = crud._snapshot_combatant(self.hero)
+        crud._ensure_combatant_snapshot_defaults(participant)
+        crud._attach_battle_item_passives(self.db, [participant])
+        participant["hp"] = 0
+        crud._mark_combatant_downed(participant)
+        events: list[str] = []
+        crud._flush_battle_revive_events([participant], events)
+        self.assertEqual(events, ["✨ 용사의 화염 발동 → 부활 [HP 30/100]"])
+
     def test_revive_once_during_enemy_turn_logs_right_after_faint(self):
         self.equip(self.hero, "불사조 깃털", [{"stat": "battle_revive_once", "delta": 0}])
         skill = EnemySkill(skill_type="지정 공격", name="내리치기", target_count=1, damage_percent=100)

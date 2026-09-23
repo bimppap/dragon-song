@@ -640,7 +640,8 @@ export interface CharacterOwnedItem {
   is_spirit_stone: boolean;
   /** 정령석 커스텀이 해방된 캐릭터의 정령석이면 true. */
   customizable: boolean;
-  /** 캐릭터가 직접 바꾼 값(편집 창 초기값). item_image_url·item_description은 이를 반영한 최종 값이다. */
+  /** 캐릭터가 직접 바꾼 값(편집 창 초기값). item_name·item_image_url·item_description은 이를 반영한 최종 값이다. */
+  custom_name: string | null;
   custom_image_url: string | null;
   custom_description: string | null;
 }
@@ -1118,11 +1119,11 @@ export async function fetchSpiritStoneOptions(characterId: number): Promise<Spir
   return request<SpiritStoneOption[]>(`/characters/${characterId}/spirit-stones`, undefined, "정령석 목록 조회 실패");
 }
 
-/** 정령석 설명을 바꾸거나(빈 값이면 원래 설명) 직접 올린 이미지를 원래대로 되돌린다. */
+/** 정령석 이름·설명을 바꾸거나(빈 값이면 원래 값) 직접 올린 이미지를 원래대로 되돌린다. */
 export async function updateSpiritStoneCustomization(
   characterId: number,
   itemId: number,
-  data: { custom_description?: string | null; clear_image?: boolean },
+  data: { custom_name?: string | null; custom_description?: string | null; clear_image?: boolean },
 ): Promise<CharacterDetail> {
   const detail = await request<CharacterDetail>(`/characters/${characterId}/items/${itemId}/customization`, {
     method: "PUT", body: JSON.stringify(data),

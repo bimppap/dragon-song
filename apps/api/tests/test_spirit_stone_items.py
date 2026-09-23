@@ -75,6 +75,27 @@ class SpiritStoneItemsTest(unittest.TestCase):
         with self.assertRaises(HTTPException):  # 이미 해방된 캐릭터는 다시 쓰지 않는다(아이템도 소모되지 않음)
             crud.use_item(self.db, self.character.id, self.customize.id)
 
+    def test_customize_renames_stone_everywhere_it_is_shown(self):
+        crud.use_item(self.db, self.character.id, self.customize.id)
+        detail, _ = crud.update_spirit_stone_customization(
+            self.db, self.character.id, self.valor.id, {"custom_name": "  첫 번째 벗  "})
+        owned = self.owned(detail)[self.valor.id]
+        self.assertEqual(owned.item_name, "첫 번째 벗")
+        self.assertEqual(owned.custom_name, "첫 번째 벗")
+
+        # 장착 중인 정령석은 캐릭터 카드의 장비 목록에도 바꾼 이름으로 보인다.
+        crud.equip_item(self.db, self.character.id, self.valor.id)
+        card = crud.get_character_card_details(self.db, admin=True)[0]
+        self.assertEqual([entry.name for entry in card.equipment], ["첫 번째 벗"])
+
+        # 이름을 비우면 원래 이름으로 돌아가고, 다른 커스텀 값은 그대로 남는다.
+        crud.update_spirit_stone_customization(self.db, self.character.id, self.valor.id, {"custom_description": "내 정령"})
+        detail, _ = crud.update_spirit_stone_customization(self.db, self.character.id, self.valor.id, {"custom_name": ""})
+        owned = self.owned(detail)[self.valor.id]
+        self.assertEqual(owned.item_name, "용맹의 정령석")
+        self.assertIsNone(owned.custom_name)
+        self.assertEqual(owned.item_description, "내 정령")
+
     def test_exchange_swaps_stone_and_unequips_the_old_one(self):
         crud.equip_item(self.db, self.character.id, self.valor.id)
         self.assertEqual(self.character.atk, 15)

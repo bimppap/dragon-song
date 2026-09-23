@@ -763,7 +763,7 @@ async def customize_spirit_stone(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
-    """정령석 설명을 바꾸거나 직접 올린 이미지를 원래대로 되돌린다."""
+    """정령석 이름·설명을 바꾸거나 직접 올린 이미지를 원래대로 되돌린다."""
     _require_own_character_or_admin(db, member, character_id)
     detail, removed_image_url = crud.update_spirit_stone_customization(
         db, character_id, item_id, data.model_dump(exclude_unset=True),

@@ -793,9 +793,9 @@ def get_character_card_details(db: Session, *, admin: bool = False) -> list[Char
         Item.item_type.in_(["companion", "accessory"]),
     ).order_by(*ITEM_DISPLAY_ORDER).all()
     for state, item in equipment:
-        description, image_url = _item_display_for_character(item, state)
+        name, description, image_url = _item_display_for_character(item, state)
         result[state.character_id].equipment.append(CharacterCardItemRead(
-            item_id=item.id, item_type=item.item_type, name=_item_owned_name(item),
+            item_id=item.id, item_type=item.item_type, name=name,
             description=description,
             image_url=image_url,
             effects=item.effects or [],
@@ -854,11 +854,11 @@ def _assert_not_in_live_real_battle(db: Session, character_id: int) -> None:
 
 
 def _owned_item_read(character: Character, item: Item, quantity: int, state: CharacterItemState | None) -> CharacterOwnedItemRead:
-    description, image_url = _item_display_for_character(item, state)
+    name, description, image_url = _item_display_for_character(item, state)
     spirit_stone = _is_spirit_stone(item)
     return CharacterOwnedItemRead(
         item_id=item.id,
-        item_name=_item_owned_name(item),
+        item_name=name,
         item_description=description,
         item_image_url=image_url,
         item_type=item.item_type,
@@ -869,6 +869,7 @@ def _owned_item_read(character: Character, item: Item, quantity: int, state: Cha
         battle_only=item.battle_only,
         is_spirit_stone=spirit_stone,
         customizable=spirit_stone and character.spirit_stone_custom_unlocked,
+        custom_name=state.custom_name if state and spirit_stone else None,
         custom_image_url=state.custom_image_url if state and spirit_stone else None,
         custom_description=state.custom_description if state and spirit_stone else None,
     )
@@ -1159,13 +1160,14 @@ def _is_spirit_stone(item: Item) -> bool:
     return item.item_type in ("companion", "accessory") and SPIRIT_STONE_KEYWORD in (item.name or "")
 
 
-def _item_display_for_character(item: Item, state: CharacterItemState | None) -> tuple[str, str | None]:
-    """캐릭터에게 보일 아이템 설명·이미지. 정령석은 캐릭터가 직접 바꾼 값을 우선한다."""
-    description, image_url = _item_owned_description(item), _item_owned_image_url(item)
+def _item_display_for_character(item: Item, state: CharacterItemState | None) -> tuple[str, str, str | None]:
+    """캐릭터에게 보일 아이템 이름·설명·이미지. 정령석은 캐릭터가 직접 바꾼 값을 우선한다."""
+    name, description, image_url = _item_owned_name(item), _item_owned_description(item), _item_owned_image_url(item)
     if state is not None and _is_spirit_stone(item):
+        name = state.custom_name or name
         description = state.custom_description or description
         image_url = state.custom_image_url or image_url
-    return description, image_url
+    return name, description, image_url
 
 
 def _apply_item_data(item: Item, data: ItemCreate) -> None:
@@ -1685,8 +1687,10 @@ def _customizable_spirit_stone_state(db: Session, character_id: int, item_id: in
 
 
 def update_spirit_stone_customization(db: Session, character_id: int, item_id: int, fields: dict) -> tuple[CharacterDetailRead, str | None]:
-    """정령석 설명을 바꾸거나 이미지를 원래대로 되돌린다. 지운 이미지 주소를 함께 돌려줘 스토리지에서 지우게 한다."""
+    """정령석 이름·설명을 바꾸거나 이미지를 원래대로 되돌린다. 지운 이미지 주소를 함께 돌려줘 스토리지에서 지우게 한다."""
     state = _customizable_spirit_stone_state(db, character_id, item_id)
+    if "custom_name" in fields:
+        state.custom_name = (fields["custom_name"] or "").strip() or None
     if "custom_description" in fields:
         state.custom_description = (fields["custom_description"] or "").strip() or None
     removed_image_url = None
@@ -4442,14 +4446,16 @@ def _attach_battle_item_passives(db: Session, participants: list[dict]) -> None:
     }
     if character_ids:
         rows = (
-            db.query(CharacterItemState.character_id, Item)
+            db.query(CharacterItemState, Item)
             .join(Item, Item.id == CharacterItemState.item_id)
             .filter(CharacterItemState.character_id.in_(character_ids), CharacterItemState.equipped.is_(True))
             .order_by(Item.sort_order, Item.id)
             .all()
         )
-        for character_id, item in rows:
-            item_name = _item_owned_name(item)
+        for state, item in rows:
+            character_id = state.character_id
+            # 전투 로그에도 러너가 직접 붙인 정령석 이름을 쓴다(기술 커스텀 이름과 같은 규칙).
+            item_name = _item_display_for_character(item, state)[0]
             for effect in item.effects or []:
                 stat = effect.get("stat")
                 if stat == "battle_revive_once":

@@ -5,12 +5,15 @@ import Image from "next/image";
 import { Package } from "lucide-react";
 import Modal from "@/components/common/Modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { updateSpiritStoneCustomization, uploadSpiritStoneImage, type CharacterDetail, type CharacterOwnedItem } from "@/lib/api";
 
+const NAME_MAX_LENGTH = 50;
 const DESCRIPTION_MAX_LENGTH = 300;
 
-/** 정령석의 이미지·설명을 캐릭터마다 바꾸는 창. 설명을 비우면 원래 설명으로, 이미지는 되돌리기 버튼으로 복원한다. */
+/** 정령석의 이름·이미지·설명을 캐릭터마다 바꾸는 창.
+ *  이름·설명을 비우면 원래 값으로, 이미지는 되돌리기 버튼으로 복원한다. */
 export default function SpiritStoneCustomizeModal({ characterId, item, onClose, onUpdated }: {
   characterId: number;
   item: CharacterOwnedItem;
@@ -18,6 +21,7 @@ export default function SpiritStoneCustomizeModal({ characterId, item, onClose, 
   onUpdated: (detail: CharacterDetail) => void;
 }) {
   const fileInput = useRef<HTMLInputElement>(null);
+  const [name, setName] = useState(item.custom_name ?? "");
   const [description, setDescription] = useState(item.custom_description ?? "");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +65,12 @@ export default function SpiritStoneCustomizeModal({ characterId, item, onClose, 
           </div>
         </div>
         <div className="space-y-1.5">
+          <label htmlFor="spirit-stone-name" className="block text-xs font-semibold text-muted">이름</label>
+          <Input id="spirit-stone-name" value={name} maxLength={NAME_MAX_LENGTH} disabled={pending}
+            placeholder="비워 두면 원래 이름이 보입니다." onChange={(event) => setName(event.target.value)} />
+          <p className="text-right font-num text-[11px] text-muted">{name.length}/{NAME_MAX_LENGTH}</p>
+        </div>
+        <div className="space-y-1.5">
           <label htmlFor="spirit-stone-description" className="block text-xs font-semibold text-muted">설명</label>
           <Textarea id="spirit-stone-description" value={description} maxLength={DESCRIPTION_MAX_LENGTH} rows={4} disabled={pending}
             placeholder="비워 두면 원래 설명이 보입니다." onChange={(event) => setDescription(event.target.value)} />
@@ -70,8 +80,10 @@ export default function SpiritStoneCustomizeModal({ characterId, item, onClose, 
         <div className="flex justify-end gap-2">
           <Button type="button" size="sm" variant="ghost" disabled={pending} onClick={onClose}>닫기</Button>
           <Button type="button" size="sm" disabled={pending}
-            onClick={() => void run(() => updateSpiritStoneCustomization(characterId, item.item_id, { custom_description: description }), true)}>
-            {pending ? "저장 중..." : "설명 저장"}
+            onClick={() => void run(() => updateSpiritStoneCustomization(characterId, item.item_id, {
+              custom_name: name, custom_description: description,
+            }), true)}>
+            {pending ? "저장 중..." : "저장"}
           </Button>
         </div>
       </div>

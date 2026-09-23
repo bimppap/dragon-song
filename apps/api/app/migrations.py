@@ -18,6 +18,8 @@ def ensure_schema(engine: Engine) -> None:
         state_columns = {col["name"] for col in inspector.get_columns("character_item_states")}
         if "chosen_stats" not in state_columns:
             statements.append("ALTER TABLE character_item_states ADD COLUMN chosen_stats JSON NOT NULL DEFAULT '[]'")
+        if "custom_name" not in state_columns:
+            statements.append("ALTER TABLE character_item_states ADD COLUMN custom_name VARCHAR")
         if "custom_image_url" not in state_columns:
             statements.append("ALTER TABLE character_item_states ADD COLUMN custom_image_url VARCHAR")
         if "custom_description" not in state_columns:
