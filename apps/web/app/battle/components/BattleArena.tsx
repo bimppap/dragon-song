@@ -4,7 +4,7 @@ import { isAllSkillTarget } from "@/lib/skillTargets";
 
 import { type ReactNode, useCallback, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import Image from "next/image";
-import { ArrowLeft, ArrowLeftRight, Ban, Check, Eye, Files, Heart, HeartPulse, Link2, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, TrendingDown, TrendingUp, Undo2, UserPlus, Zap } from "lucide-react";
+import { ArrowLeft, ArrowLeftRight, Ban, Check, Eye, Files, Heart, HeartPulse, Link2, ListChecks, Package, Shield, type LucideIcon, Megaphone, Skull, Sparkles, Swords, Undo2, UserPlus, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -2424,16 +2424,20 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
             effect.affinity === "buff" && effect.source_character_id === p.character_id,
           );
           const enemyDebuffs = (p.status_effects ?? []).filter(isEnemyDebuff);
-          const otherEffects = displayStatusEffects((p.status_effects ?? []).filter((effect) =>
+          // 남의 기술로 걸린 강화·약화. 자신이 건 강화·에너미 약화와 색만 같고 출처가 달라 따로 모은다.
+          const otherBars = statusEffectBarItems((p.status_effects ?? []).filter((effect) =>
             effect.effect_type !== "escort_guard" && !isEnemyDebuff(effect)
             && (effect.affinity !== "buff" || effect.source_character_id !== p.character_id),
           ));
+          // 약화는 오른쪽, 강화는 왼쪽으로 기울여 한눈에 갈리게 둔다.
           const stackBars: StackBarItem[] = [
             ...(p.environment_stacks ?? []).map((stack) => ({
               key: `environment:${stack.id}`, label: stack.name, count: stack.count, color: stack.color,
             })),
             ...enemyDebuffBarItems(enemyDebuffs),
-            ...statusEffectBarItems(selfBuffs).map((item): StackBarItem => ({ ...item, direction: "left" })),
+            ...otherBars.filter((item) => item.tone !== "buff"),
+            ...[...statusEffectBarItems(selfBuffs), ...otherBars.filter((item) => item.tone === "buff")]
+              .map((item): StackBarItem => ({ ...item, direction: "left" })),
           ];
           const statusBadges = [
             p.downed && <Badge key="downed" variant="destructive" className="text-[10px]">기절</Badge>,
@@ -2565,28 +2569,6 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                       <div className="flex flex-wrap gap-2">{statusBadges}</div>
                     )}
 
-                    {otherEffects.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {otherEffects.map((effect, index) => {
-                          const isBuff = effect.affinity === "buff";
-                          const label = effect.skill_name || effect.var_name || effect.effect_type;
-                          return (
-                            <Badge
-                              key={`${effect.effect_type}-${index}`}
-                              variant="outline"
-                              className={cn(
-                                "text-[10px]",
-                                isBuff ? "border-emerald-500/50 text-emerald-400" : "border-fuchsia-500/50 text-fuchsia-400",
-                              )}
-                            >
-                              {isBuff ? <TrendingUp size={10} className="mr-0.5" /> : <TrendingDown size={10} className="mr-0.5" />}
-                              {label}
-                              {effect.stacks != null && effect.stacks > 1 ? ` ×${effect.stacks}` : ""}
-                            </Badge>
-                          );
-                        })}
-                      </div>
-                    )}
                   </div>
                 </div>
 
