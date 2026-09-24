@@ -2112,6 +2112,8 @@ export interface SkillNode {
   has_cleanse_count: boolean;
   formula: string | null;
   description: string | null;
+  /** 관리자가 쓴 설명 원문. {기술 위력} 같은 자리표시자가 채워지기 전 그대로다(description은 채운 뒤). */
+  description_template?: string | null;
   tier6_effect: string | null;
   is_placeholder: boolean;
   is_public: boolean;

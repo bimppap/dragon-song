@@ -4175,6 +4175,49 @@ def _update_skill_power_units(node: SkillNode, data: SkillNodeUpdate) -> None:
         node.settings_overrides = overrides
 
 
+# 설명 자리표시자. 설명을 한 번만 쓰고 depth마다 그 depth의 값으로 채운다(예: "{기술 위력} 피해" → "150% 피해").
+# 관리 화면의 미리보기(apps/web/lib/skillDescription.ts)도 같은 규칙으로 채우므로 함께 바꾼다.
+SKILL_DESCRIPTION_TOKEN_PATTERN = re.compile(r"\{([^{}]+)\}")
+
+
+def _description_number(value: float) -> str:
+    rounded = round(float(value), 6)
+    return str(int(rounded)) if rounded.is_integer() else repr(rounded)
+
+
+def _skill_description_values(node: SkillNode) -> dict[str, str]:
+    """자리표시자 이름 → 채울 값. 위력은 칸 이름으로 부르고, 퍼센트형은 %까지 붙인다."""
+    values = {"depth": str(node.tier)}
+    cost = _resolved_skill_node_value(node, "cost")
+    if cost is not None:
+        values["비용"] = _description_number(cost)
+    powers = _resolved_skill_node_powers(node)
+    for slot in _skill_node_power_slots(node):
+        value = _resolved_skill_node_value(node, "power") if slot.key == "power" else powers.get(slot.key)
+        if value is not None:
+            values[slot.label] = f"{_description_number(value * 100)}%" if slot.unit == "percent" else _description_number(value)
+    if skill_has_cleanse_count(_resolved_skill_node_value(node, "var_name")):
+        values["약화 해제 수"] = str(int(_resolved_skill_node_value(node, "cleanse_count") or 0))
+    return values
+
+
+def _skill_description_template(node: SkillNode) -> str | None:
+    """관리자가 쓴 설명 원문(자리표시자 그대로). 자동 설명 기술은 직접 쓴 설명이 없으면 None이다."""
+    spec = _skill_spec_for_node(node) or {}
+    if spec.get("var_name") in AUTO_DESCRIPTION_VARS:
+        return (node.description_override or "").strip() or None
+    return _resolved_skill_node_value(node, "description")
+
+
+def _skill_node_description(node: SkillNode) -> str | None:
+    """러너·전투에 보여줄 설명. 자리표시자는 이 depth의 값으로 채우고, 모르는 이름은 그대로 둔다."""
+    text = _resolved_skill_node_value(node, "description")
+    if not text or "{" not in text:
+        return text
+    values = _skill_description_values(node)
+    return SKILL_DESCRIPTION_TOKEN_PATTERN.sub(lambda match: values.get(match.group(1).strip(), match.group(0)), text)
+
+
 def _resolved_skill_node_name(node: SkillNode) -> str:
     return str(_resolved_skill_node_value(node, "default_name") or node.default_name)
 
@@ -5643,7 +5686,7 @@ def _battle_skill_dict(
         "activation_order": _resolved_skill_node_value(node, "activation_order"),
         "cleanse_count": _resolved_skill_node_value(node, "cleanse_count"),
         "formula": _resolved_skill_node_value(node, "formula"),
-        "description": _resolved_skill_node_value(node, "description"),
+        "description": _skill_node_description(node),
         # 러너가 직접 쓴 설명. 원본 설명을 대체하지 않고 전투 툴팁에 함께 보여준다.
         "custom_description": custom_description,
         "custom_description_color": custom_description_color,
@@ -8855,7 +8898,8 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         cleanse_count=_resolved_skill_node_value(node, "cleanse_count"),
         has_cleanse_count=skill_has_cleanse_count(_resolved_skill_node_value(node, "var_name")),
         formula=_resolved_skill_node_value(node, "formula"),
-        description=_resolved_skill_node_value(node, "description"),
+        description=_skill_node_description(node),
+        description_template=_skill_description_template(node),
         tier6_effect=node.tier6_effect if node.tier == 6 else None,
         is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")),
         is_public=node.is_public,
@@ -9235,7 +9279,7 @@ def _to_character_skill_node_read(node: SkillNode, unlock: CharacterSkillUnlock 
         cleanse_count=_resolved_skill_node_value(node, "cleanse_count") if is_public else None,
         has_cleanse_count=skill_has_cleanse_count(_resolved_skill_node_value(node, "var_name")) if is_public else False,
         formula=_resolved_skill_node_value(node, "formula") if is_public else None,
-        description=_resolved_skill_node_value(node, "description") if is_public else None,
+        description=_skill_node_description(node) if is_public else None,
         tier6_effect=node.tier6_effect if is_public and node.tier == 6 else None,
         is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")) if is_public else False,
         is_public=is_public,

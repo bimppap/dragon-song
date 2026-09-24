@@ -11,7 +11,10 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/common/Modal";
 import { useDialog } from "@/components/common/DialogProvider";
-import { powerOf, powerSlotsOf, ratioToPercent, type PowerSlot, type PowerUnit } from "@/lib/skillPower";
+import { DescriptionText } from "@/components/skill/SkillTreeGrid";
+import { BOOK_ACCENT } from "@/components/skill/bookAccent";
+import { fillDescription, unknownDescriptionTokens } from "@/lib/skillDescription";
+import { powerOf, powerSlotsOf, powerText, ratioToPercent, type PowerSlot, type PowerUnit } from "@/lib/skillPower";
 import { ALL_SKILL_TARGETS, allTargetSide, isAllSkillTarget } from "@/lib/skillTargets";
 import { cn } from "@/lib/utils";
 import {
@@ -84,9 +87,22 @@ interface CommonDraft {
   targetSide?: SkillTargetSide;
   activationOrder?: string;
   powerUnits: Record<string, PowerUnit | undefined>;
+  /** 모든 depth가 함께 쓰는 설명. {기술 위력} 같은 자리표시자는 depth마다 그 depth의 값으로 채워진다. */
+  description: string;
 }
 
-type CommonField = Exclude<keyof CommonDraft, "powerUnits">;
+type CommonField = Exclude<keyof CommonDraft, "powerUnits" | "description">;
+
+/** 가장 많은 depth가 함께 쓰는 설명을 공통 설명으로 본다. 두 depth 이상 같은 설명이 없으면 비워 둔다. */
+function commonDescriptionOf(nodes: SkillNode[]): string {
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    const text = (node.description_template ?? "").trim();
+    counts.set(text, (counts.get(text) ?? 0) + 1);
+  }
+  const [text, count] = [...counts].reduce((best, entry) => (entry[1] > best[1] ? entry : best));
+  return count >= 2 ? text : "";
+}
 
 /** depth들의 공통 설정을 모은다. 값이 갈리는 칸은 mixed에 담는다(위력 형식은 `unit:슬롯키`). */
 function commonDraftOf(nodes: SkillNode[], slots: PowerSlot[]): { draft: CommonDraft; mixed: Set<string> } {
@@ -107,6 +123,7 @@ function commonDraftOf(nodes: SkillNode[], slots: PowerSlot[]): { draft: CommonD
     targetSide: shared("targetSide", (node) => node.target_side),
     activationOrder: shared("activationOrder", (node) => (node.activation_order == null ? null : String(node.activation_order))),
     powerUnits: Object.fromEntries(slots.map((slot) => [slot.key, shared(`unit:${slot.key}`, (node) => unitOf(node, slot.key))])),
+    description: commonDescriptionOf(nodes),
   };
   return { draft, mixed };
 }
@@ -120,10 +137,31 @@ function effectiveUnit(common: CommonDraft, node: SkillNode, key: string): Power
   return common.powerUnits[key] ?? unitOf(node, key);
 }
 
+/** 이 depth에 저장할 설명 원문(자리표시자 그대로). */
+function descriptionOf(row: DepthRow, common: CommonDraft): string {
+  return (row.ownDescription ? row.description : common.description).trim();
+}
+
+/** 설명 자리표시자 이름 → 지금 입력한 이 depth의 값. 서버가 채우는 규칙과 같다. */
+function descriptionValuesOf(row: DepthRow, common: CommonDraft, slots: PowerSlot[]): Record<string, string> {
+  const values: Record<string, string> = { depth: String(row.node.tier) };
+  if (row.node.tier === 0) return values;
+  if (isCount(row.cost)) values["비용"] = String(Number(row.cost));
+  for (const slot of slots) {
+    const unit = effectiveUnit(common, row.node, slot.key);
+    const input = row.powers[slot.key] ?? "";
+    if (isValidPower(unit, input)) values[slot.label] = powerText(unit, inputToPower(unit, input));
+  }
+  if (row.node.has_cleanse_count && isCount(row.cleanseCount)) values["약화 해제 수"] = String(Number(row.cleanseCount));
+  return values;
+}
+
 /** depth 하나의 입력값. node는 마지막으로 저장된 값이라, 바뀐 항목을 가려내는 기준이 된다. */
 interface DepthRow {
   node: SkillNode;
   name: string;
+  /** true면 공통 설명 대신 description에 이 depth만의 설명을 쓴다. */
+  ownDescription: boolean;
   description: string;
   tier6Effect: string;
   cost: string;
@@ -134,11 +172,14 @@ interface DepthRow {
   imagePreview: string | null;
 }
 
-function depthRowOf(node: SkillNode): DepthRow {
+/** commonDescription이 null이면 공통 설명 없이(depth가 하나뿐) 이 depth의 설명만 쓴다. */
+function depthRowOf(node: SkillNode, commonDescription: string | null): DepthRow {
+  const description = node.description_template ?? "";
   return {
     node,
     name: node.default_name,
-    description: node.description ?? "",
+    ownDescription: commonDescription === null || description.trim() !== commonDescription.trim(),
+    description,
     tier6Effect: node.tier6_effect ?? "",
     cost: node.cost != null ? String(node.cost) : "",
     powers: Object.fromEntries(powerSlotsOf(node).map((slot) => [slot.key, powerToInput(slot.unit, powerOf(node, slot.key))])),
@@ -157,8 +198,8 @@ function changesOf(row: DepthRow, common: CommonDraft, slots: PowerSlot[]): Skil
   const changes: SkillNodeUpdate = {};
   const name = row.name.trim();
   if (name !== node.default_name) changes.default_name = name;
-  const description = row.description.trim();
-  if (description !== (node.description ?? "").trim()) changes.description = description || null;
+  const description = descriptionOf(row, common);
+  if (description !== (node.description_template ?? "").trim()) changes.description = description || null;
   const tier6Effect = row.tier6Effect.trim();
   if (node.tier === 6 && tier6Effect !== (node.tier6_effect ?? "").trim()) changes.tier6_effect = tier6Effect || null;
 
@@ -347,11 +388,14 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
   const slots = powerSlotsOf(focus);
   const [{ draft: initialCommon, mixed }] = useState(() => commonDraftOf(nodes, slots));
   const [common, setCommon] = useState<CommonDraft>(initialCommon);
-  const [rows, setRows] = useState<DepthRow[]>(() => nodes.map(depthRowOf));
+  // depth가 여럿이면 설명을 공통으로 한 번 쓰고, 필요한 depth만 따로 쓴다.
+  const sharesDescription = nodes.length > 1;
+  const [rows, setRows] = useState<DepthRow[]>(() => nodes.map((node) => depthRowOf(node, sharesDescription ? initialCommon.description : null)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const confirmingClose = useRef(false);
   const previewUrls = useRef<string[]>([]);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
   // 고른 이미지의 미리보기 URL은 창을 닫을 때 한꺼번에 해제한다("한 번에 바꾸기"는 여러 depth가 같은 URL을 쓴다).
   useEffect(() => {
@@ -368,6 +412,10 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
   const columnCount = 3 + (isSkill ? 1 + slots.length + (showCleanse ? 1 : 0) : 0);
   const targetMode = common.target === undefined ? undefined
     : isAllSkillTarget(common.target) || common.target === "SELF" ? common.target : "COUNT";
+  const descriptionTokens = ["depth", ...(isSkill ? ["비용", ...slots.map((slot) => slot.label), ...(showCleanse ? ["약화 해제 수"] : [])] : [])];
+  const unknownTokens = unknownDescriptionTokens(common.description, descriptionTokens);
+  const ownDescriptionCount = rows.filter((row) => row.ownDescription).length;
+  const accentText = BOOK_ACCENT[focus.book].text;
 
   function updateRows(match: (row: DepthRow) => boolean, patch: (row: DepthRow) => Partial<DepthRow>) {
     setRows((prev) => prev.map((row) => (match(row) ? { ...row, ...patch(row) } : row)));
@@ -380,6 +428,19 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
     const preview = URL.createObjectURL(file);
     previewUrls.current.push(preview);
     updateRows(match, () => ({ imageFile: file, imagePreview: preview }));
+  }
+
+  /** 공통 설명의 커서 자리에 자리표시자를 넣고, 넣은 뒤에 커서를 두어 이어서 쓰게 한다. */
+  function insertToken(name: string) {
+    const token = `{${name}}`;
+    const textarea = descriptionRef.current;
+    const start = textarea?.selectionStart ?? common.description.length;
+    const end = textarea?.selectionEnd ?? start;
+    setCommon((prev) => ({ ...prev, description: prev.description.slice(0, start) + token + prev.description.slice(end) }));
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(start + token.length, start + token.length);
+    });
   }
 
   async function requestClose() {
@@ -423,7 +484,7 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
         }
         saved.push(depthLabel(row.node));
         // 저장한 depth는 서버 값을 새 기준으로 삼아, 뒤 depth에서 실패해 다시 저장할 때 중복으로 보내지 않는다.
-        updateRow(updated.id, () => depthRowOf(updated));
+        updateRow(updated.id, () => depthRowOf(updated, sharesDescription ? common.description : null));
       } catch (e) {
         failure = `${depthLabel(row.node)} 저장 실패: ${e instanceof Error ? e.message : "기술 수정 실패"}`;
         break;
@@ -570,6 +631,53 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
           </section>
         )}
 
+        {sharesDescription && (
+          <section className="space-y-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div className="space-y-0.5">
+                <h3 className="text-sm font-semibold text-ivory">설명</h3>
+                <p className="text-xs text-muted">
+                  모든 depth가 함께 쓰는 설명입니다. 아래 값을 넣으면 depth마다 그 depth의 수치로 채워집니다.
+                </p>
+              </div>
+              {ownDescriptionCount > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => updateRows(() => true, () => ({ ownDescription: false }))}
+                >
+                  따로 쓴 depth {ownDescriptionCount}개도 공통 설명 쓰기
+                </Button>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {descriptionTokens.map((name) => (
+                <Button key={name} type="button" variant="outline" size="sm" className="h-7 px-2 font-normal" onClick={() => insertToken(name)}>
+                  {`{${name}}`}
+                </Button>
+              ))}
+            </div>
+            <Textarea
+              ref={descriptionRef}
+              aria-label="공통 설명"
+              rows={3}
+              maxLength={2000}
+              value={common.description}
+              placeholder={focus.auto_description
+                ? "비워두면 depth에 맞춰 자동으로 쓰인 설명을 씁니다."
+                : `예) 적 1명에게 '{${slots[0].label}}' 피해를 줍니다.`}
+              className="resize-y"
+              onChange={(e) => setCommon((prev) => ({ ...prev, description: e.target.value }))}
+            />
+            {unknownTokens.length > 0 && (
+              <p className="text-xs text-red-400">
+                채울 수 없는 값: {unknownTokens.map((name) => `{${name}}`).join(", ")} (위 버튼의 이름과 같아야 합니다)
+              </p>
+            )}
+          </section>
+        )}
+
         <section className="space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h3 className="text-sm font-semibold text-ivory">{isSkill ? "depth별 설정" : "기본 정보"}</h3>
@@ -610,6 +718,11 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
               {states.map(({ row, dirty, errors }) => {
                 const { id, tier } = row.node;
                 const label = depthLabel(row.node);
+                const description = descriptionOf(row, common);
+                // 설명이 비어 있는 자동 설명 기술은 서버가 쓴 설명을 보여준다(직접 쓴 설명을 막 지웠으면 저장해야 바뀐다).
+                const descriptionPreview = description
+                  ? fillDescription(description, descriptionValuesOf(row, common, slots))
+                  : row.node.auto_description && !row.node.description_template ? row.node.description : null;
                 return (
                   <tbody key={id} className={cn("border-t border-line", id === focusId && "bg-gold/5")}>
                     <tr>
@@ -687,14 +800,47 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
                         </>
                       )}
                     </tr>
-                    <TextRow
-                      depth={label}
-                      label="설명"
-                      colSpan={columnCount - 1}
-                      value={row.description}
-                      placeholder={row.node.auto_description ? "비워두면 depth에 맞춰 자동으로 쓰인 설명을 씁니다." : "러너에게 보여지는 기술 설명"}
-                      onChange={(description) => updateRow(id, () => ({ description }))}
-                    />
+                    <tr>
+                      <td className="px-2 pb-2 align-top text-xs text-muted">설명</td>
+                      <td colSpan={columnCount - 1} className="px-2 pb-2">
+                        <div className="flex items-start gap-2">
+                          <div className="min-w-0 flex-1 space-y-1">
+                            {row.ownDescription && (
+                              <Textarea
+                                aria-label={`${label} 설명`}
+                                rows={2}
+                                maxLength={2000}
+                                value={row.description}
+                                placeholder={row.node.auto_description ? "비워두면 depth에 맞춰 자동으로 쓰인 설명을 씁니다." : "러너에게 보여지는 기술 설명"}
+                                className="min-h-14 resize-y"
+                                onChange={(e) => updateRow(id, () => ({ description: e.target.value }))}
+                              />
+                            )}
+                            {(!row.ownDescription || description.includes("{")) && (
+                              // 자리표시자를 이 depth의 값으로 채운 모습. 러너에게 보이는 그대로다.
+                              <p aria-label={`${label} 설명 미리보기`} className="whitespace-pre-line rounded-lg border border-dashed border-line px-3 py-2 text-sm text-ivory/85">
+                                {descriptionPreview
+                                  ? <DescriptionText text={descriptionPreview} className={accentText} />
+                                  : <span className="text-muted">{row.node.auto_description ? "저장하면 depth에 맞춰 자동으로 쓰인 설명이 들어갑니다." : "설명 없음"}</span>}
+                              </p>
+                            )}
+                          </div>
+                          {sharesDescription && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 shrink-0 px-2"
+                              onClick={() => updateRow(id, () => (
+                                row.ownDescription ? { ownDescription: false } : { ownDescription: true, description: common.description }
+                              ))}
+                            >
+                              {row.ownDescription ? "공통 설명 쓰기" : "따로 쓰기"}
+                            </Button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
                     {tier === 6 && (
                       <TextRow
                         depth={label}
@@ -717,6 +863,7 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
               설명에서 작은따옴표로 감싼 부분은 서(書) 강조 색으로 표시됩니다(따옴표는 보이지 않습니다). 수치는 따옴표가 없어도 자동으로 강조됩니다.
               {focus.auto_description && " 설명을 비워두면 depth에 맞춰 자동으로 쓰인 설명을 씁니다."}
             </li>
+            {sharesDescription && <li>{"{값 이름}"}은 depth마다 그 depth의 수치로 채워집니다. 퍼센트형 위력은 %까지 붙습니다. 따로 쓴 설명에서도 쓸 수 있습니다.</li>}
             <li>이미지는 칸을 눌러 바꿉니다. 업로드 시 WebP로 변환되며(5MB 이하), 없으면 기본 아이콘이 표시됩니다.</li>
           </ul>
         </section>

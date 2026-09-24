@@ -90,6 +90,31 @@ class SkillAdminUpdateTest(unittest.TestCase):
         self.assertEqual(updated.default_name, derived.default_name)
         self.assertEqual(updated.cost, 7)
 
+    def test_description_placeholders_are_filled_with_each_depth_values(self):
+        nodes = crud.get_skill_nodes(self.db, "불굴의 서")
+        template = "'{기술 위력}' 회복, 환경 {약화 해제 수}개 제거 (비용 {비용}, {depth}단계) {없는 값}"
+        chain = sorted((n for n in nodes if n.branch == 0 and n.col in (None, 0)), key=lambda n: n.tier)
+        for node, power in zip(chain, (0.16, 0.175)):
+            update_skill_node(self.db, node.id, SkillNodeUpdate(description=template, power=power, cleanse_count=node.tier))
+        self.db.expire_all()
+        reloaded = {n.id: n for n in crud.get_skill_nodes(self.db, "불굴의 서")}
+
+        first, second = reloaded[chain[0].id], reloaded[chain[1].id]
+        self.assertEqual(first.description, "'16%' 회복, 환경 1개 제거 (비용 3, 1단계) {없는 값}")
+        self.assertEqual(second.description, "'17.5%' 회복, 환경 2개 제거 (비용 3, 2단계) {없는 값}")
+        # 관리 화면은 채우기 전 원문을 받아 다시 편집한다.
+        self.assertEqual(first.description_template, template)
+
+    def test_auto_description_skill_fills_placeholders_in_written_description(self):
+        nodes = crud.get_skill_nodes(self.db, "불굴의 서")
+        node = next(n for n in nodes if n.branch == 0 and n.col == 1 and n.tier == 3)
+        self.assertIsNone(node.description_template)
+
+        updated = update_skill_node(self.db, node.id, SkillNodeUpdate(description="받는 피해 {피해 감소} 감소"))
+
+        self.assertEqual(updated.description, "받는 피해 15% 감소")
+        self.assertEqual(updated.description_template, "받는 피해 {피해 감소} 감소")
+
     def test_marks_skills_whose_description_is_written_automatically(self):
         nodes = crud.get_skill_nodes(self.db, "불굴의 서")
         # 불굴의 서 파생 기술(col 1)은 depth·위력으로 설명을 쓰고, 뿌리 기술은 저장한 설명을 그대로 쓴다.

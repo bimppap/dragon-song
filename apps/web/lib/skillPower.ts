@@ -19,3 +19,8 @@ export function powerOf(node: Pick<SkillNode, "power" | "powers">, key: string):
 export function ratioToPercent(value: number): number {
   return Number((value * 100).toFixed(6));
 }
+
+/** 위력 값을 보이는 글자로. 퍼센트형은 %를 붙인다(1.5 → "150%"). */
+export function powerText(unit: PowerUnit, value: number): string {
+  return unit === "percent" ? `${ratioToPercent(value)}%` : String(Number(value.toFixed(6)));
+}

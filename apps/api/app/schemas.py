@@ -1385,6 +1385,8 @@ class SkillNodeRead(BaseModel):
     has_cleanse_count: bool = False
     formula: str | None = None
     description: str | None = None
+    # 관리자가 쓴 설명 원문. {기술 위력} 같은 자리표시자가 채워지기 전 그대로다(description은 채운 뒤).
+    description_template: str | None = None
     tier6_effect: str | None = None
     is_placeholder: bool = False
     is_public: bool = True

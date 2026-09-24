@@ -5,7 +5,7 @@ import Image from "next/image";
 import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
-import { powerOf, powerSlotsOf, ratioToPercent } from "@/lib/skillPower";
+import { powerOf, powerSlotsOf, powerText } from "@/lib/skillPower";
 import type { SkillNode } from "@/lib/api";
 import { type BookAccent } from "@/components/skill/bookAccent";
 
@@ -185,7 +185,7 @@ export function SkillTooltipContent({
           <>
             {powerSlotsOf(node).map((slot) => {
               const value = powerOf(node, slot.key);
-              const text = value == null ? "정보 없음" : slot.unit === "flat" ? String(value) : `${ratioToPercent(value)}%`;
+              const text = value == null ? "정보 없음" : powerText(slot.unit, value);
               return <InfoRow key={slot.key} label={`${slot.label}:`} value={text} />;
             })}
             {node.has_cleanse_count && (
