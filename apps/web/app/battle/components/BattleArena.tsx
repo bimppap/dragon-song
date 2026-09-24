@@ -253,16 +253,33 @@ const STACK_BAR_TONE = {
   debuff: { bar: "bg-fuchsia-400", text: "text-fuchsia-400" },
 } as const;
 
+/** 시전자별 스택 색. 캐릭터 id로 골라 어느 전투에서든 같은 캐릭터는 같은 색이 나온다. */
+const CASTER_STACK_COLORS = [
+  "#60a5fa", "#fbbf24", "#a78bfa", "#4ade80", "#22d3ee",
+  "#fb923c", "#f87171", "#c084fc", "#38bdf8", "#a3e635",
+];
+
+/** 시전자를 알 수 없는 효과(특성·환경 등)는 색 없이 강화/약화 기본색을 쓴다. */
+function casterStackColor(sourceCharacterId: number | null | undefined): string | undefined {
+  if (sourceCharacterId == null) return undefined;
+  const index = ((sourceCharacterId % CASTER_STACK_COLORS.length) + CASTER_STACK_COLORS.length) % CASTER_STACK_COLORS.length;
+  return CASTER_STACK_COLORS[index];
+}
+
 /** 환경 스택·상태이상을 개수만큼 대각선 바로 보여주고, 커서를 올리면 이름과 개수를 알려준다. */
 function StackBars({ items, className }: { items: StackBarItem[]; className?: string }) {
   if (items.length === 0) return null;
   return (
     <InfoTooltip content={
-      <span className="flex flex-wrap items-center gap-1">
-        {items.map((item, index) => (
-          <span key={item.key}>
-            {index > 0 && <span className="mr-1 text-muted">|</span>}
-            <span className={item.tone ? STACK_BAR_TONE[item.tone].text : undefined} style={item.tone ? undefined : { color: item.color }}>
+      // 걸려 있는 강화·약화를 한 줄에 하나씩, 스택과 같은 색 표시와 함께 전부 보여준다.
+      <span className="flex max-w-64 flex-col gap-0.5">
+        {items.map((item) => (
+          <span key={item.key} className="flex items-baseline gap-1.5">
+            <span aria-hidden="true"
+              className={cn("mt-0.5 block h-2.5 w-0.5 shrink-0 rounded-full", item.direction === "left" ? "-rotate-20" : "rotate-20",
+                !item.color && item.tone && STACK_BAR_TONE[item.tone].bar)}
+              style={item.color ? { backgroundColor: item.color } : undefined} />
+            <span className={item.color ? undefined : item.tone && STACK_BAR_TONE[item.tone].text} style={item.color ? { color: item.color } : undefined}>
               {item.label}{item.detail ? ` (${item.detail})` : ""} × {item.count}
             </span>
           </span>
@@ -280,8 +297,9 @@ function StackBars({ items, className }: { items: StackBarItem[]; className?: st
               <span
                 key={index}
                 aria-hidden="true"
-                className={cn("block h-2.5 w-0.5 rounded-full", item.direction === "left" ? "-rotate-20" : "rotate-20", item.tone && STACK_BAR_TONE[item.tone].bar)}
-                style={item.tone ? undefined : { backgroundColor: item.color }}
+                className={cn("block h-2.5 w-0.5 rounded-full", item.direction === "left" ? "-rotate-20" : "rotate-20",
+                  !item.color && item.tone && STACK_BAR_TONE[item.tone].bar)}
+                style={item.color ? { backgroundColor: item.color } : undefined}
               />
             ))}
           </div>
@@ -301,11 +319,12 @@ function statusEffectBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
     const skillName = effect.skill_name || effect.var_name || effect.effect_type;
     const label = effect.source_name ? `${effect.source_name}의 ${skillName}` : skillName;
     const tone = effect.affinity === "buff" ? "buff" : "debuff";
-    const key = `${tone}:${label}`;
+    const color = casterStackColor(effect.source_character_id);
+    const key = `${tone}:${color ?? "-"}:${label}`;
     const count = Math.max(1, effect.stacks ?? 1);
     const existing = grouped.get(key);
     if (existing) existing.count += count;
-    else grouped.set(key, { key, label, count, tone });
+    else grouped.set(key, { key, label, count, tone, color, direction: tone === "buff" ? "left" : "right" });
   }
   return [...grouped.values()];
 }
@@ -2429,15 +2448,15 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
             effect.effect_type !== "escort_guard" && !isEnemyDebuff(effect)
             && (effect.affinity !== "buff" || effect.source_character_id !== p.character_id),
           ));
-          // 약화는 오른쪽, 강화는 왼쪽으로 기울여 한눈에 갈리게 둔다.
+          // 색은 시전자별로 갈리므로, 약화(오른쪽 기울기) → 강화(왼쪽 기울기) 순으로 묶어 둔다.
           const stackBars: StackBarItem[] = [
             ...(p.environment_stacks ?? []).map((stack) => ({
               key: `environment:${stack.id}`, label: stack.name, count: stack.count, color: stack.color,
             })),
             ...enemyDebuffBarItems(enemyDebuffs),
             ...otherBars.filter((item) => item.tone !== "buff"),
-            ...[...statusEffectBarItems(selfBuffs), ...otherBars.filter((item) => item.tone === "buff")]
-              .map((item): StackBarItem => ({ ...item, direction: "left" })),
+            ...statusEffectBarItems(selfBuffs),
+            ...otherBars.filter((item) => item.tone === "buff"),
           ];
           const statusBadges = [
             p.downed && <Badge key="downed" variant="destructive" className="text-[10px]">기절</Badge>,
