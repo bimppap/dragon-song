@@ -51,7 +51,7 @@ class EruptionSkillTest(unittest.TestCase):
         events = [e for e in result.log[-1]['events'] if '34 피해' in e]
         self.assertEqual(len(events), 4)
         for event in events:
-            self.assertIn('스킬레벨 2 × 5 + 기술 효율 고정 7', result.log[-1]['calculations'][event])
+            self.assertIn('반응 피해 10 + 기술 효율 고정 7', result.log[-1]['calculations'][event])
 
     def test_unbuffed_target_does_not_trigger(self):
         self.cast()

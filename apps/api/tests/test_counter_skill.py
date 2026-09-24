@@ -117,11 +117,11 @@ class CounterSkillTest(unittest.TestCase):
             )]),
         )
 
-        cast_event = "↩️ 실험 요정 B의 반격 I → 실험 요정 A (피해 감소 +11%) · 실험 요정 B 반격 태세 · MP -3 [7/10]"
+        cast_event = "↩️ 실험 요정 B의 반격 I → 실험 요정 A (피해 감소 +12%) · 실험 요정 B 반격 태세 · MP -3 [7/10]"
         self.assertIn(cast_event, ally_result.log[-1]["events"])
         self.assertEqual(
             ally_result.log[-1]["calculations"][cast_event],
-            "floor(기술 위력 0.1 × (1 + 기술 효율 비례 0.1) × 100)%",
+            "floor(기술 위력 0.1 × (1 + 방어 효율 0.2) × 100)%",
         )
 
         enemy_result = crud.resolve_battle_enemy_turn(self.db, self.battle.id)

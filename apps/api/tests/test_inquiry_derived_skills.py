@@ -30,24 +30,24 @@ class InquiryDerivedSkillSpecTest(unittest.TestCase):
         self.assertEqual(self._spec(2, 2)["default_name"], "복제")
 
     def test_description_scales_with_depth(self):
-        # 개선: 기술 위력 10% × 스킬레벨, 기술 효율(고정) 2 × 스킬레벨.
-        self.assertIn("+20%", dynamic_derived_description("ab_improve", 2))
-        self.assertIn("+4", dynamic_derived_description("ab_improve", 2))
-        self.assertIn("+30%", dynamic_derived_description("ab_improve", 3))
-        self.assertIn("+6", dynamic_derived_description("ab_improve", 3))
+        # 설명 수치는 그 단계에 저장된 위력을 그대로 쓴다(등급을 다시 곱하지 않는다).
+        self.assertIn("+20%", self._spec(0, 2)["description"])
+        self.assertIn("+4", self._spec(0, 2)["description"])
+        self.assertIn("+30%", self._spec(0, 3)["description"])
+        self.assertIn("+6", self._spec(0, 3)["description"])
 
-        # 쇠약: 기술 위력 2% × 스킬레벨.
-        self.assertIn("4%", dynamic_derived_description("ab_weaken", 2))
-        self.assertIn("6%", dynamic_derived_description("ab_weaken", 3))
+        self.assertIn("4%", self._spec(1, 2)["description"])
+        self.assertIn("6%", self._spec(1, 3)["description"])
 
-        # 복제: 슬롯 수 = depth, 효율 보정 -50%+10%×depth / -20+4×depth.
+        # 복제: 슬롯 수 = depth, 효율 보정 -50%+5%×depth / -20+2×depth.
         clone2 = dynamic_derived_description("ab_clone", 2)
         self.assertIn("최대 2개", clone2)
-        self.assertIn("-30%", clone2)
-        self.assertIn("-12", clone2)
+        self.assertIn("-40%", clone2)
+        self.assertIn("-16", clone2)
         clone5 = dynamic_derived_description("ab_clone", 5)
         self.assertIn("최대 5개", clone5)
-        self.assertIn("+0%", clone5)
+        self.assertIn("-25%", clone5)
+        self.assertIn("-10", clone5)
 
     def test_no_dynamic_description_for_other_skills(self):
         self.assertIsNone(dynamic_derived_description("ab_strike", 2))
@@ -88,7 +88,7 @@ class InquiryDerivedReconcileTest(unittest.TestCase):
         )
         self.assertTrue(weaken.default_name.startswith("쇠약"))
         self.assertEqual(weaken.var_name, "ab_weaken")
-        self.assertEqual(weaken.power, 0.02)
+        self.assertEqual(weaken.power, 0.04)
         self.assertEqual(weaken.target_side, "ENEMY")
 
         clone = (

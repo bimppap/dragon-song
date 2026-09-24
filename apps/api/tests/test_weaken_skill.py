@@ -74,12 +74,12 @@ class WeakenSkillTest(unittest.TestCase):
 
         weaken_event = next(e for e in events if e.startswith("🩸 주술사의 쇠약 II → 허수아비"))
         # 받는 피해 증가 = skill_lv 2 × 0.02 + 시전자 0.1 = 0.14 → +14%
-        self.assertIn("받는 피해 +14%", weaken_event)
+        self.assertIn("받는 피해 +12%", weaken_event)
 
         attack_event = next(e for e in events if e.startswith("⚔️ 검사 공격:"))
         # 기본 피해 10 → floor(10 × (1 + 0.14)) = 11
         self.assertIn("11 피해", attack_event)
-        self.assertIn("쇠약 받는 피해 증가 0.14", calcs[attack_event])
+        self.assertIn("쇠약 받는 피해 증가 0.12", calcs[attack_event])
 
     def test_weaken_amplifies_hex_heal_enemy_damage(self):
         """주술(회복량만큼 무작위 적 피해)처럼 아군 턴의 다른 피해원도 쇠약 증폭을 받아야 한다."""
@@ -117,9 +117,9 @@ class WeakenSkillTest(unittest.TestCase):
 
         events = result.log[-1]["events"]
         hex_event = next(e for e in events if e.startswith("🔮 주술사2의"))
-        # 회복량 40(최대 체력 100 × (스킬레벨 2 × 15% + 10%))에 쇠약 14%가 곱해진다.
-        self.assertIn("45 피해", hex_event)
-        self.assertIn("쇠약 받는 피해 증가 0.14", result.log[-1]["calculations"][hex_event])
+        # 회복량 39(최대 체력 100 × 회복 비율 40%, 1 남기고 회복)에 쇠약 12%가 곱해진다.
+        self.assertIn("44 피해", hex_event)
+        self.assertIn("쇠약 받는 피해 증가 0.12", result.log[-1]["calculations"][hex_event])
 
     def test_weaken_survives_ally_turn_and_expires_after_enemy_turn(self):
         """분출 반응·반격 피해까지 증폭해야 하므로 쇠약은 에너미 턴이 끝날 때 소멸한다."""

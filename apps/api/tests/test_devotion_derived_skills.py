@@ -114,7 +114,7 @@ class DevotionDerivedTest(unittest.TestCase):
         self.assertEqual([e['hp'] for e in result.enemies], [1000, 983])
         heal_event = next(e for e in result.log[-1]['events'] if '5 치유' in e)
         damage_event = next(e for e in result.log[-1]['events'] if '17 피해' in e)
-        self.assertIn('스킬레벨 2 × 0.15 + 0.10', result.log[-1]['calculations'][heal_event])
+        self.assertIn('회복 비율 0.4', result.log[-1]['calculations'][heal_event])
         self.assertIn('실제 회복량 5', result.log[-1]['calculations'][damage_event])
 
     def test_admin_edits_stick_per_depth_while_spec_drives_the_rest(self):
@@ -130,10 +130,10 @@ class DevotionDerivedTest(unittest.TestCase):
         self.assertIn('floor(10 +', reverted.description)
         hex_node = self.node(2, 5)
         updated = crud.update_skill_node(self.db, hex_node.id, SkillNodeUpdate(default_name='주술', power=0.99))
-        # 저주 회복의 레벨당 회복 비율도 depth별로 직접 정할 수 있다.
+        # 주술의 회복 비율도 depth별로 직접 정할 수 있다(저장값을 그대로 쓴다).
         # 같은 서에 같은 이름이 여럿이면 다른 기술과 마찬가지로 depth 숫자가 붙는다.
         self.assertEqual((updated.default_name, updated.power), ('주술 V', 0.99))
-        self.assertIn('505%', updated.description)
+        self.assertIn('99%', updated.description)
         legacy = self.node(1)
         legacy.default_name = '헌혈'
         legacy.var_name = None

@@ -29,7 +29,8 @@ class ImproveSkillTest(unittest.TestCase):
         self.improve = SkillNode(
             book="탐구의 서", branch=0, col=1, tier=2, default_name="개선 II",
             trigger_type="즉발형", category="강화", stackable=False, var_name="ab_improve",
-            cost=2, power=0.10, target="1", target_side="ALLY", activation_order=1, is_public=True,
+            cost=2, power=0.2, powers={"eff_true": 4}, target="1", target_side="ALLY",
+            activation_order=1, is_public=True,
         )
         self.strike = SkillNode(
             book="용맹의 서", branch=0, col=None, tier=1, default_name="강타 I",
@@ -86,7 +87,7 @@ class ImproveSkillTest(unittest.TestCase):
         self.assertIn("기술 효율(비례) +30%", improve_event)
         # 기술 효율(고정) = skill_lv 2 × 2 + floor(4 / 2) = 6
         self.assertIn("기술 효율(고정) +6", improve_event)
-        self.assertIn("스킬레벨 2 × 기술 위력 0.1", calcs[improve_event])
+        self.assertIn("기술 위력 0.2", calcs[improve_event])
 
         strike_event = next(e for e in events if e.startswith("✨ 검사의") and "허수아비" in e)
         # 강타는 기술 효율 고정을 쓰지 않으므로 비례 보정만 반영된다: floor(10 × (1.5 × (1 + 0.30))) = 19
@@ -104,6 +105,17 @@ class ImproveSkillTest(unittest.TestCase):
         # 대상이 행동하지 않았으므로 임시 보정은 적용된 적이 없다.
         self.assertEqual(target["skill_eff_fixed"], 0.0)
         self.assertNotIn("_skill_eff_fixed_temp", target)
+
+    def test_improve_cannot_target_the_caster(self):
+        """개선은 자신을 제외한 아군에게만 건다."""
+        result = self._resolve([CharacterActionInput(
+            character_id=self.caster.id, kind="skill",
+            skill_node_id=self.improve.id, target_character_id=self.caster.id,
+        )])
+        improve_event = next(e for e in result.log[-1]["events"] if e.startswith("📈"))
+        # 자신을 지정해도 다른 아군에게 걸린다.
+        self.assertIn(self.target.name, improve_event)
+        self.assertNotIn(f"→ {self.caster.name}", improve_event)
 
 
 if __name__ == "__main__":

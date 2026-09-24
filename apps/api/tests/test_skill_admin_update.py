@@ -109,7 +109,7 @@ class SkillAdminUpdateTest(unittest.TestCase):
         sibling = next(n for n in crud.get_skill_nodes(self.db, "불굴의 서")
                        if n.branch == 0 and n.col == 1 and n.tier == 2)
         self.assertEqual((sibling.trigger_type, sibling.category, sibling.stackable, sibling.power),
-                         ("지속형", "강화", True, 0.05))
+                         ("지속형", "강화", True, 0.1))
         renamed = update_skill_node(self.db, node.id, SkillNodeUpdate(default_name="새 경호"))
         self.assertEqual((renamed.power, renamed.stackable), (0.25, False))
 
@@ -230,9 +230,10 @@ class SkillAdminUpdateTest(unittest.TestCase):
             if spec.get("var_name") == "ab_protect"
         ]
 
-        # 기술 등급으로 계산하던 값들을 기술 데이터로 옮겼다(정화는 단계별, 보호는 단계 공통).
+        # 기술 등급으로 계산하던 값들을 기술 데이터로 옮겼다(단계마다 최종값을 그대로 저장한다).
         self.assertEqual([node["cleanse_count"] for node in purification], [1, 2, 3, 4, 5, 6])
-        self.assertTrue(all(node["powers"]["attn_transfer"] == 0.1 for node in protect))
+        self.assertEqual([node["powers"]["attn_transfer"] for node in protect],
+                         [0.2, 0.6, 1.2, 2.0, 3.0, 0.1])
 
 
 if __name__ == "__main__":

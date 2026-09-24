@@ -4022,7 +4022,7 @@ def _devotion_derived_power(node: SkillNode, spec: dict) -> float:
 def _devotion_derived_description(node: SkillNode, spec: dict) -> str:
     power = _resolved_skill_node_value(node, "power")
     if spec["var_name"] == "ab_hex_heal":
-        return f"아군 1명의 최대 체력의 {node.tier * power * 100 + 10:g}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다."
+        return f"아군 1명의 최대 체력의 {power * 100:g}% × (1+시전자 기술 효율 비례) × (1+시전자 치유 효율)만큼 회복하고, 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다."
     if spec["var_name"] == "ab_regeneration":
         return f"아군 1명에게 전투 종료까지 체력 재생력(고정) +floor({power:g} + 시전자 기술 효율(고정)/4) 버프를 부여합니다."
     return f"아군 전원의 현재 체력을 {power:g} + 시전자 기술 효율(고정)/4만큼 회복합니다."
@@ -4046,7 +4046,7 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
         max_stacks = 2 if _resolved_skill_node_value(node, "stackable") else 1
         return (
             f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 피해 감소를 "
-            f"{node.tier * power * 100:g}% + 기술 효율(비례)만큼 올리는 버프를 최대 {max_stacks}스택까지 부여합니다. "
+            f"{power * 100:g}% + 기술 효율(비례)만큼 올리는 버프를 최대 {max_stacks}스택까지 부여합니다. "
             "경호 스택을 가진 아군이 피격되면 스택을 소모하고 시전자가 대신 공격을 받습니다. 자신의 피해 감소는 전투 종료까지 유지됩니다."
         )
     if var_name == "ab_clone":
@@ -4056,11 +4056,14 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
         return (
             f"비전투 시 다른 캐릭터의 기술을 최대 {depth}개 저장하고, 전투에서 복제해 사용합니다"
             f"(비용 {_formula_number(cost or 0)}). "
-            f"복제 사용 시 기술 효율(비례) {-50 + 10 * depth:+d}%, 기술 효율(고정) {-20 + 4 * depth:+d}로 보정됩니다."
+            f"복제 사용 시 기술 효율(비례) {-50 + 5 * depth:+d}%, 기술 효율(고정) {-20 + 2 * depth:+d}로 보정됩니다"
+            f"(기술 효율 고정은 0 밑으로 내려가지 않습니다)."
         )
     if var_name in DEVOTION_DERIVED_VARS:
         return _devotion_derived_description(node, resolved_spec)
-    return dynamic_derived_description(var_name, node.tier)
+    return dynamic_derived_description(
+        var_name, node.tier, _resolved_skill_node_value(node, "power"), _resolved_skill_node_powers(node),
+    )
 
 
 def _apply_skill_description_update(node: SkillNode, data: SkillNodeUpdate, spec: dict, *, auto_before: str | None) -> None:
@@ -4091,7 +4094,9 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
     # (기존 DB에 "설명 준비 중입니다."가 저장돼 있어도 새 설명으로 덮는다.)
     if field == "description":
         var_name = getattr(node, "var_name", None) or spec_var_name
-        dynamic = dynamic_derived_description(var_name, node.tier)
+        dynamic = dynamic_derived_description(
+            var_name, node.tier, getattr(node, "power", None), _resolved_skill_node_powers(node),
+        )
         if dynamic is not None:
             return dynamic
     if field == "formula" and spec_var_name in SPEC_FORMULA_VAR_NAMES:
@@ -4109,7 +4114,7 @@ def _resolved_skill_node_value(node: SkillNode, field: str):
     if spec_var_name in DEVOTION_DERIVED_VARS:
         power = _devotion_derived_power(node, spec)
         if field == "power":
-            return 0.15 if spec["var_name"] == "ab_hex_heal" else power
+            return power
         if field == "description":
             return _devotion_derived_description(node, spec)
         if field == "is_placeholder":
@@ -4290,7 +4295,7 @@ def _snapshot_combatant(character: Character) -> dict:
         "skill_lv": character.skill_lv, "skill_eff_true": character.skill_eff_true,
         "skill_eff_fixed": character.skill_eff_fixed, "skill_cost": character.skill_cost,
         "def": character.def_, "def_p": character.def_p, "def_eff": character.def_eff, "dmg_r": character.dmg_r,
-        "heal_eff": character.heal_eff, "skill_target": max(1, character.skill_target or 1),
+        "heal_eff": character.heal_eff, "skill_target": max(0, character.skill_target or 0),
         "over_heal": bool(character.over_heal),
         "hp_max_p": character.hp_max_p, "rank": character.rank,
         "sh": character.sh, "start_sh": character.start_sh,
@@ -4957,10 +4962,12 @@ def _apply_eruption_reaction(recipient: dict, enemies: list[dict], round_no: int
     if not effects:
         return
     efficiency = recipient["skill_eff_true"]
-    damages = [max(0, _floor_amount(int(effect["skill_lv"]) * 5 + efficiency)) for effect in effects]
+    # damage는 기술에 설정된 반응 피해. 이 값이 없는 옛 전투 스냅샷만 예전 계산(스킬레벨 × 5)을 쓴다.
+    powers = [float(effect.get("damage", int(effect.get("skill_lv") or 2) * 5)) for effect in effects]
+    damages = [max(0, _floor_amount(power + efficiency)) for power in powers]
     formula = " + ".join(
-        f"max(0, floor(스킬레벨 {effect['skill_lv']} × 5 + 기술 효율 고정 {_formula_number(efficiency)}))"
-        for effect in effects
+        f"max(0, floor(반응 피해 {_formula_number(power)} + 기술 효율 고정 {_formula_number(efficiency)}))"
+        for power in powers
     )
     total_dealt = 0
     for enemy in enemies:
@@ -5082,7 +5089,7 @@ def _apply_minion_phase(participants: list[dict], enemies: list[dict], summons: 
                     applied = _add_combat_stat_stack(target, source=f"minion:{minion.get('spawn_round', 0)}:{minion['id']}", name=name, stat=stat, amount=amount, percent=True, stackable=True)
                     events.append(f"👹 하수인 {name} 약화 → {target['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} -{amount}%{' (방지)' if not applied else ''}")
                 elif kind == "explosion":
-                    raw = max(0, minion["attack"] - (_eff_def(target) if target.get("defending") else 0))
+                    raw = max(0, minion["attack"] - _eff_def(target))
                     damage = max(0, _floor_amount(raw * (1 - target.get("dmg_r", 0))))
                     damage, absorbed = _apply_hit(target, damage)
                     events.append(f"💥 하수인 {name} 폭발 → {target['name']} {damage} 피해 [{target['hp']}/{target['max_hp']}]")
@@ -5217,8 +5224,12 @@ def _apply_temp_skill_eff(actor: dict, fixed_delta: float, true_delta: int) -> N
         actor["skill_eff_fixed"] = float(actor["skill_eff_fixed"] or 0.0) + fixed_delta
         actor["_skill_eff_fixed_temp"] = actor.get("_skill_eff_fixed_temp", 0.0) + fixed_delta
     if true_delta:
-        actor["skill_eff_true"] = int(actor["skill_eff_true"] or 0) + true_delta
-        actor["_skill_eff_true_temp"] = actor.get("_skill_eff_true_temp", 0) + true_delta
+        # 기술 효율(고정)은 0 밑으로 내려가지 않는다(복제 보정). 실제로 깎인 만큼만 되돌린다.
+        current = int(actor["skill_eff_true"] or 0)
+        applied = max(true_delta, -current)
+        if applied:
+            actor["skill_eff_true"] = current + applied
+            actor["_skill_eff_true_temp"] = actor.get("_skill_eff_true_temp", 0) + applied
 
 
 def _revert_temp_skill_eff(actor: dict) -> None:
@@ -5283,14 +5294,12 @@ def _skill_heal_amount(
     skill_power: float,
     skill_eff_fixed: float,
     *,
-    include_heal_efficiency: bool = True,
     include_flat_efficiency: bool = True,
 ) -> tuple[int, str]:
     """기술 치유량과 계산식을 만든다. 피해 계산과 같이 기술 위력 비례를 곱한 뒤 기술 효율 고정을 더한다."""
-    heal_eff = actor["heal_eff"] if include_heal_efficiency else 0
+    heal_eff = actor["heal_eff"]
     raw = target["max_hp"] * ((skill_power * (1 + skill_eff_fixed)) * (1 + heal_eff)) + (actor["skill_eff_true"] if include_flat_efficiency else 0)
-    # 치유 효율을 아예 적용하지 않는 기술(모루 등)만 계산식에서도 해당 항을 뺀다.
-    heal_eff_term = f" × (1 + 치유 효율 {_formula_number(heal_eff)})" if include_heal_efficiency else ""
+    heal_eff_term = f" × (1 + 치유 효율 {_formula_number(heal_eff)})"
     flat_term = f" + 기술 효율 고정 {_formula_number(actor['skill_eff_true'])}" if include_flat_efficiency else ""
     formula = (
         f"floor(최대 체력 {_formula_number(target['max_hp'])} × "
@@ -5688,8 +5697,8 @@ def _expand_clone_skills(db: Session, by_character: dict[int, dict[int, dict]]) 
         # "복제:기술명"(커스텀 이름을 쓰면 "커스텀명:기술명")으로 보이도록 등급 접미사는 뗀다.
         prefix = _strip_trailing_roman_suffix(str(clone_entry.get("display_name") or "복제")) or "복제"
         # 부동소수 오차가 계산식 표시까지 번지지 않도록 보정값을 정리해 둔다.
-        eff_fixed_delta = round(-0.50 + 0.10 * depth, 6)
-        eff_true_delta = -20 + 4 * depth
+        eff_fixed_delta = round(-0.50 + 0.05 * depth, 6)
+        eff_true_delta = -20 + 2 * depth
         for slot in slots_by_character.get(character_id, []):
             source_node = nodes_by_id.get(slot.source_node_id)
             if source_node is None:
@@ -7154,21 +7163,29 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True)
                 targets = [target for _kind, target in all_targets] if all_targets is not None else [p]
+                presence_bonus = _skill_power_value(selected_skill, "presence", 0.0)
+                reaction_damage = max(0, _floor_amount(skill_power))
                 for target in targets:
                     _add_action_status_effect(target, {
                         "effect_type": "stat_modifier", "affinity": "buff", "stat": "presence",
-                        "applied_delta": 0.2, "reaction": "eruption", "skill_lv": int(selected_skill.get("tier") or 2),
+                        "applied_delta": presence_bonus, "reaction": "eruption",
+                        "skill_lv": int(selected_skill.get("tier") or 2), "damage": reaction_damage,
                         "source_character_id": p["character_id"], "source_name": p["name"],
                         "skill_name": skill_name, "var_name": var_name, "stackable": bool(selected_skill.get("stackable")),
                     }, participants=participants, enemies=enemies)
-                    target["presence"] = round(target.get("presence", 0) + 0.2, 6)
-                    events.append(f"🌋 {p['name']}의 {skill_name} → {target['name']} 존재감 +20% · 피격 시 전체 에너미 반응 피해 강화 부여")
-                    calculations[events[-1]] = "존재감 0.2 × 100% = 20% (중첩마다 가산)"
+                    target["presence"] = round(target.get("presence", 0) + presence_bonus, 6)
+                    events.append(
+                        f"🌋 {p['name']}의 {skill_name} → {target['name']} 존재감 +{_floor_amount(presence_bonus * 100)}% · "
+                        f"피격 시 전체 에너미 반응 피해 강화 부여"
+                    )
+                    calculations[events[-1]] = (
+                        f"존재감 {_formula_number(presence_bonus)} × 100% (중첩마다 가산) / "
+                        f"반응 피해 {reaction_damage} + 기술 효율 고정"
+                    )
                 continue
 
             if var_name == "ab_escort":
-                # L = 노드 tier(depth이자 스킬레벨). 경호 대상은 자신을 제외한 아군이다.
-                depth = int(selected_skill.get("tier") or 2)
+                # 경호 대상은 자신을 제외한 아군이다.
                 targets = _ally_targets(
                     p, action, _skill_target_count(selected_skill), active_only=True, exclude_actor=True,
                 )
@@ -7201,7 +7218,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     events.append(
                         f"🛡️ {p['name']}의 {skill_name} → {target['name']} 경호 스택 부여 (피격 시 {p['name']}이(가) 대신 방어)"
                     )
-                reduction = max(0.0, depth * skill_power + skill_eff_fixed)
+                reduction = max(0.0, skill_power + skill_eff_fixed)
                 stackable = bool(selected_skill.get("stackable"))
                 max_stacks = ESCORT_MAX_REDUCTION_STACKS if stackable else 1
                 if not stackable:
@@ -7227,16 +7244,15 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     f"합계 {_floor_amount(_escort_damage_reduction(p) * 100)}%)"
                 )
                 calculations[events[-1]] = (
-                    f"floor((스킬레벨 {depth} × 기술 위력 {_formula_number(skill_power)} + "
+                    f"floor((기술 위력 {_formula_number(skill_power)} + "
                     f"기술 효율 비례 {_formula_number(skill_eff_fixed)}) × 100)%"
                 )
                 continue
 
             if var_name == "ab_veil":
-                depth = int(selected_skill.get("tier") or 2)
-                hp_cost = max(0, _floor_amount(round(p["max_hp"] * max(0, round((10 - depth) / 20 - skill_eff_fixed, 10)), 10)))
+                hp_cost = max(0, _floor_amount(round(p["max_hp"] * max(0, round(skill_power - skill_eff_fixed, 10)), 10)))
                 hp_formula = (f"floor(시전자 최대 체력 {_formula_number(p['max_hp'])} × "
-                              f"max(0, 0.5 - 스킬레벨 {depth} × 0.05 - 기술 효율 비례 {_formula_number(skill_eff_fixed)}))")
+                              f"max(0, 체력 소모 비율 {_formula_number(skill_power)} - 기술 효율 비례 {_formula_number(skill_eff_fixed)}))")
                 if p["hp"] < hp_cost:
                     events.append(f"⚠️ {p['name']}의 {skill_name} 사용 실패 (체력 부족 · 필요 {hp_cost})")
                     continue
@@ -7244,8 +7260,10 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 p["hp"] -= hp_cost
                 events.append(f"🩸 {p['name']}의 {skill_name} → {hp_cost} 체력 소모 [{p['hp']}/{p['max_hp']}]")
                 calculations[events[-1]] = hp_formula
-                shield = max(0, _floor_amount(depth * 2 + p["skill_eff_true"] / 2))
-                shield_formula = f"max(0, floor(스킬레벨 {depth} × 2 + 시전자 기술 효율 고정 {_formula_number(p['skill_eff_true'])} / 2))"
+                shield_power = _skill_power_value(selected_skill, "shield", 0.0)
+                shield = max(0, _floor_amount(shield_power + p["skill_eff_true"] / 2))
+                shield_formula = (f"max(0, floor(보호막 {_formula_number(shield_power)} + "
+                                  f"시전자 기술 효율 고정 {_formula_number(p['skill_eff_true'])} / 2))")
                 if _mark_combatant_downed(p):
                     events.append(f"💫 {p['name']} 기절")
                 all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True)
@@ -7284,11 +7302,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 for target in targets:
                     before_hp = target["hp"]
                     if var_name == "ab_hex_heal":
-                        depth = int(selected_skill.get("tier") or 2)
-                        ratio = depth * skill_power + 0.10
-                        amount = max(0, _floor_amount(target["max_hp"] * ratio * (1 + skill_eff_fixed) * (1 + p["heal_eff"])))
+                        amount = max(0, _floor_amount(target["max_hp"] * skill_power * (1 + skill_eff_fixed) * (1 + p["heal_eff"])))
                         formula = (f"floor(대상 최대 체력 {_formula_number(target['max_hp'])} × "
-                                   f"(스킬레벨 {depth} × {_formula_number(skill_power)} + 0.10) × (1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}) × "
+                                   f"회복 비율 {_formula_number(skill_power)} × (1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}) × "
                                    f"(1 + 치유 효율 {_formula_number(p['heal_eff'])}))")
                     else:
                         amount = _floor_amount(flat_amount)
@@ -7464,7 +7480,6 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
 
             if var_name == "ab_suppressing":
-                depth = int(selected_skill.get("tier") or 2)
                 all_targets = (
                     _all_skill_targets(selected_skill, participants, enemies, summons, round_no)
                     if selected_skill.get("target") in ALL_SKILL_TARGETS else None
@@ -7475,9 +7490,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                damage = max(0, _floor_amount(depth * 5 + p["skill_eff_true"]))
+                damage = max(0, _floor_amount(skill_power + p["skill_eff_true"]))
                 damage_formula = (
-                    f"max(0, floor(스킬레벨 {depth} × 5 + "
+                    f"max(0, floor(기술 위력 {_formula_number(skill_power)} + "
                     f"기술 효율 고정 {_formula_number(p['skill_eff_true'])}))"
                 )
                 total_dealt = 0
@@ -7511,7 +7526,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if var_name == "ab_sparge":
                 depth = int(selected_skill.get("tier") or 2)
                 _spend_skill_cost(p, selected_skill)
-                sparge_damage = max(0, _floor_amount(depth * 6 + p["skill_eff_true"]))
+                sparge_damage = max(0, _floor_amount(skill_power + p["skill_eff_true"]))
                 _add_action_status_effect(p, {
                     "effect_type": "sparge_telegraph", "affinity": "buff",
                     "source_character_id": p["character_id"], "source_name": p["name"],
@@ -7524,7 +7539,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     f"🌪️ {p['name']}의 {skill_name} → 암시 턴 전체 피해 {sparge_damage} 부여 ({stacks}중첩)"
                 )
                 calculations[events[-1]] = (
-                    f"max(0, floor(스킬레벨 {depth} × 6 + "
+                    f"max(0, floor(기술 위력 {_formula_number(skill_power)} + "
                     f"기술 효율 고정 {_formula_number(p['skill_eff_true'])}))"
                 )
                 continue
@@ -7585,17 +7600,15 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no)
                 targets = [target for _kind, target in all_targets] if all_targets is not None else [p]
+                depth = int(selected_skill.get("tier") or 1)
                 for target in targets:
                     heal_amount, heal_formula = _skill_heal_amount(
-                        p,
-                        target,
-                        skill_power,
-                        skill_eff_fixed,
-                        include_heal_efficiency=False,
+                        p, target, skill_power, skill_eff_fixed, include_flat_efficiency=False,
                     )
                     before_hp = target["hp"]
                     healed, revived = _apply_skill_heal(p, target, heal_amount, grant_attention=False)
-                    p["attn"] += healed
+                    # 주목도는 회복량에 기술 등급을 곱해 오른다.
+                    p["attn"] += healed * depth
                     cleanse_count = max(0, int(selected_skill.get("cleanse_count") or 0))
                     # 모루도 정화처럼 약화 효과와 환경 스택을 함께 해제한다.
                     removed, removed_names = _cleanse_combat_debuffs(db, target, cleanse_count)
@@ -7622,7 +7635,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                reduction_bonus = max(0.0, skill_power * (1 + skill_eff_fixed))
+                reduction_bonus = max(0.0, skill_power * (1 + p["def_eff"]))
                 for target in targets:
                     _add_action_status_effect(
                         target,
@@ -7655,7 +7668,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     )
                     calculations[events[-1]] = (
                         f"floor(기술 위력 {_formula_number(skill_power)} × "
-                        f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}) × 100)%"
+                        f"(1 + 방어 효율 {_formula_number(p['def_eff'])}) × 100)%"
                     )
                 continue
 
@@ -7812,15 +7825,16 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
             if var_name == "ab_improve":
                 # L = 노드 tier(사용자 정의 depth이자 skill_lv). depth 2 → L=2.
-                depth = int(selected_skill.get("tier") or 2)
-                targets = _ally_targets(p, action, _skill_target_count(selected_skill), active_only=True)
+                targets = _ally_targets(p, action, _skill_target_count(selected_skill),
+                                        active_only=True, exclude_actor=True)
                 if not targets:
                     continue
                 _spend_skill_cost(p, selected_skill)
                 caster_fixed = skill_eff_fixed
                 caster_true = int(p["skill_eff_true"] or 0)
-                fixed_bonus = max(0.0, depth * skill_power + caster_fixed)
-                true_bonus = max(0, depth * 2 + caster_true // 2)
+                true_power = _skill_power_value(selected_skill, "eff_true", 0.0)
+                fixed_bonus = max(0.0, skill_power + caster_fixed)
+                true_bonus = max(0, _floor_amount(true_power + caster_true // 2))
                 for target in targets:
                     _add_action_status_effect(
                         target,
@@ -7844,21 +7858,20 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"기술 효율(고정) +{true_bonus}"
                     )
                     calculations[events[-1]] = (
-                        f"기술 효율(비례): floor((스킬레벨 {depth} × 기술 위력 {_formula_number(skill_power)} + "
+                        f"기술 효율(비례): floor((기술 위력 {_formula_number(skill_power)} + "
                         f"시전자 기술 효율 비례 {_formula_number(caster_fixed)}) × 100)% / "
-                        f"기술 효율(고정): 스킬레벨 {depth} × 2 + floor(시전자 기술 효율 고정 {caster_true} / 2)"
+                        f"기술 효율(고정): {_formula_number(true_power)} + floor(시전자 기술 효율 고정 {caster_true} / 2)"
                     )
                 continue
 
             if var_name == "ab_weaken":
-                depth = int(selected_skill.get("tier") or 2)
                 target_enemies = _enemy_targets(
                     action.target_enemy_id, _skill_target_count(selected_skill), action.skill_target_keys
                 )
                 if not target_enemies:
                     continue
                 _spend_skill_cost(p, selected_skill)
-                amp = max(0.0, depth * skill_power + skill_eff_fixed)
+                amp = max(0.0, skill_power + skill_eff_fixed)
                 for target_enemy in target_enemies:
                     _add_action_status_effect(
                         target_enemy,
@@ -7880,7 +7893,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"🩸 {p['name']}의 {skill_name} → {target_enemy['name']} 받는 피해 +{_floor_amount(amp * 100)}%"
                     )
                     calculations[events[-1]] = (
-                        f"floor((스킬레벨 {depth} × 기술 위력 {_formula_number(skill_power)} + "
+                        f"floor((기술 위력 {_formula_number(skill_power)} + "
                         f"시전자 기술 효율 비례 {_formula_number(skill_eff_fixed)}) × 100)%"
                     )
                 continue
@@ -8281,22 +8294,17 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             sum(float(effect.get("damage_reduction", 0.0)) for effect in counter_effects)
             + _escort_damage_reduction(recipient)
         )
-        # 피해 감소율(dmg_r)은 방어 행동을 취했을 때만 적용된다. 반격 태세 등 별도 버프의 감소율(extra_reduction)은 무관하게 항상 적용된다.
-        trait_reduction = recipient.get("_trait_deltas", {}).get("dmg_r", 0)
-        base_reduction = recipient["dmg_r"] if recipient["defending"] else trait_reduction
-        total_reduction = min(0.95, max(-1.0, base_reduction + extra_reduction))
-        dmg = _floor_amount(base * (1 - total_reduction))
+        # 방어력을 먼저 빼고 남은 피해에 피해 감소율을 적용한다(방어 행동 여부와 무관하게 상시 적용).
+        # recipient["dmg_r"]에는 특성 보정이 이미 반영돼 있다.
+        total_reduction = min(0.95, max(-1.0, recipient["dmg_r"] + extra_reduction))
+        effective_defense = _eff_def(recipient)
+        after_defense = max(0, base - effective_defense)
+        dmg = _floor_amount(after_defense * (1 - total_reduction))
         damage_formula = (
-            f"floor(({base_formula}) × "
+            f"floor(max(최소 피해 0, ({base_formula}) - "
+            f"유효 방어력 {_formula_number(effective_defense)}) × "
             f"(1 - 총 피해 감소율 {_formula_number(total_reduction)}))"
         )
-        if recipient["defending"]:
-            effective_defense = _eff_def(recipient)
-            dmg = max(0, dmg - effective_defense)
-            damage_formula = (
-                f"max(최소 피해 0, {damage_formula} - "
-                f"유효 방어력 {_formula_number(effective_defense)})"
-            )
         shield_before = recipient["shield"]
         dmg, absorbed = _apply_hit(recipient, dmg)
         damage_formula = (
@@ -9606,9 +9614,10 @@ def _touch_trait_battles(db: Session) -> None:
 
 
 def _trait_adjust_skill_targets(skill: dict, p: dict) -> dict:
+    """인원 지정 기술의 대상 수에 캐릭터의 기술 대상 능력치를 더한다(특성 보정 포함)."""
     result = dict(skill)
     if str(result.get("target") or "").isdigit():
-        bonus = int((p.get("_trait_deltas") or {}).get("skill_target", 0))
+        bonus = int(p.get("skill_target") or 0)
         result["target"] = str(max(1, int(result["target"]) + bonus))
     return result
 

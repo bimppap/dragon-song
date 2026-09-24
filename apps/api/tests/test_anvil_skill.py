@@ -117,10 +117,11 @@ class AnvilSkillTest(unittest.TestCase):
 
         participant = result.participants[0]
         # 모루도 기술 대상 설정을 따르게 되면서 로그에 대상 이름이 함께 붙는다.
-        event = "🪨 실험 요정 B의 모루 I → 실험 요정 B 18 치유 · 늪의 저주 스택 -1 · MP -3 [7/10]"
+        event = "🪨 실험 요정 B의 모루 I → 실험 요정 B 22 치유 · 늪의 저주 스택 -1 · MP -3 [7/10]"
         self.assertIn(event, result.log[-1]["events"])
-        self.assertEqual(participant["hp"], 96)
-        self.assertEqual(participant["attn"], 23)
+        self.assertEqual(participant["hp"], 100)
+        # 주목도는 실제 회복량 × 기술 등급(1단계)만큼 오른다.
+        self.assertEqual(participant["attn"], 27)
         self.assertEqual(participant["env_stacks"], {
             str(self.locked_environment.id): 1,
             str(self.old_environment.id): 1,
@@ -133,8 +134,8 @@ class AnvilSkillTest(unittest.TestCase):
         ])
         self.assertEqual(
             result.log[-1]["calculations"][event],
-            "min(floor(최대 체력 100 × (기술 위력 0.15 × (1 + 기술 효율 비례 0.02)) + "
-            "기술 효율 고정 3), 잃은 체력 22)",
+            "min(floor(최대 체력 100 × (기술 위력 0.15 × (1 + 기술 효율 비례 0.02)) × "
+            "(1 + 치유 효율 0.5)), 잃은 체력 22)",
         )
 
 

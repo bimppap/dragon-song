@@ -297,13 +297,12 @@ class ValorDerivedSpecTest(unittest.TestCase):
         self.assertEqual((self._spec(2, 2)["default_name"], self._spec(2, 2)["var_name"]), ("살포", "ab_sparge"))
 
     def test_depth_scaling_descriptions(self):
-        # 제압: 스킬레벨×5 피해 / 스킬레벨×2 상시 공격력
-        self.assertIn("10 + 기술 효율(고정)만큼 피해", dynamic_derived_description("ab_suppressing", 2))
-        self.assertIn("4 + 기술 효율(고정)만큼 상시", dynamic_derived_description("ab_suppressing", 2))
-        self.assertIn("25 + 기술 효율(고정)만큼 피해", dynamic_derived_description("ab_suppressing", 5))
-        # 살포: 스킬레벨×6
-        self.assertIn("12 + 기술 효율(고정)", dynamic_derived_description("ab_sparge", 2))
-        self.assertIn("30 + 기술 효율(고정)", dynamic_derived_description("ab_sparge", 5))
+        # 설명 수치는 그 단계에 저장된 위력을 그대로 쓴다.
+        self.assertIn("10 + 기술 효율(고정)만큼 피해", self._spec(1, 2)["description"])
+        self.assertIn("4 + 기술 효율(고정)만큼 상시", self._spec(1, 2)["description"])
+        self.assertIn("25 + 기술 효율(고정)만큼 피해", self._spec(1, 5)["description"])
+        self.assertIn("12 + 기술 효율(고정)", self._spec(2, 2)["description"])
+        self.assertIn("30 + 기술 효율(고정)", self._spec(2, 5)["description"])
 
 
 if __name__ == "__main__":

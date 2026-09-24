@@ -128,11 +128,11 @@ class CloneSkillTest(unittest.TestCase):
         )
         events = result.log[-1]["events"]
         strike_event = next(e for e in events if e.startswith("✨ 복제가의 복제:강타 I"))
-        # depth 2 → 기술 효율(비례) -50% + 10%×2 = -0.30, 기술 효율(고정) -20 + 4×2 = -12.
-        # 강타는 기술 효율 고정을 계산에 쓰지 않는다: 100 × (1.5 × (1 - 0.3)) = 104.99999999999999 → 내림 104.
+        # depth 2 → 기술 효율(비례) -50% + 5%×2 = -0.40, 기술 효율(고정) -20 + 2×2 = -16(0에서 멈춤).
+        # 강타는 기술 효율 고정을 계산에 쓰지 않는다: 100 × (1.5 × (1 - 0.4)) = 89.99999999999999 → 내림 89.
         # (부동소수 오차로 인한 내림은 엔진의 기존 _floor_amount 동작 그대로다.)
-        self.assertIn("104 피해", strike_event)
-        self.assertIn("기술 효율 비례 -0.3", result.log[-1]["calculations"][strike_event])
+        self.assertIn("89 피해", strike_event)
+        self.assertIn("기술 효율 비례 -0.4", result.log[-1]["calculations"][strike_event])
         self.assertNotIn("기술 효율 고정", result.log[-1]["calculations"][strike_event])
         # 기술 비용은 depth와 무관하게 4다.
         actor = next(p for p in result.participants if p["character_id"] == self.cloner.id)
@@ -140,6 +140,16 @@ class CloneSkillTest(unittest.TestCase):
         # 임시 기술 효율 보정은 라운드 종료 후 남지 않는다.
         self.assertEqual(actor["skill_eff_fixed"], 0.0)
         self.assertEqual(actor["skill_eff_true"], 0)
+
+    def test_fixed_efficiency_penalty_stops_at_zero_and_is_restored(self):
+        """복제의 기술 효율(고정) 보정은 0 밑으로 내려가지 않고, 라운드 뒤 원래 값으로 돌아온다."""
+        actor = {"skill_eff_fixed": 0.2, "skill_eff_true": 5}
+        crud._apply_temp_skill_eff(actor, -0.4, -16)
+        self.assertEqual(actor["skill_eff_true"], 0)
+        self.assertAlmostEqual(actor["skill_eff_fixed"], -0.2)
+        crud._revert_temp_skill_eff(actor)
+        self.assertEqual(actor["skill_eff_true"], 5)
+        self.assertAlmostEqual(actor["skill_eff_fixed"], 0.2)
 
 
 if __name__ == "__main__":

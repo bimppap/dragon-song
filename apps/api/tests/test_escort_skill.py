@@ -15,7 +15,7 @@ class EscortSkillTest(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
 
-        # depth 2 → 피해 감소 = 2 × 5% + 기술 효율 비례 0.1 = 0.2 (스택당)
+        # 2단계 위력 10% + 기술 효율 비례 0.1 = 피해 감소 0.2 (스택당)
         self.caster = Character(
             name="경호원", faction="수비", hp=100, hp_max=100, mp=20, mp_max=20, skill_eff_fixed=0.1,
         )
@@ -27,7 +27,7 @@ class EscortSkillTest(unittest.TestCase):
         self.node = SkillNode(
             book="불굴의 서", branch=0, col=1, tier=2, default_name="경호",
             trigger_type="지속형", category="강화", stackable=True, var_name="ab_escort",
-            cost=0, power=0.05, target="1", target_side="ALLY", activation_order=4, is_public=True,
+            cost=0, power=0.1, target="1", target_side="ALLY", activation_order=4, is_public=True,
         )
         self.node.image_url = "/skill/escort-test.png"
         self.db.add(self.node)
@@ -89,7 +89,7 @@ class EscortSkillTest(unittest.TestCase):
         self.assertAlmostEqual(reductions[0]["value"], 0.2)
 
         event = next(e for e in result.log[-1]["events"] if "피해 감소 +20%" in e)
-        self.assertIn("스킬레벨 2 × 기술 위력 0.05", result.log[-1]["calculations"][event])
+        self.assertIn("기술 위력 0.1", result.log[-1]["calculations"][event])
 
     def test_escorted_ally_hit_is_redirected_and_reduced(self):
         self.cast()
@@ -162,7 +162,7 @@ class EscortSkillTest(unittest.TestCase):
 
     def test_edited_nonstacking_reduction_keeps_ally_guards(self):
         updated = crud.update_skill_node(self.db, self.node.id, SkillNodeUpdate(
-            default_name="경호", stackable=False, power=0.1,
+            default_name="경호", stackable=False, power=0.2,
         ))
         self.assertIn("20%", updated.description)
         self.assertIn("최대 1스택", updated.description)
@@ -228,14 +228,14 @@ class EscortSpecTest(unittest.TestCase):
             spec = self._spec(tier)
             self.assertEqual(spec["default_name"], "경호")
             self.assertEqual(spec["var_name"], "ab_escort")
-            self.assertEqual(spec["power"], 0.05)
+            self.assertEqual(spec["power"], {2: 0.1, 3: 0.15, 4: 0.2, 5: 0.25, 6: 0.05}[tier])
             self.assertEqual(spec["target_side"], "ALLY")
 
     def test_description_scales_with_depth(self):
-        from app.game_data import dynamic_derived_description
-        self.assertIn("10%", dynamic_derived_description("ab_escort", 2))
-        self.assertIn("25%", dynamic_derived_description("ab_escort", 5))
-        self.assertIn("최대 2스택", dynamic_derived_description("ab_escort", 2))
+        # 설명 수치는 그 단계에 저장된 위력을 그대로 쓴다.
+        self.assertIn("10%", self._spec(2)["description"])
+        self.assertIn("25%", self._spec(5)["description"])
+        self.assertIn("최대 2스택", self._spec(2)["description"])
 
     def test_runner_custom_name_drops_the_depth_numeral(self):
         """단계 숫자는 기본 이름을 구분하려고 붙는 것이라, 러너가 직접 지은 이름에는 붙지 않는다."""
