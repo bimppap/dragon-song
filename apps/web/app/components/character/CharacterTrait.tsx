@@ -62,7 +62,7 @@ function TraitPicker({ character, onClose, onUpdated }: {
       <p className="text-xs text-muted">특성은 한 번에 하나만 장착할 수 있습니다. 칸에 커서를 올리거나 눌러 효과를 확인하세요.</p>
       {loading ? <p className="py-8 text-center text-sm text-muted">특성을 불러오는 중...</p>
         : traits.length === 0 ? <p className="py-8 text-center text-sm text-muted">고를 수 있는 특성이 없습니다.</p>
-          : <div className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+          : <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
             {traits.map((trait) => {
               const equipped = trait.id === character.trait_id;
               return <InfoTooltip key={trait.id} content={<div className="flex max-w-64 flex-col gap-2">
