@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { Check, Image as ImageIcon, ImagePlus, X } from "lucide-react";
 import { Button, buttonVariants } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -32,7 +33,7 @@ const SKILL_CATEGORIES = asOptions(["피해", "복합", "강화", "약화", "회
 const STACKABLE_OPTIONS = [{ value: "true", label: "가능 (스택 사용)" }, { value: "false", label: "불가능" }];
 const TARGET_OPTIONS = [{ value: "COUNT", label: "인원 지정" }, { value: "SELF", label: "SELF (본인)" }, ...asOptions(ALL_SKILL_TARGETS)];
 const TARGET_SIDES = [{ value: "ALLY", label: "아군" }, { value: "ENEMY", label: "적군" }];
-/** depth마다 값이 달라 하나로 보여줄 수 없는 공통 설정 칸에 띄우는 문구. */
+/** 위력 형식이 depth마다 달라 하나로 고를 수 없을 때 띄우는 문구. */
 const MIXED_LABEL = "depth마다 다름";
 /** 잘못 입력한 칸은 aria-invalid만 켜면 빨간 테두리로 보인다. */
 const INVALID_BORDER = "aria-[invalid=true]:border-red-500";
@@ -75,23 +76,93 @@ function baseSkillName(name: string): string {
   return name.replace(/\s+[IVXLCDM]+$/, "");
 }
 
-/**
- * 모든 depth에 함께 적용하는 설정. undefined는 depth마다 값이 달라 각 depth의 값을 그대로 둔다는 뜻이고,
- * 관리자가 값을 고르면 모든 depth를 그 값으로 맞춘다.
- */
+/** 공통으로 한 번 정하거나 depth별로 따로 정할 수 있는 기술 설정. 고르지 않은 칸은 ""다. */
+interface SkillSettings {
+  triggerType: string;
+  category: string;
+  /** "true" | "false" | "" */
+  stackable: string;
+  /** null은 정하지 않음. 인원 지정은 숫자 문자열이다(지우는 중이면 ""). */
+  target: string | null;
+  targetSide: string;
+  activationOrder: string;
+}
+
+/** depth별로 나눌 수 있는 설정 단위. 기술 대상은 진영과 한 묶음이다. */
+type SettingKey = "triggerType" | "category" | "stackable" | "target" | "activationOrder";
+const SETTING_KEYS: SettingKey[] = ["triggerType", "category", "stackable", "target", "activationOrder"];
+/** 고르기만 하면 되는 설정. 공통 칸과 depth별 열에서 같은 선택지를 쓴다. */
+const SIMPLE_SETTINGS = [
+  { key: "triggerType", label: "발동 타입", options: TRIGGER_TYPES },
+  { key: "category", label: "분류", options: SKILL_CATEGORIES },
+  { key: "stackable", label: "중첩", options: STACKABLE_OPTIONS },
+] as const;
+/** depth별로 나눈 설정이 표의 열로 들어갈 때의 순서. hiddenField는 서버 inapplicable_fields의 이름이다. */
+const SETTING_COLUMNS: { field: keyof SkillSettings; label: string; hiddenField?: string }[] = [
+  ...SIMPLE_SETTINGS.map(({ key, label }) => ({ field: key, label })),
+  { field: "target", label: "기술 대상", hiddenField: "target" },
+  { field: "targetSide", label: "진영", hiddenField: "target_side" },
+  { field: "activationOrder", label: "발동 순서", hiddenField: "activation_order" },
+];
+
+function settingsOf(node: SkillNode): SkillSettings {
+  return {
+    triggerType: node.trigger_type ?? "",
+    category: node.category ?? "",
+    stackable: node.stackable == null ? "" : String(node.stackable),
+    target: node.target,
+    targetSide: node.target_side ?? "",
+    activationOrder: node.activation_order == null ? "" : String(node.activation_order),
+  };
+}
+
+function pickSetting(settings: SkillSettings, key: SettingKey): Partial<SkillSettings> {
+  return key === "target" ? { target: settings.target, targetSide: settings.targetSide } : { [key]: settings[key] };
+}
+
+/** 처음 열 때 depth마다 값이 이미 다른 설정. 이 설정들은 depth별 표에서 편집하도록 켜 둔다. */
+function perDepthKeysOf(nodes: SkillNode[]): Set<SettingKey> {
+  const [first, ...rest] = nodes.map(settingsOf);
+  return new Set(SETTING_KEYS.filter((key) => rest.some((settings) => (
+    JSON.stringify(pickSetting(settings, key)) !== JSON.stringify(pickSetting(first, key))
+  ))));
+}
+
+/** 이 depth에 적용할 설정. depth별로 나눈 설정은 그 depth의 값을, 나머지는 공통 값을 쓴다. */
+function effectiveSettings(row: DepthRow, common: CommonDraft, perDepth: Set<SettingKey>): SkillSettings {
+  const from = (key: SettingKey) => (perDepth.has(key) ? row.settings : common.settings);
+  return {
+    triggerType: from("triggerType").triggerType,
+    category: from("category").category,
+    stackable: from("stackable").stackable,
+    target: from("target").target,
+    targetSide: from("target").targetSide,
+    activationOrder: from("activationOrder").activationOrder,
+  };
+}
+
+/** 잘못 고른 설정 칸. 기술 성격상 없는 칸(hidden)은 보지 않는다. */
+function settingErrorsOf(settings: SkillSettings, hidden: Set<string>): (keyof SkillSettings)[] {
+  const errors: (keyof SkillSettings)[] = [];
+  if (!settings.triggerType) errors.push("triggerType");
+  if (!settings.category) errors.push("category");
+  if (!settings.stackable) errors.push("stackable");
+  if (!hidden.has("target") && (settings.target === null || !isValidTarget(settings.target))) errors.push("target");
+  if (!hidden.has("target_side") && !isAllSkillTarget(settings.target) && !settings.targetSide) errors.push("targetSide");
+  if (!hidden.has("activation_order") && !/^-?\d+$/.test(settings.activationOrder.trim())) errors.push("activationOrder");
+  return errors;
+}
+
+const settingKeyOf = (field: keyof SkillSettings): SettingKey => (field === "targetSide" ? "target" : field);
+
+/** 모든 depth에 함께 적용하는 값. depth별로 나눈 설정의 값은 각 depth(DepthRow.settings)에 있다. */
 interface CommonDraft {
-  triggerType?: SkillTriggerType;
-  category?: SkillCategory;
-  stackable?: boolean;
-  target?: string;
-  targetSide?: SkillTargetSide;
-  activationOrder?: string;
+  settings: SkillSettings;
+  /** 슬롯 키 → 위력 형식. undefined는 depth마다 형식이 달라 각자의 형식을 그대로 둔다는 뜻이다. */
   powerUnits: Record<string, PowerUnit | undefined>;
   /** 모든 depth가 함께 쓰는 설명. {기술 위력} 같은 자리표시자는 depth마다 그 depth의 값으로 채워진다. */
   description: string;
 }
-
-type CommonField = Exclude<keyof CommonDraft, "powerUnits" | "description">;
 
 /** 가장 많은 depth가 함께 쓰는 설명을 공통 설명으로 본다. 두 depth 이상 같은 설명이 없으면 비워 둔다. */
 function commonDescriptionOf(nodes: SkillNode[]): string {
@@ -104,28 +175,17 @@ function commonDescriptionOf(nodes: SkillNode[]): string {
   return count >= 2 ? text : "";
 }
 
-/** depth들의 공통 설정을 모은다. 값이 갈리는 칸은 mixed에 담는다(위력 형식은 `unit:슬롯키`). */
-function commonDraftOf(nodes: SkillNode[], slots: PowerSlot[]): { draft: CommonDraft; mixed: Set<string> } {
-  const mixed = new Set<string>();
-  function shared<T>(key: string, read: (node: SkillNode) => T | null): T | undefined {
-    const values = nodes.map(read);
-    if (values.some((value) => value !== values[0])) {
-      mixed.add(key);
-      return undefined;
-    }
-    return values[0] ?? undefined;
-  }
-  const draft: CommonDraft = {
-    triggerType: shared("triggerType", (node) => node.trigger_type),
-    category: shared("category", (node) => node.category),
-    stackable: shared("stackable", (node) => node.stackable),
-    target: shared("target", (node) => node.target),
-    targetSide: shared("targetSide", (node) => node.target_side),
-    activationOrder: shared("activationOrder", (node) => (node.activation_order == null ? null : String(node.activation_order))),
-    powerUnits: Object.fromEntries(slots.map((slot) => [slot.key, shared(`unit:${slot.key}`, (node) => unitOf(node, slot.key))])),
+/** 공통 값은 편집창을 연 depth의 값에서 시작한다. */
+function commonDraftOf(nodes: SkillNode[], focus: SkillNode, slots: PowerSlot[]): CommonDraft {
+  const sharedUnit = (key: string) => {
+    const units = nodes.map((node) => unitOf(node, key));
+    return units.every((unit) => unit === units[0]) ? units[0] : undefined;
+  };
+  return {
+    settings: settingsOf(focus),
+    powerUnits: Object.fromEntries(slots.map((slot) => [slot.key, sharedUnit(slot.key)])),
     description: commonDescriptionOf(nodes),
   };
-  return { draft, mixed };
 }
 
 function unitOf(node: SkillNode, key: string): PowerUnit {
@@ -160,6 +220,8 @@ function descriptionValuesOf(row: DepthRow, common: CommonDraft, slots: PowerSlo
 interface DepthRow {
   node: SkillNode;
   name: string;
+  /** depth별로 나눈 설정에서 쓰는 이 depth의 값. */
+  settings: SkillSettings;
   /** true면 공통 설명 대신 description에 이 depth만의 설명을 쓴다. */
   ownDescription: boolean;
   description: string;
@@ -178,6 +240,7 @@ function depthRowOf(node: SkillNode, commonDescription: string | null): DepthRow
   return {
     node,
     name: node.default_name,
+    settings: settingsOf(node),
     ownDescription: commonDescription === null || description.trim() !== commonDescription.trim(),
     description,
     tier6Effect: node.tier6_effect ?? "",
@@ -193,7 +256,7 @@ function depthRowOf(node: SkillNode, commonDescription: string | null): DepthRow
  * 이 depth에서 저장된 값과 달라진 항목만 모은다. 달라진 게 없으면 null.
  * 손대지 않은 항목은 보내지 않아, 파생기의 자동 설명·스펙 값이 저장값으로 굳지 않게 한다.
  */
-function changesOf(row: DepthRow, common: CommonDraft, slots: PowerSlot[]): SkillNodeUpdate | null {
+function changesOf(row: DepthRow, common: CommonDraft, perDepth: Set<SettingKey>, slots: PowerSlot[]): SkillNodeUpdate | null {
   const { node } = row;
   const changes: SkillNodeUpdate = {};
   const name = row.name.trim();
@@ -205,18 +268,18 @@ function changesOf(row: DepthRow, common: CommonDraft, slots: PowerSlot[]): Skil
 
   if (node.tier !== 0) {
     const hidden = new Set(node.inapplicable_fields ?? []);
-    if (common.triggerType && common.triggerType !== node.trigger_type) changes.trigger_type = common.triggerType;
-    if (common.category && common.category !== node.category) changes.category = common.category;
-    if (common.stackable !== undefined && common.stackable !== node.stackable) changes.stackable = common.stackable;
+    const settings = effectiveSettings(row, common, perDepth);
+    if (settings.triggerType && settings.triggerType !== node.trigger_type) changes.trigger_type = settings.triggerType as SkillTriggerType;
+    if (settings.category && settings.category !== node.category) changes.category = settings.category as SkillCategory;
+    if (settings.stackable && (settings.stackable === "true") !== node.stackable) changes.stackable = settings.stackable === "true";
     // 대상 표기(예: "03" → "3")는 서버가 정리하므로 입력값 그대로 비교해 보낸다.
-    const target = common.target?.trim();
-    if (!hidden.has("target") && target !== undefined && target !== node.target) changes.target = target;
-    if (!hidden.has("target_side") && common.targetSide && common.targetSide !== node.target_side) {
-      changes.target_side = common.targetSide;
-    }
-    if (!hidden.has("activation_order") && common.activationOrder !== undefined
-      && Number(common.activationOrder) !== node.activation_order) {
-      changes.activation_order = Number(common.activationOrder);
+    const target = settings.target?.trim();
+    if (!hidden.has("target") && target && target !== node.target) changes.target = target;
+    const side = allTargetSide(settings.target) ?? settings.targetSide;
+    if (!hidden.has("target_side") && side && side !== node.target_side) changes.target_side = side as SkillTargetSide;
+    if (!hidden.has("activation_order") && settings.activationOrder.trim() !== ""
+      && Number(settings.activationOrder) !== node.activation_order) {
+      changes.activation_order = Number(settings.activationOrder);
     }
     if (Number(row.cost) !== node.cost) changes.cost = Number(row.cost);
 
@@ -245,11 +308,14 @@ function changesOf(row: DepthRow, common: CommonDraft, slots: PowerSlot[]): Skil
   return Object.keys(changes).length > 0 ? changes : null;
 }
 
-/** 잘못 입력한 칸. 위력은 `power:슬롯키`로 담는다. */
-function rowErrorsOf(row: DepthRow, common: CommonDraft, slots: PowerSlot[]): Set<string> {
+/** 잘못 입력한 칸. 위력은 `power:슬롯키`, depth별로 나눈 설정은 `setting:칸이름`으로 담는다. */
+function rowErrorsOf(row: DepthRow, common: CommonDraft, perDepth: Set<SettingKey>, slots: PowerSlot[], hidden: Set<string>): Set<string> {
   const errors = new Set<string>();
   if (!row.name.trim()) errors.add("name");
   if (row.node.tier === 0) return errors;
+  for (const field of settingErrorsOf(row.settings, hidden)) {
+    if (perDepth.has(settingKeyOf(field))) errors.add(`setting:${field}`);
+  }
   if (!isCount(row.cost)) errors.add("cost");
   for (const slot of slots) {
     if (!isValidPower(effectiveUnit(common, row.node, slot.key), row.powers[slot.key] ?? "")) errors.add(`power:${slot.key}`);
@@ -258,55 +324,106 @@ function rowErrorsOf(row: DepthRow, common: CommonDraft, slots: PowerSlot[]): Se
   return errors;
 }
 
-function commonErrorsOf(common: CommonDraft, mixed: Set<string>, hidden: Set<string>): Set<CommonField> {
-  const errors = new Set<CommonField>();
-  // depth마다 다른 칸은 비워 둬도 각자의 값을 유지하므로 괜찮다.
-  const check = (field: CommonField, valid: (value: string) => boolean = () => true) => {
-    const value = common[field];
-    if (value === undefined ? !mixed.has(field) : !valid(String(value))) errors.add(field);
-  };
-  check("triggerType");
-  check("category");
-  check("stackable");
-  if (!hidden.has("target")) check("target", isValidTarget);
-  if (!hidden.has("target_side") && !isAllSkillTarget(common.target)) check("targetSide");
-  if (!hidden.has("activation_order")) check("activationOrder", (value) => /^-?\d+$/.test(value.trim()));
-  return errors;
-}
-
-function OptionSelect({ id, label, value, options, mixed, invalid, disabled, onChange, children }: {
-  id: string;
+function OptionPicker({ id, label, value, options, placeholder = "선택", invalid, disabled, className, onChange }: {
+  id?: string;
   label: string;
-  value: string | undefined;
+  value: string;
   options: { value: string; label: string }[];
-  mixed: boolean;
+  placeholder?: string;
   invalid?: boolean;
   disabled?: boolean;
+  className?: string;
   onChange: (value: string) => void;
-  children?: ReactNode;
+}) {
+  return (
+    <Select value={value} disabled={disabled} onValueChange={onChange}>
+      <SelectTrigger id={id} aria-label={label} aria-invalid={invalid} className={cn(INVALID_BORDER, className)}>
+        <SelectValue placeholder={placeholder} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectGroup>
+          {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+        </SelectGroup>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** 기술 대상 고르기. 인원 지정이면 인원 칸을 함께 보여준다. */
+function TargetPicker({ id, label, target, invalid, compact, onChange }: {
+  id?: string;
+  label: string;
+  target: string | null;
+  invalid: boolean;
+  compact?: boolean;
+  onChange: (target: string) => void;
+}) {
+  const mode = target === null ? "" : isAllSkillTarget(target) || target === "SELF" ? target : "COUNT";
+  return (
+    <>
+      <OptionPicker
+        id={id}
+        label={label}
+        value={mode}
+        options={TARGET_OPTIONS}
+        placeholder={compact ? "선택" : "기술 대상 선택"}
+        invalid={invalid && mode === ""}
+        className={compact ? "h-8" : undefined}
+        onChange={(value) => onChange(value === "COUNT" ? "1" : value)}
+      />
+      {mode === "COUNT" && (
+        <Input
+          aria-label={`${label} 인원`}
+          value={target ?? ""}
+          placeholder="1 이상의 정수"
+          aria-invalid={invalid}
+          className={cn(compact && "mt-1 h-8", INVALID_BORDER)}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+    </>
+  );
+}
+
+/** 공통 설정 칸. "depth별"을 켜면 칸 대신 안내를 보여주고, 값은 depth별 표에서 정한다. */
+function SettingField({ label, htmlFor, perDepth, onPerDepthChange, children }: {
+  label: string;
+  htmlFor: string;
+  perDepth: boolean;
+  /** 없으면 다른 칸(기술 대상)의 depth별 여부를 따른다. */
+  onPerDepthChange?: (perDepth: boolean) => void;
+  children: ReactNode;
 }) {
   return (
     <Field>
-      <FieldLabel htmlFor={id}>{label}</FieldLabel>
-      <Select value={value ?? ""} disabled={disabled} onValueChange={onChange}>
-        <SelectTrigger id={id} aria-invalid={invalid} className={INVALID_BORDER}>
-          <SelectValue placeholder={mixed ? MIXED_LABEL : `${label} 선택`} />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      {children}
+      <div className="flex items-center justify-between gap-2">
+        <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel>
+        {onPerDepthChange && (
+          <label className="flex cursor-pointer items-center gap-1.5 text-xs text-muted">
+            <Checkbox
+              aria-label={`${label} depth별로 정하기`}
+              checked={perDepth}
+              onCheckedChange={(checked) => onPerDepthChange(checked === true)}
+            />
+            depth별
+          </label>
+        )}
+      </div>
+      {perDepth ? (
+        <p className="flex h-9 items-center rounded-lg border border-dashed border-line px-3 text-xs text-muted">
+          아래 depth별 표에서 정합니다.
+        </p>
+      ) : children}
     </Field>
   );
 }
 
-function NumberCell({ label, value, invalid, step = "1", placeholder, suffix, onChange }: {
+function NumberCell({ label, value, invalid, min = "0", step = "1", placeholder, suffix, onChange }: {
   label: string;
   value: string;
   invalid: boolean;
+  /** 음수도 받는 칸(발동 순서)은 null을 넘긴다. */
+  min?: string | null;
   step?: string;
   placeholder?: string;
   /** 칸 오른쪽에 붙이는 단위. 칸 너비를 맞추려고 없을 때도 자리를 둔다. */
@@ -317,7 +434,7 @@ function NumberCell({ label, value, invalid, step = "1", placeholder, suffix, on
     <Input
       aria-label={label}
       type="number"
-      min="0"
+      min={min ?? undefined}
       step={step}
       value={value}
       placeholder={placeholder}
@@ -386,11 +503,11 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
   const showCleanse = isSkill && focus.has_cleanse_count;
   const hidden = new Set(focus.inapplicable_fields ?? []);
   const slots = powerSlotsOf(focus);
-  const [{ draft: initialCommon, mixed }] = useState(() => commonDraftOf(nodes, slots));
-  const [common, setCommon] = useState<CommonDraft>(initialCommon);
+  const [common, setCommon] = useState<CommonDraft>(() => commonDraftOf(nodes, focus, slots));
+  const [perDepth, setPerDepth] = useState<Set<SettingKey>>(() => perDepthKeysOf(nodes));
   // depth가 여럿이면 설명을 공통으로 한 번 쓰고, 필요한 depth만 따로 쓴다.
   const sharesDescription = nodes.length > 1;
-  const [rows, setRows] = useState<DepthRow[]>(() => nodes.map((node) => depthRowOf(node, sharesDescription ? initialCommon.description : null)));
+  const [rows, setRows] = useState<DepthRow[]>(() => nodes.map((node) => depthRowOf(node, sharesDescription ? common.description : null)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const confirmingClose = useRef(false);
@@ -403,15 +520,16 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
     return () => urls.forEach((url) => URL.revokeObjectURL(url));
   }, []);
 
-  const commonErrors = isSkill ? commonErrorsOf(common, mixed, hidden) : new Set<CommonField>();
+  const commonErrors = new Set(isSkill ? settingErrorsOf(common.settings, hidden).filter((field) => !perDepth.has(settingKeyOf(field))) : []);
   const states = rows.map((row) => {
-    const changes = changesOf(row, common, slots);
-    return { row, changes, dirty: Boolean(changes || row.imageFile), errors: rowErrorsOf(row, common, slots) };
+    const changes = changesOf(row, common, perDepth, slots);
+    return { row, changes, dirty: Boolean(changes || row.imageFile), errors: rowErrorsOf(row, common, perDepth, slots, hidden) };
   });
   const dirtyCount = states.filter((state) => state.dirty).length;
-  const columnCount = 3 + (isSkill ? 1 + slots.length + (showCleanse ? 1 : 0) : 0);
-  const targetMode = common.target === undefined ? undefined
-    : isAllSkillTarget(common.target) || common.target === "SELF" ? common.target : "COUNT";
+  const settingColumns = isSkill
+    ? SETTING_COLUMNS.filter((column) => perDepth.has(settingKeyOf(column.field)) && !(column.hiddenField && hidden.has(column.hiddenField)))
+    : [];
+  const columnCount = 3 + (isSkill ? 1 + slots.length + (showCleanse ? 1 : 0) + settingColumns.length : 0);
   const descriptionTokens = ["depth", ...(isSkill ? ["비용", ...slots.map((slot) => slot.label), ...(showCleanse ? ["약화 해제 수"] : [])] : [])];
   const unknownTokens = unknownDescriptionTokens(common.description, descriptionTokens);
   const ownDescriptionCount = rows.filter((row) => row.ownDescription).length;
@@ -422,6 +540,53 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
   }
 
   const updateRow = (id: number, patch: (row: DepthRow) => Partial<DepthRow>) => updateRows((row) => row.node.id === id, patch);
+
+  const setCommonSettings = (patch: Partial<SkillSettings>) => setCommon((prev) => ({ ...prev, settings: { ...prev.settings, ...patch } }));
+
+  /** depth별로 나누면 지금 공통 값에서 시작하고, 다시 합치면 편집창을 연 depth의 값에서 시작한다. */
+  function togglePerDepth(key: SettingKey, on: boolean) {
+    if (on) {
+      const value = pickSetting(common.settings, key);
+      updateRows(() => true, (row) => ({ settings: { ...row.settings, ...value } }));
+    } else {
+      const focusRow = rows.find((row) => row.node.id === focus.id) ?? rows[0];
+      setCommonSettings(pickSetting(focusRow.settings, key));
+    }
+    setPerDepth((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }
+
+  function settingCell(row: DepthRow, depth: string, errors: Set<string>, { field, label }: (typeof SETTING_COLUMNS)[number]) {
+    const cellLabel = `${depth} ${label}`;
+    const invalid = errors.has(`setting:${field}`);
+    const set = (patch: Partial<SkillSettings>) => updateRow(row.node.id, (current) => ({ settings: { ...current.settings, ...patch } }));
+    if (field === "activationOrder") {
+      return (
+        <NumberCell key={field} label={cellLabel} value={row.settings.activationOrder} invalid={invalid} min={null} placeholder="정수"
+          onChange={(activationOrder) => set({ activationOrder })} />
+      );
+    }
+    if (field === "target") {
+      return (
+        <td key={field} className="min-w-32 p-2 pb-1">
+          <TargetPicker label={cellLabel} target={row.settings.target} invalid={invalid} compact onChange={(target) => set({ target })} />
+        </td>
+      );
+    }
+    const options = field === "targetSide" ? TARGET_SIDES : SIMPLE_SETTINGS.find((setting) => setting.key === field)?.options ?? [];
+    // 전체 대상이면 진영은 대상이 정한다.
+    const allSide = field === "targetSide" ? allTargetSide(row.settings.target) : undefined;
+    return (
+      <td key={field} className="p-2 pb-1">
+        <OptionPicker label={cellLabel} value={allSide ?? row.settings[field] ?? ""} options={options} invalid={invalid} disabled={Boolean(allSide)}
+          className="h-8 min-w-24" onChange={(value) => set({ [field]: value })} />
+      </td>
+    );
+  }
 
   function pickImage(match: (row: DepthRow) => boolean, file: File | undefined) {
     if (!file) return;
@@ -462,7 +627,7 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
   async function save() {
     if (saving) return;
     if (commonErrors.size > 0 || states.some((state) => state.dirty && state.errors.size > 0)) {
-      setError("빨간 칸을 확인해 주세요. 이름은 비울 수 없고, 비용·해제 수는 0 이상의 정수, 위력은 0 이상의 숫자(정수형은 정수), 대상은 SELF·1 이상의 정수·전체 대상 중 하나여야 합니다.");
+      setError("빨간 칸을 확인해 주세요. 이름은 비울 수 없고, 발동 타입·분류·중첩·진영은 골라야 하며, 비용·해제 수는 0 이상의 정수, 위력은 0 이상의 숫자(정수형은 정수), 대상은 SELF·1 이상의 정수·전체 대상 중 하나, 발동 순서는 정수여야 합니다.");
       return;
     }
     setSaving(true);
@@ -512,97 +677,75 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
             <div className="space-y-0.5">
               <h3 className="text-sm font-semibold text-ivory">공통 설정</h3>
               <p className="text-xs text-muted">
-                모든 depth에 함께 적용됩니다.
-                {mixed.size > 0 && ` '${MIXED_LABEL}'인 칸은 그대로 두면 depth별 값을 유지하고, 값을 고르면 모든 depth를 그 값으로 맞춥니다.`}
+                모든 depth에 함께 적용됩니다. depth마다 다르게 정하려면 항목의 &apos;depth별&apos;을 켜세요(처음부터 depth마다 값이 다른 항목은 켜져 있습니다).
               </p>
             </div>
             <div className="grid gap-3 sm:grid-cols-3">
-              <OptionSelect
-                id="skill-trigger-type"
-                label="발동 타입"
-                value={common.triggerType}
-                options={TRIGGER_TYPES}
-                mixed={mixed.has("triggerType")}
-                invalid={commonErrors.has("triggerType")}
-                onChange={(value) => setCommon((prev) => ({ ...prev, triggerType: value as SkillTriggerType }))}
-              />
-              <OptionSelect
-                id="skill-category"
-                label="분류"
-                value={common.category}
-                options={SKILL_CATEGORIES}
-                mixed={mixed.has("category")}
-                invalid={commonErrors.has("category")}
-                onChange={(value) => setCommon((prev) => ({ ...prev, category: value as SkillCategory }))}
-              />
-              <OptionSelect
-                id="skill-stackable"
-                label="중첩"
-                value={common.stackable === undefined ? undefined : String(common.stackable)}
-                options={STACKABLE_OPTIONS}
-                mixed={mixed.has("stackable")}
-                invalid={commonErrors.has("stackable")}
-                onChange={(value) => setCommon((prev) => ({ ...prev, stackable: value === "true" }))}
-              />
+              {SIMPLE_SETTINGS.map(({ key, label, options }) => (
+                <SettingField key={key} label={label} htmlFor={`skill-${key}`} perDepth={perDepth.has(key)} onPerDepthChange={(on) => togglePerDepth(key, on)}>
+                  <OptionPicker
+                    id={`skill-${key}`}
+                    label={label}
+                    value={common.settings[key]}
+                    options={[...options]}
+                    placeholder={`${label} 선택`}
+                    invalid={commonErrors.has(key)}
+                    onChange={(value) => setCommonSettings({ [key]: value })}
+                  />
+                </SettingField>
+              ))}
 
               {!hidden.has("target") && (
-                <OptionSelect
-                  id="skill-target"
-                  label="기술 대상"
-                  value={targetMode}
-                  options={TARGET_OPTIONS}
-                  mixed={mixed.has("target")}
-                  invalid={commonErrors.has("target") && targetMode === undefined}
-                  onChange={(value) => setCommon((prev) => ({
-                    ...prev,
-                    target: value === "COUNT" ? "1" : value,
-                    targetSide: allTargetSide(value) ?? prev.targetSide,
-                  }))}
-                >
-                  {targetMode === "COUNT" && (
-                    <Input
-                      aria-label="기술 대상 인원"
-                      value={common.target}
-                      onChange={(e) => setCommon((prev) => ({ ...prev, target: e.target.value }))}
-                      placeholder="1 이상의 정수"
-                      aria-invalid={commonErrors.has("target")}
-                      className={INVALID_BORDER}
-                    />
-                  )}
-                </OptionSelect>
+                <SettingField label="기술 대상" htmlFor="skill-target" perDepth={perDepth.has("target")} onPerDepthChange={(on) => togglePerDepth("target", on)}>
+                  <TargetPicker
+                    id="skill-target"
+                    label="기술 대상"
+                    target={common.settings.target}
+                    invalid={commonErrors.has("target")}
+                    onChange={(target) => setCommonSettings({ target })}
+                  />
+                </SettingField>
               )}
 
               {!hidden.has("target_side") && (
-                <OptionSelect
-                  id="skill-target-side"
+                // 진영은 기술 대상과 함께 depth별로 나뉜다.
+                <SettingField
                   label="기술 대상 진영"
-                  value={allTargetSide(common.target) ?? common.targetSide}
-                  options={TARGET_SIDES}
-                  mixed={mixed.has("targetSide")}
-                  invalid={commonErrors.has("targetSide")}
-                  disabled={isAllSkillTarget(common.target)}
-                  onChange={(value) => setCommon((prev) => ({ ...prev, targetSide: value as SkillTargetSide }))}
-                />
+                  htmlFor="skill-target-side"
+                  perDepth={perDepth.has("target")}
+                  onPerDepthChange={hidden.has("target") ? (on) => togglePerDepth("target", on) : undefined}
+                >
+                  <OptionPicker
+                    id="skill-target-side"
+                    label="기술 대상 진영"
+                    value={allTargetSide(common.settings.target) ?? common.settings.targetSide}
+                    options={TARGET_SIDES}
+                    placeholder="아군/적군 선택"
+                    invalid={commonErrors.has("targetSide")}
+                    disabled={isAllSkillTarget(common.settings.target)}
+                    onChange={(targetSide) => setCommonSettings({ targetSide })}
+                  />
+                </SettingField>
               )}
 
               {!hidden.has("activation_order") && (
-                <Field>
-                  <FieldLabel htmlFor="skill-activation-order">발동 순서</FieldLabel>
+                <SettingField
+                  label="발동 순서"
+                  htmlFor="skill-activation-order"
+                  perDepth={perDepth.has("activationOrder")}
+                  onPerDepthChange={(on) => togglePerDepth("activationOrder", on)}
+                >
                   <Input
                     id="skill-activation-order"
                     type="number"
                     step="1"
-                    value={common.activationOrder ?? ""}
-                    // depth마다 다른 칸을 다시 비우면 depth별 값을 유지하는 상태로 돌아간다.
-                    onChange={(e) => setCommon((prev) => ({
-                      ...prev,
-                      activationOrder: e.target.value === "" && mixed.has("activationOrder") ? undefined : e.target.value,
-                    }))}
-                    placeholder={mixed.has("activationOrder") ? MIXED_LABEL : "정수"}
+                    value={common.settings.activationOrder}
+                    placeholder="정수"
                     aria-invalid={commonErrors.has("activationOrder")}
                     className={INVALID_BORDER}
+                    onChange={(e) => setCommonSettings({ activationOrder: e.target.value })}
                   />
-                </Field>
+                </SettingField>
               )}
 
               {slots.map((slot) => (
@@ -711,6 +854,7 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
                       <th className="w-24 p-2 font-semibold">비용 (MP)</th>
                       {slots.map((slot) => <th key={slot.key} className="w-36 p-2 font-semibold">{slot.label}</th>)}
                       {showCleanse && <th className="w-24 p-2 font-semibold">약화 해제 수</th>}
+                      {settingColumns.map((column) => <th key={column.field} className="p-2 font-semibold">{column.label}</th>)}
                     </>
                   )}
                 </tr>
@@ -762,7 +906,7 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
                           maxLength={50}
                           placeholder="기술 이름"
                           aria-invalid={errors.has("name")}
-                          className={cn("h-8", INVALID_BORDER)}
+                          className={cn("h-8 min-w-28", INVALID_BORDER)}
                           onChange={(e) => updateRow(id, () => ({ name: e.target.value }))}
                         />
                       </td>
@@ -797,6 +941,7 @@ export default function SkillEditModal({ nodes, focusId, onClose, onSaved }: Pro
                               onChange={(cleanseCount) => updateRow(id, () => ({ cleanseCount }))}
                             />
                           )}
+                          {settingColumns.map((column) => settingCell(row, label, errors, column))}
                         </>
                       )}
                     </tr>
