@@ -1444,6 +1444,7 @@ export default function CharacterInfo({
                     alt={`모험가 등급 ${getRankGrade(selectedDetail.rank).name}패`}
                     width={48}
                     height={48}
+                    unoptimized
                     className="absolute -left-3 -top-3 z-10 cursor-help drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]"
                   />
                 </InfoTooltip>
