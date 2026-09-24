@@ -1388,8 +1388,10 @@ class SkillNodeRead(BaseModel):
     tier6_effect: str | None = None
     is_placeholder: bool = False
     is_public: bool = True
-    # 파생기 여부. 편집 화면에서 같은 기술의 depth별 노드로 이동할 수 있다.
+    # 파생기 여부. 이전 클라이언트와의 호환 필드다.
     is_derived: bool = False
+    # 설명을 depth·위력으로 자동으로 쓰는 기술인지. 관리자가 설명을 비우면 자동 설명으로 돌아간다.
+    auto_description: bool = False
     # 이전 클라이언트와의 호환 필드. 모든 기술의 위력을 편집할 수 있다.
     power_editable: bool = True
     # 이 기술에는 해당하지 않아 편집 화면·툴팁에서 감추는 항목(예: 복제는 복제한 기술의 대상을 따른다).
@@ -1405,7 +1407,8 @@ class SkillNodeRead(BaseModel):
 
 class SkillNodeUpdate(BaseModel):
     tier6_effect: str | None = Field(default=None, max_length=2000)
-    default_name: str = Field(min_length=1, max_length=50)
+    # 보낸 항목만 바꾼다. 이름도 바꿀 때만 보낸다.
+    default_name: str | None = Field(default=None, min_length=1, max_length=50)
     description: str | None = Field(default=None, max_length=2000)
     trigger_type: SkillTriggerType | None = None
     category: SkillCategory | None = None

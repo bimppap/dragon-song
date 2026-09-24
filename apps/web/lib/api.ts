@@ -2115,10 +2115,8 @@ export interface SkillNode {
   tier6_effect: string | null;
   is_placeholder: boolean;
   is_public: boolean;
-  /** 파생기 여부. 편집 화면에서 같은 기술의 depth별 노드로 이동할 수 있다. */
-  is_derived: boolean;
-  /** 이전 클라이언트와의 호환 필드. 모든 기술의 위력을 편집할 수 있다. */
-  power_editable: boolean;
+  /** 설명을 depth·위력으로 자동으로 쓰는 기술인지. 설명을 비우면 자동 설명으로 돌아간다. */
+  auto_description: boolean;
   /** 기술 성격상 입력할 값이 없어 편집창·툴팁에서 감추는 항목(예: 복제는 복제한 기술의 대상을 따른다). */
   inapplicable_fields?: string[];
 }
@@ -2210,9 +2208,10 @@ export async function fetchSkillNodes(book: SkillBook): Promise<SkillNode[]> {
 
 export async function updateSkillNode(
   nodeId: number,
+  /** 보낸 항목만 바뀐다. */
   data: {
-    default_name: string;
-    description: string | null;
+    default_name?: string;
+    description?: string | null;
     tier6_effect?: string | null;
     trigger_type?: SkillTriggerType;
     category?: SkillCategory;

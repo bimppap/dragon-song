@@ -1,104 +1,36 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Image from "next/image";
-import { Check, Image as ImageIcon, X } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { ALL_SKILL_TARGETS, isAllSkillTarget } from "@/lib/skillTargets";
-import Modal from "@/components/common/Modal";
 import SkillTreeGrid from "@/components/skill/SkillTreeGrid";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
+import SkillEditModal from "./SkillEditModal";
 import {
   fetchSkillNodes,
-  updateSkillNode,
   updateSkillVisibility,
-  uploadSkillImage,
   type SkillBook,
-  type SkillCategory,
   type SkillNode,
-  type SkillTargetSide,
-  type SkillTriggerType,
 } from "@/lib/api";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
-const TRIGGER_TYPES: SkillTriggerType[] = ["즉발형", "지속형", "혼합형"];
-const SKILL_CATEGORIES: SkillCategory[] = ["피해", "복합", "강화", "약화", "회복"];
-type PowerSlot = SkillNode["power_slots"][number];
 
-const DEFAULT_POWER_SLOTS: PowerSlot[] = [{ key: "power", label: "기술 위력", unit: "percent" }];
-
-/** 서버가 기술마다 내려주는 위력 입력 칸 정의. 예전 응답 호환을 위해 비어 있으면 단일 위력으로 본다. */
-function powerSlotsOf(node: SkillNode): PowerSlot[] {
-  return node.power_slots?.length ? node.power_slots : DEFAULT_POWER_SLOTS;
-}
-
-/** percent 슬롯은 퍼센트로 입력받아 배율로 저장하고, flat 슬롯은 입력값을 그대로 쓴다. */
-function slotValueToInput(slot: PowerSlot, value: number | null): string {
-  if (value == null) return "";
-  return slot.unit === "flat" ? String(value) : ratioToPercent(value);
-}
-
-function slotInputToValue(slot: PowerSlot, input: string): number {
-  const value = Number(input);
-  return slot.unit === "flat" ? value : value / 100;
-}
-
-const TARGET_SIDES: { value: SkillTargetSide; label: string }[] = [
-  { value: "ALLY", label: "아군" },
-  { value: "ENEMY", label: "적군" },
-];
-
-interface Draft {
-  name: string;
-  description: string;
-  tier6Effect: string;
-  triggerType: SkillTriggerType | "";
-  category: SkillCategory | "";
-  stackable: boolean;
-  target: string;
-  targetSide: SkillTargetSide | "";
-  activationOrder: string;
-  cost: string;
-  /** 위력 슬롯 키 → 퍼센트 입력값. 위력이 하나인 기술은 "power" 하나만 쓴다. */
-  powerPercents: Record<string, string>;
-  powerUnits: Record<string, PowerSlot["unit"]>;
-  cleanseCount: string;
-}
-
-const EMPTY_DRAFT: Draft = {
-  name: "",
-  description: "",
-  tier6Effect: "",
-  triggerType: "",
-  category: "",
-  stackable: false,
-  target: "",
-  targetSide: "",
-  activationOrder: "",
-  cost: "",
-  powerPercents: {},
-  powerUnits: {},
-  cleanseCount: "0",
-};
-
-function ratioToPercent(value: number | null): string {
-  return value == null ? "" : String(Number((value * 100).toFixed(6)));
+/**
+ * 누른 노드와 같은 기술의 depth별 노드. 뿌리 기술은 1단계와 col 0의 2~6단계,
+ * 파생 기술은 col 1의 2~6단계이고, 0단계(서 아이덴티티)는 혼자다.
+ */
+function skillChainOf(node: SkillNode, bookNodes: SkillNode[]): SkillNode[] {
+  if (node.tier === 0) return [node];
+  const col = node.tier === 1 ? 0 : node.col;
+  return bookNodes
+    .filter((other) => other.branch === node.branch && (other.col === col || (col === 0 && other.tier === 1)))
+    .sort((a, b) => a.tier - b.tier);
 }
 
 export default function AdminSkillEditor() {
   const [nodesByBook, setNodesByBook] = useState<Record<SkillBook, SkillNode[]>>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [editing, setEditing] = useState<SkillNode | null>(null);
-  const [draft, setDraft] = useState<Draft>(EMPTY_DRAFT);
-  const [imageFile, setImageFile] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<{ chain: SkillNode[]; focusId: number } | null>(null);
   const [maxPublicTier, setMaxPublicTier] = useState(6);
   const [savingVisibility, setSavingVisibility] = useState(false);
 
@@ -125,126 +57,18 @@ export default function AdminSkillEditor() {
   }, []);
 
   function startEdit(node: SkillNode) {
-    setError(null);
-    setEditing(node);
-    setDraft({
-      name: node.default_name,
-      description: node.description ?? "",
-      tier6Effect: node.tier6_effect ?? "",
-      triggerType: node.trigger_type ?? "",
-      category: node.category ?? "",
-      stackable: node.stackable ?? false,
-      target: node.target ?? "",
-      targetSide: node.target_side ?? "",
-      activationOrder: node.activation_order != null ? String(node.activation_order) : "",
-      cost: node.cost != null ? String(node.cost) : "",
-      powerUnits: Object.fromEntries(powerSlotsOf(node).map((slot) => [slot.key, slot.unit])),
-      powerPercents: Object.fromEntries(powerSlotsOf(node).map((slot) => [
-        slot.key,
-        slotValueToInput(slot, slot.key === "power" ? node.power : node.powers?.[slot.key] ?? null),
-      ])),
-      cleanseCount: String(node.cleanse_count ?? 0),
-    });
-    setImageFile(null);
-    setImagePreview(node.image_url);
+    if (!nodesByBook) return;
+    setEditing({ chain: skillChainOf(node, nodesByBook[node.book]), focusId: node.id });
   }
 
-  function closeEdit() {
-    setEditing(null);
-    setImageFile(null);
-    setImagePreview(null);
-  }
-
-  function handleImageChange(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0] ?? null;
-    setImageFile(file);
-    setImagePreview(file ? URL.createObjectURL(file) : editing?.image_url ?? null);
-  }
-
-  async function saveEdit() {
-    if (!editing || saving) return;
-    if (!draft.name.trim() || !metadataIsValid) {
-      setError("기술 이름과 기술 설정의 필수 항목을 확인해 주세요. 대상·발동 순서·비용·위력은 올바른 숫자 또는 지정된 값이어야 합니다.");
-      return;
-    }
-    setSaving(true);
-    setError(null);
+  async function reloadBook(book: SkillBook) {
     try {
-      const powerValue = () => slotInputToValue(
-        powerSlots.find((slot) => slot.key === "power") ?? DEFAULT_POWER_SLOTS[0],
-        draft.powerPercents.power ?? "",
-      );
-      const skillMetadata = editing.tier === 0 ? {} : {
-        trigger_type: draft.triggerType as SkillTriggerType,
-        category: draft.category as SkillCategory,
-        stackable: draft.stackable,
-        // 기술 성격상 해당 없는 항목은 보내지 않는다(예: 복제는 복제한 기술의 대상을 따른다).
-        ...(hides("target") ? {} : { target: draft.target.trim().toUpperCase() }),
-        ...(hides("target_side") ? {} : { target_side: draft.targetSide as SkillTargetSide }),
-        ...(hides("activation_order") ? {} : { activation_order: Number(draft.activationOrder) }),
-        cost: Number(draft.cost),
-        power: powerValue(),
-        power_units: Object.fromEntries(powerSlots.map((slot) => [slot.key, slot.unit])),
-        powers: Object.fromEntries(
-          powerSlots
-            .filter((slot) => slot.key !== "power")
-            .map((slot) => [slot.key, slotInputToValue(slot, draft.powerPercents[slot.key] ?? "")]),
-        ),
-        ...(editing.has_cleanse_count ? { cleanse_count: Number(draft.cleanseCount) } : {}),
-      };
-      let updated = await updateSkillNode(editing.id, {
-        default_name: draft.name,
-        description: draft.description.trim() || null,
-        ...(editing.tier === 6 ? { tier6_effect: draft.tier6Effect.trim() || null } : {}),
-        ...skillMetadata,
-      });
-      if (imageFile) {
-        updated = await uploadSkillImage(editing.id, imageFile);
-      }
-      const refreshedBookNodes = await fetchSkillNodes(updated.book);
-      setNodesByBook((prev) => (
-        prev
-          ? { ...prev, [updated.book]: refreshedBookNodes }
-          : prev
-      ));
-      closeEdit();
+      const nodes = await fetchSkillNodes(book);
+      setNodesByBook((prev) => (prev ? { ...prev, [book]: nodes } : prev));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "기술 수정 실패");
-    } finally {
-      setSaving(false);
+      setError(e instanceof Error ? e.message : "기술트리 조회 실패");
     }
   }
-
-  const isSkillNode = editing !== null && editing.tier !== 0;
-  const isDerived = Boolean(editing?.is_derived);
-  // 기술 성격상 노드에 입력할 값이 없는 항목은 칸을 감추고 검사·저장에서도 뺀다.
-  const hides = (field: string) => Boolean(editing?.inapplicable_fields?.includes(field));
-  const targetIsValid = hides("target") || isAllSkillTarget(draft.target) || draft.target.trim().toUpperCase() === "SELF" || /^[1-9]\d*$/.test(draft.target.trim());
-  const activationOrderIsValid = hides("activation_order") || /^-?\d+$/.test(draft.activationOrder.trim());
-  const costIsValid = /^\d+$/.test(draft.cost.trim());
-  const powerSlots = (editing ? powerSlotsOf(editing) : DEFAULT_POWER_SLOTS).map((slot) => ({
-    ...slot, unit: draft.powerUnits[slot.key] ?? slot.unit,
-  }));
-  const powerIsValid = powerSlots.every((slot) => {
-    const value = draft.powerPercents[slot.key] ?? "";
-    return value.trim() !== "" && Number.isFinite(Number(value)) && Number(value) >= 0
-      && (slot.unit !== "flat" || Number.isInteger(Number(value)));
-  });
-  const cleanseCountIsValid = !isSkillNode || isDerived || !editing.has_cleanse_count || /^\d+$/.test(draft.cleanseCount.trim());
-  const metadataIsValid = !isSkillNode || (
-    TRIGGER_TYPES.includes(draft.triggerType as SkillTriggerType)
-    && SKILL_CATEGORIES.includes(draft.category as SkillCategory)
-    && (hides("target_side") || TARGET_SIDES.some(({ value }) => value === draft.targetSide))
-    && targetIsValid
-    && activationOrderIsValid
-    && costIsValid
-    && powerIsValid
-    && cleanseCountIsValid
-  );
-  // 파생기는 depth 2부터 같은 기술이 강화되는 형태라, 편집창 안에서 depth를 바로 오갈 수 있게 한다.
-  const depthSiblings = editing && isDerived && nodesByBook
-    ? nodesByBook[editing.book].filter((node) => node.branch === editing.branch && node.col === editing.col && node.tier >= 2)
-    : [];
 
   async function handleVisibilityChange(value: string) {
     const nextTier = Number(value);
@@ -291,7 +115,7 @@ export default function AdminSkillEditor() {
         </div>
       </div>
 
-      {error && !editing && <p role="alert" className="text-sm text-red-500">{error}</p>}
+      {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
 
       {loading || !nodesByBook ? (
         <p className="text-sm text-muted">불러오는 중...</p>
@@ -304,7 +128,7 @@ export default function AdminSkillEditor() {
                 <SkillTreeGrid
                   nodes={nodesByBook[book]}
                   getLabel={(n) => n.default_name}
-                  isHighlighted={(n) => editing?.id === n.id}
+                  isHighlighted={(n) => Boolean(editing?.chain.some((node) => node.id === n.id))}
                   onNodeClick={startEdit}
                   showLabels={false}
                   tooltipVariant="admin"
@@ -316,287 +140,14 @@ export default function AdminSkillEditor() {
         </div></div>
       )}
 
-      <Modal
-        open={editing !== null}
-        onClose={closeEdit}
-        title={editing ? `${editing.book} · ${editing.tier_label} 기술 편집` : undefined}
-        className="max-w-2xl"
-      >
-        {editing && <div className="space-y-4">
-          {isDerived && (
-            <div className="space-y-2 rounded-lg bg-inset p-3">
-              <p className="text-xs text-muted">
-                depth별로 발동 타입·분류·기술 위력·중첩 여부를 각각 설정할 수 있습니다.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {depthSiblings.map((node) => (
-                  <Button
-                    key={node.id}
-                    variant={node.id === editing.id ? "default" : "outline"}
-                    size="sm"
-                    disabled={saving}
-                    onClick={() => startEdit(node)}
-                  >
-                    depth {node.tier}
-                  </Button>
-                ))}
-              </div>
-              {editing.formula && <p className="text-xs text-muted">{editing.formula}</p>}
-            </div>
-          )}
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 이름</label>
-            <Input
-              value={draft.name}
-              onChange={(e) => setDraft((prev) => ({ ...prev, name: e.target.value }))}
-              placeholder="기술 이름"
-            />
-          </div>
-
-          {isSkillNode ? (
-            <div className="space-y-3 border-y border-line py-4">
-              <h3 className="text-sm font-semibold text-ivory">기술 설정</h3>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
-                    발동 타입
-                  </label>
-                  <Select
-                    value={draft.triggerType}
-                    onValueChange={(value) => setDraft((prev) => ({ ...prev, triggerType: value as SkillTriggerType }))}
-                  >
-                    <SelectTrigger><SelectValue placeholder="발동 타입 선택" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {TRIGGER_TYPES.map((type) => <SelectItem key={type} value={type}>{type}</SelectItem>)}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
-                    분류
-                  </label>
-                  <Select
-                    value={draft.category}
-                    onValueChange={(value) => setDraft((prev) => ({ ...prev, category: value as SkillCategory }))}
-                  >
-                    <SelectTrigger><SelectValue placeholder="분류 선택" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {SKILL_CATEGORIES.map((category) => <SelectItem key={category} value={category}>{category}</SelectItem>)}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {!hides("target") && <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상</label>
-                  <Select
-                    value={isAllSkillTarget(draft.target) || draft.target === "SELF" ? draft.target : "COUNT"}
-                    onValueChange={(value) => setDraft((prev) => ({
-                      ...prev,
-                      target: value === "COUNT" ? "1" : value,
-                      targetSide: isAllSkillTarget(value) ? (value === "아군 전원" ? "ALLY" : "ENEMY") : prev.targetSide,
-                    }))}
-                  >
-                    <SelectTrigger aria-label="기술 대상"><SelectValue /></SelectTrigger>
-                    <SelectContent><SelectGroup>
-                      <SelectItem value="COUNT">인원 지정</SelectItem>
-                      <SelectItem value="SELF">SELF (본인)</SelectItem>
-                      {ALL_SKILL_TARGETS.map((target) => <SelectItem key={target} value={target}>{target}</SelectItem>)}
-                    </SelectGroup></SelectContent>
-                  </Select>
-                  {!isAllSkillTarget(draft.target) && draft.target !== "SELF" && <Input
-                    aria-label="기술 대상 인원"
-                    value={draft.target}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, target: e.target.value }))}
-                    placeholder="1 이상의 정수"
-                    aria-invalid={draft.target !== "" && !targetIsValid}
-                  />}
-                  {draft.target !== "" && !targetIsValid ? (
-                    <p className="text-xs text-red-500">1 이상의 정수를 입력하세요.</p>
-                  ) : null}
-                </div>}
-
-                {!hides("target_side") && <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 대상 진영</label>
-                  <Select
-                    value={isAllSkillTarget(draft.target) ? (draft.target === "아군 전원" ? "ALLY" : "ENEMY") : draft.targetSide}
-                    disabled={isAllSkillTarget(draft.target)}
-                    onValueChange={(value) => setDraft((prev) => ({ ...prev, targetSide: value as SkillTargetSide }))}
-                  >
-                    <SelectTrigger><SelectValue placeholder="아군/적군 선택" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectGroup>
-                        {TARGET_SIDES.map(({ value, label }) => (
-                          <SelectItem key={value} value={value}>{label}</SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                </div>}
-
-                {!hides("activation_order") && <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">발동 순서</label>
-                  <Input
-                    type="number"
-                    step="1"
-                    value={draft.activationOrder}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, activationOrder: e.target.value }))}
-                    placeholder="정수"
-                    aria-invalid={draft.activationOrder !== "" && !activationOrderIsValid}
-                  />
-                </div>}
-
-                <div className="space-y-1.5">
-                  <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 비용 (MP)</label>
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    value={draft.cost}
-                    onChange={(e) => setDraft((prev) => ({ ...prev, cost: e.target.value }))}
-                    placeholder="0 이상의 정수"
-                    aria-invalid={draft.cost !== "" && !costIsValid}
-                  />
-                </div>
-
-                {powerSlots.map((slot) => {
-                  const value = draft.powerPercents[slot.key] ?? "";
-                  return (
-                    <div key={slot.key} className="space-y-1.5">
-                      <label className="block text-xs font-semibold uppercase tracking-wide text-muted">
-                        {slot.unit === "flat" ? slot.label : `${slot.label} (%)`}
-                      </label>
-                      <RadioGroup
-                        aria-label={`${slot.label} 형식`}
-                        className="flex gap-4"
-                        value={slot.unit}
-                        disabled={saving}
-                        onValueChange={(unit) => setDraft((prev) => ({
-                          ...prev, powerUnits: { ...prev.powerUnits, [slot.key]: unit as PowerSlot["unit"] },
-                        }))}
-                      >
-                        <label className="flex cursor-pointer items-center gap-2 text-xs text-ivory">
-                          <RadioGroupItem value="percent" />퍼센트형 (%)
-                        </label>
-                        <label className="flex cursor-pointer items-center gap-2 text-xs text-ivory">
-                          <RadioGroupItem value="flat" />정수형
-                        </label>
-                      </RadioGroup>
-                      <Input
-                        aria-label={slot.label}
-                        type="number"
-                        min="0"
-                        step={slot.unit === "flat" ? "1" : "any"}
-                        value={value}
-                        onChange={(e) => setDraft((prev) => ({
-                          ...prev,
-                          powerPercents: { ...prev.powerPercents, [slot.key]: e.target.value },
-                        }))}
-                        placeholder={slot.unit === "flat" ? "예: 2" : "예: 150"}
-                        aria-invalid={value !== "" && !(Number.isFinite(Number(value)) && Number(value) >= 0 && (slot.unit !== "flat" || Number.isInteger(Number(value))))}
-                      />
-                      <p className="text-xs text-muted">
-                        {slot.unit === "flat" ? "0 이상의 정수를 입력하세요." : "입력값을 퍼센트로 적용합니다. 예: 150 → 150%"}
-                      </p>
-                    </div>
-                  );
-                })}
-
-                {editing.has_cleanse_count && (
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-semibold uppercase tracking-wide text-muted">약화 해제 수</label>
-                    <Input
-                      type="number"
-                      min="0"
-                      step="1"
-                      value={draft.cleanseCount}
-                      onChange={(e) => setDraft((prev) => ({ ...prev, cleanseCount: e.target.value }))}
-                      placeholder="0 이상의 정수"
-                      aria-invalid={!cleanseCountIsValid}
-                    />
-                    <p className="text-xs text-muted">가장 오래된 것부터 해제합니다.</p>
-                  </div>
-                )}
-              </div>
-
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-ivory">
-                <Checkbox
-                  checked={draft.stackable}
-                  onCheckedChange={(checked) => setDraft((prev) => ({ ...prev, stackable: checked === true }))}
-                />
-                중첩 가능 (스택 사용)
-              </label>
-            </div>
-          ) : null}
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 이미지</label>
-            <div className="flex items-center gap-4">
-              <div className="relative flex size-16 shrink-0 items-center justify-center overflow-hidden border border-line bg-inset">
-                {imagePreview ? (
-                  // blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다.
-                  <Image src={imagePreview} alt="기술 이미지 미리보기" fill unoptimized className="object-cover" />
-                ) : (
-                  <ImageIcon size={20} className="text-muted" />
-                )}
-              </div>
-              <div className="space-y-1">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleImageChange}
-                  className="block text-sm text-ivory/85 file:mr-3 file:rounded-lg file:border-0 file:bg-gold/10 file:px-3 file:py-1.5 file:text-sm file:font-semibold file:text-gold hover:file:bg-gold/15"
-                />
-                <p className="text-xs text-muted">업로드 시 WebP로 변환되며(5MB 이하), 없으면 기본 아이콘이 표시됩니다.</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <label className="block text-xs font-semibold uppercase tracking-wide text-muted">기술 설명</label>
-            <Textarea
-              value={draft.description}
-              onChange={(e) => setDraft((prev) => ({ ...prev, description: e.target.value }))}
-              placeholder="러너에게 보여지는 기술 설명을 입력하세요. 예) 적 1명에게 '150%' 피해"
-              rows={4}
-            />
-            <p className="text-xs text-muted">
-              작은따옴표로 감싼 부분은 서(書) 강조 색으로 표시됩니다(따옴표는 보이지 않습니다). 수치는 따옴표가 없어도 자동으로 강조됩니다.
-              {isDerived && " 비워두면 depth에 맞춰 자동으로 쓰인 설명을 그대로 씁니다."}
-            </p>
-          </div>
-
-          {editing.tier === 6 && (
-            <div className="space-y-1.5">
-              <label htmlFor="skill-tier6-effect" className="block text-xs font-semibold uppercase tracking-wide text-muted">6단계 효과</label>
-              <Textarea
-                id="skill-tier6-effect"
-                value={draft.tier6Effect}
-                onChange={(e) => setDraft((prev) => ({ ...prev, tier6Effect: e.target.value }))}
-                placeholder="6단계에서 추가되는 효과를 입력하세요."
-                maxLength={2000}
-                rows={4}
-              />
-            </div>
-          )}
-
-          {error && <p role="alert" className="text-sm text-red-500">{error}</p>}
-          <div className="flex items-center justify-end gap-2">
-            <Button type="button" size="sm" variant="ghost" onClick={closeEdit} disabled={saving}>
-              <X size={14} />
-              취소
-            </Button>
-            <Button type="button" size="sm" onClick={saveEdit} disabled={saving}>
-              <Check size={14} />
-              {saving ? "저장 중..." : "저장"}
-            </Button>
-          </div>
-        </div>}
-      </Modal>
+      {editing && (
+        <SkillEditModal
+          nodes={editing.chain}
+          focusId={editing.focusId}
+          onClose={() => setEditing(null)}
+          onSaved={() => void reloadBook(editing.chain[0].book)}
+        />
+      )}
     </div>
   );
 }

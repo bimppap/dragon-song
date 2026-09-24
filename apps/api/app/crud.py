@@ -8860,6 +8860,7 @@ def _to_skill_node_read(node: SkillNode) -> SkillNodeRead:
         is_placeholder=bool(_resolved_skill_node_value(node, "is_placeholder")),
         is_public=node.is_public,
         is_derived=spec_var_name in DERIVED_VARS,
+        auto_description=spec_var_name in AUTO_DESCRIPTION_VARS,
         power_editable=True,
         inapplicable_fields=list(SKILL_INAPPLICABLE_FIELDS.get(spec_var_name, ())),
     )
@@ -9114,7 +9115,8 @@ def _update_derived_skill_node(db: Session, node: SkillNode, data: SkillNodeUpda
         if unknown:
             raise HTTPException(status_code=400, detail=f"이 기술에 없는 기술 위력 항목입니다: {', '.join(unknown)}")
         node.powers = {key: float(value) for key, value in data.powers.items() if key != "power"}
-    node.default_name = data.default_name.strip()
+    if data.default_name is not None:
+        node.default_name = data.default_name.strip()
     if "description" in data.model_fields_set:
         _apply_skill_description_update(node, data, spec, auto_before=auto_description_before)
     for field in ("target", "target_side", "activation_order", "cost"):
@@ -9141,7 +9143,8 @@ def update_skill_node(db: Session, node_id: int, data: SkillNodeUpdate) -> Skill
     if spec.get("var_name") in DERIVED_VARS:
         return _update_derived_skill_node(db, node, data, spec)
     auto_description_before = derived_auto_description(node, spec)
-    node.default_name = data.default_name.strip()
+    if data.default_name is not None:
+        node.default_name = data.default_name.strip()
     if "description" in data.model_fields_set:
         _apply_skill_description_update(node, data, spec, auto_before=auto_description_before)
     for field in (

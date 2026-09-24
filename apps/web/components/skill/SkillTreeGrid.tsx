@@ -5,6 +5,7 @@ import Image from "next/image";
 import { Sparkles } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { cn } from "@/lib/utils";
+import { powerOf, powerSlotsOf, ratioToPercent } from "@/lib/skillPower";
 import type { SkillNode } from "@/lib/api";
 import { type BookAccent } from "@/components/skill/bookAccent";
 
@@ -69,9 +70,6 @@ function InfoRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function formatPowerPercent(value: number): string {
-  return `${Number((value * 100).toFixed(6))}%`;
-}
 
 const DESCRIPTION_NUMBER_PATTERN = /[+-]?(?:\d[\d,.]*|[nN]+)(?:\s*(?:명|개|회|턴|라운드|단계|등급|스택|%|배|HP|MP|SP))?/g;
 
@@ -185,9 +183,9 @@ export function SkillTooltipContent({
         <InfoRow label="기술 비용:" value={node.cost != null ? `${node.cost} MP` : "정보 없음"} />
         {variant === "admin" && (
           <>
-            {(node.power_slots?.length ? node.power_slots : [{ key: "power", label: "기술 위력", unit: "percent" as const }]).map((slot) => {
-              const value = slot.key === "power" ? node.power : node.powers?.[slot.key] ?? null;
-              const text = value == null ? "정보 없음" : slot.unit === "flat" ? String(value) : formatPowerPercent(value);
+            {powerSlotsOf(node).map((slot) => {
+              const value = powerOf(node, slot.key);
+              const text = value == null ? "정보 없음" : slot.unit === "flat" ? String(value) : `${ratioToPercent(value)}%`;
               return <InfoRow key={slot.key} label={`${slot.label}:`} value={text} />;
             })}
             {node.has_cleanse_count && (

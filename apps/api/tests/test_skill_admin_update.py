@@ -80,6 +80,22 @@ class SkillAdminUpdateTest(unittest.TestCase):
             ))
             self.assertIsNone(cleared.tier6_effect)
 
+    def test_update_without_name_keeps_current_name(self):
+        updated = update_skill_node(self.db, self.node_id, SkillNodeUpdate(cost=4))
+        self.assertEqual(updated.default_name, "기존 기술")
+        self.assertEqual(updated.cost, 4)
+
+        derived = next(n for n in crud.get_skill_nodes(self.db, "불굴의 서") if n.col == 1 and n.tier == 3)
+        updated = update_skill_node(self.db, derived.id, SkillNodeUpdate(cost=7))
+        self.assertEqual(updated.default_name, derived.default_name)
+        self.assertEqual(updated.cost, 7)
+
+    def test_marks_skills_whose_description_is_written_automatically(self):
+        nodes = crud.get_skill_nodes(self.db, "불굴의 서")
+        # 불굴의 서 파생 기술(col 1)은 depth·위력으로 설명을 쓰고, 뿌리 기술은 저장한 설명을 그대로 쓴다.
+        self.assertTrue(all(n.auto_description for n in nodes if n.col == 1))
+        self.assertFalse(any(n.auto_description for n in nodes if n.tier == 1))
+
     def test_tier6_effect_rejects_other_depths(self):
         with self.assertRaises(HTTPException):
             update_skill_node(self.db, self.node_id, SkillNodeUpdate(
