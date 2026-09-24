@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app import crud
 from app.db import Base
 from app.models import Character, CharacterItemState, CharacterSkillUnlock, Item, Member, SkillNode
+from app.schemas import TraitCreate
 
 
 class CharacterCardDetailsTest(unittest.TestCase):
@@ -73,6 +74,18 @@ class CharacterCardDetailsTest(unittest.TestCase):
         self.assertTrue(all(item.image_url == "https://example.com/after.webp" for item in card.equipment))
         self.assertEqual(card.equipment[0].effects[0].delta, 3)
 
+    def test_equipped_trait_is_shown_only_after_traits_open(self):
+        trait = crud.create_trait(self.db, TraitCreate(name="불꽃의 심장", effect="공격력 +5", description="뜨겁다"))
+        self.runner.trait_id = trait.id
+        self.db.commit()
+        # 개방 전에는 러너에게 숨기고, 관리자에게는 보여준다.
+        self.assertIsNone(crud.get_character_card_details(self.db)[0].trait)
+        self.assertEqual(crud.get_character_card_details(self.db, admin=True)[0].trait["name"], "불꽃의 심장")
+
+        crud.update_trait_status(self.db, True)
+        card = crud.get_character_card_details(self.db)[0]
+        self.assertEqual((card.trait["id"], card.trait["effect"]), (trait.id, "공격력 +5"))
+
     def test_hidden_characters_empty_slots_and_batched_queries(self):
         runner_id, hidden_id = self.runner.id, self.hidden.id
         for index in range(10):
@@ -93,7 +106,8 @@ class CharacterCardDetailsTest(unittest.TestCase):
         self.assertEqual(len(cards), 11)
         self.assertIn(runner_id, [card.character_id for card in cards])
         self.assertNotIn(hidden_id, [card.character_id for card in cards])
-        self.assertTrue(all(card.skill is None and card.equipment == [] for card in cards))
+        # 특성을 장착한 캐릭터가 없으면 특성 조회 자체를 하지 않아 질의 수가 늘지 않는다.
+        self.assertTrue(all(card.skill is None and card.equipment == [] and card.trait is None for card in cards))
         self.assertIn(hidden_id, [card.character_id for card in crud.get_character_card_details(self.db, admin=True)])
 
 

@@ -1480,6 +1480,8 @@ class CharacterCardDetailsRead(BaseModel):
     character_id: int
     skill: CharacterSkillNodeRead | None = None
     equipment: list[CharacterCardItemRead] = Field(default_factory=list)
+    # 장착한 특성(_trait_payload 형태). 특성이 개방되기 전에는 러너에게 보내지 않는다.
+    trait: dict | None = None
 
 
 class CharacterSkillTreeRead(BaseModel):

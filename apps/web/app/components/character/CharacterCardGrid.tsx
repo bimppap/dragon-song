@@ -4,7 +4,7 @@ import { useState, type ReactNode } from "react";
 import Image from "next/image";
 import { Card, CardContent } from "@/components/ui/card";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
-import { Gem, PawPrint, Sparkles } from "lucide-react";
+import { Gem, PawPrint, Sparkles, Star } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { SkillTooltipContent } from "@/components/skill/SkillTreeGrid";
@@ -48,6 +48,15 @@ function DetailSlots({ details }: { details: CharacterCardDetails }) {
       </div>,
     });
   }
+  const trait = details.trait;
+  if (trait) slots.push({
+    key: "trait", label: `특성: ${trait.name}`, image: trait.image_url, icon: <Star size={18} />,
+    content: <div className="max-w-64 space-y-2 text-left">
+      <strong>{trait.name}</strong>
+      {trait.effect && <p className="whitespace-pre-wrap text-xs text-ivory/90">{trait.effect}</p>}
+      {trait.description && <p className="whitespace-pre-wrap text-xs text-muted">{trait.description}</p>}
+    </div>,
+  });
   if (!slots.length) return null;
   return <div className="pointer-events-none absolute inset-x-0 top-0 aspect-square">
     <div className="absolute inset-x-1 bottom-1 grid grid-cols-4 gap-1">

@@ -802,6 +802,12 @@ def get_character_card_details(db: Session, *, admin: bool = False) -> list[Char
             image_url=image_url,
             effects=item.effects or [],
         ))
+    # 특성은 개방 전까지 러너에게 숨긴다(캐릭터 정보 화면의 특성 슬롯과 같은 규칙).
+    trait_ids = {character.trait_id for character in characters if character.trait_id}
+    if trait_ids and (admin or get_trait_status(db).is_open):
+        traits = {trait.id: trait for trait in db.query(Trait).filter(Trait.id.in_(trait_ids)).all()}
+        for character in characters:
+            result[character.id].trait = _trait_payload(traits.get(character.trait_id))
     return list(result.values())
 
 

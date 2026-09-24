@@ -2378,6 +2378,8 @@ export interface CharacterCardDetails {
   character_id: number;
   skill: CharacterSkillNode | null;
   equipment: CharacterCardItem[];
+  /** 장착한 특성. 특성이 개방되기 전에는 러너에게 내려오지 않는다. */
+  trait: Trait | null;
 }
 
 export async function fetchCharacterCardDetails(): Promise<CharacterCardDetails[]> {
