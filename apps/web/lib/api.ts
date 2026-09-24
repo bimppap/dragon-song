@@ -2425,8 +2425,25 @@ export interface TraitEffectTemplate {
   fields: { key: string; label: string; default: number; unit: string; min: number; max: number; step: number }[];
 }
 
+export interface TraitStatus {
+  is_open: boolean;
+}
+
 export function fetchTraitEffectTemplates(): Promise<TraitEffectTemplate[]> {
   return request("/trait-effect-templates", undefined, "특성 효과 유형 조회 실패");
+}
+
+export function fetchTraitStatus(): Promise<TraitStatus> {
+  return cachedRequest<TraitStatus>("traits:status", "/traits/status", SHOP_STATUS_CACHE_TTL_MS, "특성 개방 상태 조회 실패");
+}
+
+export async function updateTraitStatus(isOpen: boolean): Promise<TraitStatus> {
+  const status = await request<TraitStatus>("/traits/status", {
+    method: "PUT",
+    body: JSON.stringify({ is_open: isOpen }),
+  }, "특성 개방 상태 변경 실패");
+  invalidateApiCache("traits:");
+  return status;
 }
 
 export function equipTrait(characterId: number, traitId: number | null): Promise<CharacterDetail> {

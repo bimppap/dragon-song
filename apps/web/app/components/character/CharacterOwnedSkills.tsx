@@ -97,7 +97,7 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false, ad
               <span className="flex size-9 items-center justify-center border-2 border-line bg-gold/10 text-gold hover:bg-gold/15">
                 <Sparkles size={17} />
               </span>
-              <span className="text-[9px] font-semibold text-muted">기술 배우기</span>
+              <span className="w-9 break-words text-[9px] font-semibold leading-tight text-muted">기술 배우기</span>
             </button>
           )}
           {skills.map((skill) => {
@@ -143,7 +143,7 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false, ad
                     )}
                   </span>
                   {skill.tier > 0 ? (
-                    <span className="line-clamp-2 text-[9px] font-semibold leading-tight text-ivory">{skill.display_name}</span>
+                    <span className="line-clamp-2 w-9 break-words text-[9px] font-semibold leading-tight text-ivory">{skill.display_name}</span>
                   ) : null}
                 </button>
               </InfoTooltip>

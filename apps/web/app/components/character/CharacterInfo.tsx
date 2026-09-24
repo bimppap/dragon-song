@@ -57,7 +57,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
-import { MAX_CHARACTER_LEVEL, patchAdminCharacter, formatEffect, consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, fetchSpiritStoneOptions, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
+import { MAX_CHARACTER_LEVEL, patchAdminCharacter, formatEffect, consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTraitStatus, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, fetchSpiritStoneOptions, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
 import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemEffect, ItemHistoryEntry, Reward, RewardGrant, UseItemSelection } from "@/lib/api";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import DatePicker from "@/components/ui/date-picker";
@@ -1207,9 +1207,12 @@ export default function CharacterInfo({
   const [rewardModalOpen, setRewardModalOpen] = useState(false);
   const [itemHistoryModalOpen, setItemHistoryModalOpen] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
+  // 특성은 개방 전까지 러너에게 슬롯 자체를 숨긴다. 조회 실패 시에도 닫힌 것으로 둔다.
+  const [traitOpen, setTraitOpen] = useState(false);
 
   useEffect(() => {
     fetchItems().then(setItems).catch(console.error);
+    fetchTraitStatus().then((status) => setTraitOpen(status.is_open)).catch(console.error);
   }, []);
 
   const selectedCharacterId = characters.some(
@@ -1474,12 +1477,13 @@ export default function CharacterInfo({
                   <CharacterClonedSkills key={`cloned:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} />
                   <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} locked={selectedDetail.in_live_battle}
                     onCustomize={(item) => setCustomizingItemId(item.item_id)} />
+                  {/* 개방 전에는 관리자가 만든 캐릭터에만(=관리자 화면에서만) 특성 슬롯을 띄운다. */}
+                  {(traitOpen || canAdminEdit) && <CharacterTrait key={`trait:${selectedDetail.id}:${selectedDetail.trait_id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />}
                 </div>
               </div>
 
               {/* 명함 우측: 정보 */}
               <div className="flex min-w-0 flex-1 flex-col gap-4">
-                <CharacterTrait key={`trait:${selectedDetail.id}:${selectedDetail.trait_id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="inline-flex w-fit items-center bg-linear-to-b from-gold/90 via-gold/55 to-gold/85 p-0.75 shadow-[0_2px_5px_rgba(0,0,0,0.55)] [clip-path:polygon(6%_0,94%_0,100%_50%,94%_100%,6%_100%,0_50%)]">
                     <div className="flex items-center gap-2 bg-linear-to-b from-primary-light/45 via-surface to-inset px-4 py-1.5 [clip-path:polygon(6%_0,94%_0,100%_50%,94%_100%,6%_100%,0_50%)]">

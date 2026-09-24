@@ -24,6 +24,20 @@ class Trait(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=now_kst)
 
 
+class TraitState(Base):
+    """특성 기능 개방 여부(단일 행). 닫혀 있으면 러너에게 특성 슬롯 자체를 보이지 않는다."""
+    __tablename__ = "trait_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    is_open: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=now_kst,
+        onupdate=now_kst,
+    )
+
+
 class Chapter(Base):
     __tablename__ = "chapters"
 

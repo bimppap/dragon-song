@@ -111,6 +111,8 @@ from app.schemas import (
     SpiritStoneOptionRead,
     TraitCreate,
     TraitRead,
+    TraitStatusRead,
+    TraitStatusUpdate,
     AdminCharacterUpdate,
     CharacterStatUpgradeRequest,
 )
@@ -1678,10 +1680,23 @@ def trait_effect_templates(member: Member = Depends(require_admin)):
     return trait_effects.templates()
 
 
+@app.get("/traits/status", response_model=TraitStatusRead)
+def get_trait_status(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    return crud.get_trait_status(db)
+
+
+@app.put("/traits/status", response_model=TraitStatusRead)
+def update_trait_status(data: TraitStatusUpdate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+    return crud.update_trait_status(db, data.is_open)
+
+
 @app.put("/characters/{character_id}/trait", response_model=CharacterDetailRead)
 def equip_trait(character_id: int, data: CharacterTraitUpdate,
                 member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     _require_own_character_or_admin(db, member, character_id)
+    # 개방 전에는 러너에게 특성 슬롯이 보이지 않으므로, 관리자 외에는 장착도 막는다.
+    if not is_admin_role(member.role) and not crud.get_trait_status(db).is_open:
+        raise HTTPException(status_code=400, detail="아직 특성이 개방되지 않았습니다.")
     detail = crud.equip_trait(db, character_id, data.trait_id)
     return detail if is_admin_role(member.role) else crud.scrub_admin_only_stats(detail)
 

@@ -134,6 +134,30 @@ class TraitCombatTest(unittest.TestCase):
         self.assertTrue(all(e["hp"] < 1000 for e in result.enemies))
         self.assertAlmostEqual(result.participants[0]["skill_eff_fixed"], -.1)
 
+    def test_distribution_and_charge_clone_skills_exclude_each_other(self):
+        charge = SkillNode(book="탐구의 서", branch=2, col=0, tier=1, default_name="충전",
+                           trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",
+                           cost=4, power=2, target="1", target_side="ALLY", activation_order=1, is_public=True)
+        self.db.add(charge)
+        self.db.commit()
+        # 충전을 습득한 뒤에는 분배를 장착할 수 없다.
+        self.db.add(CharacterSkillUnlock(character_id=self.actor.id, node_id=charge.id))
+        self.db.commit()
+        rules = effects.default_rules("distribution")
+        trait = crud.create_trait(self.db, TraitCreate(name="분배", rules=rules))
+        with self.assertRaises(HTTPException) as blocked:
+            crud.equip_trait(self.db, self.actor.id, trait.id)
+        self.assertIn("충전", blocked.exception.detail)
+        # 다른 특성은 그대로 장착되고, 분배를 장착한 캐릭터는 충전을 습득할 수 없다.
+        self.equip("standard")
+        self.db.query(CharacterSkillUnlock).delete()
+        self.actor.sp = 99
+        self.db.commit()
+        crud.equip_trait(self.db, self.actor.id, trait.id)
+        with self.assertRaises(HTTPException) as blocked:
+            crud.unlock_character_skill_node(self.db, self.actor.id, charge.id)
+        self.assertIn("충전", blocked.exception.detail)
+
     def test_offense_defense_hit_consumes_only_hit_buffs(self):
         self.equip("offense_defense")
         battle = self.battle()

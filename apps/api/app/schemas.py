@@ -1556,3 +1556,13 @@ class TraitRead(BaseModel):
 
 class CharacterTraitUpdate(BaseModel):
     trait_id: int | None = Field(default=None, gt=0)
+
+
+class TraitStatusRead(BaseModel):
+    is_open: bool
+
+    model_config = {"from_attributes": True}
+
+
+class TraitStatusUpdate(BaseModel):
+    is_open: bool

@@ -28,7 +28,7 @@ from app.game_data import (
     skill_power_slots,
 )
 from app.models import KST, now_kst
-from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterClonedSkill, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode, Trait
+from app.models import AttendanceEntry, AttendanceRecord, BattleSession, Chapter, Challenge, ChallengeProgress, Character, CharacterClonedSkill, CharacterItemState, CharacterSkillUnlock, DeliveryRequest, Enemy, Environment, Item, ItemUsage, Member, Mission, MissionProgress, NaverSession, Purchase, RefreshToken, Reward, SettlementRequest, ShopState, SkillNode, Trait, TraitState
 from app.schemas import (
     ALL_SKILL_TARGETS,
     FACTIONS,
@@ -114,6 +114,7 @@ from app.schemas import (
 
 
 SHOP_STATE_ID = 1
+TRAIT_STATE_ID = 1
 
 # 아이템을 나열하는 모든 화면이 따르는 표시 순서. 관리자가 드래그로 정한 순서가 유일한 기준이고,
 # 아직 순서를 받지 못한 아이템만 id로 갈린다. 새 목록을 추가할 때도 이 기준을 그대로 쓴다.
@@ -1067,6 +1068,24 @@ def get_shop_status(db: Session) -> ShopState:
 
 def update_shop_status(db: Session, is_open: bool) -> ShopState:
     state = get_shop_status(db)
+    state.is_open = is_open
+    db.commit()
+    db.refresh(state)
+    return state
+
+
+def get_trait_status(db: Session) -> TraitState:
+    state = db.get(TraitState, TRAIT_STATE_ID)
+    if state is None:
+        state = TraitState(id=TRAIT_STATE_ID, is_open=False)
+        db.add(state)
+        db.commit()
+        db.refresh(state)
+    return state
+
+
+def update_trait_status(db: Session, is_open: bool) -> TraitState:
+    state = get_trait_status(db)
     state.is_open = is_open
     db.commit()
     db.refresh(state)
@@ -8903,6 +8922,31 @@ def _character_clone_tier(db: Session, character_id: int) -> int:
     return int(result or 0)
 
 
+# 분배는 인원 지정 기술의 대상 수를 늘리는데, 충전·복제는 대상이 늘어나는 것을 전제로
+# 설계된 기술이 아니므로(충전은 마나를 여러 명에게 뿌리고, 복제는 저장한 기술을 대상마다
+# 되풀이한다) 같은 캐릭터가 둘 다 가질 수 없다.
+_DISTRIBUTION_BLOCKING_SKILLS = {"ab_charge": "충전", "ab_clone": "복제"}
+
+
+def _distribution_blocking_skill_names(db: Session, character_id: int) -> list[str]:
+    """캐릭터가 습득한 충전·복제 계열 기술의 이름 목록(없으면 빈 목록)."""
+    owned = {
+        var_name
+        for (var_name,) in db.query(SkillNode.var_name)
+        .join(CharacterSkillUnlock, CharacterSkillUnlock.node_id == SkillNode.id)
+        .filter(
+            CharacterSkillUnlock.character_id == character_id,
+            SkillNode.var_name.in_(_DISTRIBUTION_BLOCKING_SKILLS),
+        )
+        .distinct()
+    }
+    return [name for var_name, name in _DISTRIBUTION_BLOCKING_SKILLS.items() if var_name in owned]
+
+
+def _is_distribution_trait(trait: Trait | None) -> bool:
+    return bool(trait and (trait.rules or {}).get("kind") == "distribution")
+
+
 def get_character_cloned_skills(db: Session, character_id: int) -> dict:
     """복제 슬롯 수와 저장된 아군 기술 목록을 돌려준다. 커서 툴팁·전투 표기에 쓴다."""
     character = db.get(Character, character_id)
@@ -9301,6 +9345,13 @@ def unlock_character_skill_node(db: Session, character_id: int, node_id: int) ->
         if other_column_chosen:
             raise HTTPException(status_code=400, detail="이미 다른 세부 경로를 선택했습니다.")
 
+    blocked_name = _DISTRIBUTION_BLOCKING_SKILLS.get(node.var_name)
+    if blocked_name:
+        equipped_trait = db.get(Trait, character.trait_id) if character.trait_id else None
+        if _is_distribution_trait(equipped_trait):
+            raise HTTPException(status_code=400,
+                                detail=f"{equipped_trait.name} 특성을 장착한 캐릭터는 {blocked_name}을(를) 습득할 수 없습니다.")
+
     cost = get_level_grade_stats(character.lv)["sp_cost"]
     if character.sp < cost:
         raise HTTPException(status_code=400, detail=f"SP가 부족합니다. (필요: {cost})")
@@ -9491,6 +9542,11 @@ def equip_trait(db: Session, character_id: int, trait_id: int | None) -> Charact
         trait = _get_trait_or_404(db, trait_id)
         if not trait.rules:
             raise HTTPException(status_code=400, detail="효과 수치가 설정된 특성만 장착할 수 있습니다.")
+        if _is_distribution_trait(trait):
+            blocking = _distribution_blocking_skill_names(db, character_id)
+            if blocking:
+                raise HTTPException(status_code=400,
+                                    detail=f"{'·'.join(blocking)} 기술을 습득한 캐릭터는 {trait.name}을(를) 장착할 수 없습니다.")
     character.trait_id = trait_id
     _touch_trait_battles(db)
     db.commit()

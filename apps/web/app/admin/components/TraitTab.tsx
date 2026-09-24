@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { ImagePlus, Pencil, Plus, Star, Trash2 } from "lucide-react";
+import { Eye, EyeOff, ImagePlus, Pencil, Plus, Star, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/common/Modal";
 import TraitEffectEditor from "./TraitEffectEditor";
 import { useDialog } from "@/components/common/DialogProvider";
-import { createTrait, deleteTrait, fetchTraits, updateTrait, uploadTraitImage, type Trait, type TraitInput } from "@/lib/api";
+import { createTrait, deleteTrait, fetchTraits, fetchTraitStatus, updateTrait, updateTraitStatus, uploadTraitImage, type Trait, type TraitInput } from "@/lib/api";
 
 const EMPTY_FORM: TraitInput = { name: "", effect: "", description: "" };
 const NAME_MAX_LENGTH = 50;
@@ -116,6 +116,10 @@ export default function TraitTab() {
   const [loadError, setLoadError] = useState<string | null>(null);
   // null: 닫힘, "new": 추가, Trait: 수정
   const [editing, setEditing] = useState<Trait | "new" | null>(null);
+  // 개방 상태를 아직 모르는 동안(null)에는 토글을 누를 수 없게 둔다.
+  const [open, setOpen] = useState<boolean | null>(null);
+  const [openSaving, setOpenSaving] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,8 +127,20 @@ export default function TraitTab() {
       .then((list) => { if (!cancelled) setTraits(list); })
       .catch((err) => { if (!cancelled) setLoadError(err instanceof Error ? err.message : "특성 목록 조회 실패"); })
       .finally(() => { if (!cancelled) setLoading(false); });
+    fetchTraitStatus()
+      .then((status) => { if (!cancelled) setOpen(status.is_open); })
+      .catch((err) => { if (!cancelled) setOpenError(err instanceof Error ? err.message : "특성 개방 상태 조회 실패"); });
     return () => { cancelled = true; };
   }, []);
+
+  async function toggleOpen() {
+    if (open === null) return;
+    setOpenSaving(true);
+    setOpenError(null);
+    try { setOpen((await updateTraitStatus(!open)).is_open); }
+    catch (err) { setOpenError(err instanceof Error ? err.message : "특성 개방 상태 변경 실패"); }
+    finally { setOpenSaving(false); }
+  }
 
   function handleSaved(saved: Trait) {
     setTraits((prev) => prev.some((trait) => trait.id === saved.id)
@@ -139,6 +155,22 @@ export default function TraitTab() {
         <h2 className="text-base font-semibold text-ivory">특성 목록 <span className="text-xs font-normal text-muted">{traits.length}개</span></h2>
         <Button type="button" onClick={() => setEditing("new")} className="gap-2"><Plus size={15} />특성 추가</Button>
       </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line bg-inset p-3">
+        <div className="flex flex-col gap-0.5">
+          <span className="text-sm font-semibold text-ivory">특성 개방</span>
+          <span className="text-xs text-muted">
+            {open === null ? "개방 상태를 불러오는 중..."
+              : open ? "러너의 캐릭터 정보 페이지에 특성 슬롯이 보입니다."
+                : "러너에게는 특성 슬롯이 보이지 않습니다. 관리자가 만든 캐릭터는 개방과 상관없이 장착할 수 있습니다."}
+          </span>
+        </div>
+        <Button type="button" variant={open ? "outline" : "cta"} className="gap-1.5" disabled={open === null || openSaving} onClick={() => void toggleOpen()}>
+          {open ? <Eye size={15} /> : <EyeOff size={15} />}
+          {openSaving ? "변경 중..." : open ? "특성 개방 on" : "특성 개방 off"}
+        </Button>
+      </div>
+      {openError && <p role="alert" className="text-sm text-red-400">{openError}</p>}
 
       {loading ? (
         <p className="py-8 text-center text-sm text-muted">특성 목록을 불러오는 중...</p>

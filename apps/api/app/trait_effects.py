@@ -14,7 +14,7 @@ def field(key, label, default, unit="%", minimum=0, maximum=1000):
 CATALOG = {
     "meditation": ("명상", "공격 대신 명상: 사용할 때마다 치유 효율 +{heal}%, 피해 감소 +{reduction}%, 마나 최대치 +{mana_max}, 마나 +{mana}, 체력 재생력 고정 +{regen} 지속 강화.", [field("heal", "치유 효율", 10), field("reduction", "피해 감소", 5), field("mana_max", "마나 최대치", 1, ""), field("mana", "마나 회복", 1, ""), field("regen", "체력 재생력 고정", 2, "")]),
     "technique": ("기교", "기술을 사용한 뒤마다 자신에게 기술 효율 비례 +{eff}%, 고정 +{flat} 지속 강화.", [field("eff", "기술 효율 비례", 15), field("flat", "기술 효율 고정", 6, "")]),
-    "distribution": ("분배", "인원 지정 기술 대상 +{targets}, 기술 비용 +{cost}, 기술 효율 비례 {eff}%, 고정 {flat}.", [field("targets", "추가 대상", 1, "", 0, 100), field("cost", "추가 비용", 1, "", -100), field("eff", "기술 효율 비례", -20, "%", -100), field("flat", "기술 효율 고정", -4, "", -1000)]),
+    "distribution": ("분배", "인원 지정 기술 대상 +{targets}, 기술 비용 +{cost}, 기술 효율 비례 {eff}%, 고정 {flat}. 충전·복제 기술과 함께 가질 수 없음.", [field("targets", "추가 대상", 1, "", 0, 100), field("cost", "추가 비용", 1, "", -100), field("eff", "기술 효율 비례", -20, "%", -100), field("flat", "기술 효율 고정", -4, "", -1000)]),
     "offense_defense": ("공방일체", "공격·기술 행동 시 피해 감소 +{reduction}% 일회성 강화(피격 시 해제). 방어 행동 시 기술 효율 +{eff}%, 공격력 증폭 +{attack}% 지속 강화.", [field("reduction", "피격 전 피해 감소", 30), field("eff", "방어 후 기술 효율 비례", 10), field("attack", "방어 후 공격력 증폭", 10)]),
     "prepared": ("만전", "체력이 최대일 때 기술 효율 비례 +{eff}%. 전투 시작 시 약화 방지 {guard}스택(약화와 1:1 상쇄).", [field("eff", "기술 효율 비례", 25), field("guard", "시작 약화 방지 스택", 2, "", 0, 100)]),
     "hero": ("용사", "살아 있는 적 한 명당 공격력 증폭·방어력 증폭·치유 효율 +{amp}%(최대 {cap}%), 기술 효율 고정 +{flat}(최대 {flat_cap}).", [field("amp", "적당 증폭", 5), field("cap", "증폭 상한", 50), field("flat", "적당 기술 효율 고정", 1, ""), field("flat_cap", "고정 상한", 10, "")]),
