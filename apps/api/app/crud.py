@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 from functools import lru_cache
 
 import httpx
+from app import trait_effects
 from fastapi import HTTPException
 from sqlalchemy import func
 from sqlalchemy.orm import Session, load_only
@@ -504,7 +505,7 @@ def scrub_admin_only_stats(character_read: CharacterRead) -> CharacterRead:
 
 
 def _to_character_read(character: Character) -> CharacterRead:
-    return CharacterRead(**_character_read_kwargs(character))
+    return CharacterRead(**_character_read_kwargs(character), trait_id=character.trait_id)
 
 
 def create_character_for_member(
@@ -946,8 +947,16 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             return row.quantity - used_quantity
         return row.quantity
 
+    equipped_trait = _trait_payload(db.get(Trait, character.trait_id)) if character.trait_id else None
+    trait_preview = _snapshot_combatant(character)
+    trait_preview["trait"] = equipped_trait
+    # 전투 시작 자원은 지급하지 않는다. 현재 체력·마나와 상시 보정만 표시한다.
+    trait_effects.sync(trait_preview)
     return CharacterDetailRead(
         **_character_read_kwargs(character),
+        trait_id=character.trait_id,
+        equipped_trait=equipped_trait,
+        trait_stat_bonuses=trait_preview["_trait_deltas"],
         stat_upgrades=_character_stat_upgrades(character, _grade_bonus_from_states(item_states_by_id.values())),
         in_live_battle=character.id in _live_real_battle_character_ids(db),
         spirit_stone_custom_unlocked=character.spirit_stone_custom_unlocked,
@@ -4240,6 +4249,7 @@ def _snapshot_combatant(character: Character) -> dict:
     max_hp = max(_floor_amount(character.hp_max * (1 + character.hp_max_p)), character.hp, 1)
     return {
         "character_id": character.id,
+        "trait_id": character.trait_id,
         "name": character.name,
         "image_url": character.image_url,
         "faction": character.faction,
@@ -4697,6 +4707,11 @@ def _apply_environment_stack_delta(
         next_stacks = previous_stacks + stack_delta
         if max_stacks > 0:
             next_stacks = min(next_stacks, max_stacks)
+    gained = max(0, next_stacks - previous_stacks)
+    blocked = 0
+    while blocked < gained and _consume_purification_guard_stack(target):
+        blocked += 1
+    next_stacks -= blocked
     if next_stacks > 0:
         stacks[key] = next_stacks
     elif key in stacks:
@@ -4768,8 +4783,18 @@ def _add_status_effect(
     participants: list[dict],
     enemies: list[dict],
 ) -> bool:
-    if effect.get("affinity") == "debuff" and _consume_purification_guard_stack(target):
-        return False
+    if effect.get("affinity") == "debuff":
+        stacks = max(1, int(effect.get("stacks", 1)))
+        remaining = stacks
+        while remaining > 0 and _consume_purification_guard_stack(target):
+            remaining -= 1
+        if remaining == 0:
+            return False
+        if remaining != stacks:
+            effect = {**effect, "stacks": remaining}
+            # Aggregated stat modifiers carry the total delta for all stacks.
+            if "applied_delta" in effect:
+                effect["applied_delta"] *= remaining / stacks
     source_character_id = effect.get("source_character_id")
     var_name = effect.get("var_name")
     if not effect.get("stackable") and isinstance(source_character_id, int) and isinstance(var_name, str):
@@ -5413,6 +5438,7 @@ def _apply_hit(recipient: dict, dmg: int) -> tuple[int, int]:
     recipient["shield"] -= absorbed
     dmg -= absorbed
     recipient["hp"] = max(0, recipient["hp"] - dmg)
+    trait_effects.hit(recipient, dmg)
     return dmg, absorbed
 
 
@@ -5715,7 +5741,11 @@ def get_battle_active_skills(db: Session, session_id: int) -> dict:
     participants = db.query(BattleSession.participants).filter(BattleSession.id == session_id).scalar()
     if participants is None:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
+    participants = copy.deepcopy(participants)
+    _sync_battle_traits(db, participants, [], [])
     by_character = _battle_skills_by_participant(db, participants, cached=True)
+    by_actor = {p["character_id"]: p for p in participants}
+    by_character = {cid: {sid: _trait_adjust_skill_targets(skill, by_actor[cid]) for sid, skill in skills.items()} for cid, skills in by_character.items()}
     book_order = {book: index for index, book in enumerate(SKILL_BOOK_ORDER)}
     return {
         "skills_by_character": {
@@ -5871,6 +5901,9 @@ def _to_battle_session_read(db: Session, session: BattleSession) -> BattleSessio
          "color": environments[env_id].color if env_id in environments else "#e879f9", "count": count}
         for env_id, count in participant.get("env_stacks", {}).items() if count > 0
     ]} for participant in session.participants]
+    participants = copy.deepcopy(participants)
+    if session.status == "in_progress":
+        _sync_battle_traits(db, participants, enemies, session.summons)
     # 이전 전투의 경호에도 시전자별 커스텀 아이콘과 설명을 보충한다.
     missing_guard_metadata = any(
         effect.get("effect_type") == "escort_guard" and "skill_description" not in effect
@@ -5945,6 +5978,9 @@ def _get_battle_for_update(db: Session, session_id: int) -> BattleSession | None
 
 def _commit_battle_session(db: Session, session: BattleSession) -> BattleSessionRead:
     """공개 응답을 flush 직후 만들고 커밋해, 커지는 비공개 롤백 JSON의 재조회까지 피한다."""
+    participants = copy.deepcopy(session.participants)
+    _sync_battle_traits(db, participants, session.enemies, session.summons)
+    session.participants = participants
     db.flush()
     result = _to_battle_session_read(db, session)
     db.commit()
@@ -6117,6 +6153,7 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
     participants = [_snapshot_combatant(c) for c in characters]
     if data.pair_battle:
         participants = _apply_battle_pair_stats(participants, pairs, initial=True)
+    _sync_battle_traits(db, participants, [_snapshot_enemy(e, characters) for e in enemies_db], [], initial=True)
     session = BattleSession(
         mode=data.mode,
         pair_battle=data.pair_battle,
@@ -6284,6 +6321,8 @@ def join_battle(db: Session, session_id: int, data: BattleJoinRequest) -> Battle
     if session.pair_battle:
         session.pairs = _reconcile_battle_pairs(session.pairs, [p["character_id"] for p in participants])
         session.participants = _apply_battle_pair_stats(participants, session.pairs)
+    _sync_battle_traits(db, session.participants, session.enemies, session.summons)
+    trait_effects.start(next(p for p in session.participants if p["character_id"] == character.id))
     if session.mode == "real":
         rollback_state = _get_battle_rollback_state(session)
         if rollback_state.get("version") == 1:
@@ -6327,6 +6366,7 @@ def _finalize_real_battle(db: Session, session: BattleSession, participants: lis
     } if character_ids else {}
     participants = [dict(p) for p in participants]
     _attach_battle_item_passives(db, participants)
+    _sync_battle_traits(db, participants, session.enemies, session.summons)
     revive_events: list[str] = []
     for p in participants:
         character = characters_by_id.get(p["character_id"])
@@ -6363,6 +6403,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
     _attach_battle_item_passives(db, participants)
+    _sync_battle_traits(db, participants, enemies, summons)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
 
@@ -6393,7 +6434,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     session.round_snapshots = list(session.round_snapshots) + [{
         "round": round_no,
         "phase": "telegraph",
-        "participants": [dict(p) for p in participants],
+        "participants": copy.deepcopy(participants),
         "enemies": [dict(e) for e in enemies],
         "summons": [dict(s) for s in summons],
         "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
@@ -6439,6 +6480,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 continue
             damage = min(participant["hp"], max(0, int(effect.get("damage", 0))))
             participant["hp"] -= damage
+            trait_effects.hit(participant, damage)
             events.append(f"☠️ {effect.get('skill_name', '지속 피해')} → {participant['name']} {damage} 지속 피해 · [{participant['hp']}/{participant['max_hp']}]")
             _mark_combatant_downed(participant)
     _flush_battle_revive_events(participants, events)
@@ -6484,6 +6526,7 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             if dmg > 0:
                 # 환경은 적의 공격이 아닌 맵 효과라 방어력, 피해 감소, 보호를 적용하지 않는다.
                 p["hp"] = max(0, p["hp"] - dmg)
+                trait_effects.hit(p, dmg)
                 damage_event = f"　→ {p['name']} · 피해 {dmg} [{p['hp']}/{p['max_hp']}]"
                 damage_events.append(damage_event)
                 calculations[damage_event] = (
@@ -6649,6 +6692,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
     _attach_battle_item_passives(db, participants)
+    _sync_battle_traits(db, participants, enemies, summons)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
 
@@ -6657,7 +6701,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     turn_snapshot = {
         "round": round_no,
         "phase": "ally",
-        "participants": [dict(p) for p in participants],
+        "participants": copy.deepcopy(participants),
         "enemies": [dict(e) for e in enemies],
         "summons": [dict(s) for s in summons],
         "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
@@ -6706,6 +6750,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     living = [p for p in participants if _combatant_active(p)]
     actable = [p for p in living if not _just_joined(p, round_no)]
 
+    for p in actable:
+        action = actions_by_char.get(p["character_id"])
+        if action and trait_effects.kind(p) == "onslaught" and action.kind in ("defend", "item"):
+            raise HTTPException(status_code=400, detail=f"{p['name']}: 맹공 특성으로 방어·소비 행동을 사용할 수 없습니다.")
+
     # 행동 보상 집계: 실제로 "무반응"이 아닌 행동을 선택한 캐릭터에게만 1라운드씩 적립한다.
     for p in actable:
         action = actions_by_char.get(p["character_id"])
@@ -6744,7 +6793,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             and p["faction"] == "수비"
             and protect_target is not None
             and _combatant_targetable(protect_target, round_no)
-            and p["mp"] >= 1
+            and (p["mp"] >= 1 or trait_effects.kind(p) == "peace")
         )
         protect_target_id = requested_target_id if can_redirect else p["character_id"]
         p["defending"] = True
@@ -6755,9 +6804,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             f"floor(성장 등급 {_formula_number(p['lv'])} × 20 × "
             f"(1 + 존재감 {_formula_number(p['presence'])}))"
         )
+        trait_effects.trigger(p, "defend")
         if protect_target_id != p["character_id"]:
-            p["mp"] -= 1
-            _note_mp_spent(p, 1)
+            if trait_effects.kind(p) == "peace":
+                trait_effects.trigger(p, "protect")
+            else:
+                p["mp"] -= 1
+                _note_mp_spent(p, 1)
             events.append(
                 f"🛡️ {p['name']} 방어 태세 → {by_char_id[protect_target_id]['name']} 보호 · "
                 f"+{attn_gain} 주목도"
@@ -6913,16 +6966,29 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             selected = ordered_skills[0] if ordered_skills else None
         if selected is None:
             return None
-        resolved = dict(selected)
+        resolved = _trait_adjust_skill_targets(selected, actor)
         resolved["display_name"] = _battle_skill_name(resolved)
         return resolved
 
+    pending_trait_skills: list[dict] = []
+
+    def _finish_trait_skills() -> None:
+        for actor in pending_trait_skills:
+            trait_effects.trigger(actor, "skill")
+        pending_trait_skills.clear()
+
     def _spend_skill_cost(actor: dict, skill: dict | None) -> None:
         skill_cost = _battle_skill_cost(actor, skill) if skill is not None else max(0, int(actor["skill_cost"]))
-        if actor["mp"] < skill_cost:
+        if not _trait_can_pay(actor, skill_cost):
             return
-        actor["mp"] -= skill_cost
-        _note_mp_spent(actor, skill_cost)
+        if trait_effects.kind(actor) == "blood":
+            spent = trait_effects.hp_cost(actor, skill_cost)
+            actor["hp"] -= spent
+            events.append(f"🩸 {actor['name']} 기술 비용: HP -{spent} [{actor['hp']}/{actor['max_hp']}]")
+        else:
+            actor["mp"] -= skill_cost
+            _note_mp_spent(actor, skill_cost)
+        pending_trait_skills.append(actor)
 
     queued_actions: list[tuple[int, int, dict, CharacterActionInput, dict | None]] = []
     for order_index, p in enumerate(actable):
@@ -7014,8 +7080,16 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     for _priority, _order_index, p, action, selected_skill in queued_actions:
         _flush_mp_note()
         _finish_pending_recast()
-        if p["retreated"]:
+        _finish_trait_skills()
+        if p["retreated"] or p["downed"]:
             continue
+        for participant in participants:
+            trait_effects.sync(participant, enemies, summons)
+        if action.kind == "attack":
+            trait_effects.trigger(p, "attack")
+            if trait_effects.kind(p) == "meditation":
+                events.append(f"🧘 {p['name']} 명상 · 지속 강화 획득 · MP {p['mp']}/{p['max_mp']}")
+                continue
 
         # 개선(아군에게 걸린 이번 라운드 기술 효율 증가)과 복제(원본 기술의 기술 효율 보정)를
         # 이 actor의 행동 계산에만 반영한다. 라운드 종료 시 _revert_temp_skill_eff로 되돌린다.
@@ -7030,12 +7104,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             and selected_skill.get("var_name") in SUPPORTED_BATTLE_SKILL_VAR_NAMES
         )
 
-        if action.kind == "skill" and selected_skill is not None:
-            skill_cost = _battle_skill_cost(p, selected_skill)
-            if p["mp"] < skill_cost:
-                events.append(f"⚠️ {p['name']}의 {selected_skill['display_name']} 사용 실패 (MP 부족)")
+        if action.kind == "skill":
+            skill_cost = _battle_skill_cost(p, selected_skill or {})
+            if not _trait_can_pay(p, skill_cost):
+                resource = "HP" if trait_effects.kind(p) == "blood" else "MP"
+                events.append(f"⚠️ {p['name']}의 {(selected_skill or {}).get('display_name', '기술')} 사용 실패 ({resource} 부족)")
                 continue
-            if (p.get("item_passives") or {}).get("skill_recast"):
+            if selected_skill and (p.get("item_passives") or {}).get("skill_recast"):
                 pending_recast.append((p, str(selected_skill["display_name"]), _capture_skill_recast_state(participants, enemies, summons)))
 
         if supported_skill:
@@ -8019,15 +8094,18 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if p["faction"] != "치유":
                 events.append(f"⚠️ {p['name']}: 치유 포지션만 치유를 사용할 수 있습니다.")
                 continue
-            if p["mp"] < 1:
+            if p["mp"] < 1 and trait_effects.kind(p) != "peace":
                 events.append(f"⚠️ {p['name']} 치유 실패 (MP 부족)")
                 continue
 
             chosen = by_char_id.get(action.target_character_id) if action.target_character_id else None
             target = chosen if chosen and _healable(chosen, round_no) else p
             heal = max(0, _floor_amount(0.25 * target["max_hp"] * (1 + p["heal_eff"])))
-            p["mp"] -= 1
-            _note_mp_spent(p, 1)
+            if trait_effects.kind(p) == "peace":
+                trait_effects.trigger(p, "heal")
+            else:
+                p["mp"] -= 1
+                _note_mp_spent(p, 1)
 
             before = target["hp"]
             next_hp = target["hp"] + heal
@@ -8054,6 +8132,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
     _flush_mp_note()
     _finish_pending_recast()
+    _finish_trait_skills()
 
     # 격려·개선처럼 해당 라운드에만 유효한 아군 효과는 아군 행동이 모두 끝나면 소멸한다.
     # (개선/복제가 적용한 임시 기술 효율 보정도 여기서 원상 복구한다.)
@@ -8118,6 +8197,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     for p in participants:
         _ensure_combatant_snapshot_defaults(p)
     _attach_battle_item_passives(db, participants)
+    _sync_battle_traits(db, participants, enemies, summons)
     for enemy in enemies:
         _ensure_enemy_snapshot_defaults(enemy)
 
@@ -8125,7 +8205,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
     session.round_snapshots = list(session.round_snapshots) + [{
         "round": round_no,
         "phase": "enemy",
-        "participants": [dict(p) for p in participants],
+        "participants": copy.deepcopy(participants),
         "enemies": [dict(e) for e in enemies],
         "summons": [dict(s) for s in summons],
         "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
@@ -8163,14 +8243,16 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             if effect.get("effect_type") != "escort_guard"
             or (redirected and effect.get("source_character_id") != recipient["character_id"])
         ]
+        trait_effects.sync(recipient, enemies, summons)
         counter_effects = _counter_effects_for_target(recipient)
         extra_reduction = (
             sum(float(effect.get("damage_reduction", 0.0)) for effect in counter_effects)
             + _escort_damage_reduction(recipient)
         )
         # 피해 감소율(dmg_r)은 방어 행동을 취했을 때만 적용된다. 반격 태세 등 별도 버프의 감소율(extra_reduction)은 무관하게 항상 적용된다.
-        base_reduction = recipient["dmg_r"] if recipient["defending"] else 0.0
-        total_reduction = min(0.95, max(0.0, base_reduction + extra_reduction))
+        trait_reduction = recipient.get("_trait_deltas", {}).get("dmg_r", 0)
+        base_reduction = recipient["dmg_r"] if recipient["defending"] else trait_reduction
+        total_reduction = min(0.95, max(-1.0, base_reduction + extra_reduction))
         dmg = _floor_amount(base * (1 - total_reduction))
         damage_formula = (
             f"floor(({base_formula}) × "
@@ -9393,6 +9475,61 @@ def get_character_paid_source_ids(db: Session, character_id: int, kind: str) -> 
 
 # ── Trait ────────────────────────────────────────────────────────────────────
 
+def _trait_payload(trait: Trait | None) -> dict | None:
+    if trait is None:
+        return None
+    return dict(id=trait.id, name=trait.name, effect=trait.effect, description=trait.description, created_at=trait.created_at.isoformat(),
+                image_url=trait.image_url, rules=copy.deepcopy(trait.rules))
+
+
+def equip_trait(db: Session, character_id: int, trait_id: int | None) -> CharacterDetailRead:
+    character = db.query(Character).filter(Character.id == character_id).with_for_update().first()
+    if character is None:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
+    _assert_not_in_live_real_battle(db, character_id)
+    if trait_id is not None:
+        trait = _get_trait_or_404(db, trait_id)
+        if not trait.rules:
+            raise HTTPException(status_code=400, detail="효과 수치가 설정된 특성만 장착할 수 있습니다.")
+    character.trait_id = trait_id
+    _touch_trait_battles(db)
+    db.commit()
+    return get_character_detail(db, character_id)
+
+
+def _sync_battle_traits(db: Session, participants: list[dict], enemies: list[dict], summons: list[dict], *, initial=False) -> None:
+    ids = [p["character_id"] for p in participants]
+    rows = db.query(Character.id, Trait).outerjoin(Trait, Character.trait_id == Trait.id).filter(Character.id.in_(ids)).all() if ids else []
+    by_id = {character_id: _trait_payload(trait) for character_id, trait in rows}
+    for p in participants:
+        previous_id = (p.get("trait") or {}).get("id")
+        p["trait"] = by_id.get(p["character_id"])
+        p["trait_id"] = (p["trait"] or {}).get("id")
+        if previous_id != p["trait_id"]:
+            p["status_effects"] = [e for e in p.get("status_effects", []) if e.get("effect_type") != "trait_buff"]
+        trait_effects.sync(p, enemies, summons)
+        if initial:
+            trait_effects.start(p)
+
+
+def _trait_can_pay(p: dict, cost: int) -> bool:
+    # 체력은 비용으로 0이 되지 않게 한다. 불사자의 생존은 피해 전용이다.
+    return p["hp"] > trait_effects.hp_cost(p, cost) if trait_effects.kind(p) == "blood" else p["mp"] >= cost
+
+
+def _touch_trait_battles(db: Session) -> None:
+    # 변경 감지 폴링도 최신 특성으로 다시 조회하도록 버전을 갱신한다.
+    db.query(BattleSession).filter(BattleSession.status == "in_progress").update(
+        {BattleSession.updated_at: now_kst()}, synchronize_session=False)
+
+
+def _trait_adjust_skill_targets(skill: dict, p: dict) -> dict:
+    result = dict(skill)
+    if str(result.get("target") or "").isdigit():
+        bonus = int((p.get("_trait_deltas") or {}).get("skill_target", 0))
+        result["target"] = str(max(1, int(result["target"]) + bonus))
+    return result
+
 def list_traits(db: Session) -> list[Trait]:
     return db.query(Trait).order_by(Trait.id).all()
 
@@ -9405,7 +9542,8 @@ def _get_trait_or_404(db: Session, trait_id: int) -> Trait:
 
 
 def create_trait(db: Session, data: TraitCreate) -> Trait:
-    trait = Trait(name=data.name, effect=data.effect, description=data.description)
+    trait = Trait(name=data.name, effect=trait_effects.describe(data.rules) if data.rules else data.effect,
+                  rules=data.rules, description=data.description)
     db.add(trait)
     db.commit()
     db.refresh(trait)
@@ -9414,7 +9552,13 @@ def create_trait(db: Session, data: TraitCreate) -> Trait:
 
 def update_trait(db: Session, trait_id: int, data: TraitCreate) -> Trait:
     trait = _get_trait_or_404(db, trait_id)
-    trait.name, trait.effect, trait.description = data.name, data.effect, data.description
+    if trait.rules and "rules" not in data.model_fields_set and data.effect != trait.effect:
+        raise HTTPException(status_code=400, detail="효과 수치 입력란에서 수정해 주세요.")
+    if "rules" in data.model_fields_set:
+        trait.rules = data.rules
+    trait.name, trait.description = data.name, data.description
+    trait.effect = trait_effects.describe(trait.rules) if trait.rules else data.effect
+    _touch_trait_battles(db)
     db.commit()
     db.refresh(trait)
     return trait
@@ -9432,6 +9576,8 @@ def delete_trait(db: Session, trait_id: int) -> str | None:
     """특성을 지우고, 스토리지에서도 지울 수 있게 이미지 주소를 돌려준다."""
     trait = _get_trait_or_404(db, trait_id)
     image_url = trait.image_url
+    db.query(Character).filter(Character.trait_id == trait_id).update({Character.trait_id: None})
+    _touch_trait_battles(db)
     db.delete(trait)
     db.commit()
     return image_url

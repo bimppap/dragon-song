@@ -22,6 +22,8 @@ from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 
 from app import storage
+from app import trait_effects
+from app.schemas import CharacterTraitUpdate
 from app.auth import authenticate_ws_token, create_access_token, get_current_member, is_admin_role, require_admin, require_owner_admin
 from app.db import SessionLocal, engine, get_db
 from app.migrations import ensure_schema
@@ -1667,8 +1669,21 @@ def get_character_paid_source_ids(
 # ── 특성 ─────────────────────────────────────────────────────────────────────
 
 @app.get("/traits", response_model=list[TraitRead])
-def list_traits(member: Member = Depends(require_admin), db: Session = Depends(get_db)):
+def list_traits(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     return crud.list_traits(db)
+
+
+@app.get("/trait-effect-templates")
+def trait_effect_templates(member: Member = Depends(require_admin)):
+    return trait_effects.templates()
+
+
+@app.put("/characters/{character_id}/trait", response_model=CharacterDetailRead)
+def equip_trait(character_id: int, data: CharacterTraitUpdate,
+                member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    _require_own_character_or_admin(db, member, character_id)
+    detail = crud.equip_trait(db, character_id, data.trait_id)
+    return detail if is_admin_role(member.role) else crud.scrub_admin_only_stats(detail)
 
 
 @app.post("/traits", response_model=TraitRead)

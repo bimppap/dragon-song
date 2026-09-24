@@ -1,3 +1,4 @@
+import json
 from sqlalchemy import inspect, text
 from sqlalchemy.engine import Engine
 
@@ -14,6 +15,9 @@ def ensure_schema(engine: Engine) -> None:
         return
 
     statements: list[str] = []
+    trait_rules_added = "traits" in table_names and "rules" not in {col["name"] for col in inspector.get_columns("traits")}
+    if trait_rules_added:
+        statements.append("ALTER TABLE traits ADD COLUMN rules JSON")
     if "character_item_states" in table_names:
         state_columns = {col["name"] for col in inspector.get_columns("character_item_states")}
         if "chosen_stats" not in state_columns:
@@ -26,6 +30,8 @@ def ensure_schema(engine: Engine) -> None:
             statements.append("ALTER TABLE character_item_states ADD COLUMN custom_description VARCHAR")
 
     character_columns = {col["name"] for col in inspector.get_columns("characters")}
+    if "trait_id" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN trait_id INTEGER REFERENCES traits(id) ON DELETE SET NULL")
 
     # 기존 컬럼을 새 스탯 체계 이름으로 이전 (값은 보존, 컬럼명만 변경)
     rename_pairs = [
@@ -510,3 +516,9 @@ def ensure_schema(engine: Engine) -> None:
     with engine.begin() as connection:
         for statement in statements:
             connection.execute(text(statement))
+        if trait_rules_added:
+            from app.trait_effects import CATALOG, default_rules, describe
+            for kind, (name, _, _) in CATALOG.items():
+                rules = default_rules(kind)
+                connection.execute(text("UPDATE traits SET rules = :rules, effect = :effect WHERE name = :name AND rules IS NULL"),
+                                   dict(rules=json.dumps(rules), effect=describe(rules), name=name))

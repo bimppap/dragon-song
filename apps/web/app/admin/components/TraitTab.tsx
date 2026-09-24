@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import Modal from "@/components/common/Modal";
+import TraitEffectEditor from "./TraitEffectEditor";
 import { useDialog } from "@/components/common/DialogProvider";
 import { createTrait, deleteTrait, fetchTraits, updateTrait, uploadTraitImage, type Trait, type TraitInput } from "@/lib/api";
 
@@ -30,7 +31,7 @@ function TraitFormModal({ trait, onClose, onSaved, onDeleted }: {
   onDeleted: (traitId: number) => void;
 }) {
   const { confirm } = useDialog();
-  const [form, setForm] = useState<TraitInput>(trait ? { name: trait.name, effect: trait.effect, description: trait.description } : EMPTY_FORM);
+  const [form, setForm] = useState<TraitInput>(trait ? { name: trait.name, effect: trait.effect, description: trait.description, rules: trait.rules } : EMPTY_FORM);
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(trait?.image_url ?? null);
   const [saving, setSaving] = useState(false);
@@ -87,11 +88,7 @@ function TraitFormModal({ trait, onClose, onSaved, onDeleted }: {
               onChange={(event) => setForm((prev) => ({ ...prev, name: event.target.value }))} />
           </div>
         </div>
-        <div className="flex flex-col gap-1.5">
-          <label htmlFor="trait-effect" className="text-xs font-semibold text-muted">효과</label>
-          <Textarea id="trait-effect" rows={4} value={form.effect} maxLength={TEXT_MAX_LENGTH} disabled={saving}
-            placeholder="특성이 주는 효과를 입력하세요." onChange={(event) => setForm((prev) => ({ ...prev, effect: event.target.value }))} />
-        </div>
+        <TraitEffectEditor rules={form.rules ?? null} disabled={saving} onChange={(rules) => setForm((prev) => ({ ...prev, rules }))} />
         <div className="flex flex-col gap-1.5">
           <label htmlFor="trait-description" className="text-xs font-semibold text-muted">설명</label>
           <Textarea id="trait-description" rows={4} value={form.description} maxLength={TEXT_MAX_LENGTH} disabled={saving}
@@ -104,7 +101,7 @@ function TraitFormModal({ trait, onClose, onSaved, onDeleted }: {
           ) : <span />}
           <div className="flex gap-2">
             <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>취소</Button>
-            <Button type="submit" disabled={saving || !form.name.trim()}>{saving ? "저장 중..." : trait ? "저장" : "특성 추가"}</Button>
+            <Button type="submit" disabled={saving || !form.name.trim() || !form.rules}>{saving ? "저장 중..." : trait ? "저장" : "특성 추가"}</Button>
           </div>
         </div>
       </form>

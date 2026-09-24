@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.game_data import MAX_CHARACTER_LEVEL
 from app.models import KST
+from app.trait_effects import validate_rules
 
 EnemySkillType = Literal["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"]
 Faction = Literal["공격", "수비", "치유"]
@@ -375,6 +376,7 @@ class CharacterRead(BaseModel):
     model_config = {"from_attributes": True, "populate_by_name": True}
 
     id: int
+    trait_id: int | None = None
     name: str
     member_id: int | None
     faction: Faction | None
@@ -788,6 +790,8 @@ class CharacterAchievedMissionRead(BaseModel):
 
 
 class CharacterDetailRead(CharacterRead):
+    equipped_trait: dict | None = None
+    trait_stat_bonuses: dict[str, float] = Field(default_factory=dict)
     stat_upgrades: dict[str, dict] = Field(default_factory=dict)
     owned_items: list[CharacterOwnedItemRead]
     achieved_challenges: list[CharacterAchievedChallengeRead]
@@ -1516,9 +1520,15 @@ class SkillCustomizationUpdate(BaseModel):
 
 
 class TraitCreate(BaseModel):
+    rules: dict | None = None
     name: str = Field(min_length=1, max_length=50)
     effect: str = Field(default="", max_length=2000)
     description: str = Field(default="", max_length=2000)
+
+    @field_validator("rules")
+    @classmethod
+    def check_rules(cls, value):
+        return validate_rules(value) if value is not None else None
 
     @field_validator("name", "effect", "description")
     @classmethod
@@ -1533,6 +1543,7 @@ class TraitCreate(BaseModel):
 
 
 class TraitRead(BaseModel):
+    rules: dict | None = None
     id: int
     name: str
     effect: str
@@ -1541,3 +1552,7 @@ class TraitRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class CharacterTraitUpdate(BaseModel):
+    trait_id: int | None = Field(default=None, gt=0)

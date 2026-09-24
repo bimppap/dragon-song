@@ -26,6 +26,7 @@ import {
 import CharacterOwnedSkills from "./CharacterOwnedSkills";
 import CharacterClonedSkills from "./CharacterClonedSkills";
 import CharacterEquipmentSlots from "./CharacterEquipmentSlots";
+import CharacterTrait from "./CharacterTrait";
 import SpiritStoneCustomizeModal from "./SpiritStoneCustomizeModal";
 import SpiritStoneExchangeForm from "./SpiritStoneExchangeForm";
 import { SPIRIT_STONE_CUSTOMIZE_GUIDE, unlocksSpiritStoneCustomization } from "@/lib/spiritStone";
@@ -1478,6 +1479,7 @@ export default function CharacterInfo({
 
               {/* 명함 우측: 정보 */}
               <div className="flex min-w-0 flex-1 flex-col gap-4">
+                <CharacterTrait key={`trait:${selectedDetail.id}:${selectedDetail.trait_id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />
                 <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                   <div className="inline-flex w-fit items-center bg-linear-to-b from-gold/90 via-gold/55 to-gold/85 p-0.75 shadow-[0_2px_5px_rgba(0,0,0,0.55)] [clip-path:polygon(6%_0,94%_0,100%_50%,94%_100%,6%_100%,0_50%)]">
                     <div className="flex items-center gap-2 bg-linear-to-b from-primary-light/45 via-surface to-inset px-4 py-1.5 [clip-path:polygon(6%_0,94%_0,100%_50%,94%_100%,6%_100%,0_50%)]">
@@ -1602,20 +1604,23 @@ export default function CharacterInfo({
                   </Button>
                   {showDetails && (
                     <div className="mt-4 flex flex-col gap-4">
+                      {selectedDetail.equipped_trait && <p className="text-xs text-muted">특성의 현재 보정을 포함한 수치입니다. 전투 중 조건·중첩에 따라 달라지며, 관리자 편집은 특성 적용 전 기본값을 변경합니다.</p>}
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
-                        {DETAIL_STATS.map(({ key, label, isFloat, rawPercent, description }) => (
+                        {DETAIL_STATS.map(({ key, label, isFloat, rawPercent, description }) => {
+                          const effective = Number(selectedDetail[key]) + (selectedDetail.trait_stat_bonuses?.[key] ?? 0);
+                          return (
                           <InfoTooltip key={key} side="top" content={description}>
                             <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
                               <span className="shrink-0 whitespace-nowrap text-muted">{label}</span>
                               <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-ivory">
                                 <EditableValue key={`${selectedDetail.id}:${key}`} label={label} disabled={adminSaving}
                                   value={isFloat ? Math.round((rawPercent ? Number(selectedDetail[key]) : 1 + Number(selectedDetail[key])) * 10000) / 100 : selectedDetail[key]}
-                                  display={isFloat ? `${percentageFormatter.format((rawPercent ? Number(selectedDetail[key]) : 1 + Number(selectedDetail[key])) * 100)}%` : numberFormatter.format(selectedDetail[key])}
+                                  display={isFloat ? `${percentageFormatter.format((rawPercent ? effective : 1 + effective) * 100)}%` : numberFormatter.format(effective)}
                                   onSave={canAdminEdit ? (value) => saveAdminStat(key, isFloat ? Number(value) / 100 - (rawPercent ? 0 : 1) : value) : undefined} />
                               </span>
                             </div>
                           </InfoTooltip>
-                        ))}
+                        ); })}
                       </div>
 
                       {selectedDetail.start_sh != null && (

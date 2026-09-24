@@ -17,6 +17,7 @@ class Trait(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
+    rules: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     effect: Mapped[str] = mapped_column(String, nullable=False, default="", server_default=text("''"))
     description: Mapped[str] = mapped_column(String, nullable=False, default="", server_default=text("''"))
     image_url: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -105,6 +106,7 @@ class Character(Base):
     __tablename__ = "characters"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    trait_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("traits.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(String, nullable=False)
     gold: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     cp: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))

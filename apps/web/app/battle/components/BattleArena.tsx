@@ -657,7 +657,9 @@ function battleSkillCost(skill: BattleActiveSkill, p: BattleParticipant): number
 }
 
 function affordableBattleSkills(skills: BattleActiveSkill[], p: BattleParticipant): BattleActiveSkill[] {
-  return skills.filter((skill) => p.mp >= battleSkillCost(skill, p));
+  return skills.filter((skill) => p.trait?.rules?.kind === "blood"
+    ? p.hp > Math.floor(Number((p.max_hp * p.trait.rules.values.hp * battleSkillCost(skill, p) / 100).toFixed(8)))
+    : p.mp >= battleSkillCost(skill, p));
 }
 
 /**
@@ -714,6 +716,7 @@ function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
 
 function allowedKinds(p: BattleParticipant, hasDowned: boolean, hasBattleSkills: boolean): CharacterActionKind[] {
   return (Object.keys(CHAR_ACTION_LABEL) as CharacterActionKind[]).filter((kind) => {
+    if (p.trait?.rules?.kind === "onslaught" && (kind === "defend" || kind === "item")) return false;
     if (kind === "skill") return hasBattleSkills;
     if (kind === "heal") return p.faction === "치유";
     if (kind === "rescue") return hasDowned;
@@ -1169,7 +1172,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         if (battleSkills == null) continue;
         const hasBattleSkills = battleSkills.length > 0;
         const kinds = allowedKinds(participant, hasDowned, hasBattleSkills);
-        if (!kinds.includes(draft.kind) || (draft.kind === "heal" && participant.mp < 1)) {
+        if (!kinds.includes(draft.kind) || (draft.kind === "heal" && participant.mp < 1 && participant.trait?.rules?.kind !== "peace")) {
           next[participant.character_id] = {
             ...draft,
             kind: defaultCharKind(participant.faction, participant.mp),
@@ -1182,7 +1185,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           draft.kind === "defend"
           && draft.protect_target_character_id != null
           && draft.protect_target_character_id !== participant.character_id
-          && participant.mp < 1
+          && participant.mp < 1 && participant.trait?.rules?.kind !== "peace"
         ) {
           next[participant.character_id] = { ...draft, protect_target_character_id: participant.character_id };
           changed = true;
@@ -2168,7 +2171,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           const selectedActionLabel = draft
             ? draft.kind === "skill" && selectedSkill
               ? selectedSkill.display_name
-              : CHAR_ACTION_LABEL[draft.kind]
+              : draft.kind === "attack" && p.trait?.rules?.kind === "meditation" ? "명상" : CHAR_ACTION_LABEL[draft.kind]
             : "";
           const targetInputId = `character:${p.character_id}:target`;
           const extraControls: { key: string; icon: LucideIcon; control: ReactNode }[] = [];
@@ -2210,7 +2213,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   target_enemy_id: keys[0]?.startsWith("enemy:") ? Number(keys[0].split(":")[1]) : null,
                 })} />,
             });
-          } else if (draft && draft.kind === "attack" && targetableEnemies.length > 1) {
+          } else if (draft && draft.kind === "attack" && p.trait?.rules?.kind !== "meditation" && targetableEnemies.length > 1) {
             extraControls.push({
               key: "enemy-target",
               icon: Skull,
@@ -2304,7 +2307,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   onChange={(value) => patchChar(p.character_id, { protect_target_character_id: Number(value) })}
                   options={targetableParticipants.map((target) => {
                     const isSelf = target.character_id === p.character_id;
-                    const disabled = !isSelf && usableMp < 1;
+                    const disabled = !isSelf && usableMp < 1 && p.trait?.rules?.kind !== "peace";
                     return {
                       key: String(target.character_id),
                       label: isSelf ? "본인" : disabled ? `${target.name} (MP 부족)` : target.name,
@@ -2355,15 +2358,15 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                           </SelectItem>
                         ));
                         const skillUnavailable = kind === "skill" && affordableSkills.length === 0;
-                        const healUnavailable = kind === "heal" && usableMp < 1;
+                        const healUnavailable = kind === "heal" && usableMp < 1 && p.trait?.rules?.kind !== "peace";
                         const unavailable = skillUnavailable || healUnavailable;
                         return (
                           <SelectItem key={kind} value={kind} disabled={unavailable}>
                             {skillUnavailable
-                              ? "기술(MP 부족)"
+                              ? `기술(${p.trait?.rules?.kind === "blood" ? "HP" : "MP"} 부족)`
                               : healUnavailable
                                 ? "치유(MP 부족)"
-                                : CHAR_ACTION_LABEL[kind]}
+                                : kind === "attack" && p.trait?.rules?.kind === "meditation" ? "명상" : CHAR_ACTION_LABEL[kind]}
                           </SelectItem>
                         );
                       })}

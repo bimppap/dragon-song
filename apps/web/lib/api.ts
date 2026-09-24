@@ -546,6 +546,7 @@ export interface ItemHistoryEntry {
 }
 
 export interface Character {
+  trait_id?: number | null;
   id: number;
   name: string;
   member_id: number | null;
@@ -668,6 +669,8 @@ export interface CharacterAchievedMission {
 }
 
 export interface CharacterDetail extends Character {
+  trait_stat_bonuses?: Record<string, number>;
+  equipped_trait?: Trait | null;
   stat_upgrades: Partial<Record<GradeStat, { cost: number; changes: Record<string, number> }>>;
   owned_items: CharacterOwnedItem[];
   achieved_challenges: CharacterAchievedChallenge[];
@@ -1811,6 +1814,7 @@ export interface BattleStatusEffect {
 }
 
 export interface BattleParticipant {
+  trait?: Trait | null;
   pair_source_character_id?: number;
   pair_source_name?: string;
   environment_stacks?: { id: number; name: string; color: string; count: number }[];
@@ -2393,6 +2397,7 @@ export async function fetchCharacterPaidSourceIds(characterId: number, kind: "mi
 // ── 특성 ──────────────────────────────────────────────────────────────────────
 
 export interface Trait {
+  rules: TraitRules | null;
   id: number;
   name: string;
   effect: string;
@@ -2402,9 +2407,30 @@ export interface Trait {
 }
 
 export interface TraitInput {
+  rules?: TraitRules | null;
   name: string;
   effect: string;
   description: string;
+}
+
+export interface TraitRules {
+  kind: string;
+  values: Record<string, number>;
+}
+
+export interface TraitEffectTemplate {
+  kind: string;
+  name: string;
+  template: string;
+  fields: { key: string; label: string; default: number; unit: string; min: number; max: number; step: number }[];
+}
+
+export function fetchTraitEffectTemplates(): Promise<TraitEffectTemplate[]> {
+  return request("/trait-effect-templates", undefined, "특성 효과 유형 조회 실패");
+}
+
+export function equipTrait(characterId: number, traitId: number | null): Promise<CharacterDetail> {
+  return request(`/characters/${characterId}/trait`, { method: "PUT", body: JSON.stringify({ trait_id: traitId }) }, "특성 장착 변경 실패");
 }
 
 export async function fetchTraits(): Promise<Trait[]> {
