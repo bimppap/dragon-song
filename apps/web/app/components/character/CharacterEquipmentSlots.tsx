@@ -6,7 +6,7 @@ import { Gem, PawPrint } from "lucide-react";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import { Button } from "@/components/ui/button";
 import { unequipItem, formatEffect, ITEM_TYPE_LABELS, type CharacterDetail, type CharacterOwnedItem } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import CharacterSlot from "./CharacterSlot";
 
 type SlotType = "companion" | "accessory";
 const SLOT_TYPES: SlotType[] = ["companion", "accessory"];
@@ -68,13 +68,11 @@ export default function CharacterEquipmentSlots({ character, onUpdated, readOnly
               onClick={() => void unequip(equipped)}>해제</Button>}
           </div>
         : `장착한 ${ITEM_TYPE_LABELS[type]} 없음`}>
-        {/* 키보드로도 설명·해제 버튼을 열 수 있게 포커스를 받는다. */}
-        <span tabIndex={0} aria-label={equipped ? `${ITEM_TYPE_LABELS[type]}: ${equipped.item_name}` : `${ITEM_TYPE_LABELS[type]} 없음`}
-          className="flex w-10 shrink-0 cursor-default flex-col items-center gap-1 text-center focus-visible:outline-2 focus-visible:outline-gold">
-          <span className={cn("relative flex size-9 items-center justify-center border-2 bg-gold/10 text-gold", equipped ? "border-gold" : "border-line")}>
-            <ItemIcon item={equipped} type={type} />
-          </span>
-        </span>
+        <CharacterSlot
+          aria-label={equipped ? `${ITEM_TYPE_LABELS[type]}: ${equipped.item_name}` : `${ITEM_TYPE_LABELS[type]} 없음`}
+          filled={!!equipped}>
+          <ItemIcon item={equipped} type={type} />
+        </CharacterSlot>
       </InfoTooltip>;
     })}
     {error && <p role="alert" className="text-xs text-red-500">{error}</p>}

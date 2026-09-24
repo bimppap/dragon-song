@@ -9,10 +9,10 @@ import { SkillTooltipContent } from "@/components/skill/SkillTreeGrid";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import { Button } from "@/components/ui/button";
 import { fetchCharacterSkillTree, type CharacterSkillNode, type SkillBook } from "@/lib/api";
+import CharacterSlot from "./CharacterSlot";
 import Modal from "@/components/common/Modal";
 import MySkillTree from "@/app/battle/components/MySkillTree";
 import type { CharacterDetail } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 import { deepestLearnedSkill } from "@/lib/skillProgression";
 
@@ -71,7 +71,7 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false, ad
   }, [characterId, revision]);
 
   return (
-    <div className="flex flex-col gap-2">
+    <>
       {adminMode && <>
         <Modal open={mode === "actions"} onClose={() => setMode(null)} title="기술 설정">
           <div className="flex gap-2"><Button onClick={() => setMode("tree")}>스킬 변경하기</Button><Button variant="outline" onClick={() => setMode("custom")}>커스텀 하기</Button></div>
@@ -86,19 +86,11 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false, ad
       ) : !loaded ? (
         <span className="text-xs text-muted">불러오는 중...</span>
       ) : (
-        <div className="flex gap-1">
+        <>
           {skills.length === 0 && !readOnly && (
-            <button
-              type="button"
-              onClick={goToSkillPage}
-              aria-label="기술 배우기"
-              className="flex cursor-pointer flex-col items-center gap-1 text-center"
-            >
-              <span className="flex size-9 items-center justify-center border-2 border-line bg-gold/10 text-gold hover:bg-gold/15">
-                <Sparkles size={17} />
-              </span>
-              <span className="w-9 break-words text-[9px] font-semibold leading-tight text-muted">기술 배우기</span>
-            </button>
+            <CharacterSlot aria-label="기술 배우기" interactive onClick={goToSkillPage}>
+              <Sparkles size={17} />
+            </CharacterSlot>
           )}
           {skills.map((skill) => {
             const isOwned = skill.unlocked && skill.tier > 0;
@@ -129,28 +121,23 @@ export default function CharacterOwnedSkills({ characterId, readOnly = false, ad
                   />
                 )}
               >
-                <button
-                  type="button"
+                <CharacterSlot
                   aria-label={readOnly ? skill.display_name : `${skill.display_name} · 기술트리 열기`}
+                  borderClassName={BOOK_BORDER_CLASS[skill.book]}
+                  interactive={!readOnly}
                   onClick={goToSkillPage}
-                  className={cn("flex min-w-0 flex-col items-center gap-1 text-center", readOnly ? "cursor-default" : "cursor-pointer")}
                 >
-                  <span className={`relative flex size-9 items-center justify-center overflow-hidden border-2 bg-gold/10 text-gold transition-colors hover:bg-gold/15 ${BOOK_BORDER_CLASS[skill.book]}`}>
-                    {skill.image_url ? (
-                      <Image src={skill.image_url} alt="" fill sizes="36px" unoptimized className="object-cover" />
-                    ) : (
-                      <Sparkles size={17} />
-                    )}
-                  </span>
-                  {skill.tier > 0 ? (
-                    <span className="line-clamp-2 w-9 break-words text-[9px] font-semibold leading-tight text-ivory">{skill.display_name}</span>
-                  ) : null}
-                </button>
+                  {skill.image_url ? (
+                    <Image src={skill.image_url} alt="" fill sizes="36px" unoptimized className="object-cover" />
+                  ) : (
+                    <Sparkles size={17} />
+                  )}
+                </CharacterSlot>
               </InfoTooltip>
             );
           })}
-        </div>
+        </>
       )}
-    </div>
+    </>
   );
 }

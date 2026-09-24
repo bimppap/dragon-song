@@ -8,6 +8,7 @@ import Modal from "@/components/common/Modal";
 import { Button } from "@/components/ui/button";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import { cn } from "@/lib/utils";
+import CharacterSlot from "./CharacterSlot";
 import {
   fetchCharacterCardDetails,
   fetchCharacters,
@@ -146,57 +147,50 @@ export default function CharacterClonedSkills({ characterId, readOnly = false }:
   const slotByIndex = new Map<number, ClonedSkill>(data.slots.map((slot) => [slot.slot_index, slot]));
 
   return (
-    <div className="flex flex-col gap-1">
-      <span className="text-[9px] font-semibold text-muted">복제</span>
-      <div className="flex gap-1">
-        {Array.from({ length: data.slot_count }, (_, index) => {
-          const slot = slotByIndex.get(index);
-          const label = slot ? `${slot.source_character_name}의 ${slot.display_name}` : "빈 복제 칸";
-          return (
-            <InfoTooltip
-              key={index}
-              side="top"
-              content={(
-                <div className="max-w-56 text-left">
-                  {slot ? (
-                    <>
-                      <div className={cn("font-semibold", BOOK_ACCENT[slot.book].text)}>
-                        복제:{slot.display_name}
-                      </div>
-                      <div className="mt-0.5 text-[11px] text-muted">{slot.source_character_name}의 기술</div>
-                    </>
-                  ) : (
-                    <div className="text-muted">비어 있는 복제 칸</div>
-                  )}
-                  {!readOnly && (
-                    <div className="mt-1 text-[11px] text-muted">클릭해서 {slot ? "변경" : "저장"}</div>
-                  )}
-                </div>
-              )}
-            >
-              <button
-                type="button"
-                aria-label={label}
-                disabled={readOnly}
-                onClick={() => openPicker(index)}
-                className={cn(
-                  "relative flex size-9 items-center justify-center overflow-hidden border-2 bg-gold/10 transition-colors",
-                  slot ? BOOK_ACCENT[slot.book].border : "border-line text-muted",
-                  readOnly ? "cursor-default" : "cursor-pointer hover:bg-gold/15",
-                )}
-              >
-                {slot?.image_url ? (
-                  <Image src={slot.image_url} alt="" fill sizes="36px" unoptimized className="object-cover" />
-                ) : slot ? (
-                  <Sparkles size={17} />
+    <>
+      {Array.from({ length: data.slot_count }, (_, index) => {
+        const slot = slotByIndex.get(index);
+        const label = slot ? `${slot.source_character_name}의 ${slot.display_name}` : "빈 복제 칸";
+        return (
+          <InfoTooltip
+            key={index}
+            side="top"
+            content={(
+              <div className="max-w-56 text-left">
+                {slot ? (
+                  <>
+                    <div className={cn("font-semibold", BOOK_ACCENT[slot.book].text)}>
+                      복제:{slot.display_name}
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted">{slot.source_character_name}의 기술</div>
+                  </>
                 ) : (
-                  <Plus size={15} />
+                  <div className="text-muted">비어 있는 복제 칸</div>
                 )}
-              </button>
-            </InfoTooltip>
-          );
-        })}
-      </div>
+                {!readOnly && (
+                  <div className="mt-1 text-[11px] text-muted">클릭해서 {slot ? "변경" : "저장"}</div>
+                )}
+              </div>
+            )}
+          >
+            <CharacterSlot
+              aria-label={label}
+              filled={!!slot}
+              borderClassName={slot ? BOOK_ACCENT[slot.book].border : undefined}
+              interactive={!readOnly}
+              onClick={readOnly ? undefined : () => openPicker(index)}
+            >
+              {slot?.image_url ? (
+                <Image src={slot.image_url} alt="" fill sizes="36px" unoptimized className="object-cover" />
+              ) : slot ? (
+                <Sparkles size={17} />
+              ) : (
+                <Plus size={15} />
+              )}
+            </CharacterSlot>
+          </InfoTooltip>
+        );
+      })}
       {error && <span className="text-[10px] text-red-500">{error}</span>}
 
       <Modal
@@ -241,6 +235,6 @@ export default function CharacterClonedSkills({ characterId, readOnly = false }:
           </div>
         )}
       </Modal>
-    </div>
+    </>
   );
 }

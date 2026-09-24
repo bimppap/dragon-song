@@ -193,6 +193,9 @@ class Character(Base):
     # "정령석 커스텀 기능 해방" 아이템을 쓰면 켜진다. 보유한 정령석의 이름·이미지·설명을 직접 바꿀 수 있다.
     spirit_stone_custom_unlocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
 
+    # "특성 교체" 아이템을 쓰면 1장 늘어나고, 이미 장착한 특성을 다른 특성으로 바꿀 때 1장 소모된다.
+    trait_change_tickets: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+
     # 관리자 전용 능력치 (RUNNER에게는 노출되지 않음)
     start_sh: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     revive_hp: Mapped[float] = mapped_column(Float, nullable=False, default=0.1, server_default=text("0.1"))

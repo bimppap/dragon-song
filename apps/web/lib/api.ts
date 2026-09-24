@@ -334,6 +334,7 @@ export type ItemEffectStat =
   | "challenge_acquisition"
   | "delivery_date_slot" | "delivery_freeform"
   | "spirit_stone_customize" | "spirit_stone_exchange"
+  | "trait_change"
   | "battle_revive_once" | "battle_auto_revive" | "skill_recast";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
@@ -388,6 +389,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "delivery_freeform", label: "이미지 또는 편지 또는 둘 다 배달 (사이트 외 기능)" },
   { value: "spirit_stone_customize", label: "정령석 커스텀 기능 해방" },
   { value: "spirit_stone_exchange", label: "정령석 교환" },
+  { value: "trait_change", label: "특성 교체(일회성)" },
   { value: "battle_revive_once", label: "전투 당 1회 부활" },
   { value: "battle_auto_revive", label: "전투 이후 자동 부활" },
   { value: "skill_recast", label: "기술 재발동(%)" },
@@ -423,6 +425,7 @@ export function formatEffect(effect: ItemEffect): string {
     || effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2"
     || effect.stat === "cleanse_debuffs" || effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform"
     || effect.stat === "spirit_stone_customize" || effect.stat === "spirit_stone_exchange"
+    || effect.stat === "trait_change"
     || effect.stat === "battle_revive_once" || effect.stat === "battle_auto_revive"
   ) return label;
   if (effect.stat === "skill_recast") return `기술 재발동 ${Math.round(effect.delta * 1000) / 10}% 위력`;
@@ -681,11 +684,13 @@ export interface CharacterDetail extends Character {
   /** 진행 중인 실전 전투 참가자면 true. 아이템 사용·장착 변경이 막힌다. */
   in_live_battle: boolean;
   spirit_stone_custom_unlocked: boolean;
+  /** 보유한 특성 교체권. 이미 장착한 특성을 바꾸려면 1장이 필요하다. */
+  trait_change_tickets: number;
 }
 
 export type RewardGrant =
   | { type: "item"; item_id: number; quantity: number }
-  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition" | "spirit_stone_customize" | "spirit_stone_exchange">; amount: number };
+  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition" | "spirit_stone_customize" | "spirit_stone_exchange" | "trait_change">; amount: number };
 
 export type ChallengeRewardItemGrant = RewardGrant;
 

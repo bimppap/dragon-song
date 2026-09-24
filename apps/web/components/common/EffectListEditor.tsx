@@ -28,7 +28,7 @@ const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
   "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
   "mission_exp_recollection", "challenge_acquisition",
   "delivery_date_slot", "delivery_freeform",
-  "spirit_stone_customize", "spirit_stone_exchange",
+  "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
   "battle_revive_once", "battle_auto_revive",
 ]);
 

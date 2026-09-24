@@ -1697,7 +1697,8 @@ def equip_trait(character_id: int, data: CharacterTraitUpdate,
     # 개방 전에는 러너에게 특성 슬롯이 보이지 않으므로, 관리자 외에는 장착도 막는다.
     if not is_admin_role(member.role) and not crud.get_trait_status(db).is_open:
         raise HTTPException(status_code=400, detail="아직 특성이 개방되지 않았습니다.")
-    detail = crud.equip_trait(db, character_id, data.trait_id)
+    # 관리자는 교체권 없이도 바꿀 수 있다(관리 화면에서 캐릭터를 직접 정비한다).
+    detail = crud.equip_trait(db, character_id, data.trait_id, consume_ticket=not is_admin_role(member.role))
     return detail if is_admin_role(member.role) else crud.scrub_admin_only_stats(detail)
 
 

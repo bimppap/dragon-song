@@ -1472,13 +1472,14 @@ export default function CharacterInfo({
                 {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
                 {/* key는 목록용이 아니라 캐릭터가 바뀔 때 내부 상태를 버리고 다시 마운트하려는 것이다.
                     형제끼리 값이 같으면 안 되므로 컴포넌트 이름을 앞에 붙여 구분한다. */}
-                <div className="flex items-start gap-2">
+                {/* 슬롯은 모두 같은 크기의 칸(CharacterSlot)이라, 한 줄에 가지런히 놓이고 넘치면 다음 줄로 접힌다. */}
+                <div className="flex flex-wrap items-center justify-center gap-1">
                   <CharacterOwnedSkills key={`skills:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
                   <CharacterClonedSkills key={`cloned:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} />
                   <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} locked={selectedDetail.in_live_battle}
                     onCustomize={(item) => setCustomizingItemId(item.item_id)} />
                   {/* 개방 전에는 관리자가 만든 캐릭터에만(=관리자 화면에서만) 특성 슬롯을 띄운다. */}
-                  {(traitOpen || canAdminEdit) && <CharacterTrait key={`trait:${selectedDetail.id}:${selectedDetail.trait_id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} />}
+                  {(traitOpen || canAdminEdit) && <CharacterTrait key={`trait:${selectedDetail.id}:${selectedDetail.trait_id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} adminMode={canAdminEdit} />}
                 </div>
               </div>
 

@@ -57,10 +57,11 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 # "spirit_stone_customize": ("정령석 커스텀 기능 해방") 사용한 캐릭터가 보유한 정령석의 이름·이미지·설명을 직접 바꿀 수 있게 된다.
 # "spirit_stone_exchange": ("정령석 교환") 사용 시 보유한 정령석 하나를 다른 정령석으로 바꾼다.
 #   정령석은 이름에 "정령석"이 들어간 장착형(동반자·장신구) 아이템이다.
+# "trait_change": ("특성 교체(일회성)") 특성 교체권 1장을 준다. 한 번 장착한 특성은 이 교체권이 있어야 바꿀 수 있다.
 ITEM_EFFECT_SPECIAL_STATS = {
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform", "mission_exp_recollection", "challenge_acquisition",
-    "spirit_stone_customize", "spirit_stone_exchange",
+    "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
 }
 # 장착한 동반자·장신구에서만 동작하는 전투 패시브 효과. 캐릭터 능력치를 바꾸지 않는다.
 # "battle_revive_once": 전투마다 한 번, 기절하는 즉시 부활 후 체력(revive_hp) 비율로 되살아난다.
@@ -83,7 +84,7 @@ ItemEffectStat = Literal[
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform",
     "mission_exp_recollection", "challenge_acquisition",
-    "spirit_stone_customize", "spirit_stone_exchange",
+    "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
     "battle_revive_once", "battle_auto_revive", "skill_recast",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
@@ -492,7 +493,7 @@ class ItemCreate(BaseModel):
             if any(e.stat in (
                 "ap_reset", "stat_reset", "full_reset", "hp_heal_p",
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
-                "spirit_stone_customize", "spirit_stone_exchange",
+                "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
         if self.item_type == "consumable" and any(e.stat in ITEM_EFFECT_EQUIP_PASSIVE_STATS for e in self.effects):
@@ -517,6 +518,11 @@ class ItemCreate(BaseModel):
                 raise ValueError("정령석 커스텀·교환 아이템은 전투 전용으로 설정할 수 없습니다.")
             if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
                 raise ValueError("정령석 커스텀·교환 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
+        if any(e.stat == "trait_change" for e in self.effects):
+            if self.battle_only:
+                raise ValueError("특성 교체 아이템은 전투 전용으로 설정할 수 없습니다.")
+            if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
+                raise ValueError("특성 교체 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
         if not self.price_gold and not self.price_cp:
             raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
         return self
@@ -802,6 +808,8 @@ class CharacterDetailRead(CharacterRead):
     # 진행 중인 실전 전투 참가자면 아이템 사용·장착을 막는다(화면에서도 버튼을 감춘다).
     in_live_battle: bool = False
     spirit_stone_custom_unlocked: bool = False
+    # 보유한 특성 교체권. 이미 장착한 특성을 바꾸려면 1장이 필요하다.
+    trait_change_tickets: int = 0
 
 
 class ChallengeCreate(BaseModel):

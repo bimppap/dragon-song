@@ -111,6 +111,8 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0")
     if "spirit_stone_custom_unlocked" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN spirit_stone_custom_unlocked BOOLEAN NOT NULL DEFAULT false")
+    if "trait_change_tickets" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN trait_change_tickets INTEGER NOT NULL DEFAULT 0")
 
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}

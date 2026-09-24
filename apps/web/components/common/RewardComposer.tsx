@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/select";
 import { ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS, type ItemEffectStat } from "@/lib/api";
 
-type RewardableStat = Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition" | "spirit_stone_customize" | "spirit_stone_exchange">;
+type RewardableStat = Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition" | "spirit_stone_customize" | "spirit_stone_exchange" | "trait_change">;
 
 export type RewardFormEntry =
   | { id: string; type: "stat"; stat: RewardableStat; amount: string }
@@ -27,7 +27,7 @@ interface Props {
 
 const EXCLUDED_STATS = new Set<ItemEffectStat>([
   "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "challenge_acquisition",
-  "spirit_stone_customize", "spirit_stone_exchange",
+  "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
   "battle_revive_once", "battle_auto_revive", "skill_recast",
 ]);
 const STAT_OPTIONS = ITEM_EFFECT_STAT_OPTIONS.filter((option) => !EXCLUDED_STATS.has(option.value)) as {
