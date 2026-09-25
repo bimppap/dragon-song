@@ -8431,6 +8431,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             # 쇠약이 걸린 적은 이번 라운드 아군 피해를 더 받는다(반격 피해도 아군 피해다).
             counter_damage, counter_formula = _apply_weaken_amp(attacker, counter_damage, counter_formula)
             dealt, overkill = _apply_damage_to_enemy(attacker, counter_damage)
+            # 반격 피해도 공격과 같은 식으로 시전자의 주목도를 쌓는다. 기절·퇴각한 시전자는 주목도가 0으로 유지된다.
+            if counter_actor is not None and _combatant_active(counter_actor):
+                _apply_damage_attn(counter_actor, dealt)
             counter_results.append({
                 "skill_name": effect.get("skill_name") or "반격",
                 "counterattacker_name": counterattacker_name,

@@ -131,6 +131,9 @@ class CounterSkillTest(unittest.TestCase):
         self.assertEqual(caster["hp"], 100)
         self.assertEqual(target["hp"], 56)
         self.assertEqual(enemy_result.enemies[0]["hp"], 65)
+        # 반격 피해 35를 입힌 시전자(수비)가 주목도를 얻는다: floor(35 × 4 × (1 + 존재감 0)).
+        self.assertEqual(caster["attn"], 140)
+        self.assertEqual(target["attn"], 0)
 
         counter_event = "↩️ 실험 요정 B의 반격 I → 훈련용 에너미 35 피해 · [65/100]"
         self.assertIn(counter_event, enemy_result.log[-1]["events"])
@@ -141,6 +144,31 @@ class CounterSkillTest(unittest.TestCase):
             "기술 위력 2 × (1 + 기술 효율 비례 0.1)) × "
             "(1 + 피해 증폭 0)), 남은 체력 100)",
         )
+
+    def test_downed_caster_counterattacks_without_gaining_attention(self):
+        crud.resolve_battle_ally_turn(
+            self.db,
+            self.battle.id,
+            BattleAllyTurnRequest(character_actions=[CharacterActionInput(
+                character_id=self.caster.id,
+                kind="skill",
+                skill_node_id=self.skill.id,
+                skill_target_keys=[f"ally:{self.target.id}"],
+                target_character_id=self.target.id,
+            )]),
+        )
+        self.db.refresh(self.battle)
+        participants = [dict(p) for p in self.battle.participants]
+        caster = next(p for p in participants if p["character_id"] == self.caster.id)
+        caster.update(hp=0, downed=True, attn=0)
+        self.battle.participants = participants
+        self.db.commit()
+
+        enemy_result = crud.resolve_battle_enemy_turn(self.db, self.battle.id)
+
+        caster = next(p for p in enemy_result.participants if p["character_id"] == self.caster.id)
+        self.assertEqual(enemy_result.enemies[0]["hp"], 65)
+        self.assertEqual(caster["attn"], 0)
 
 
 if __name__ == "__main__":

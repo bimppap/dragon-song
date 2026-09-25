@@ -323,6 +323,8 @@ class EnemyEffectsTest(unittest.TestCase):
         telegraph = self.telegraph(battle)
         self.assertEqual(telegraph.enemies[0]["hp"], 875)
         self.assertIn("[875/1000]", telegraph.log[-1]["events"][0])
+        # 지속 피해는 시전자에게 주목도를 주지 않는다(첫 타격에만 쌓인다).
+        self.assertEqual([p["attn"] for p in telegraph.participants], [0, 0, 0])
 
         ally_turn = crud.resolve_battle_ally_turn(self.db, battle.id, BattleAllyTurnRequest())
         self.assertEqual(ally_turn.enemies[0]["hp"], 875)
