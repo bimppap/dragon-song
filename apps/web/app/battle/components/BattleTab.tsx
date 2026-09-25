@@ -30,7 +30,7 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
 import BattleArena from "./BattleArena";
 import BattlePairGrid from "./BattlePairGrid";
-import { randomizeBattlePairs, reconcileBattlePairs, swapBattlePairMembers } from "@/lib/battlePairs";
+import { PAIR_BATTLE_ENABLED, randomizeBattlePairs, reconcileBattlePairs, swapBattlePairMembers } from "@/lib/battlePairs";
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
 
@@ -564,7 +564,7 @@ export default function BattleTab() {
               </Button>
             </CardHeader>
             <CardContent className="space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-inset/40 p-3">
+              {PAIR_BATTLE_ENABLED && <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-line bg-inset/40 p-3">
                 <div className="space-y-1">
                   <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-ivory">
                     <Checkbox
@@ -584,7 +584,7 @@ export default function BattleTab() {
                 {pairBattle && <Button type="button" variant="outline" size="sm" disabled={selectedCharacterIds.size < 2} onClick={() => setPairs(randomizeBattlePairs([...selectedCharacterIds]))}>
                   <Shuffle size={14} /> 다시 랜덤 매칭
                 </Button>}
-              </div>
+              </div>}
               <div className="grid max-w-3xl grid-cols-3 gap-3 sm:grid-cols-6">
                 {characters.map((c) => {
                   const checked = selectedCharacterIds.has(c.id);

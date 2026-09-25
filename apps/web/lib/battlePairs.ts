@@ -1,5 +1,8 @@
 import type { BattleSession } from "./api";
 
+/** 페어 전투는 당분간 쓰지 않아 전투 편성 화면에서 선택지를 감춘다. 다시 쓰려면 true로 바꾼다. */
+export const PAIR_BATTLE_ENABLED = false;
+
 /** REST/소켓으로 편성만 갱신되면 작성 중인 행동을 초기화하지 않는다. */
 export function sameBattleCombatState(previous: BattleSession, next: BattleSession): boolean {
   const combatState = (session: BattleSession) => Object.entries(session).filter(
