@@ -153,7 +153,8 @@ const PARTICIPANT_SORTS: { value: ParticipantSort; label: string }[] = [
   { value: "hp", label: "체력 비율순" },
   { value: "position", label: "포지션 순" },
 ];
-const RUNNER_PARTICIPANT_SORTS = PARTICIPANT_SORTS.filter(({ value }) => value === "hp");
+// 러너는 체력 비율순(기본)과 주목도 순만 고를 수 있다.
+const RUNNER_PARTICIPANT_SORTS = (["hp", "attention"] as const).map((value) => PARTICIPANT_SORTS.find((sort) => sort.value === value)!);
 
 /** 이름 옆에 붙는 포지션(공격/수비/치유) 아이콘. */
 function ParticipantFactionIcon({ faction }: { faction: BattleParticipant["faction"] }) {
@@ -983,6 +984,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
   const skillsByCharacter = loadedSkills?.key === activeSkillLoadoutKey ? loadedSkills.skills : EMPTY_BATTLE_SKILLS;
   const skillsReady = readOnly || loadedSkills?.key === activeSkillLoadoutKey;
   const [participantSort, setParticipantSort] = useState<ParticipantSort>("attention");
+  const [runnerParticipantSort, setRunnerParticipantSort] = useState<ParticipantSort>("hp");
   const [pairGrouped, setPairGrouped] = useState(true);
 
   const [joinOpen, setJoinOpen] = useState(false);
@@ -1695,7 +1697,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
     return groups;
   }, [session?.log]);
 
-  const effectiveParticipantSort: ParticipantSort = showAdminView ? participantSort : "hp";
+  const effectiveParticipantSort: ParticipantSort = showAdminView ? participantSort : runnerParticipantSort;
   const sortedParticipants = useMemo(() => {
     const participants = session?.participants ?? [];
     return participants.toSorted((a, b) => {
@@ -1708,7 +1710,8 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
 
   const showPairGroups = !!session?.pair_battle && pairGrouped;
   function selectParticipantSort(value: ParticipantSort) {
-    setParticipantSort(value);
+    if (showAdminView) setParticipantSort(value);
+    else setRunnerParticipantSort(value);
     setPairGrouped(false);
   }
   // 페어 묶음을 풀어 보는 동안에는 카드마다 페어 상대 이름을 붙인다.
@@ -2108,37 +2111,35 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         </div>
       )}
 
-      {(showAdminView || session.pair_battle) && (
-        <div className="flex flex-wrap items-center justify-end gap-2">
-          <span className="text-xs font-semibold text-muted">캐릭터 정렬</span>
-          <div className="flex flex-wrap rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
-            {/* 페어 전투는 페어 묶음 보기가 기본이고, 러너도 체력 비율순으로 풀어 볼 수 있다. */}
-            {session.pair_battle && (
-              <Button
-                type="button"
-                size="sm"
-                variant={pairGrouped ? "default" : "ghost"}
-                aria-pressed={pairGrouped}
-                onClick={() => setPairGrouped(true)}
-              >
-                페어순
-              </Button>
-            )}
-            {(showAdminView ? PARTICIPANT_SORTS : RUNNER_PARTICIPANT_SORTS).map(({ value, label }) => (
-              <Button
-                key={value}
-                type="button"
-                size="sm"
-                variant={!showPairGroups && effectiveParticipantSort === value ? "default" : "ghost"}
-                aria-pressed={!showPairGroups && effectiveParticipantSort === value}
-                onClick={() => selectParticipantSort(value)}
-              >
-                {label}
-              </Button>
-            ))}
-          </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <span className="text-xs font-semibold text-muted">캐릭터 정렬</span>
+        <div className="flex flex-wrap rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
+          {/* 페어 전투는 페어 묶음 보기가 기본이고, 러너도 체력 비율순·주목도 순으로 풀어 볼 수 있다. */}
+          {session.pair_battle && (
+            <Button
+              type="button"
+              size="sm"
+              variant={pairGrouped ? "default" : "ghost"}
+              aria-pressed={pairGrouped}
+              onClick={() => setPairGrouped(true)}
+            >
+              페어순
+            </Button>
+          )}
+          {(showAdminView ? PARTICIPANT_SORTS : RUNNER_PARTICIPANT_SORTS).map(({ value, label }) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={!showPairGroups && effectiveParticipantSort === value ? "default" : "ghost"}
+              aria-pressed={!showPairGroups && effectiveParticipantSort === value}
+              onClick={() => selectParticipantSort(value)}
+            >
+              {label}
+            </Button>
+          ))}
         </div>
-      )}
+      </div>
 
       {/* 캐릭터 그리드 */}
       {session.pair_battle && (
@@ -2543,12 +2544,10 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                           <span className="truncate">{pairPartnerNameById.get(p.character_id)}</span>
                         </span>
                       )}
-                      {!readOnly && (
-                        <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-normal text-gold" title="주목도 (관리자 전용)">
-                          <Eye size={11} />
-                          {fmt(p.attn)}
-                        </span>
-                      )}
+                      <span className="inline-flex shrink-0 items-center gap-1 text-[11px] font-normal text-gold" title="주목도">
+                        <Eye size={11} />
+                        {fmt(p.attn)}
+                      </span>
                     </p>
                     <div className="space-y-1.5">
                       <ResourceBar
