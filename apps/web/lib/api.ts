@@ -1624,7 +1624,7 @@ export interface EnemySkill {
   environment_id?: number | null;
   environment_stack_count?: number;
   on_hit_dot?: boolean;
-  on_hit_effect?: "dot" | "stat";
+  on_hit_effect?: EnemyOnHitEffect;
   debuff_direction?: "increase" | "decrease";
   debuff_color?: string;
   dot_name?: string;
@@ -1789,6 +1789,8 @@ export type BattleStatus = "in_progress" | "victory" | "defeat" | "early_termina
 export type BattlePhase = "telegraph" | "ally" | "enemy";
 export type CharacterActionKind = "attack" | "skill" | "defend" | "heal" | "rescue" | "item" | "none" | "retreat";
 export type EnemyActionKind = "attack" | "summon" | "none";
+/** 피격 디버프 효과: 턴마다 고정 피해 / 상세 능력치 변경 / 피격 즉시 방어력·피해 감소를 무시하는 고정 피해 */
+export type EnemyOnHitEffect = "dot" | "stat" | "true_damage";
 
 export interface BattleEnemyState {
   action_count?: number;

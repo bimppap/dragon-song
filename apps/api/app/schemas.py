@@ -967,7 +967,9 @@ class EnemySkill(BaseModel):
     manual_target_count: bool = False
     auto_target_mode: Literal["attention", "random"] = "attention"
     on_hit_dot: bool = False
-    on_hit_effect: Literal["dot", "stat"] = "dot"
+    # 피격 디버프 효과: "dot" 턴마다 고정 피해, "stat" 상세 능력치 변경,
+    # "true_damage" 피격 즉시 방어력·피해 감소를 무시하는 고정 피해(dot_damage만큼, 기술 피해와 별도)
+    on_hit_effect: Literal["dot", "stat", "true_damage"] = "dot"
     debuff_direction: Literal["increase", "decrease"] = "decrease"
     debuff_color: str = Field(default="#e879f9", pattern=HEX_COLOR_PATTERN)
     dot_name: str = "지속 피해"

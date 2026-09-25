@@ -90,6 +90,38 @@ class EnemyEffectsTest(unittest.TestCase):
                 self.assertEqual(crud._cleanse_combat_debuffs(self.db, participants[0], 1), (1, ["저주"]))
                 self.assertAlmostEqual(participants[0][stat], before)
 
+    def true_damage_hit(self, **target_stats):
+        """공격력 10 × 100% 지정 공격에 방어 무시 피해 7이 붙은 기술로 A를 한 번 때린다."""
+        skill = EnemySkill(skill_type="지정 공격", name="관통 창", target_count=1, damage_percent=100,
+                           on_hit_dot=True, on_hit_effect="true_damage", dot_name="관통", dot_damage=7)
+        self.party[0].update(target_stats)
+        battle = self.battle([skill])
+        self.telegraph(battle, 0, [self.party[0]["character_id"]])
+        result = self.enemy_turn(battle)
+        return battle, [event for entry in result.log for event in entry["events"]]
+
+    def test_on_hit_true_damage_ignores_defense_and_damage_reduction(self):
+        battle, events = self.true_damage_hit(**{"def": 1000, "dmg_r": 0.5})
+
+        self.assertEqual(battle.participants[0]["hp"], 93)  # 기술 피해는 방어력에 막혀 0, 방어 무시 피해 7만 들어간다
+        self.assertEqual(battle.participants[0]["status_effects"], [])
+        self.assertIn("💥 에너미의 관통 → A 7 방어 무시 피해 · [93/100]", events)
+
+    def test_on_hit_true_damage_is_absorbed_by_shield(self):
+        battle, events = self.true_damage_hit(shield=12)
+
+        # 기술 피해 10을 모두 흡수하고 남은 보호막 2가 방어 무시 피해 7 중 2를 흡수한다.
+        self.assertEqual((battle.participants[0]["hp"], battle.participants[0]["shield"]), (95, 0))
+        self.assertIn("💥 에너미의 관통 → A 5 방어 무시 피해(보호막 2 흡수) · [95/100]", events)
+
+    def test_on_hit_true_damage_hits_the_protector(self):
+        self.party[1].update(defending=True, protect_target=self.party[0]["character_id"])
+
+        battle, _ = self.true_damage_hit()
+
+        self.assertEqual(battle.participants[0]["hp"], 100)
+        self.assertEqual(battle.participants[1]["hp"], 83)  # 기술 피해 10 + 방어 무시 피해 7
+
     def test_environment_alive_dead_conditions_and_existing_stacks(self):
         alive = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="생존", enemy_condition="alive", condition_enemy_id=1, stacks_per_round=2, damage_per_stack=3))
         dead = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="사망", enemy_condition="dead", condition_enemy_id=1))

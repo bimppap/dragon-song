@@ -8642,9 +8642,10 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 recipient, dmg, absorbed, redirected, counter_results, damage_formula = hit(
                     enemy, t, base, base_formula
                 )
-                if skill.get("on_hit_dot") and _combatant_active(recipient):
+                on_hit_effect = skill.get("on_hit_effect", "dot") if skill.get("on_hit_dot") else None
+                if on_hit_effect in ("dot", "stat") and _combatant_active(recipient):
                     source = f"enemy:{enemy_id}:skill:{skill_index}:dot"
-                    if skill.get("on_hit_effect", "dot") == "stat":
+                    if on_hit_effect == "stat":
                         stat = skill.get("debuff_stat", "atk")
                         amount = skill.get("debuff_amount", 0)
                         ratio_stat = ITEM_EFFECT_STAT_TYPES.get(stat) is float
@@ -8671,6 +8672,19 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · {recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
                 )
                 calculations[events[-1]] = damage_formula
+                if on_hit_effect == "true_damage" and _combatant_active(recipient) and recipient["hp"] > 0:
+                    # 기술 피해와 별개로, 실제로 맞은 캐릭터의 방어력·피해 감소를 무시하는 고정 피해를 준다(보호막은 흡수).
+                    true_damage = max(1, int(skill.get("dot_damage", 1)))
+                    shield_before = recipient["shield"]
+                    dealt, absorbed_true = _apply_hit(recipient, true_damage)
+                    events.append(
+                        f"💥 {enemy['name']}의 {skill.get('dot_name') or skill['name']} → {recipient['name']} {dealt} 방어 무시 피해"
+                        f"{f'(보호막 {absorbed_true} 흡수)' if absorbed_true > 0 else ''} · [{recipient['hp']}/{recipient['max_hp']}]"
+                    )
+                    calculations[events[-1]] = (
+                        f"max(최소 피해 0, 고정 피해 {true_damage} - 보호막 {_formula_number(shield_before)})"
+                        " (방어력·피해 감소 무시)"
+                    )
                 _apply_eruption_reaction(recipient, enemies, round_no, events, calculations, attacking_enemy_id=enemy["enemy_id"])
                 if _mark_combatant_downed(recipient):
                     newly_downed_names.append(recipient["name"])

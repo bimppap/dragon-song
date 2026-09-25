@@ -803,7 +803,8 @@ function enemySkillSummary(
       : "환경";
     return `${environmentName} +${skill.environment_stack_count ?? 1}스택`;
   }
-  return `예상 피해 ${fmt(Math.floor((enemy.attack * skill.damage_percent) / 100))}`;
+  const trueDamage = skill.on_hit_dot && skill.on_hit_effect === "true_damage" ? ` + 방어 무시 ${fmt(skill.dot_damage ?? 1)}` : "";
+  return `예상 피해 ${fmt(Math.floor((enemy.attack * skill.damage_percent) / 100))}${trueDamage}`;
 }
 
 interface TargetOption {

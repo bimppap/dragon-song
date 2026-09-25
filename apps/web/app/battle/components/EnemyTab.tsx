@@ -30,7 +30,7 @@ import {
   uploadEnemyImage,
   uploadEnemySummonImage,
 } from "@/lib/api";
-import type { Chapter, Enemy, EnemyCreate, EnemySkill, Environment } from "@/lib/api";
+import type { Chapter, Enemy, EnemyCreate, EnemyOnHitEffect, EnemySkill, Environment } from "@/lib/api";
 import { cn, parsePositiveInt, todayDateValue } from "@/lib/utils";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
@@ -58,6 +58,18 @@ const EMPTY_ENVIRONMENT_DRAFT = {
   damage_per_stack: "0",
 };
 
+const ON_HIT_EFFECT_OPTIONS: [EnemyOnHitEffect, string][] = [
+  ["dot", "턴마다 고정 피해"],
+  ["stat", "상세 능력치 변경"],
+  ["true_damage", "방어 무시 피해"],
+];
+
+const ON_HIT_EFFECT_HELP: Record<EnemyOnHitEffect, string> = {
+  dot: "다음 적의 행동 암시부터 매 턴 피해를 입습니다. 같은 스킬은 중첩되지 않습니다. 디버프 해제로 제거할 수 있습니다.",
+  stat: "피격 직후 능력치가 변경되며 해제될 때까지 유지됩니다. 디버프 해제로 제거할 수 있습니다.",
+  true_damage: "피격 즉시 스킬 피해와 별개로, 맞은 캐릭터의 방어력과 피해 감소를 무시하는 고정 피해를 줍니다. 보호막은 먼저 흡수합니다.",
+};
+
 function SettingSelect({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) {
   return <div className="flex min-w-0 flex-col gap-1.5 text-xs text-ivory/85">
     <span>{label}</span>
@@ -80,7 +92,7 @@ type SkillFormEntry = {
   environment_id: string;
   environment_stack_count: string;
   on_hit_dot: boolean;
-  on_hit_effect: "dot" | "stat";
+  on_hit_effect: EnemyOnHitEffect;
   debuff_direction: "increase" | "decrease";
   debuff_color: string;
   dot_name: string;
@@ -1060,15 +1072,15 @@ export default function EnemyTab() {
                       <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.on_hit_dot} onChange={(event) => updateSkill(idx, "on_hit_dot", event.target.checked)} />피격 대상에게 디버프 부여</label>
                       {skill.on_hit_dot && <>
                         <label className="block text-xs">디버프 이름<Input required value={skill.dot_name} onChange={(event) => updateSkill(idx, "dot_name", event.target.value)} /></label>
-                        <SettingSelect label="디버프 효과" value={skill.on_hit_effect} options={[["dot", "턴마다 고정 피해"], ["stat", "상세 능력치 변경"]]} onChange={(value) => updateSkill(idx, "on_hit_effect", value as SkillFormEntry["on_hit_effect"])} />
-                        {skill.on_hit_effect === "dot" ? <label className="block text-xs">턴마다 고정 피해<Input type="number" min={1} required value={skill.dot_damage} onChange={(event) => updateSkill(idx, "dot_damage", event.target.value)} /></label> : <>
+                        <SettingSelect label="디버프 효과" value={skill.on_hit_effect} options={ON_HIT_EFFECT_OPTIONS} onChange={(value) => updateSkill(idx, "on_hit_effect", value as EnemyOnHitEffect)} />
+                        {skill.on_hit_effect !== "stat" ? <label className="block text-xs">{skill.on_hit_effect === "dot" ? "턴마다 고정 피해" : "방어 무시 피해"}<Input type="number" min={1} required value={skill.dot_damage} onChange={(event) => updateSkill(idx, "dot_damage", event.target.value)} /></label> : <>
                           <SettingSelect label="변경할 상세 능력치" value={skill.debuff_stat} options={EFFECT_STATS} onChange={(value) => updateSkill(idx, "debuff_stat", value)} />
                           <SettingSelect label="증가 / 감소" value={skill.debuff_direction} options={[["decrease", "감소"], ["increase", "증가"]]} onChange={(value) => updateSkill(idx, "debuff_direction", value as SkillFormEntry["debuff_direction"])} />
                           <label className="block text-xs">변경량 {EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1].includes("%") ? "(%)" : "(수치)"}<Input type="number" min={0} step="any" required value={skill.debuff_amount} onChange={(event) => updateSkill(idx, "debuff_amount", event.target.value)} /></label>
                           <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.debuff_stackable} onChange={(event) => updateSkill(idx, "debuff_stackable", event.target.checked)} />중첩 허용</label>
                         </>}
-                        <label className="flex items-center gap-2 text-xs">스택 표시색<input type="color" aria-label="피격 디버프 스택 표시색" value={skill.debuff_color} onChange={(event) => updateSkill(idx, "debuff_color", event.target.value)} /></label>
-                        <p className="text-xs text-muted">{skill.on_hit_effect === "dot" ? "다음 적의 행동 암시부터 매 턴 피해를 입습니다. 같은 스킬은 중첩되지 않습니다." : "피격 직후 능력치가 변경되며 해제될 때까지 유지됩니다."} 디버프 해제로 제거할 수 있습니다.</p>
+                        {skill.on_hit_effect !== "true_damage" && <label className="flex items-center gap-2 text-xs">스택 표시색<input type="color" aria-label="피격 디버프 스택 표시색" value={skill.debuff_color} onChange={(event) => updateSkill(idx, "debuff_color", event.target.value)} /></label>}
+                        <p className="text-xs text-muted">{ON_HIT_EFFECT_HELP[skill.on_hit_effect]}</p>
                       </>}
                     </div>
                   )}
