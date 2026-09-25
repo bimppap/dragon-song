@@ -8,6 +8,7 @@ import Modal from "@/components/common/Modal";
 import { Button } from "@/components/ui/button";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import { cn } from "@/lib/utils";
+import { isAdminRole, useAuth } from "@/lib/auth";
 import CharacterSlot from "./CharacterSlot";
 import {
   fetchCharacterCardDetails,
@@ -42,6 +43,9 @@ interface Props {
  * 칸 수는 복제 기술의 depth를 따르고, 커서를 올리면 저장한 기술을 확인할 수 있다.
  */
 export default function CharacterClonedSkills({ characterId, readOnly = false }: Props) {
+  const { member } = useAuth();
+  // 러너에게 공개된 관리자 캐릭터는 열람만 할 수 있으므로 복제 대상으로 고를 수 없다.
+  const canCloneAdminCharacters = member != null && isAdminRole(member.role);
   const [data, setData] = useState<ClonedSkills | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [editingSlot, setEditingSlot] = useState<number | null>(null);
@@ -85,7 +89,7 @@ export default function CharacterClonedSkills({ characterId, readOnly = false }:
       );
       setCandidates(
         characters
-          .filter((character) => character.id !== characterId)
+          .filter((character) => character.id !== characterId && (canCloneAdminCharacters || character.member_id !== null))
           .flatMap((character) => {
             const skill = skillByCharacter.get(character.id);
             if (!skill || isCloneSkill(skill)) return [];

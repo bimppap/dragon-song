@@ -190,6 +190,9 @@ class Character(Base):
     caution: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     warning_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
 
+    # 관리자가 만든 캐릭터(러너 계정 미연결)를 러너에게 보여줄지. 공개해도 러너는 정보 카드만 볼 수 있다.
+    is_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
+
     # "정령석 커스텀 기능 해방" 아이템을 쓰면 켜진다. 보유한 정령석의 이름·이미지·설명을 직접 바꿀 수 있다.
     spirit_stone_custom_unlocked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
 

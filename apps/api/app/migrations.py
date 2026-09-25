@@ -109,6 +109,8 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN caution BOOLEAN NOT NULL DEFAULT false")
     if "warning_count" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN warning_count INTEGER NOT NULL DEFAULT 0")
+    if "is_public" not in character_columns:
+        statements.append("ALTER TABLE characters ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT false")
     if "spirit_stone_custom_unlocked" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN spirit_stone_custom_unlocked BOOLEAN NOT NULL DEFAULT false")
     if "trait_change_tickets" not in character_columns:

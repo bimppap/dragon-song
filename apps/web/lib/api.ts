@@ -608,6 +608,9 @@ export interface Character {
   caution: boolean | null;
   warning_count: number | null;
 
+  /** 관리자가 만든 캐릭터를 러너에게 공개했는지. 공개해도 러너는 정보 카드만 볼 수 있다. */
+  is_public: boolean;
+
   image_url: string | null;
 }
 
@@ -872,7 +875,7 @@ export async function updateCharacterFlags(
   return character;
 }
 
-export async function patchAdminCharacter(characterId: number, data: { lv?: number; faction?: Faction; stats?: Record<string, number | boolean> }): Promise<CharacterDetail> {
+export async function patchAdminCharacter(characterId: number, data: { lv?: number; faction?: Faction; is_public?: boolean; stats?: Record<string, number | boolean> }): Promise<CharacterDetail> {
   const detail = await request<CharacterDetail>(`/characters/${characterId}/admin`, { method: "PATCH", body: JSON.stringify(data) }, "캐릭터 수정 실패");
   invalidateApiCache("characters:");
   return detail;

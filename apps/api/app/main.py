@@ -278,7 +278,7 @@ def update_character(
 
 @app.patch("/characters/{character_id}/admin", response_model=CharacterDetailRead)
 def patch_admin_character(character_id: int, data: AdminCharacterUpdate, member: Member = Depends(require_admin), db: Session = Depends(get_db)):
-    return crud.patch_admin_character(db, character_id, data.lv, data.stats, data.faction)
+    return crud.patch_admin_character(db, character_id, data.lv, data.stats, data.faction, data.is_public)
 
 
 @app.put("/characters/{character_id}/admin/skill/{node_id}", response_model=CharacterDetailRead)
@@ -307,12 +307,12 @@ def get_character(
     member: Member = Depends(get_current_member),
     db: Session = Depends(get_db),
 ):
+    _require_visible_character(db, member, character_id)
     detail = crud.get_character_detail(db, character_id)
     if not is_admin_role(member.role):
         detail = crud.scrub_admin_only_stats(detail)
-        # 다른 캐릭터를 조회할 때는 보상·구매 이력을 숨긴다.
         if crud.get_member_character_id(db, member.id) != character_id:
-            detail = detail.model_copy(update={"reward_history": [], "item_history": []})
+            detail = crud.scrub_other_character_detail(detail)
     return detail
 
 
@@ -718,6 +718,15 @@ def bulk_purchase(data: BulkPurchaseRequest, member: Member = Depends(get_curren
 def _require_own_character_or_admin(db: Session, member: Member, character_id: int) -> None:
     if not is_admin_role(member.role) and crud.get_member_character_id(db, member.id) != character_id:
         raise HTTPException(status_code=403, detail="본인 캐릭터에만 사용할 수 있습니다.")
+
+
+def _require_visible_character(db: Session, member: Member, character_id: int) -> None:
+    """러너에게는 공개하지 않은 관리자 캐릭터를 없는 캐릭터처럼 다룬다."""
+    if is_admin_role(member.role):
+        return
+    character = db.get(Character, character_id)
+    if character is not None and character.member_id is None and not character.is_public:
+        raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
 
 
 @app.post("/characters/{character_id}/items/{item_id}/use", response_model=CharacterDetailRead)
@@ -1572,6 +1581,7 @@ def get_character_skills(
     db: Session = Depends(get_db),
 ):
     """다른 러너의 캐릭터라도 열람은 누구나 가능하다(강화/이름/이미지 변경만 본인 캐릭터로 제한)."""
+    _require_visible_character(db, member, character_id)
     # 관리자·스텝은 다른 캐릭터의 기술을 제한 없이 고를 수 있어야 하므로 비공개 노드까지 드러낸다.
     # 다만 본인 캐릭터는 러너와 똑같이 다뤄야 하므로(스텝), 자기 캐릭터에는 적용하지 않는다.
     reveal = is_admin_role(member.role) and crud.get_member_character_id(db, member.id) != character_id
@@ -1611,6 +1621,7 @@ def get_character_cloned_skills(
     db: Session = Depends(get_db),
 ):
     """복제 슬롯 수와 저장해 둔 아군 기술 목록. 다른 러너의 캐릭터도 열람은 누구나 가능하다."""
+    _require_visible_character(db, member, character_id)
     return crud.get_character_cloned_skills(db, character_id)
 
 

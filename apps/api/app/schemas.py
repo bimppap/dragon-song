@@ -312,6 +312,7 @@ class AdminCharacterUpdate(BaseModel):
     model_config = {"extra": "forbid"}
     lv: int | None = Field(default=None, ge=1, le=MAX_CHARACTER_LEVEL)
     faction: Faction | None = None
+    is_public: bool | None = None
     stats: dict[str, float | bool] = Field(default_factory=dict)
 
 
@@ -430,6 +431,9 @@ class CharacterRead(BaseModel):
     # 관리자 전용 관리 플래그 (RUNNER 조회 시 null 처리됨)
     caution: bool | None = None
     warning_count: int | None = None
+
+    # 관리자가 만든 캐릭터를 러너에게 공개했는지
+    is_public: bool = False
 
     image_url: str | None = None
 

@@ -10,6 +10,8 @@ import {
   ChevronsUp,
   ChevronUp,
   Coins,
+  Eye,
+  EyeOff,
   Flame,
   Gauge,
   Gem,
@@ -1284,6 +1286,16 @@ export default function CharacterInfo({
   }
 
   const canAdminEdit = adminMode && !readOnly && selectedDetail?.member_id === null;
+  // 러너가 공개된 관리자 캐릭터를 볼 때는 정보 카드만 보여준다(보유 아이템·임무·도전과제 제외).
+  const cardOnly = readOnly && selectedDetail?.member_id === null;
+
+  async function toggleVisibility() {
+    if (!selectedDetail) return;
+    setAdminSaving(true);
+    try { setDetail(await patchAdminCharacter(selectedDetail.id, { is_public: !selectedDetail.is_public })); }
+    catch (error) { toast(error instanceof Error ? error.message : "공개 여부 변경 실패", "error"); }
+    finally { setAdminSaving(false); }
+  }
 
   async function saveAdminFaction(nextFaction: Faction) {
     if (!selectedDetail) return;
@@ -1511,6 +1523,14 @@ export default function CharacterInfo({
                       </Badge>
                     )}
                     {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
+                    {canAdminEdit && (
+                      <Button type="button" size="sm" variant={selectedDetail.is_public ? "cta" : "outline"} className="gap-1.5"
+                        aria-pressed={selectedDetail.is_public} disabled={adminSaving} onClick={() => void toggleVisibility()}
+                        title="공개하면 러너도 이 캐릭터의 정보 카드를 볼 수 있습니다. 보유 아이템·임무·도전과제·이력은 보이지 않습니다.">
+                        {selectedDetail.is_public ? <Eye size={14} /> : <EyeOff size={14} />}
+                        {selectedDetail.is_public ? "러너에게 공개" : "비공개"}
+                      </Button>
+                    )}
                   </div>
                 </div>
 
@@ -1660,6 +1680,7 @@ export default function CharacterInfo({
             </CardContent>
           </Card>
 
+          {!cardOnly && <>
           <Card>
             <CardHeader className="flex flex-row items-center justify-between gap-3">
               <CardTitle>보유 중인 아이템</CardTitle>
@@ -1764,6 +1785,7 @@ export default function CharacterInfo({
               </CardContent>
             </Card>
           </div>
+          </>}
 
           {canViewHistory && <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
             <Card>

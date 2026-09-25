@@ -490,6 +490,7 @@ def _character_read_kwargs(character: Character) -> dict:
         over_heal=character.over_heal,
         caution=character.caution,
         warning_count=character.warning_count,
+        is_public=character.is_public,
         image_url=character.image_url,
     )
 
@@ -503,6 +504,22 @@ def scrub_admin_only_stats(character_read: CharacterRead) -> CharacterRead:
         "caution": None,
         "warning_count": None,
     })
+
+
+def scrub_other_character_detail(detail: CharacterDetailRead) -> CharacterDetailRead:
+    """러너가 남의 캐릭터를 볼 때 감출 정보를 지운다.
+
+    보상·구매 이력은 늘 감춘다. 공개된 관리자 캐릭터는 정보 카드만 보여주므로 달성한 임무·도전과제와
+    보유 아이템도 감추되, 카드 슬롯에 보이는 장착 중인 동반자·장신구는 남긴다.
+    """
+    update: dict = {"reward_history": [], "item_history": []}
+    if detail.member_id is None:
+        update.update(
+            owned_items=[item for item in detail.owned_items if item.equipped],
+            achieved_missions=[],
+            achieved_challenges=[],
+        )
+    return detail.model_copy(update=update)
 
 
 def _to_character_read(character: Character) -> CharacterRead:
@@ -708,7 +725,9 @@ def _get_admin_character(db: Session, character_id: int) -> Character:
     return character
 
 
-def patch_admin_character(db: Session, character_id: int, lv: int | None, stats: dict, faction: str | None = None) -> CharacterDetailRead:
+def patch_admin_character(
+    db: Session, character_id: int, lv: int | None, stats: dict, faction: str | None = None, is_public: bool | None = None,
+) -> CharacterDetailRead:
     character = _get_admin_character(db, character_id)
     allowed = set(CharacterCreate.model_fields) - {"name", "faction", "skill_node_ids", "initialize_growth", "lv"}
     normalized = {"def_" if key == "def" else key: value for key, value in stats.items()}
@@ -740,6 +759,8 @@ def patch_admin_character(db: Session, character_id: int, lv: int | None, stats:
                 _apply_grade_choice(character, [stat], 1, sign=difference)
     for key in normalized.keys() - set(GRADE_STAT_FIELDS):
         setattr(character, key, getattr(validated, key))
+    if is_public is not None:
+        character.is_public = is_public
     db.commit()
     return get_character_detail(db, character_id)
 
@@ -762,11 +783,14 @@ def get_characters(db: Session) -> list[CharacterRead]:
 
 
 def get_characters_visible_to_runner(db: Session) -> list[CharacterRead]:
-    """러너 화면에 노출할 캐릭터 목록(러너/스텝 캐릭터만, 관리자 캐릭터·미연결 캐릭터는 제외)."""
+    """러너 화면에 노출할 캐릭터 목록(러너/스텝 캐릭터와 공개된 관리자 생성 캐릭터).
+
+    관리자 계정의 캐릭터와 공개하지 않은 관리자 생성 캐릭터는 제외한다.
+    """
     characters = (
         db.query(Character)
-        .join(Member, Character.member_id == Member.id)
-        .filter(Member.role.in_(["RUNNER", "STAFF"]))
+        .outerjoin(Member, Character.member_id == Member.id)
+        .filter(Member.role.in_(["RUNNER", "STAFF"]) | (Character.member_id.is_(None) & Character.is_public.is_(True)))
         .order_by(Character.name.asc(), Character.id.asc())
         .all()
     )
@@ -776,7 +800,7 @@ def get_characters_visible_to_runner(db: Session) -> list[CharacterRead]:
 def get_character_card_details(db: Session, *, admin: bool = False) -> list[CharacterCardDetailsRead]:
     query = db.query(Character)
     if not admin:
-        query = query.filter(Character.member_id.is_not(None))
+        query = query.filter(Character.member_id.is_not(None) | Character.is_public.is_(True))
     characters = query.order_by(Character.id).all()
     if not characters:
         return []
