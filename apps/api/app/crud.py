@@ -91,6 +91,7 @@ from app.schemas import (
     MissionProgressBulkUpdate,
     MissionProgressRead,
     MissionUpdate,
+    NaverCafePostRead,
     NaverSessionRead,
     NoncombatHealResult,
     PurchaseRead,
@@ -2611,7 +2612,7 @@ def pay_attendance_rewards(db: Session) -> AttendanceRewardPayResult:
 
 
 NAVER_SESSION_ID = 1
-NAVER_ATTENDANCE_CLUB_ID = "31734615"
+NAVER_CAFE_ID = "31734615"
 NAVER_ATTENDANCE_MENU_ID = "21"
 NAVER_USER_AGENT = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -2660,24 +2661,48 @@ def update_naver_session(db: Session, nid_aut: str, nid_ses: str) -> NaverSessio
     return _to_naver_session_read(session)
 
 
-async def _fetch_naver_attendance_html(nid_aut: str, nid_ses: str, target_date: date) -> str:
-    """네이버 카페 출석부의 특정 날짜 페이지를 쿠키 세션으로 직접 요청한다(브라우저 없이 순수 HTTP GET).
+def _require_naver_session(db: Session) -> NaverSession:
+    session = get_naver_session(db)
+    if not session.nid_aut or not session.nid_ses:
+        raise HTTPException(status_code=400, detail="등록된 네이버 세션 쿠키가 없습니다.")
+    return session
+
+
+def _naver_client(session: NaverSession) -> httpx.Client:
+    """저장된 쿠키 세션으로 네이버 카페에 요청하는 클라이언트(브라우저 없이 순수 HTTP).
+
+    네이버 요청 함수는 모두 동기 함수라서, FastAPI가 스레드풀에서 실행해 DB·HTTP 대기가
+    전투 WebSocket을 돌리는 이벤트 루프를 막지 않는다.
+    """
+    return httpx.Client(
+        timeout=15,
+        cookies={"NID_AUT": session.nid_aut, "NID_SES": session.nid_ses},
+        headers={"User-Agent": NAVER_USER_AGENT},
+    )
+
+
+def _record_naver_session_check(db: Session, session: NaverSession, is_valid: bool) -> None:
+    session.is_valid = is_valid
+    session.last_checked_at = now_kst()
+    db.commit()
+
+
+def _fetch_naver_attendance_html(session: NaverSession, target_date: date) -> str:
+    """네이버 카페 출석부의 특정 날짜 페이지를 요청한다.
 
     출석부는 EUC-KR(KSC5601)로 응답하므로 그렇게 디코딩한다.
     """
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
+        with _naver_client(session) as client:
+            resp = client.get(
                 "https://cafe.naver.com/AttendanceView.nhn",
                 params={
-                    "search.clubid": NAVER_ATTENDANCE_CLUB_ID,
+                    "search.clubid": NAVER_CAFE_ID,
                     "search.menuid": NAVER_ATTENDANCE_MENU_ID,
                     "search.attendyear": f"{target_date.year:04d}",
                     "search.attendmonth": f"{target_date.month:02d}",
                     "search.attendday": f"{target_date.day:02d}",
                 },
-                cookies={"NID_AUT": nid_aut, "NID_SES": nid_ses},
-                headers={"User-Agent": NAVER_USER_AGENT},
             )
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"네이버 카페 요청 실패: {exc}")
@@ -2696,31 +2721,21 @@ def _extract_attendance_names(html: str) -> list[str]:
     return re.findall(r'class="p-nick">.*?class="link_text"[^>]*>([^<]+)</a>', html, re.DOTALL)
 
 
-async def check_naver_session(db: Session) -> NaverSessionRead:
+def check_naver_session(db: Session) -> NaverSessionRead:
     """저장된 쿠키로 실제 출석부에 접근해 로그인 세션이 살아있는지 검사한다."""
-    session = get_naver_session(db)
-    if not session.nid_aut or not session.nid_ses:
-        raise HTTPException(status_code=400, detail="등록된 네이버 세션 쿠키가 없습니다.")
-
-    html = await _fetch_naver_attendance_html(session.nid_aut, session.nid_ses, _today())
-    session.is_valid = _is_logged_in_attendance_page(html)
-    session.last_checked_at = now_kst()
-    db.commit()
+    session = _require_naver_session(db)
+    html = _fetch_naver_attendance_html(session, _today())
+    _record_naver_session_check(db, session, _is_logged_in_attendance_page(html))
     db.refresh(session)
     return _to_naver_session_read(session)
 
 
-async def run_auto_attendance(db: Session, target_date: date) -> AutoAttendanceResult:
+def run_auto_attendance(db: Session, target_date: date) -> AutoAttendanceResult:
     """네이버 출석부에서 target_date 출석자 이름을 가져와 DB 캐릭터 이름과 대조해
     출석 미처리 캐릭터는 출석 처리하고, 보상 미지급 캐릭터는 보상을 지급한다."""
-    session = get_naver_session(db)
-    if not session.nid_aut or not session.nid_ses:
-        raise HTTPException(status_code=400, detail="등록된 네이버 세션 쿠키가 없습니다.")
-
-    html = await _fetch_naver_attendance_html(session.nid_aut, session.nid_ses, target_date)
-    session.is_valid = _is_logged_in_attendance_page(html)
-    session.last_checked_at = now_kst()
-    db.commit()
+    session = _require_naver_session(db)
+    html = _fetch_naver_attendance_html(session, target_date)
+    _record_naver_session_check(db, session, _is_logged_in_attendance_page(html))
 
     if not session.is_valid:
         raise HTTPException(
@@ -2800,6 +2815,89 @@ async def run_auto_attendance(db: Session, target_date: date) -> AutoAttendanceR
             AutoAttendanceCharacterResult(character_id=c.id, character_name=c.name) for c in newly_rewarded
         ],
     )
+
+
+NAVER_CAFE_BOARD_PAGE_SIZE = 50  # 게시판 목록 API가 한 페이지에 돌려주는 최대 글 수(더 크게 주면 15개로 되돌아간다)
+NAVER_CAFE_BOARD_MAX_PAGES = 20
+
+
+def _fetch_naver_cafe_board_page(client: httpx.Client, menu_id: int, page: int) -> dict:
+    try:
+        resp = client.get(
+            f"https://apis.naver.com/cafe-web/cafe-boardlist-api/v1/cafes/{NAVER_CAFE_ID}/menus/{menu_id}/articles",
+            params={"page": page, "pageSize": NAVER_CAFE_BOARD_PAGE_SIZE, "sortBy": "TIME", "viewType": "L"},
+        )
+        return resp.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=f"네이버 카페 요청 실패: {exc}")
+
+
+def fetch_naver_cafe_posts(
+    db: Session,
+    menu_id: int,
+    *,
+    start_article_id: int | None = None,
+    end_article_id: int | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+) -> list[NaverCafePostRead]:
+    """게시판(menu_id)에서 글번호 범위 또는 작성 시각 범위 안의 글을 글번호 오름차순으로 돌려준다.
+
+    목록은 최신 글부터 오므로 페이지를 넘기다가 범위 시작보다 앞선 글이 나오면 멈춘다.
+    """
+    by_article = start_article_id is not None and end_article_id is not None
+    by_time = start_at is not None and end_at is not None
+    if by_article == by_time:
+        raise HTTPException(status_code=400, detail="글번호 범위와 작성 시각 범위 중 하나만 시작·종료를 모두 입력해주세요.")
+    start, end = (start_article_id, end_article_id) if by_article else (_as_kst(start_at), _as_kst(end_at))
+    if menu_id <= 0:
+        raise HTTPException(status_code=400, detail="게시판 menuid를 확인해주세요.")
+    if start > end:
+        raise HTTPException(status_code=400, detail="범위 시작이 종료보다 뒤에 있습니다.")
+
+    session = _require_naver_session(db)
+    posts: list[NaverCafePostRead] = []
+    with _naver_client(session) as client:
+        # 여러 페이지를 넘기는 동안 DB 커넥션을 붙잡지 않도록 읽기 트랜잭션을 닫는다.
+        db.rollback()
+        for page in range(1, NAVER_CAFE_BOARD_MAX_PAGES + 1):
+            data = _fetch_naver_cafe_board_page(client, menu_id, page)
+            error = data.get("error")
+            if error:
+                # 세션이 만료되면 멤버 전용 카페라서 들어갈 수 없다는 오류가 온다.
+                if error.get("reason") == "ONLY_ACCESSIBLE_CAFE_MEMBER":
+                    _record_naver_session_check(db, session, False)
+                    raise HTTPException(
+                        status_code=502,
+                        detail="네이버 세션이 만료되어 게시판을 불러올 수 없습니다. 쿠키를 다시 등록해주세요.",
+                    )
+                raise HTTPException(status_code=502, detail=f"네이버 카페 게시판 조회 실패: {error.get('message') or error}")
+
+            entries = data["result"]["articleList"]
+            key = None
+            for entry in entries:
+                if entry.get("type") != "ARTICLE":
+                    continue
+                article = entry["item"]
+                key = article["articleId"] if by_article else datetime.fromtimestamp(article["writeDateTimestamp"] / 1000, KST)
+                if start <= key <= end:
+                    posts.append(NaverCafePostRead(
+                        article_id=article["articleId"],
+                        head_name=article.get("headName") or None,
+                        writer_name=article["writerInfo"]["nickName"],
+                    ))
+            # 한 페이지를 다 채우지 못했으면 마지막 페이지다. 최신 글부터 오므로
+            # 이 페이지의 가장 오래된 글이 범위보다 앞서도 더 넘길 필요가 없다.
+            if len(entries) < NAVER_CAFE_BOARD_PAGE_SIZE or (key is not None and key < start):
+                break
+            if page == NAVER_CAFE_BOARD_MAX_PAGES:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"게시판을 {NAVER_CAFE_BOARD_MAX_PAGES}페이지까지 넘겨도 범위 시작에 닿지 않았습니다. 범위를 좁혀주세요.",
+                )
+
+    _record_naver_session_check(db, session, True)
+    return sorted(posts, key=lambda post: post.article_id)
 
 
 def get_attendance_streak_ranking(db: Session) -> list[AttendanceStreakEntry]:

@@ -80,6 +80,7 @@ from app.schemas import (
     MissionProgressRead,
     MissionRead,
     MissionUpdate,
+    NaverCafePostRead,
     NaverSessionRead,
     NaverSessionUpdate,
     NoncombatHealRequest,
@@ -141,12 +142,14 @@ app.add_middleware(
 KST = timezone(timedelta(hours=9))
 
 
-async def _run_daily_auto_attendance_job() -> None:
-    """매일 00:10(KST)에 전날 출석부를 크롤링해 미처리 캐릭터를 출석·보상 처리한다."""
+def _run_daily_auto_attendance_job() -> None:
+    """매일 00:10(KST)에 전날 출석부를 크롤링해 미처리 캐릭터를 출석·보상 처리한다.
+
+    동기 함수라서 스케줄러가 스레드에서 실행해 이벤트 루프를 막지 않는다."""
     target_date = (datetime.now(KST) - timedelta(days=1)).date()
     db = SessionLocal()
     try:
-        result = await crud.run_auto_attendance(db, target_date)
+        result = crud.run_auto_attendance(db, target_date)
         print(
             f"[auto-attendance] {target_date} 처리 완료: "
             f"출석 {len(result.newly_checked_in)}명, 보상 {len(result.newly_rewarded)}명"
@@ -418,13 +421,34 @@ def get_attendance_streak_ranking(
 
 
 @app.post("/attendance/auto-run", response_model=AutoAttendanceResult)
-async def run_auto_attendance(
+def run_auto_attendance(
     attendance_date: date,
     member: Member = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
     """네이버 출석부에서 attendance_date 출석자를 가져와 미처리 캐릭터를 출석·보상 처리한다."""
-    return await crud.run_auto_attendance(db, attendance_date)
+    return crud.run_auto_attendance(db, attendance_date)
+
+
+@app.get("/naver-cafe/menus/{menu_id}/posts", response_model=list[NaverCafePostRead])
+def list_naver_cafe_posts(
+    menu_id: int,
+    start_article_id: int | None = None,
+    end_article_id: int | None = None,
+    start_at: datetime | None = None,
+    end_at: datetime | None = None,
+    member: Member = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """전투 게시판에서 글번호 또는 작성 시각 범위 안의 글을 가져온다(전투 행동 자동 지정용)."""
+    return crud.fetch_naver_cafe_posts(
+        db,
+        menu_id,
+        start_article_id=start_article_id,
+        end_article_id=end_article_id,
+        start_at=start_at,
+        end_at=end_at,
+    )
 
 
 @app.get("/admin/naver-session", response_model=NaverSessionRead)
@@ -445,11 +469,11 @@ def update_naver_session(
 
 
 @app.post("/admin/naver-session/check", response_model=NaverSessionRead)
-async def check_naver_session(
+def check_naver_session(
     member: Member = Depends(require_owner_admin),
     db: Session = Depends(get_db),
 ):
-    return await crud.check_naver_session(db)
+    return crud.check_naver_session(db)
 
 
 @app.post("/items", response_model=ItemRead)

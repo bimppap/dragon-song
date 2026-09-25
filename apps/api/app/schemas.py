@@ -1352,6 +1352,12 @@ class AutoAttendanceResult(BaseModel):
     newly_rewarded: list[AutoAttendanceCharacterResult]
 
 
+class NaverCafePostRead(BaseModel):
+    article_id: int
+    head_name: str | None  # 말머리. 말머리가 없는 글은 None
+    writer_name: str
+
+
 TIER_LABELS = {0: "기본", 1: "1단계", 2: "2단계", 3: "3단계", 4: "4단계", 5: "5단계", 6: "6단계"}
 
 

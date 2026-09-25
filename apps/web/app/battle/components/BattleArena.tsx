@@ -65,6 +65,7 @@ import BattleRewardCard from "./BattleRewardCard";
 import BattleLogEvent from "./BattleLogEvent";
 import BattleRoundMetricsTable from "./BattleRoundMetricsTable";
 import BattlePairGrid from "./BattlePairGrid";
+import CafeActionImport from "./CafeActionImport";
 import { QuotedDescription } from "@/components/skill/SkillTreeGrid";
 import { skillBookAccent } from "@/components/skill/bookAccent";
 import EnemyAttackArrows, { enemyAttackColor, type EnemyAttackMark } from "./EnemyAttackArrows";
@@ -139,6 +140,23 @@ function defaultCharKind(faction: string | null, mp: number): CharacterActionKin
   if (faction === "수비") return "defend";
   if (faction === "치유") return mp >= 1 ? "heal" : "none";
   return "attack";
+}
+
+/** 마나 1이 드는 행동(치유, 다른 캐릭터 보호)을 할 수 있는지. 평화 특성은 마나 없이도 할 수 있다. */
+function canSpendOneMp(p: BattleParticipant, mp = p.mp): boolean {
+  return mp >= 1 || p.trait?.rules?.kind === "peace";
+}
+
+function sameDraftValue(a: unknown, b: unknown): boolean {
+  return a === b || (Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((value, index) => value === b[index]));
+}
+
+/** 받은 초안 패치를 반영한다. 값이 모두 같으면(내가 보낸 패치의 에코 등) 이전 객체를 돌려줘 다시 그리지 않는다. */
+function withDraftPatch<T extends object>(drafts: Record<number, T>, entityId: number, patch: Partial<T>): Record<number, T> {
+  const draft = drafts[entityId];
+  if (!draft) return drafts;
+  const changed = (Object.keys(patch) as (keyof T)[]).some((key) => !sameDraftValue(draft[key], patch[key]));
+  return changed ? { ...drafts, [entityId]: { ...draft, ...patch } } : drafts;
 }
 
 function isActive(p: BattleParticipant): boolean {
@@ -1021,17 +1039,9 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
       });
     } else if (msg.type === "draft_patch") {
       if (msg.draft_type === "character") {
-        setCharDrafts((previous) => {
-          const draft = previous[msg.entity_id];
-          if (!draft) return previous;
-          return { ...previous, [msg.entity_id]: { ...draft, ...(msg.patch as Partial<CharDraft>) } };
-        });
+        setCharDrafts((previous) => withDraftPatch(previous, msg.entity_id, msg.patch as Partial<CharDraft>));
       } else {
-        setTelegraphDrafts((previous) => {
-          const draft = previous[msg.entity_id];
-          if (!draft) return previous;
-          return { ...previous, [msg.entity_id]: { ...draft, ...(msg.patch as Partial<TelegraphDraft>) } };
-        });
+        setTelegraphDrafts((previous) => withDraftPatch(previous, msg.entity_id, msg.patch as Partial<TelegraphDraft>));
       }
     }
   });
@@ -1193,7 +1203,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         if (battleSkills == null) continue;
         const hasBattleSkills = battleSkills.length > 0;
         const kinds = allowedKinds(participant, hasDowned, hasBattleSkills);
-        if (!kinds.includes(draft.kind) || (draft.kind === "heal" && participant.mp < 1 && participant.trait?.rules?.kind !== "peace")) {
+        if (!kinds.includes(draft.kind) || (draft.kind === "heal" && !canSpendOneMp(participant))) {
           next[participant.character_id] = {
             ...draft,
             kind: defaultCharKind(participant.faction, participant.mp),
@@ -1206,7 +1216,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           draft.kind === "defend"
           && draft.protect_target_character_id != null
           && draft.protect_target_character_id !== participant.character_id
-          && participant.mp < 1 && participant.trait?.rules?.kind !== "peace"
+          && !canSpendOneMp(participant)
         ) {
           next[participant.character_id] = { ...draft, protect_target_character_id: participant.character_id };
           changed = true;
@@ -1424,28 +1434,50 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
     if (!readOnly && hasItemDraft) loadDraftItems();
   }, [readOnly, hasItemDraft, session?.updated_at]);
 
+  /**
+   * 이번 턴에 고를 수 있는 행동이면 그 행동으로 바꾸는 초안 패치를, 아니면 null을 돌려준다.
+   * 기술은 skillNodeId를 주지 않으면 쓸 수 있는 첫 기술을 고른다. 아이템 목록은 hasItemDraft 효과가 불러온다.
+   */
+  function characterActionPatch(characterId: number, kind: CharacterActionKind, skillNodeId?: number): Partial<CharDraft> | null {
+    const draft = charDrafts[characterId];
+    const p = participantsById.get(characterId);
+    if (!draft || !p) return null;
+    const battleSkills = skillsByCharacter[characterId] ?? [];
+    if (!allowedKinds(p, hasDowned, battleSkills.length > 0).includes(kind)) return null;
+    const usable = withUsableMp(p);
+    if (kind === "heal" && !canSpendOneMp(usable)) return null;
+    const affordableSkills = affordableBattleSkills(battleSkills, usable);
+    if (kind === "skill" && affordableSkills.length === 0) return null;
+    if (kind !== "skill") {
+      return {
+        kind,
+        protect_target_character_id: kind === "defend" ? characterId : draft.protect_target_character_id ?? characterId,
+        item_id: kind === "item" ? draft.item_id : null,
+      };
+    }
+    return {
+      kind,
+      skill_node_id: skillNodeId ?? firstBattleSkillId(affordableSkills),
+      skill_target_keys: [],
+      target_enemy_id: targetableEnemies[0]?.enemy_id ?? null,
+      target_character_id: characterId,
+      item_id: null,
+    };
+  }
+
+  /** 캐릭터별 행동을 초안에 반영하고, 이번 턴에 고를 수 없어 건너뛴 행동을 돌려준다. */
+  function applyCharacterActions<T extends { character_id: number; kind: CharacterActionKind }>(actions: T[]): T[] {
+    const rejected: T[] = [];
+    for (const action of actions) {
+      const patch = characterActionPatch(action.character_id, action.kind);
+      if (patch) patchChar(action.character_id, patch);
+      else rejected.push(action);
+    }
+    return rejected;
+  }
+
   function applyBulkCharacterAction() {
-    if (!session) return;
-    const hasDowned = session.participants.some((p) => p.downed);
-    for (const [characterId, draft] of Object.entries(charDrafts)) {
-      const numericCharacterId = Number(characterId);
-      const p = participantsById.get(numericCharacterId);
-      const battleSkills = skillsByCharacter[numericCharacterId] ?? [];
-      if (!p || !allowedKinds(p, hasDowned, battleSkills.length > 0).includes(bulkActionKind)) continue;
-      const affordableSkills = affordableBattleSkills(battleSkills, withUsableMp(p));
-      if (bulkActionKind === "skill" && affordableSkills.length === 0) continue;
-      patchChar(numericCharacterId, {
-        kind: bulkActionKind,
-        skill_target_keys: [],
-        skill_node_id: bulkActionKind === "skill" ? firstBattleSkillId(affordableSkills) : draft.skill_node_id,
-        target_character_id: bulkActionKind === "skill" ? numericCharacterId : draft.target_character_id,
-        protect_target_character_id: bulkActionKind === "defend" ? numericCharacterId : draft.protect_target_character_id,
-        item_id: bulkActionKind === "item" ? draft.item_id : null,
-      });
-    }
-    if (bulkActionKind === "item") {
-      void ensureItemsLoaded();
-    }
+    applyCharacterActions(Object.keys(charDrafts).map((characterId) => ({ character_id: Number(characterId), kind: bulkActionKind })));
   }
 
   async function handleSubmitTelegraph() {
@@ -2111,6 +2143,15 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         </div>
       )}
 
+      {canAct && phase === "ally" && (
+        <CafeActionImport
+          sessionId={session.id}
+          actors={targetableParticipants}
+          disabled={!skillsReady}
+          onApply={applyCharacterActions}
+        />
+      )}
+
       <div className="flex flex-wrap items-center justify-end gap-2">
         <span className="text-xs font-semibold text-muted">캐릭터 정렬</span>
         <div className="flex flex-wrap rounded-lg border border-line bg-inset p-1" role="group" aria-label="캐릭터 정렬">
@@ -2327,7 +2368,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   onChange={(value) => patchChar(p.character_id, { protect_target_character_id: Number(value) })}
                   options={targetableParticipants.map((target) => {
                     const isSelf = target.character_id === p.character_id;
-                    const disabled = !isSelf && usableMp < 1 && p.trait?.rules?.kind !== "peace";
+                    const disabled = !isSelf && !canSpendOneMp(p, usableMp);
                     return {
                       key: String(target.character_id),
                       label: isSelf ? "본인" : disabled ? `${target.name} (MP 부족)` : target.name,
@@ -2348,20 +2389,9 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   value={draft?.kind === "skill" && selectedSkill ? `skill:${selectedSkill.id}` : draft?.kind}
                   onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
                   onValueChange={(value) => {
-                    const kind = (value.startsWith("skill:") ? "skill" : value) as CharacterActionKind;
-                    const nextPatch: Partial<CharDraft> = {
-                      kind,
-                      item_id: kind === "item" ? draft?.item_id ?? null : null,
-                      protect_target_character_id: kind === "defend" ? p.character_id : draft?.protect_target_character_id ?? p.character_id,
-                    };
-                    if (kind === "skill") {
-                      nextPatch.skill_node_id = Number(value.slice("skill:".length));
-                      nextPatch.skill_target_keys = [];
-                      nextPatch.target_enemy_id = targetableEnemies[0]?.enemy_id ?? null;
-                      nextPatch.target_character_id = p.character_id;
-                    }
-                    patchChar(p.character_id, nextPatch);
-                    if (kind === "item") void ensureItemsLoaded();
+                    const skillNodeId = value.startsWith("skill:") ? Number(value.slice("skill:".length)) : undefined;
+                    const patch = characterActionPatch(p.character_id, skillNodeId != null ? "skill" : value as CharacterActionKind, skillNodeId);
+                    if (patch) patchChar(p.character_id, patch);
                   }}
                 >
                   <SelectTrigger className={cn("h-auto min-h-8 w-full [&>span]:line-clamp-none [&>span]:whitespace-normal [&>span]:break-words [&>span]:text-left",
@@ -2378,7 +2408,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                           </SelectItem>
                         ));
                         const skillUnavailable = kind === "skill" && affordableSkills.length === 0;
-                        const healUnavailable = kind === "heal" && usableMp < 1 && p.trait?.rules?.kind !== "peace";
+                        const healUnavailable = kind === "heal" && !canSpendOneMp(p, usableMp);
                         const unavailable = skillUnavailable || healUnavailable;
                         return (
                           <SelectItem key={kind} value={kind} disabled={unavailable}>

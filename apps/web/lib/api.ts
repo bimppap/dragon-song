@@ -833,6 +833,17 @@ export interface AutoAttendanceResult {
   newly_rewarded: AutoAttendanceCharacterResult[];
 }
 
+export interface NaverCafePost {
+  article_id: number;
+  head_name: string | null;
+  writer_name: string;
+}
+
+/** 전투 게시판에서 가져올 글 범위. 글번호 또는 작성 시각(ISO 문자열) 중 하나로 지정한다. */
+export type NaverCafePostRange =
+  | { start_article_id: number; end_article_id: number }
+  | { start_at: string; end_at: string };
+
 export interface CartItem {
   item_id: number;
   quantity: number;
@@ -962,6 +973,11 @@ export async function updateNaverSession(nidAut: string, nidSes: string): Promis
 
 export async function checkNaverSession(): Promise<NaverSession> {
   return request<NaverSession>("/admin/naver-session/check", { method: "POST" }, "네이버 세션 만료 검사 실패");
+}
+
+export async function fetchNaverCafePosts(menuId: number, range: NaverCafePostRange): Promise<NaverCafePost[]> {
+  const params = new URLSearchParams(Object.entries(range).map(([key, value]) => [key, String(value)]));
+  return request<NaverCafePost[]>(`/naver-cafe/menus/${menuId}/posts?${params}`, undefined, "네이버 카페 게시판 조회 실패");
 }
 
 export async function fetchItems(character_id?: number): Promise<Item[]> {
