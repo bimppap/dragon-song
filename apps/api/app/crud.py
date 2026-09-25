@@ -7410,10 +7410,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 damage, damage_formula = _damage_from_skill_power(p, skill_power, skill_eff_fixed)
-                _apply_damage_attn(p, damage * len(targets))
+                total_dealt = 0
                 for target_kind, target in targets:
                     if target_kind == "summon":
                         dealt, overkill = _apply_damage_to_summon(target, damage)
+                        total_dealt += dealt
                         summon_name = _summon_log_name(target)
                         events.append(
                             f"✨ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
@@ -7426,6 +7427,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     else:
                         weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
                         dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
+                        total_dealt += dealt
                         events.append(
                             f"✨ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
@@ -7434,6 +7436,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
                             events.append(f"💀 {target['name']} 격파")
+                _apply_damage_attn(p, total_dealt)
                 continue
 
             if var_name == "ab_crushing":
@@ -7444,11 +7447,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 damage, damage_formula = _damage_from_skill_power(p, skill_power, skill_eff_fixed)
-                total_damage_for_attn = 0
+                total_dealt = 0
                 for target_kind, target in targets:
-                    total_damage_for_attn += damage
                     if target_kind == "summon":
                         dealt, overkill = _apply_damage_to_summon(target, damage)
+                        total_dealt += dealt
                         summon_name = _summon_log_name(target)
                         events.append(
                             f"🌊 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
@@ -7462,6 +7465,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
 
                     weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
                     dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
+                    total_dealt += dealt
                     events.append(
                         f"🌊 {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
                         f"[{target['hp']}/{target['max_hp']}]"
@@ -7486,8 +7490,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             participants=participants,
                             enemies=enemies,
                         )
-                if total_damage_for_attn > 0:
-                    _apply_damage_attn(p, total_damage_for_attn)
+                _apply_damage_attn(p, total_dealt)
                 continue
 
             if var_name == "ab_enchant":
@@ -7506,10 +7509,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 damage_formula = (
                     f"max(0, floor({base_formula} + 기술 효율 고정 {_formula_number(p['skill_eff_true'])}))"
                 )
-                _apply_damage_attn(p, damage * len(targets))
+                total_dealt = 0
                 for target_kind, target in targets:
                     if target_kind == "summon":
                         dealt, overkill = _apply_damage_to_summon(target, damage)
+                        total_dealt += dealt
                         summon_name = _summon_log_name(target)
                         events.append(
                             f"💉 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
@@ -7521,6 +7525,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     else:
                         weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
                         dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
+                        total_dealt += dealt
                         events.append(
                             f"💉 {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
@@ -7528,6 +7533,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
                             events.append(f"💀 {target['name']} 격파")
+                _apply_damage_attn(p, total_dealt)
                 # 자신에게 공격력 버프를 중첩한다.
                 buff_power = _skill_power_value(selected_skill, "attack_buff", 2.0)
                 buff_formula = f"(자애 {p['stat_charity']} + 지혜 {p['stat_wisdom']}) × {_formula_number(buff_power)}"
@@ -7619,10 +7625,11 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     continue
                 _spend_skill_cost(p, selected_skill)
                 damage, damage_formula = _damage_from_skill_power(p, skill_power, skill_eff_fixed)
-                _apply_damage_attn(p, damage * len(targets))
+                total_dealt = 0
                 for target_kind, target in targets:
                     if target_kind == "summon":
                         dealt, overkill = _apply_damage_to_summon(target, damage)
+                        total_dealt += dealt
                         summon_name = _summon_log_name(target)
                         events.append(
                             f"☠️ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
@@ -7635,6 +7642,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     else:
                         weaken_damage, weaken_formula = _apply_weaken_amp(target, damage, damage_formula)
                         dealt, overkill = _apply_damage_to_enemy(target, weaken_damage)
+                        total_dealt += dealt
                         events.append(
                             f"☠️ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
@@ -7661,6 +7669,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                                 enemies=enemies,
                             )
                             events.append(f"　↳ {target['name']}에게 지속 피해가 누적됩니다.")
+                _apply_damage_attn(p, total_dealt)
                 continue
 
             if var_name == "ab_anvil":
@@ -8080,14 +8089,14 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     f"(1 + 피해 증폭 {_formula_number(damage_amp)}))"
                 )
             dmg = max(0, _floor_amount(raw))
-            attn_mult = 4 if p["faction"] == "수비" else 1
-            p["attn"] += _floor_amount(dmg * attn_mult * (1 + p["presence"]))
 
             all_targets = _all_skill_targets(selected_skill, participants, enemies, summons, round_no, active_only=True) if action.kind == "skill" else None
             if all_targets is not None:
+                total_dealt = 0
                 for kind, target in all_targets:
                     target_damage, target_formula = _apply_weaken_amp(target, dmg, damage_formula)
                     dealt, overkill = _apply_damage_to_enemy(target, target_damage)
+                    total_dealt += dealt
                     name = f"하수인 {_summon_log_name(target)}" if kind == "summon" else target["name"]
                     events.append(f"⚔️ {p['name']}의 {selected_skill['display_name']} → {name} {dealt} 피해 [{target['hp']}/{target['max_hp']}]")
                     calculations[events[-1]] = f"min({target_formula}, 남은 체력 {target['hp'] + dealt})"
@@ -8097,11 +8106,13 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             events.append(f"💫 {name} 기절")
                         else:
                             events.append(f"💀 {name} {'처치' if kind == 'summon' else '격파'}")
+                _apply_damage_attn(p, total_dealt)
                 continue
 
             target_summon = next((summon for summon in summons if summon["hp"] > 0), None)
             if target_summon is not None:
                 dealt, overkill = _apply_damage_to_summon(target_summon, dmg)
+                _apply_damage_attn(p, dealt)
                 target_summon_name = _summon_log_name(target_summon)
                 action_label = (
                     f"{p['name']}의 {selected_skill['display_name']}"
@@ -8122,6 +8133,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             dealt = min(dmg, target_enemy["hp"])
             overkill = dmg > target_enemy["hp"]
             target_enemy["hp"] = max(0, target_enemy["hp"] - dmg)
+            _apply_damage_attn(p, dealt)
             action_label = (
                 f"{p['name']}의 {selected_skill['display_name']}"
                 if action.kind == "skill" and selected_skill is not None
