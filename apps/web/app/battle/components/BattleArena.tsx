@@ -790,6 +790,11 @@ function describePendingAction(
   return `예고: ${skill.name} → ${targetLabel} (${enemySkillSummary(enemy, skill, environmentsById)})`;
 }
 
+/** 피격 디버프 '방어 무시 피해'로 기술 피해와 별개로 더 들어가는 고정 피해. 없으면 0. */
+function enemySkillTrueDamage(skill: EnemySkill): number {
+  return skill.on_hit_dot && skill.on_hit_effect === "true_damage" ? Math.max(1, skill.dot_damage ?? 1) : 0;
+}
+
 /** 에너미 공격 기술이 대상에게 주는 효과를 짧게 요약한다. */
 function enemySkillSummary(
   enemy: BattleEnemyState,
@@ -803,8 +808,8 @@ function enemySkillSummary(
       : "환경";
     return `${environmentName} +${skill.environment_stack_count ?? 1}스택`;
   }
-  const trueDamage = skill.on_hit_dot && skill.on_hit_effect === "true_damage" ? ` + 방어 무시 ${fmt(skill.dot_damage ?? 1)}` : "";
-  return `예상 피해 ${fmt(Math.floor((enemy.attack * skill.damage_percent) / 100))}${trueDamage}`;
+  const trueDamage = enemySkillTrueDamage(skill);
+  return `예상 피해 ${fmt(Math.floor((enemy.attack * skill.damage_percent) / 100))}${trueDamage ? ` + 방어 무시 ${fmt(trueDamage)}` : ""}`;
 }
 
 interface TargetOption {
@@ -2050,6 +2055,9 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                               </SelectGroup>
                             </SelectContent>
                           </Select>
+                          {draft.kind === "attack" && (selectedSkill?.skill_type === "지정 공격" || selectedSkill?.skill_type === "광역 공격") && (
+                            <span className="text-xs text-amber-300">{enemySkillSummary(enemy, selectedSkill, environmentsById)}</span>
+                          )}
                           {enemyDraft.actions.length > 1 && (
                             <div className="flex gap-1">
                               <Button size="sm" variant="outline" disabled={actionIndex === 0} aria-label={`${enemy.name} ${actionIndex + 1}번째 행동 앞으로`} onClick={() => moveTelegraphAction(enemy.enemy_id, actionIndex, -1)}>앞으로</Button>

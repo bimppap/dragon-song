@@ -103,6 +103,7 @@ class EnemyEffectsTest(unittest.TestCase):
     def test_on_hit_true_damage_ignores_defense_and_damage_reduction(self):
         battle, events = self.true_damage_hit(**{"def": 1000, "dmg_r": 0.5})
 
+        self.assertIn("이번 차례 공격 대상 : A / 예상 피해 : 10 + 방어 무시 7", events)
         self.assertEqual(battle.participants[0]["hp"], 93)  # 기술 피해는 방어력에 막혀 0, 방어 무시 피해 7만 들어간다
         self.assertEqual(battle.participants[0]["status_effects"], [])
         self.assertIn("💥 에너미의 관통 → A 7 방어 무시 피해 · [93/100]", events)

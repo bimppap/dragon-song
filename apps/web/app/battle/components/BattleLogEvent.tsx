@@ -43,9 +43,11 @@ function formulaFor(
   event: string,
   kind: NumberKind,
   session: Pick<BattleSession, "enemies" | "participants">,
-  previousEvent?: string,
+  previousEvent: string | undefined,
+  start: number,
 ): string | null {
-  if (kind === "damage" && event.includes("예상 피해") && previousEvent) {
+  // "예상 피해 : 10 + 방어 무시 7"에서 계산식은 기술 피해(10)에만 붙인다.
+  if (kind === "damage" && event.slice(0, start).endsWith("예상 피해 : ") && previousEvent) {
     const action = previousEvent.match(/^🔮\s+(.+?)\s+-\s+(.+)$/);
     const enemy = action ? session.enemies.find((candidate) => candidate.name === action[1]) : undefined;
     const skill = enemy?.skills.find((candidate) => candidate.name === action?.[2]);
@@ -157,7 +159,7 @@ export default function BattleLogEvent({
       : null;
     if (isCalcNumber) calculationIndex += 1;
     const formula = showFormula && shouldShowFormula(event, value, kind, isCalcNumber)
-      ? storedCalculation ?? formulaFor(event, kind, session, previousEvent)
+      ? storedCalculation ?? formulaFor(event, kind, session, previousEvent, start)
       : null;
     const hasFormulaTooltip = formula !== null;
     const number = (

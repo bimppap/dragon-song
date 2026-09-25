@@ -4875,6 +4875,13 @@ def _enemy_skill_is_aoe(skill: dict) -> bool:
     return skill.get("skill_type") == "광역 공격" and not skill.get("manual_target_count", False)
 
 
+def _enemy_skill_true_damage(skill: dict) -> int:
+    """피격 디버프 '방어 무시 피해'로 기술 피해와 별개로 더 들어가는 고정 피해. 없으면 0."""
+    if not skill.get("on_hit_dot") or skill.get("on_hit_effect") != "true_damage":
+        return 0
+    return max(1, int(skill.get("dot_damage", 1)))
+
+
 def _select_enemy_skill_targets(
     participants: list[dict],
     *,
@@ -6816,7 +6823,9 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 events.append(f"이번 차례 환경 대상 : {target_label} / {environment.name} +{stack_delta}")
             else:
                 base = _floor_amount(enemy["attack"] * skill["damage_percent"] / 100)
-                events.append(f"이번 차례 공격 대상 : {target_label} / 예상 피해 : {base}")
+                true_damage = _enemy_skill_true_damage(skill)
+                true_damage_note = f" + 방어 무시 {true_damage}" if true_damage else ""
+                events.append(f"이번 차례 공격 대상 : {target_label} / 예상 피해 : {base}{true_damage_note}")
             pending_actions.append({
                 "enemy_id": enemy["enemy_id"], "kind": "attack",
                 "skill_index": action.skill_index, "target_character_ids": target_ids,
@@ -8672,9 +8681,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     f"{f'(보호막 {absorbed} 흡수)' if absorbed > 0 else ''} · {recipient['name']} [{recipient['hp']}/{recipient['max_hp']}]"
                 )
                 calculations[events[-1]] = damage_formula
-                if on_hit_effect == "true_damage" and _combatant_active(recipient) and recipient["hp"] > 0:
+                true_damage = _enemy_skill_true_damage(skill)
+                if true_damage and _combatant_active(recipient) and recipient["hp"] > 0:
                     # 기술 피해와 별개로, 실제로 맞은 캐릭터의 방어력·피해 감소를 무시하는 고정 피해를 준다(보호막은 흡수).
-                    true_damage = max(1, int(skill.get("dot_damage", 1)))
                     shield_before = recipient["shield"]
                     dealt, absorbed_true = _apply_hit(recipient, true_damage)
                     events.append(
