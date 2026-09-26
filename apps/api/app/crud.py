@@ -7151,11 +7151,18 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             return [target for target in _explicit_skill_targets(keys, initial_healable_candidates, count) if _healable(target, round_no)]
         return sorted(healable, key=lambda target: (target["hp"], -target["attn"], target["name"]))[:count]
 
+    # 이번 시전에서 이전 시전의 비중첩 효과를 이미 지운 (시전자, 기술) 목록. 행동마다 비운다.
+    cast_replaced_effects: set[tuple] = set()
+
     def _add_action_status_effect(target: dict, effect: dict, *, participants: list[dict], enemies: list[dict]) -> bool:
-        # 전원 기술 한 번의 적용 중 다른 대상에게 방금 건 비중첩 효과를 지우지 않는다.
-        if (selected_skill or {}).get("target") in ALL_SKILL_TARGETS:
+        # 한 번의 시전 중 다른 대상에게 방금 건 비중첩 효과를 지우지 않는다(전원 기술, 분배 등으로 늘어난 대상).
+        key = (effect.get("source_character_id"), effect.get("var_name"))
+        if (selected_skill or {}).get("target") in ALL_SKILL_TARGETS or key in cast_replaced_effects:
             return _add_status_effect(target, effect, participants=[target], enemies=[])
-        return _add_status_effect(target, effect, participants=participants, enemies=enemies)
+        applied = _add_status_effect(target, effect, participants=participants, enemies=enemies)
+        if applied:
+            cast_replaced_effects.add(key)
+        return applied
 
     def _selected_skill(actor: dict, action: CharacterActionInput) -> dict | None:
         available = battle_skills_by_character.get(actor["character_id"], {})
@@ -7290,6 +7297,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             _flush_battle_revive_events(participants, events)
 
     for _priority, _order_index, p, action, selected_skill in queued_actions:
+        cast_replaced_effects.clear()
         _flush_mp_note()
         _finish_pending_recast()
         _finish_trait_skills()

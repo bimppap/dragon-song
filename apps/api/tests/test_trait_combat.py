@@ -135,6 +135,25 @@ class TraitCombatTest(unittest.TestCase):
         self.assertTrue(all(e["hp"] < 1000 for e in result.enemies))
         self.assertAlmostEqual(result.participants[0]["skill_eff_fixed"], -.1)
 
+    def test_distribution_keeps_non_stackable_effects_on_every_target(self):
+        # 비중첩 효과도 한 번의 시전에서 늘어난 대상 모두에게 남고, 다음 시전은 이전 시전분만 교체한다.
+        self.skill.var_name, self.skill.default_name, self.skill.target_side = "ab_curse", "저주 I", "ENEMY"
+        self.db.commit()
+        self.equip("distribution")
+        battle = self.battle(3)
+        cursed = lambda result: [sum(e.get("var_name") == "ab_curse" for e in enemy["status_effects"])
+                                 for enemy in result.enemies]
+        self.assertEqual(cursed(self.act(battle, skill_target_keys=["enemy:1", "enemy:2"])), [1, 1, 0])
+        self.assertEqual(cursed(self.act(battle, skill_target_keys=["enemy:2", "enemy:3"])), [0, 1, 1])
+
+        self.skill.var_name, self.skill.default_name, self.skill.target_side = "ab_counter", "반격 I", "ALLY"
+        self.db.commit()
+        crud.invalidate_active_battle_skills_cache()
+        keys = [f"ally:{self.actor.id}", f"ally:{self.ally.id}"]
+        result = self.act(battle, skill_target_keys=keys)
+        self.assertEqual([sum(e.get("var_name") == "ab_counter" for e in p["status_effects"])
+                          for p in result.participants], [1, 1])
+
     def test_distribution_and_charge_clone_skills_exclude_each_other(self):
         charge = SkillNode(book="탐구의 서", branch=2, col=0, tier=1, default_name="충전",
                            trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",
