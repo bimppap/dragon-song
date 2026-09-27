@@ -751,9 +751,19 @@ export interface Reward {
   created_at: string;
 }
 
+/** 이미 상점에서 사서 임무 보상에서 뺀 아이템(기술 서적 등). */
+export interface SkippedRewardItem {
+  character_id: number;
+  character_name: string;
+  item_id: number;
+  item_name: string;
+  quantity: number;
+}
+
 export interface RewardPayResult {
   paid_count: number;
   rewards: Reward[];
+  skipped_items: SkippedRewardItem[];
 }
 
 export interface HealerCandidate {

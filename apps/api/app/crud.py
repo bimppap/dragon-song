@@ -100,6 +100,7 @@ from app.schemas import (
     RewardRead,
     RewardWithCharacterRead,
     SettlementCreate,
+    SkippedRewardItem,
     SettlementPayRequest,
     SettlementRead,
     SettlementTargetRead,
@@ -3774,17 +3775,38 @@ def pay_mission_rewards(db: Session, mission_id: int, *, character_ids: set[int]
         {item.id: item for item in db.query(Item).filter(Item.id.in_(item_ids)).all()}
         if item_ids else {}
     )
+    # 이 임무 보상을 받으면 살 수 없게 한 아이템(기술 서적 등)은, 먼저 상점에서 산 캐릭터에게 보상으로 또 주지 않는다.
+    exclusive_item_ids = [item.id for item in items_map.values() if item.restricted_mission_id == mission_id]
+    bought_pairs = set(
+        db.query(Purchase.character_id, Purchase.item_id)
+        .filter(Purchase.source == "shop", Purchase.character_id.in_(to_pay), Purchase.item_id.in_(exclusive_item_ids))
+        .group_by(Purchase.character_id, Purchase.item_id)
+        .having(func.sum(Purchase.quantity) > 0)
+        .all()
+    ) if exclusive_item_ids else set()
 
     created_rewards: list[Reward] = []
+    skipped_items: list[SkippedRewardItem] = []
     for character_id in to_pay:
         character = characters.get(character_id)
         if not character:
             continue
 
+        item_grants = []
+        for grant in item_grant_list:
+            if grant.get("type", "item") == "item" and (character_id, grant.get("item_id")) in bought_pairs:
+                item = items_map[grant["item_id"]]
+                skipped_items.append(SkippedRewardItem(
+                    character_id=character_id, character_name=character.name,
+                    item_id=item.id, item_name=item.name, quantity=grant.get("quantity", 1),
+                ))
+            else:
+                item_grants.append(grant)
+
         reward_items: list[dict] = []
         _apply_stat_rewards(mission, character, reward_items)
         _apply_reward_stat_grants(item_grant_list, character, reward_items)
-        _apply_item_grants(db, item_grant_list, items_map, character_id, reward_items)
+        _apply_item_grants(db, item_grants, items_map, character_id, reward_items)
 
         reward = Reward(
             type="mission",
@@ -3802,7 +3824,7 @@ def pay_mission_rewards(db: Session, mission_id: int, *, character_ids: set[int]
     rewards_read = [_to_reward_read(r, item_names) for r in created_rewards]
     if commit:
         db.commit()
-    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read)
+    return RewardPayResult(paid_count=len(rewards_read), rewards=rewards_read, skipped_items=skipped_items)
 
 
 # ── Chapter ───────────────────────────────────────────────────────────────────
@@ -9734,6 +9756,7 @@ def grant_character_reward_batch(db: Session, character_id: int, kind: str, sour
     if not ids or len(sources) != len(ids):
         raise HTTPException(status_code=400, detail="유효한 보상을 선택해 주세요.")
     rewards = []
+    skipped_items = []
     try:
         for source_id in sorted(ids):
             filters = {"character_id": character_id, f"{kind}_id": source_id}
@@ -9744,12 +9767,14 @@ def grant_character_reward_batch(db: Session, character_id: int, kind: str, sour
             progress.achieved = True
             db.flush()
             pay = pay_mission_rewards if kind == "mission" else pay_challenge_rewards
-            rewards.extend(pay(db, source_id, character_ids={character_id}, commit=False).rewards)
+            result = pay(db, source_id, character_ids={character_id}, commit=False)
+            rewards.extend(result.rewards)
+            skipped_items.extend(result.skipped_items)
         db.commit()
     except Exception:
         db.rollback()
         raise
-    return RewardPayResult(paid_count=len(rewards), rewards=rewards)
+    return RewardPayResult(paid_count=len(rewards), rewards=rewards, skipped_items=skipped_items)
 
 
 def get_character_paid_source_ids(db: Session, character_id: int, kind: str) -> list[int]:

@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { fetchCharacters, fetchCharacterPaidSourceIds, grantCharacterRewardBatch } from "@/lib/api";
 import type { Character, Item, Mission, Challenge, RewardGrant } from "@/lib/api";
 import RewardSummary from "./RewardSummary";
+import SkippedRewardItems from "./SkippedRewardItems";
 import { useToast } from "./ToastProvider";
 import { useDialog } from "./DialogProvider";
 
@@ -22,7 +23,7 @@ export default function CharacterRewardBatch({ kind, sources, items }: {
   kind: "mission" | "challenge"; sources: (Mission | Challenge)[]; items: Item[];
 }) {
   const { toast } = useToast();
-  const { confirm } = useDialog();
+  const { confirm, alert } = useDialog();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [characterId, setCharacterId] = useState("");
   const [chapter, setChapter] = useState("all");
@@ -76,7 +77,13 @@ export default function CharacterRewardBatch({ kind, sources, items }: {
       const result = await grantCharacterRewardBatch(character.id, kind, selected);
       setPaid((prev) => new Set([...prev, ...selected]));
       setSelected([]);
-      toast(`${character.name}에게 ${result.paid_count}개 보상을 지급했습니다.`, "success");
+      const message = `${character.name}에게 ${result.paid_count}개 보상을 지급했습니다.`;
+      if (result.skipped_items.length > 0) {
+        void alert({ title: `${label} 보상 지급 완료`, description: message,
+          content: <SkippedRewardItems items={result.skipped_items} />, maxWidthClassName: "max-w-md" });
+      } else {
+        toast(message, "success");
+      }
     } catch (error) {
       toast(error instanceof Error ? error.message : "보상 지급 실패", "error");
       setReload((value) => value + 1);

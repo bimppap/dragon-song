@@ -279,9 +279,19 @@ class RewardRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class SkippedRewardItem(BaseModel):
+    """이미 상점에서 사서 임무 보상에서 뺀 아이템(기술 서적 등)."""
+    character_id: int
+    character_name: str
+    item_id: int
+    item_name: str
+    quantity: int
+
+
 class RewardPayResult(BaseModel):
     paid_count: int
     rewards: list[RewardRead]
+    skipped_items: list[SkippedRewardItem] = Field(default_factory=list)
 
 
 class HealerCandidateRead(BaseModel):

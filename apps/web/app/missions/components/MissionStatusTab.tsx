@@ -42,6 +42,8 @@ import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
 import RewardSummary from "@/components/common/RewardSummary";
 import { useToast } from "@/components/common/ToastProvider";
+import { useDialog } from "@/components/common/DialogProvider";
+import SkippedRewardItems from "@/components/common/SkippedRewardItems";
 import CharacterRewardBatch from "@/components/common/CharacterRewardBatch";
 import { useEditableProgressList } from "@/lib/useEditableProgressList";
 
@@ -51,6 +53,7 @@ function statusCardNameFontSize(name: string): number {
 
 export default function MissionStatusTab() {
   const { toast } = useToast();
+  const { alert } = useDialog();
   const [missions, setMissions] = useState<Mission[]>([]);
   const [items, setItems] = useState<Item[]>([]);
   const [selectedChapter, setSelectedChapter] = useState("");
@@ -178,7 +181,17 @@ export default function MissionStatusTab() {
         if (m.reward_defense > 0) parts.push(`방어력 +${m.reward_defense}`);
         if (m.reward_items?.length > 0) parts.push(`구성 보상 ${m.reward_items.length}종`);
         const desc = parts.length > 0 ? `(${parts.join(", ")})` : "";
-        toast(`${result.paid_count}명에게 임무 보상${desc}이 지급되었습니다.`, "success");
+        const message = `${result.paid_count}명에게 임무 보상${desc}이 지급되었습니다.`;
+        if (result.skipped_items.length > 0) {
+          void alert({
+            title: "임무 보상 지급 완료",
+            description: message,
+            content: <SkippedRewardItems items={result.skipped_items} />,
+            maxWidthClassName: "max-w-md",
+          });
+        } else {
+          toast(message, "success");
+        }
       }
     } catch (e) {
       toast(e instanceof Error ? e.message : "임무 보상 지급에 실패했습니다.", "error");

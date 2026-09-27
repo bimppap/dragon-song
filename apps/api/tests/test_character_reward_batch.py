@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from app import crud
 from app.db import Base
-from app.models import Character, Mission, Challenge, MissionProgress, ChallengeProgress, Reward
+from app.models import Character, Item, Mission, Challenge, MissionProgress, ChallengeProgress, Purchase, Reward
 
 
 class CharacterRewardBatchTest(unittest.TestCase):
@@ -67,3 +67,46 @@ class CharacterRewardBatchTest(unittest.TestCase):
         self.assertEqual(self.character.gold, 0)
         self.assertEqual(self.db.query(Reward).count(), 0)
         self.assertEqual(self.db.query(progress).filter_by(character_id=self.character.id).count(), 0)
+
+    def test_mission_skips_skill_book_already_bought_in_shop(self):
+        mission = Mission(chapter="1장", name="운구", description="", reward="", reward_gold=10)
+        self.db.add(mission)
+        self.db.flush()
+        book = Item(name="기술 서적 Ⅱ", price_gold=15, purchase_limit_per_character=1, restricted_mission_id=mission.id)
+        potion = Item(name="회복약", price_gold=5)
+        self.db.add_all([book, potion])
+        self.db.flush()
+        mission.reward_items = [{"type": "item", "item_id": book.id, "quantity": 1},
+                                {"type": "item", "item_id": potion.id, "quantity": 1}]
+        # 상점에서 산 기술 서적만 빼고, 같은 임무의 다른 보상과 사지 않은 캐릭터 몫은 그대로 준다.
+        self.db.add_all([Purchase(character_id=self.character.id, item_id=book.id, quantity=1, source="shop"),
+                         Purchase(character_id=self.character.id, item_id=potion.id, quantity=1, source="shop"),
+                         MissionProgress(mission_id=mission.id, character_id=self.other.id, achieved=True),
+                         MissionProgress(mission_id=mission.id, character_id=self.character.id, achieved=True)])
+        self.db.commit()
+
+        result = crud.pay_mission_rewards(self.db, mission.id)
+        owned = lambda character, item: crud._sum_quantity(self.db, item.id, character.id)
+        self.assertEqual(result.paid_count, 2)
+        self.assertEqual([(s.character_name, s.item_name, s.quantity) for s in result.skipped_items], [("대상", "기술 서적 Ⅱ", 1)])
+        self.assertEqual((owned(self.character, book), owned(self.character, potion)), (1, 2))
+        self.assertEqual((owned(self.other, book), owned(self.other, potion)), (1, 1))
+        self.assertEqual((self.character.gold, self.other.gold), (10, 10))
+        rewarded = self.db.query(Reward).filter_by(character_id=self.character.id).one().reward_items
+        self.assertEqual([entry.get("item_id") for entry in rewarded if entry["type"] == "item"], [potion.id])
+
+    def test_character_batch_reports_skipped_skill_book(self):
+        mission = Mission(chapter="1장", name="상호 발전", description="", reward="")
+        self.db.add(mission)
+        self.db.flush()
+        book = Item(name="기술 서적 Ⅲ", price_gold=20, restricted_mission_id=mission.id)
+        self.db.add(book)
+        self.db.flush()
+        mission.reward_items = [{"type": "item", "item_id": book.id, "quantity": 1}]
+        self.db.add(Purchase(character_id=self.character.id, item_id=book.id, quantity=1, source="shop"))
+        self.db.commit()
+
+        result = crud.grant_character_reward_batch(self.db, self.character.id, "mission", [mission.id])
+        self.assertEqual(result.paid_count, 1)
+        self.assertEqual([s.item_name for s in result.skipped_items], ["기술 서적 Ⅲ"])
+        self.assertEqual(crud._sum_quantity(self.db, book.id, self.character.id), 1)
