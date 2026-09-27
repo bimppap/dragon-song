@@ -154,6 +154,18 @@ class TraitCombatTest(unittest.TestCase):
         self.assertEqual([sum(e.get("var_name") == "ab_counter" for e in p["status_effects"])
                           for p in result.participants], [1, 1])
 
+    def test_undo_turn_removes_status_effects_applied_to_enemies(self):
+        # 턴 되돌리기는 그 턴에 에너미에게 건 약화(중첩 포함)까지 턴 시작 상태로 되돌린다.
+        self.skill.var_name, self.skill.default_name, self.skill.stackable = "ab_curse", "저주 I", True
+        self.db.commit()
+        battle = self.battle()
+        self.act(battle, target_enemy_id=1)
+        self.assertEqual(len(self.act(battle, target_enemy_id=1).enemies[0]["status_effects"]), 2)
+        restored = crud.undo_last_turn(self.db, battle.id)
+        self.assertEqual(len(restored.enemies[0]["status_effects"]), 1)
+        restored = crud.undo_last_turn(self.db, battle.id)
+        self.assertEqual(restored.enemies[0]["status_effects"], [])
+
     def test_distribution_and_charge_clone_skills_exclude_each_other(self):
         charge = SkillNode(book="탐구의 서", branch=2, col=0, tier=1, default_name="충전",
                            trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",

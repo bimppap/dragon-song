@@ -6663,13 +6663,14 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
             raise HTTPException(status_code=400, detail=f"{enemy['name']}: 행동횟수에 맞춰 스킬 {expected}개를 순서대로 선택해 주세요.")
 
     # "이전 턴 다시 진행하기"를 위해 이 턴의 행동이 반영되기 전 상태를 남겨둔다(모의전도 동일).
+    # 버프·약화 목록은 이번 턴에 제자리에서 바뀌므로 깊은 복사해야 되돌렸을 때 남지 않는다.
     session.round_snapshots = list(session.round_snapshots) + [{
         "round": round_no,
         "phase": "telegraph",
         "participants": copy.deepcopy(participants),
-        "enemies": [dict(e) for e in enemies],
-        "summons": [dict(s) for s in summons],
-        "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
+        "enemies": copy.deepcopy(enemies),
+        "summons": copy.deepcopy(summons),
+        "pending_enemy_actions": copy.deepcopy(list(session.pending_enemy_actions)),
         "item_usages": [],
     }]
 
@@ -6931,14 +6932,15 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         _ensure_enemy_snapshot_defaults(enemy)
 
     # "이전 턴 다시 진행하기"를 위해 이 턴의 행동이 반영되기 전 상태를 남겨둔다(모의전도 동일).
+    # 버프·약화 목록은 이번 턴에 제자리에서 바뀌므로 깊은 복사해야 되돌렸을 때 남지 않는다.
     # 아이템 사용 내역(turn_item_usages)은 아래 처리 중에 채워지므로, 완성된 뒤 함수 끝에서 append한다.
     turn_snapshot = {
         "round": round_no,
         "phase": "ally",
         "participants": copy.deepcopy(participants),
-        "enemies": [dict(e) for e in enemies],
-        "summons": [dict(s) for s in summons],
-        "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
+        "enemies": copy.deepcopy(enemies),
+        "summons": copy.deepcopy(summons),
+        "pending_enemy_actions": copy.deepcopy(list(session.pending_enemy_actions)),
     }
     turn_item_usages: list[dict] = []
     events: list[str] = ["🗡️ 조사단의 행동!"]
@@ -8463,13 +8465,14 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         _ensure_enemy_snapshot_defaults(enemy)
 
     # "이전 턴 다시 진행하기"를 위해 이 턴의 행동이 반영되기 전 상태를 남겨둔다(모의전도 동일).
+    # 버프·약화 목록은 이번 턴에 제자리에서 바뀌므로 깊은 복사해야 되돌렸을 때 남지 않는다.
     session.round_snapshots = list(session.round_snapshots) + [{
         "round": round_no,
         "phase": "enemy",
         "participants": copy.deepcopy(participants),
-        "enemies": [dict(e) for e in enemies],
-        "summons": [dict(s) for s in summons],
-        "pending_enemy_actions": [dict(a) for a in session.pending_enemy_actions],
+        "enemies": copy.deepcopy(enemies),
+        "summons": copy.deepcopy(summons),
+        "pending_enemy_actions": copy.deepcopy(list(session.pending_enemy_actions)),
         "item_usages": [],
     }]
 
