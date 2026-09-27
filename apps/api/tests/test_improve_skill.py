@@ -93,6 +93,28 @@ class ImproveSkillTest(unittest.TestCase):
         # 강타는 기술 효율 고정을 쓰지 않으므로 비례 보정만 반영된다: floor(10 × (1.5 × (1 + 0.30))) = 19
         self.assertIn("19 피해", strike_event)
 
+    def test_inquiry_skill_goes_first_within_same_activation_order(self):
+        """발동 순서가 같으면 참가 순서가 뒤여도 탐구의 서 기술(개선)이 먼저 적용된다."""
+        self.improve.activation_order = self.strike.activation_order
+        self.battle.participants = list(reversed(self.battle.participants))
+        self.db.commit()
+        result = self._resolve([
+            CharacterActionInput(
+                character_id=self.target.id, kind="skill",
+                skill_node_id=self.strike.id, target_enemy_id=1,
+            ),
+            CharacterActionInput(
+                character_id=self.caster.id, kind="skill",
+                skill_node_id=self.improve.id, target_character_id=self.target.id,
+            ),
+        ])
+        events = result.log[-1]["events"]
+        improve_index = next(i for i, e in enumerate(events) if e.startswith("📈 개선가의 개선 II"))
+        strike_index = next(i for i, e in enumerate(events) if e.startswith("✨ 검사의"))
+        self.assertLess(improve_index, strike_index)
+        # 개선이 먼저 걸려 강타가 보정을 받는다.
+        self.assertIn("19 피해", events[strike_index])
+
     def test_improve_bonus_expires_after_round(self):
         result = self._resolve([
             CharacterActionInput(
