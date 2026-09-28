@@ -115,6 +115,66 @@ class ImproveSkillTest(unittest.TestCase):
         # 개선이 먼저 걸려 강타가 보정을 받는다.
         self.assertIn("19 피해", events[strike_index])
 
+    def _learn_inquiry_skill(self, name, var_name, **fields):
+        character = Character(name=name, faction="치유", hp=100, hp_max=100, mp=10, mp_max=10, skill_eff_fixed=0.1)
+        self.db.add(character)
+        self.db.flush()
+        node = SkillNode(
+            book="탐구의 서", col=1, tier=2, default_name=name, trigger_type="즉발형", stackable=False,
+            var_name=var_name, target="1", activation_order=1, is_public=True, **fields,
+        )
+        self.db.add(node)
+        self.db.flush()
+        self.db.add(CharacterSkillUnlock(character_id=character.id, node_id=node.id))
+        return character, node
+
+    def test_improve_goes_first_among_inquiry_skills_within_same_activation_order(self):
+        """탐구의 서끼리 발동 순서가 같으면 참가 순서가 뒤여도 개선이 먼저 적용된다."""
+        weakener, weaken = self._learn_inquiry_skill(
+            "쇠약", "ab_weaken", branch=1, category="약화", cost=3, power=0.02, target_side="ENEMY",
+        )
+        self.battle.participants = [crud._snapshot_combatant(weakener), *self.battle.participants]
+        self.db.commit()
+        result = self._resolve([
+            CharacterActionInput(
+                character_id=weakener.id, kind="skill", skill_node_id=weaken.id, target_enemy_id=1,
+            ),
+            CharacterActionInput(
+                character_id=self.caster.id, kind="skill",
+                skill_node_id=self.improve.id, target_character_id=weakener.id,
+            ),
+        ])
+        events = result.log[-1]["events"]
+        improve_index = next(i for i, e in enumerate(events) if e.startswith("📈 개선가의 개선 II → 쇠약"))
+        weaken_index = next(i for i, e in enumerate(events) if e.startswith("🩸 쇠약의"))
+        self.assertLess(improve_index, weaken_index)
+        # 받는 피해 증가 = 기술 위력 0.02 + 시전자 기술 효율 비례(0.1 + 개선 0.30) = 0.42
+        self.assertIn("받는 피해 +42%", events[weaken_index])
+
+    def test_charge_still_goes_before_improve_within_same_activation_order(self):
+        """충전은 개선보다도 먼저 처리되어, 충전받은 마나로 개선을 쓸 수 있다."""
+        charger, charge = self._learn_inquiry_skill(
+            "충전가", "ab_charge", branch=2, category="회복", cost=1, power=2, target_side="ALLY",
+        )
+        caster, target = self.battle.participants
+        caster["mp"] = 0
+        self.battle.participants = [caster, target, crud._snapshot_combatant(charger)]
+        self.db.commit()
+        result = self._resolve([
+            CharacterActionInput(
+                character_id=self.caster.id, kind="skill",
+                skill_node_id=self.improve.id, target_character_id=self.target.id,
+            ),
+            CharacterActionInput(
+                character_id=charger.id, kind="skill", skill_node_id=charge.id, target_character_id=self.caster.id,
+            ),
+        ])
+        events = result.log[-1]["events"]
+        self.assertEqual([e for e in events if "MP 부족" in e], [])
+        charge_index = next(i for i, e in enumerate(events) if e.startswith("🔋 충전가의"))
+        improve_index = next(i for i, e in enumerate(events) if e.startswith("📈 개선가의"))
+        self.assertLess(charge_index, improve_index)
+
     def test_improve_bonus_expires_after_round(self):
         result = self._resolve([
             CharacterActionInput(
