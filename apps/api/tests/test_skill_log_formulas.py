@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app import crud
 from app.db import Base
 from app.models import BattleSession, Character, CharacterSkillUnlock, SkillNode
-from app.schemas import BattleAllyTurnRequest, CharacterActionInput
+from app.schemas import BattleAllyTurnRequest, CharacterActionInput, SkillNodeUpdate
 
 
 class SkillLogFormulaTest(unittest.TestCase):
@@ -150,10 +150,12 @@ class SkillLogFormulaTest(unittest.TestCase):
                 event = next(event for event in result.log[-1]["events"] if "15 보호막 부여" in event)
                 self.assertNotIn("치유 효율", result.log[-1]["calculations"][event][0])
                 self.assertEqual(result.log[-1]["metrics"]["ally_healing"], 0)
-        description = crud._resolved_skill_node_value(node, "description")
-        self.assertIn("보호막", description)
-        self.assertIn("10%", description)
-        self.assertNotIn("치유 효율", description)
+        # 보호는 자동 설명 기술이 아니라 관리자가 쓴 설명을 그대로 쓰고 자리표시자만 채운다.
+        # 자리표시자 뒤에 %를 붙여 써도 퍼센트형 값의 %와 겹치지 않는다.
+        crud.update_skill_node(self.db, node.id, SkillNodeUpdate(
+            description="최대 체력의 {보호막 비율}%에 비례하는 보호막, 주목도 {주목도 이전} 감소, {없는 값}%",
+        ))
+        self.assertEqual(crud._skill_node_description(node), "최대 체력의 10%에 비례하는 보호막, 주목도 20% 감소, {없는 값}%")
         self.assertIn("보호막:", crud._resolved_skill_node_value(node, "formula"))
         self.assertNotIn("치유 효율", crud._resolved_skill_node_value(node, "formula"))
 

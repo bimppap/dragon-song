@@ -4318,7 +4318,7 @@ def _update_skill_power_units(node: SkillNode, data: SkillNodeUpdate) -> None:
 
 # 설명 자리표시자. 설명을 한 번만 쓰고 depth마다 그 depth의 값으로 채운다(예: "{기술 위력} 피해" → "150% 피해").
 # 관리 화면의 미리보기(apps/web/lib/skillDescription.ts)도 같은 규칙으로 채우므로 함께 바꾼다.
-SKILL_DESCRIPTION_TOKEN_PATTERN = re.compile(r"\{([^{}]+)\}")
+SKILL_DESCRIPTION_TOKEN_PATTERN = re.compile(r"\{([^{}]+)\}(%?)")
 
 
 def _description_number(value: float) -> str:
@@ -4356,7 +4356,15 @@ def _skill_node_description(node: SkillNode) -> str | None:
     if not text or "{" not in text:
         return text
     values = _skill_description_values(node)
-    return SKILL_DESCRIPTION_TOKEN_PATTERN.sub(lambda match: values.get(match.group(1).strip(), match.group(0)), text)
+
+    def fill(match: re.Match) -> str:
+        value = values.get(match.group(1).strip())
+        if value is None:
+            return match.group(0)
+        # 퍼센트형 값은 %까지 채우므로, "{보호막 비율}%"처럼 뒤에 %를 붙여 써도 한 번만 붙는다.
+        return value if value.endswith("%") else value + match.group(2)
+
+    return SKILL_DESCRIPTION_TOKEN_PATTERN.sub(fill, text)
 
 
 def _resolved_skill_node_name(node: SkillNode) -> str:
