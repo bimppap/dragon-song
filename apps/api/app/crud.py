@@ -996,7 +996,6 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
         stat_upgrades=_character_stat_upgrades(character, _grade_bonus_from_states(item_states_by_id.values())),
         in_live_battle=character.id in _live_real_battle_character_ids(db),
         spirit_stone_custom_unlocked=character.spirit_stone_custom_unlocked,
-        trait_change_tickets=character.trait_change_tickets,
         owned_items=[
             _owned_item_read(character, items_by_id[row.item_id], row.quantity, item_states_by_id.get(row.item_id))
             for row in owned_item_rows
@@ -1587,6 +1586,9 @@ def use_item(
     if "spirit_stone_exchange" in special_stats:
         spirit_stone_exchange = _validate_spirit_stone_exchange(db, character_id, exchange_from_item_id, exchange_to_item_id)
 
+    if "trait_change" in special_stats and character.trait_id is None:
+        raise HTTPException(status_code=400, detail="장착한 특성이 없어 사용할 수 없습니다.")
+
     # 역할 변경은 효과 적용 전에 검증해, 잘못된 선택이 아이템만 소모시키지 않게 한다.
     if "full_reset" in special_stats and chosen_faction not in FACTIONS:
         raise HTTPException(status_code=400, detail="바꿀 역할(공격/수비/치유)을 선택해 주세요.")
@@ -1632,9 +1634,10 @@ def use_item(
         _apply_grade_choice(character, chosen_stats or [], 2)
     if "spirit_stone_customize" in special_stats:
         character.spirit_stone_custom_unlocked = True
-    # 특수 효과: 특성 교체권 지급. 장착 중인 특성을 한 번 바꿀 수 있게 된다.
+    # 특수 효과: 장착한 특성 해제(개성의 시약). 빈 슬롯에 특성을 다시 한 번 고를 수 있게 된다.
     if "trait_change" in special_stats:
-        character.trait_change_tickets += 1
+        character.trait_id = None
+        _touch_trait_battles(db)
     if spirit_stone_exchange is not None:
         _exchange_spirit_stone(db, character, *spirit_stone_exchange)
     first_quantity = len(gift_payloads[0]["recipient_ids"]) if gift_payloads else 1
@@ -9044,7 +9047,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 events.append(f"⚠️ {p['name']}: 도전과제 획득 아이템은 캐릭터 정보에서 사용해 주세요.")
                 continue
             if any(effect.get("stat") == "trait_change" for effect in (item.effects or [])):
-                events.append(f"⚠️ {p['name']}: 특성 교체 아이템은 캐릭터 정보에서 사용해 주세요.")
+                events.append(f"⚠️ {p['name']}: 특성 해제 아이템은 캐릭터 정보에서 사용해 주세요.")
                 continue
             if item.battle_unusable:
                 events.append(f"⚠️ {p['name']}: {item.name}은(는) 전투 중에 사용할 수 없습니다.")
@@ -10584,18 +10587,17 @@ def _trait_payload(trait: Trait | None) -> dict | None:
                 image_url=trait.image_url, rules=copy.deepcopy(trait.rules))
 
 
-def equip_trait(db: Session, character_id: int, trait_id: int | None, *, consume_ticket: bool = True) -> CharacterDetailRead:
-    """특성을 장착한다. 한 번 장착한 특성은 해제할 수 없고, "특성 교체" 아이템으로 받은
-    교체권 1장을 써야 다른 특성으로 바꿀 수 있다(관리자는 consume_ticket=False로 해제·교체를 모두 한다)."""
+def equip_trait(db: Session, character_id: int, trait_id: int | None, *, locked: bool = True) -> CharacterDetailRead:
+    """빈 특성 슬롯에 특성을 장착한다. 한 번 장착한 특성은 '개성의 시약'으로 해제하기 전까지
+    바꾸거나 해제할 수 없다(관리자는 locked=False로 해제·교체를 모두 한다)."""
     character = db.query(Character).filter(Character.id == character_id).with_for_update().first()
     if character is None:
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
     _assert_not_in_live_real_battle(db, character_id)
     if trait_id == character.trait_id:
         return get_character_detail(db, character_id)
-    if consume_ticket and character.trait_id is not None and trait_id is None:
-        raise HTTPException(status_code=400,
-                            detail="장착한 특성은 해제할 수 없습니다. '특성 교체' 아이템으로 다른 특성으로 바꿀 수만 있습니다.")
+    if locked and character.trait_id is not None:
+        raise HTTPException(status_code=400, detail="장착한 특성은 '개성의 시약'을 사용해 해제한 뒤에만 다시 고를 수 있습니다.")
     if trait_id is not None:
         trait = _get_trait_or_404(db, trait_id)
         if not trait.rules:
@@ -10605,12 +10607,6 @@ def equip_trait(db: Session, character_id: int, trait_id: int | None, *, consume
             if blocking:
                 raise HTTPException(status_code=400,
                                     detail=f"{'·'.join(blocking)} 기술을 습득한 캐릭터는 {trait.name}을(를) 장착할 수 없습니다.")
-    # 빈 슬롯에 처음 장착하는 것만 무료다. 이미 장착 중이면 교체권을 1장 쓴다.
-    if consume_ticket and character.trait_id is not None:
-        if character.trait_change_tickets <= 0:
-            raise HTTPException(status_code=400,
-                                detail="장착한 특성은 '특성 교체' 아이템을 사용해야 다른 특성으로 바꿀 수 있습니다.")
-        character.trait_change_tickets -= 1
     character.trait_id = trait_id
     _touch_trait_battles(db)
     db.commit()

@@ -995,7 +995,10 @@ function OwnedItemTile({
               onUse({ deliveryGroups: groupsRef.current });
               return;
             }
-            if (await confirm({ title: "아이템 사용", description: `'${item.item_name}'을(를) 사용하시겠습니까?` })) onUse();
+            const description = item.effects.some((effect) => effect.stat === "trait_change")
+              ? `'${item.item_name}'을(를) 사용하면 장착한 특성이 해제되고, 특성을 다시 고를 수 있습니다. 사용하시겠습니까?`
+              : `'${item.item_name}'을(를) 사용하시겠습니까?`;
+            if (await confirm({ title: "아이템 사용", description })) onUse();
           }}
           disabled={loading || remainingUses <= 0}
         >

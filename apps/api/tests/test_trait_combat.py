@@ -41,7 +41,7 @@ class TraitCombatTest(unittest.TestCase):
         rules["values"].update(values)
         trait = crud.create_trait(self.db, TraitCreate(name=effects.CATALOG[kind][0], rules=rules))
         # 교체권 규칙은 test_trait_change_item에서 따로 검증한다. 여기서는 전투 효과만 본다.
-        crud.equip_trait(self.db, self.actor.id, trait.id, consume_ticket=False)
+        crud.equip_trait(self.db, self.actor.id, trait.id, locked=False)
         return trait
 
     def battle(self, enemy_count=1):
@@ -85,7 +85,7 @@ class TraitCombatTest(unittest.TestCase):
         result = self.act(battle)
         self.assertEqual(result.participants[0]["skill_eff_true"], 22)
         self.assertEqual(self.actor.skill_eff_true, 2)
-        crud.equip_trait(self.db, self.actor.id, None, consume_ticket=False)
+        crud.equip_trait(self.db, self.actor.id, None, locked=False)
         self.assertEqual(crud._to_battle_session_read(self.db, battle).participants[0]["skill_eff_true"], 2)
 
     def test_one_slot_delete_and_live_battle_equip_lock(self):
@@ -96,7 +96,7 @@ class TraitCombatTest(unittest.TestCase):
         battle.mode = "real"
         self.db.commit()
         with self.assertRaises(HTTPException):
-            crud.equip_trait(self.db, self.actor.id, first.id, consume_ticket=False)
+            crud.equip_trait(self.db, self.actor.id, first.id, locked=False)
         crud.delete_trait(self.db, second.id)
         self.assertIsNone(self.db.get(Character, self.actor.id).trait_id)
 
@@ -185,7 +185,7 @@ class TraitCombatTest(unittest.TestCase):
         self.db.query(CharacterSkillUnlock).delete()
         self.actor.sp = 99
         self.db.commit()
-        crud.equip_trait(self.db, self.actor.id, trait.id, consume_ticket=False)
+        crud.equip_trait(self.db, self.actor.id, trait.id, locked=False)
         with self.assertRaises(HTTPException) as blocked:
             crud.unlock_character_skill_node(self.db, self.actor.id, clone.id)
         self.assertIn("복제", blocked.exception.detail)
@@ -201,7 +201,7 @@ class TraitCombatTest(unittest.TestCase):
         self.actor.sp = 99
         self.db.commit()
         trait = crud.create_trait(self.db, TraitCreate(name="분배", rules=effects.default_rules("distribution")))
-        crud.equip_trait(self.db, self.actor.id, trait.id, consume_ticket=False)
+        crud.equip_trait(self.db, self.actor.id, trait.id, locked=False)
         self.db.query(CharacterSkillUnlock).delete()
         self.db.commit()
         crud.unlock_character_skill_node(self.db, self.actor.id, charge.id)

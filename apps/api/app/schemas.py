@@ -59,7 +59,8 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 # "spirit_stone_customize": ("정령석 커스텀 기능 해방") 사용한 캐릭터가 보유한 정령석의 이름·이미지·설명을 직접 바꿀 수 있게 된다.
 # "spirit_stone_exchange": ("정령석 교환") 사용 시 보유한 정령석 하나를 다른 정령석으로 바꾼다.
 #   정령석은 이름에 "정령석"이 들어간 장착형(동반자·장신구) 아이템이다.
-# "trait_change": ("특성 교체(일회성)") 특성 교체권 1장을 준다. 한 번 장착한 특성은 이 교체권이 있어야 바꿀 수 있다.
+# "trait_change": ("특성 해제·재선택", 개성의 시약) 장착한 특성을 해제해 빈 슬롯에 다시 고를 수 있게 한다.
+#   한 번 장착한 특성은 이 아이템을 다시 쓰기 전까지 바꿀 수 없다.
 # "battle_buff_round": ("일회성 강화") 전투 중에만 쓸 수 있다. 같은 아이템에 함께 담은 능력치 효과를
 #   영구 변화가 아니라 다음 라운드까지만 유지되는 강화로 적용한다(강화 항목은 여러 개 담을 수 있다).
 ITEM_EFFECT_SPECIAL_STATS = {
@@ -564,9 +565,9 @@ class ItemCreate(BaseModel):
                 raise ValueError("정령석 커스텀·교환 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
         if any(e.stat == "trait_change" for e in self.effects):
             if self.battle_only:
-                raise ValueError("특성 교체 아이템은 전투 전용으로 설정할 수 없습니다.")
+                raise ValueError("특성 해제 아이템은 전투 전용으로 설정할 수 없습니다.")
             if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
-                raise ValueError("특성 교체 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
+                raise ValueError("특성 해제 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
         if not self.price_gold and not self.price_cp:
             raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
         return self
@@ -852,8 +853,6 @@ class CharacterDetailRead(CharacterRead):
     # 진행 중인 실전 전투 참가자면 아이템 사용·장착을 막는다(화면에서도 버튼을 감춘다).
     in_live_battle: bool = False
     spirit_stone_custom_unlocked: bool = False
-    # 보유한 특성 교체권. 이미 장착한 특성을 바꾸려면 1장이 필요하다.
-    trait_change_tickets: int = 0
 
 
 class ChallengeCreate(BaseModel):

@@ -10,7 +10,7 @@ import { equipTrait, fetchTraits, type CharacterDetail, type Trait } from "@/lib
 import { cn } from "@/lib/utils";
 import CharacterSlot from "./CharacterSlot";
 
-const CHANGE_LOCKED_NOTICE = "장착한 특성은 해제할 수 없고, '특성 교체' 아이템을 사용해야 다른 특성으로 바꿀 수 있습니다.";
+const CHANGE_LOCKED_NOTICE = "장착한 특성은 '개성의 시약'을 사용해 해제한 뒤에만 다시 고를 수 있습니다.";
 
 function TraitImage({ trait, className }: { trait: Trait | null; className: string }) {
   return <span className={cn("relative flex items-center justify-center overflow-hidden border-2 bg-gold/10 text-gold transition-colors hover:bg-gold/15",
@@ -31,11 +31,9 @@ function TraitDetails({ trait }: { trait: Trait }) {
 }
 
 /** 특성 목록 창. 이미지와 이름을 한 칸으로 묶어 격자로 보여주고, 칸의 툴팁에서 장착한다. */
-function TraitPicker({ character, canChange, adminMode, onClose, onUpdated }: {
+function TraitPicker({ character, adminMode, onClose, onUpdated }: {
   character: CharacterDetail;
-  /** 이미 장착한 특성을 다른 특성으로 바꿀 수 있는지(교체권 보유 또는 관리자). */
-  canChange: boolean;
-  /** 해제는 관리자만 할 수 있다. 러너는 교체권으로 다른 특성으로 바꾸기만 한다. */
+  /** 장착 중인 특성의 해제·교체는 관리자만 할 수 있다. 러너는 빈 슬롯에 고르기만 한다. */
   adminMode: boolean;
   onClose: () => void;
   onUpdated: (value: CharacterDetail) => void;
@@ -69,18 +67,18 @@ function TraitPicker({ character, canChange, adminMode, onClose, onUpdated }: {
   return <Modal open onClose={pending ? () => {} : onClose} title="특성" className="max-w-2xl">
     <div className="flex flex-col gap-4">
       <p className="text-xs text-muted">특성은 한 번에 하나만 장착할 수 있습니다. 칸에 커서를 올리거나 눌러 효과를 확인하세요.</p>
-      <p className="text-xs text-muted">
+      {!adminMode && <p className="text-xs text-muted">
         {character.trait_id === null
-          ? "한 번 장착한 특성은 해제할 수 없고 '특성 교체' 아이템으로만 바꿀 수 있으니 신중히 고르세요."
-          : canChange ? "다른 특성으로 바꾸면 특성 교체권 1장이 사용됩니다. 특성을 비워둘 수는 없습니다." : CHANGE_LOCKED_NOTICE}
-      </p>
+          ? "한 번 장착한 특성은 '개성의 시약'을 다시 사용하기 전까지 바꿀 수 없으니 신중히 고르세요."
+          : CHANGE_LOCKED_NOTICE}
+      </p>}
       {loading ? <p className="py-8 text-center text-sm text-muted">특성을 불러오는 중...</p>
         : traits.length === 0 ? <p className="py-8 text-center text-sm text-muted">고를 수 있는 특성이 없습니다.</p>
           : <div className="grid grid-cols-3 gap-3 sm:grid-cols-5">
             {traits.map((trait) => {
               const equipped = trait.id === character.trait_id;
-              // 장착 중인 특성은 관리자만 해제할 수 있고, 다른 특성은 교체권이 있어야 고를 수 있다.
-              const disabled = pending || (equipped ? !adminMode : character.trait_id !== null && !canChange);
+              // 러너는 빈 슬롯에만 고를 수 있고, 장착 중인 특성의 해제·교체는 관리자만 한다.
+              const disabled = pending || (!adminMode && character.trait_id !== null);
               return <InfoTooltip key={trait.id} content={<div className="flex max-w-64 flex-col gap-2">
                 <TraitDetails trait={trait} />
                 <Button type="button" size="sm" variant={equipped ? "secondary" : "outline"} disabled={disabled}
@@ -107,16 +105,14 @@ export default function CharacterTrait({ character, onUpdated, readOnly, adminMo
   character: CharacterDetail;
   onUpdated: (value: CharacterDetail) => void;
   readOnly: boolean;
-  /** 관리자가 캐릭터를 직접 정비하는 화면에서는 교체권 없이도 바꿀 수 있다. */
+  /** 관리자가 캐릭터를 직접 정비하는 화면에서는 개성의 시약 없이도 해제·교체할 수 있다. */
   adminMode?: boolean;
 }) {
   const [picking, setPicking] = useState(false);
   const equipped = character.equipped_trait ?? null;
   const locked = character.in_live_battle;
-  const tickets = character.trait_change_tickets ?? 0;
-  // 빈 슬롯에 처음 장착하는 것은 언제나 무료이고, 바꾸려면 교체권이 있어야 한다.
-  const canChange = adminMode || tickets > 0;
-  const changeBlocked = !!equipped && !canChange;
+  // 러너는 빈 슬롯에만 고를 수 있다. 장착한 특성은 개성의 시약으로 해제해야 다시 고른다.
+  const changeBlocked = !!equipped && !adminMode;
   return <>
     <InfoTooltip content={<div className="flex max-w-64 flex-col gap-2">
       {equipped ? <TraitDetails trait={equipped} /> : <p className="text-xs text-ivory">장착한 특성 없음</p>}
@@ -124,12 +120,9 @@ export default function CharacterTrait({ character, onUpdated, readOnly, adminMo
         ? <p className="text-xs text-muted">실전 전투 중에는 특성을 변경할 수 없습니다.</p>
         : changeBlocked
           ? <p className="text-xs text-muted">{CHANGE_LOCKED_NOTICE}</p>
-          : <>
-            {equipped && !adminMode && <p className="text-xs text-muted">특성 교체권 {tickets}장 보유 · 다른 특성으로 바꾸면 1장이 사용됩니다.</p>}
-            <Button type="button" size="sm" variant="cta" className="w-full" onClick={() => setPicking(true)}>
-              {equipped ? "특성 교체하기" : "특성 획득하기"}
-            </Button>
-          </>)}
+          : <Button type="button" size="sm" variant="cta" className="w-full" onClick={() => setPicking(true)}>
+            {equipped ? "특성 교체하기" : "특성 획득하기"}
+          </Button>)}
     </div>}>
       <CharacterSlot aria-label={equipped ? `특성: ${equipped.name}` : "장착한 특성 없음"} filled={!!equipped}>
         {equipped?.image_url
@@ -137,7 +130,7 @@ export default function CharacterTrait({ character, onUpdated, readOnly, adminMo
           : <Star size={17} />}
       </CharacterSlot>
     </InfoTooltip>
-    {picking && <TraitPicker character={character} canChange={canChange} adminMode={adminMode} onClose={() => setPicking(false)}
+    {picking && <TraitPicker character={character} adminMode={adminMode} onClose={() => setPicking(false)}
       onUpdated={(value) => { onUpdated(value); setPicking(false); }} />}
   </>;
 }

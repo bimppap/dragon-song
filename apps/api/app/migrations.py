@@ -113,8 +113,11 @@ def ensure_schema(engine: Engine) -> None:
         statements.append("ALTER TABLE characters ADD COLUMN is_public BOOLEAN NOT NULL DEFAULT false")
     if "spirit_stone_custom_unlocked" not in character_columns:
         statements.append("ALTER TABLE characters ADD COLUMN spirit_stone_custom_unlocked BOOLEAN NOT NULL DEFAULT false")
-    if "trait_change_tickets" not in character_columns:
-        statements.append("ALTER TABLE characters ADD COLUMN trait_change_tickets INTEGER NOT NULL DEFAULT 0")
+    # 특성 교체권은 사용 즉시 특성을 해제하는 개성의 시약으로 바뀌었다. 아직 쓰지 않은 교체권은
+    # 시약을 쓴 것으로 보고 특성을 해제해, 다시 고를 수 있게 한 뒤 컬럼을 지운다.
+    if "trait_change_tickets" in character_columns:
+        statements.append("UPDATE characters SET trait_id = NULL WHERE trait_change_tickets > 0")
+        statements.append("ALTER TABLE characters DROP COLUMN trait_change_tickets")
 
     if "items" in table_names:
         item_columns = {col["name"] for col in inspector.get_columns("items")}
