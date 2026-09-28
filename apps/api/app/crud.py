@@ -7359,7 +7359,16 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
                 target_ids = chosen
                 target_label = ", ".join(by_char_id[cid]["name"] for cid in target_ids) if target_ids else "대상 없음"
             events.append(f"🔮 {enemy['name']} - {skill['name']}")
-            if skill["skill_type"] == "지속 디버프":
+            if skill["skill_type"] == "즉사":
+                for cid in target_ids:
+                    target = by_char_id[cid]
+                    target["retreated"] = True
+                    target["status_effects"] = [
+                        effect for effect in _ensure_status_effects(target)
+                        if effect.get("effect_type") != "sparge_telegraph"
+                    ]
+                    events.append(f"🏳️ {enemy['name']}의 {skill['name']} → {target['name']} 강제 퇴각")
+            elif skill["skill_type"] == "지속 디버프":
                 events.append(f"이번 차례 약화 대상 : {target_label}")
             elif skill["skill_type"] == "환경":
                 environment = environment_by_id.get(int(skill.get("environment_id") or 0))
@@ -7425,11 +7434,16 @@ def resolve_battle_telegraph(db: Session, session_id: int, data: BattleTelegraph
     _flush_battle_revive_events(participants, events)
     session.pending_enemy_actions = pending_actions
     session.phase = "ally"
+    if not any(_combatant_active(p) for p in participants):
+        session.status = "defeat"
+        events.append("💀 전투 패배")
     session.participants = participants
     session.enemies = enemies
     session.summons = [summon for summon in summons if summon["hp"] > 0]
     session.log = list(session.log) + [{"round": round_no, "phase": "telegraph", "events": events, "calculations": calculations}]
 
+    if session.status == "defeat" and session.mode == "real":
+        _finalize_real_battle(db, session, participants)
     return _commit_battle_session(db, session)
 
 
@@ -9253,6 +9267,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             skill = enemy["skills"][skill_index]
 
         if enemy_action.get("kind") == "attack" and skill and skill["skill_type"] != "소환":
+            # 즉사는 행동 암시에서 이미 처리했다. 재선정하거나 피해를 주지 않는다.
+            if skill["skill_type"] == "즉사":
+                continue
             is_aoe = _enemy_skill_is_aoe(skill)
             if is_aoe:
                 targets = [p for p in participants if _combatant_targetable(p, round_no)]

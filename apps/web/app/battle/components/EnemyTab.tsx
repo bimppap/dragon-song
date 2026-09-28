@@ -39,7 +39,7 @@ import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import EmptyState from "@/components/common/EmptyState";
 
-const SKILL_TYPES = ["지정 공격", "광역 공격", "포지션 광역 공격", "소환", "지속 디버프", "환경"] as const;
+const SKILL_TYPES = ["지정 공격", "광역 공격", "포지션 광역 공격", "소환", "지속 디버프", "환경", "즉사"] as const;
 type SkillType = (typeof SKILL_TYPES)[number];
 
 const AUTO_TARGET_MODE_OPTIONS: [EnemyAutoTargetMode, string][] = (
@@ -181,7 +181,7 @@ function toPayload(form: EnemyFormState): EnemyCreate {
       auto_target_mode: s.auto_target_mode,
       environment_id: isEnvironment && s.environment_id ? Number(s.environment_id) : null,
       environment_stack_count: isEnvironment ? Math.max(1, parsePositiveInt(s.environment_stack_count) || 1) : 1,
-      on_hit_dot: !isSummon && !isEnvironment && s.skill_type !== "지속 디버프" && s.on_hit_dot,
+      on_hit_dot: !isSummon && !isEnvironment && s.skill_type !== "지속 디버프" && s.skill_type !== "즉사" && s.on_hit_dot,
       on_hit_effect: s.on_hit_effect, debuff_direction: s.debuff_direction, debuff_color: s.debuff_color,
       dot_name: s.dot_name.trim() || "지속 피해", dot_damage: Math.max(1, parsePositiveInt(s.dot_damage)),
       debuff_stat: s.debuff_stat, debuff_amount: Number(s.debuff_amount) || 0, debuff_stackable: s.debuff_stackable,
@@ -191,7 +191,7 @@ function toPayload(form: EnemyFormState): EnemyCreate {
       skill_type: s.skill_type,
       name: s.name.trim(),
       target_count: isSummon ? 0 : parsePositiveInt(s.target_count),
-      damage_percent: isSummon || isEnvironment ? 0 : parsePositiveInt(s.damage_percent),
+      damage_percent: isSummon || isEnvironment || s.skill_type === "즉사" ? 0 : parsePositiveInt(s.damage_percent),
       summon_name: isSummon ? s.summon_name.trim() || null : null,
       summon_hp: isSummon ? parsePositiveInt(s.summon_hp) : null,
       summon_attack: isSummon ? parsePositiveInt(s.summon_attack) : null,
@@ -257,6 +257,7 @@ const SKILL_TYPE_COLOR: Record<SkillType, string> = {
   소환: "bg-gold/15 text-gold",
   "지속 디버프": "bg-purple-500/20 text-purple-300",
   환경: "bg-emerald-500/20 text-emerald-300",
+  즉사: "bg-red-500/20 text-red-300",
 };
 
 export default function EnemyTab() {
@@ -723,7 +724,7 @@ export default function EnemyTab() {
                         </span>
                       ) : (
                         <span className="text-muted">
-                          {skill.skill_type === "포지션 광역 공격" ? "지정 포지션 전원 대상" : skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${ENEMY_AUTO_TARGET_MODE_LABELS[skill.auto_target_mode ?? "attention"]}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
+                          {skill.skill_type === "포지션 광역 공격" ? "지정 포지션 전원 대상" : skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${ENEMY_AUTO_TARGET_MODE_LABELS[skill.auto_target_mode ?? "attention"]}`} / {skill.skill_type === "즉사" ? "행동 암시 시 강제 퇴각" : skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
                         </span>
                       )}
                         </>;
@@ -1123,7 +1124,9 @@ export default function EnemyTab() {
                           onChange={(value) => updateSkill(idx, "auto_target_mode", value as SkillFormEntry["auto_target_mode"])}
                         />
                       )}
-                      <div className="flex flex-col gap-1.5">
+                      {skill.skill_type === "즉사" ? (
+                        <p className="text-xs text-muted">적군 행동 암시를 확정하면 대상 캐릭터가 즉시 강제 퇴각합니다.</p>
+                      ) : <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-semibold text-ivory/85">{isEnvironment ? "부여 스택 수" : "피해량 (%)"}</label>
                         <Input
                           type="number" min={isEnvironment ? 1 : 0} className="h-8 text-xs"
@@ -1132,7 +1135,7 @@ export default function EnemyTab() {
                           onChange={(e) => updateSkill(idx, isEnvironment ? "environment_stack_count" : "damage_percent", e.target.value)}
                           placeholder={isEnvironment ? "1" : "0"}
                         />
-                      </div>
+                      </div>}
                     </div>
                   )}
 

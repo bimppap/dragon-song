@@ -60,6 +60,60 @@ class EnemyTargetModeTest(unittest.TestCase):
         by_id = {p["character_id"]: p["name"] for p in self.party}
         return [by_id[character_id] for character_id in character_ids]
 
+    def test_instant_death_retreats_during_telegraph_without_damage_or_second_hit(self):
+        battle = self.battle([EnemySkill(skill_type="즉사", name="추방", target_count=1, damage_percent=999)])
+        target_id = self.by_name["방패"]
+        result = self.telegraph(battle, skill_index=0)
+        target = next(p for p in result.participants if p["character_id"] == target_id)
+        self.assertTrue(target["retreated"])
+        self.assertFalse(target["downed"])
+        self.assertEqual(target["hp"], 60)
+        self.assertEqual(result.phase, "ally")
+        self.assertEqual(result.status, "in_progress")
+        self.assertTrue(any("방패 강제 퇴각" in event for event in result.log[-1]["events"]))
+        before = [(p["hp"], p["retreated"]) for p in result.participants]
+        battle.phase = "enemy"
+        self.db.commit()
+        result = crud.resolve_battle_enemy_turn(self.db, battle.id)
+        self.assertEqual([(p["hp"], p["retreated"]) for p in result.participants], before)
+
+    def test_instant_death_manual_targets_and_undo(self):
+        battle = self.battle([EnemySkill(skill_type="즉사", name="추방", manual_target_count=True)])
+        ids = [self.by_name["공격수"], self.by_name["치유사"]]
+        result = self.telegraph(battle, skill_index=0, target_character_ids=ids)
+        self.assertEqual([p["character_id"] for p in result.participants if p["retreated"]], ids)
+        restored = crud.undo_last_turn(self.db, battle.id)
+        self.assertEqual(restored.phase, "telegraph")
+        self.assertFalse(any(p["retreated"] for p in restored.participants))
+
+    def test_instant_death_defeats_party_immediately_when_everyone_retreats(self):
+        battle = self.battle([EnemySkill(skill_type="즉사", name="추방", target_count=4)])
+        result = self.telegraph(battle, skill_index=0)
+        self.assertEqual(result.status, "defeat")
+        self.assertTrue(all(p["retreated"] for p in result.participants))
+        self.assertEqual(result.log[-1]["phase"], "telegraph")
+
+    def test_instant_death_real_battle_finalizes_without_changing_hp(self):
+        battle = self.battle([EnemySkill(skill_type="즉사", name="추방", target_count=4)])
+        battle.mode = "real"
+        self.db.commit()
+        result = self.telegraph(battle, skill_index=0)
+        self.assertEqual(result.status, "defeat")
+        for participant in result.participants:
+            character = self.db.get(Character, participant["character_id"])
+            self.assertEqual(character.hp, participant["hp"])
+            self.assertEqual(character.mp, character.mp_max)
+
+    def test_repeated_instant_death_actions_select_remaining_active_targets(self):
+        battle = self.battle([EnemySkill(skill_type="즉사", name="추방", target_count=1)])
+        battle.enemies = [{**battle.enemies[0], "action_count": 2}]
+        self.db.commit()
+        result = crud.resolve_battle_telegraph(self.db, battle.id, BattleTelegraphRequest(
+            enemy_actions=[{"enemy_id": 1, "kind": "attack", "skill_index": 0}] * 2,
+        ))
+        self.assertEqual({p["name"] for p in result.participants if p["retreated"]}, {"방패", "공격수"})
+        self.assertEqual(result.status, "in_progress")
+
     def test_position_aoe_hits_every_character_in_the_chosen_position(self):
         battle = self.battle([EnemySkill(skill_type="포지션 광역 공격", name="전열 강타", damage_percent=100)])
         result = self.telegraph(battle, skill_index=0, target_faction="공격")

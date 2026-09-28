@@ -7,7 +7,7 @@ from app.game_data import MAX_CHARACTER_LEVEL
 from app.models import KST
 from app.trait_effects import validate_rules
 
-EnemySkillType = Literal["지정 공격", "광역 공격", "포지션 광역 공격", "소환", "지속 디버프", "환경"]
+EnemySkillType = Literal["지정 공격", "광역 공격", "포지션 광역 공격", "소환", "지속 디버프", "환경", "즉사"]
 # 4) 자동 대상 선정 방식. 행동 암시에서 이 중 하나로 바꿔 지정할 수 있다.
 EnemyAutoTargetMode = Literal["attention", "random", "hp"]
 Faction = Literal["공격", "수비", "치유"]

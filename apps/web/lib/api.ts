@@ -1637,7 +1637,7 @@ export async function fetchActiveChapter(): Promise<Chapter | null> {
   );
 }
 
-export type EnemySkillType = "지정 공격" | "광역 공격" | "포지션 광역 공격" | "소환" | "지속 디버프" | "환경";
+export type EnemySkillType = "지정 공격" | "광역 공격" | "포지션 광역 공격" | "소환" | "지속 디버프" | "환경" | "즉사";
 
 /** 대상을 자동으로 고르는 방식. 행동 암시에서 이 중 하나로 바꿔 지정할 수 있다. */
 export type EnemyAutoTargetMode = "attention" | "random" | "hp";

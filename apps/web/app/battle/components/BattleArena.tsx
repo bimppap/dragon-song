@@ -897,6 +897,7 @@ function enemySkillSummary(
   skill: EnemySkill,
   environmentsById: Map<number, BattleSessionEnvironment>,
 ): string {
+  if (skill.skill_type === "즉사") return "행동 암시 시 강제 퇴각";
   if (skill.skill_type === "지속 디버프") return "지속 디버프";
   if (skill.skill_type === "환경") {
     const environmentName = skill.environment_id != null
@@ -2158,7 +2159,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
                                 <SelectItem value="none">무반응</SelectItem>
                                 {attackSkills.map((s) => (
                                   <SelectItem key={s.index} value={`attack:${s.index}`}>
-                                    {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : isEnemySkillPositionAoe(s) ? "포지션 전체" : `${s.target_count}인 · ${ENEMY_AUTO_TARGET_MODE_LABELS[s.auto_target_mode ?? "attention"]}`} / {s.skill_type === "지속 디버프"
+                                    {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : isEnemySkillPositionAoe(s) ? "포지션 전체" : `${s.target_count}인 · ${ENEMY_AUTO_TARGET_MODE_LABELS[s.auto_target_mode ?? "attention"]}`} / {s.skill_type === "즉사" ? "행동 암시 시 강제 퇴각" : s.skill_type === "지속 디버프"
                                       ? "지속 디버프"
                                       : s.skill_type === "환경"
                                         ? `${s.environment_id != null ? environmentsById.get(s.environment_id)?.name ?? `환경 #${s.environment_id}` : "환경"} +${s.environment_stack_count ?? 1}스택`
@@ -2232,7 +2233,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
                             <p className="mb-1.5 text-[11px] text-muted">
                               {selectedSkill?.manual_target_count
                                 ? `대상 수동 지정 · ${draft.target_character_ids.length}명 선택 (매 라운드 인원 변경 가능)`
-                                : `${selectedSkill?.skill_type === "환경" ? "환경 부여" : selectedSkill?.skill_type === "지속 디버프" ? "약화" : "공격"} 대상 선택 (${draft.target_character_ids.length}/${targetCount}명)`}
+                                : `${selectedSkill?.skill_type === "즉사" ? "강제 퇴각" : selectedSkill?.skill_type === "환경" ? "환경 부여" : selectedSkill?.skill_type === "지속 디버프" ? "약화" : "공격"} 대상 선택 (${draft.target_character_ids.length}/${targetCount}명)`}
                             </p>
                             <div className="flex flex-wrap gap-x-4 gap-y-1.5">
                               {targetableParticipants.map((p) => {
