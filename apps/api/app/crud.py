@@ -9601,6 +9601,12 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
 _TURN_PHASE_ORDER = {"telegraph": 0, "ally": 1, "enemy": 2}
 
 
+def _log_entry_turn_order(entry: dict) -> tuple[int, int]:
+    # 전투 시작 알림(phase None)은 1라운드의 어느 단계보다도 앞선다.
+    phase = entry.get("phase")
+    return entry["round"], -1 if phase is None else _TURN_PHASE_ORDER[phase]
+
+
 def undo_last_turn(db: Session, session_id: int) -> BattleSessionRead:
     """직전에 진행한 턴(적 행동 암시/아군 턴/에너미 턴)을 되돌린다: 그 턴 시작 시점 상태로 복원하고,
     그 턴에 소모한 아이템 사용 횟수도 함께 복구하고, 로그를 지워 다시 진행할 수 있게 한다."""
@@ -9643,8 +9649,8 @@ def undo_last_turn(db: Session, session_id: int) -> BattleSessionRead:
     # 되돌아간 단계에서 일어난 난입은 스냅샷 전이라 참가자가 남으므로 로그도 남긴다.
     session.log = [
         entry for entry in session.log
-        if (entry["round"], _TURN_PHASE_ORDER[entry["phase"]]) < cutoff
-        or (entry.get("kind") == "join" and (entry["round"], _TURN_PHASE_ORDER[entry["phase"]]) == cutoff)
+        if _log_entry_turn_order(entry) < cutoff
+        or (entry.get("kind") == "join" and _log_entry_turn_order(entry) == cutoff)
     ]
     session.round_snapshots = snapshots[:-1]
 

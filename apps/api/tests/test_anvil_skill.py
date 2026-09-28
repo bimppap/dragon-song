@@ -193,6 +193,15 @@ class AnvilStartAttentionTest(unittest.TestCase):
         holder = next(p for p in refreshed.participants if p["name"] == "모루지기")
         self.assertEqual(holder["attn"], 600)
 
+    def test_undoing_the_first_turn_keeps_the_start_log(self):
+        session = self.start()
+        crud.resolve_battle_telegraph(self.db, session.id, BattleTelegraphRequest(
+            enemy_actions=[{"enemy_id": self.enemy.id, "kind": "none"}],
+        ))
+        undone = crud.undo_last_turn(self.db, session.id)
+        self.assertEqual([entry["kind"] for entry in undone.log], ["start"])
+        self.assertEqual(undone.phase, "telegraph")
+
     def test_joining_character_gets_it_when_they_enter(self):
         session = self.start()
         latecomer = Character(name="지각생", faction="수비", hp=100, hp_max=100, mp=10, mp_max=10)
