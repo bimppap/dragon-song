@@ -103,6 +103,7 @@ interface Props {
   readOnly?: boolean;
   hideReadOnlyNotice?: boolean;
   replayMode?: boolean;
+  replayDisplayRound?: number;
   runnerPreview?: boolean;
   onExit: () => void;
   /**
@@ -1065,7 +1066,7 @@ function TargetPickerButton({
   );
 }
 
-export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyNotice = false, replayMode = false, runnerPreview = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
+export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyNotice = false, replayMode = false, replayDisplayRound, runnerPreview = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
   const { member } = useAuth();
   const isAdmin = member != null && isAdminRole(member.role);
   const showAdminView = isAdmin && !runnerPreview;
@@ -2020,7 +2021,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
           </h2>
           <Badge>{session.mode === "real" ? "실전" : "모의전"}</Badge>
           {session.pair_battle && <Badge variant="outline"><Link2 size={12} className="mr-1" />페어 전투</Badge>}
-          <Badge variant="outline">라운드 {session.round}</Badge>
+          <Badge variant="outline">라운드 {replayDisplayRound ?? session.round}</Badge>
           {inProgress && <Badge variant="secondary">{PHASE_LABEL[phase]}</Badge>}
         </div>
         {canAct && (

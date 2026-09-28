@@ -1,5 +1,6 @@
 """턴 단위 되짚어보기: 1라운드 첫 턴부터 마지막 턴까지 그 턴의 판 상태와 로그를 함께 돌려준다."""
 import unittest
+import copy
 
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -108,6 +109,73 @@ class BattleReplayTest(unittest.TestCase):
         # 암시·에너미 턴에는 아군 행동이 없다.
         telegraph_turn = next(turn for turn in replay.turns if turn.phase == "telegraph")
         self.assertEqual(telegraph_turn.action_preview, {})
+
+    def test_join_after_ally_is_attached_to_that_ally_without_shifting_state(self):
+        self.play_round()
+        original = copy.deepcopy(self.battle.log)
+        self.battle.log = [*original[:2],
+                           {"round": 1, "phase": "enemy", "kind": "join", "events": ["🚪 신입 난입"]},
+                           original[2]]
+        self.finish()
+        replay = crud.get_battle_replay(self.db, self.battle.id, self.admin)
+        self.assertEqual(len(replay.turns), 3)
+        self.assertIn("🚪 신입 난입", replay.turns[1].events)
+        self.assertNotIn("🚪 신입 난입", replay.turns[2].events)
+        self.assertEqual(replay.turns[1].enemies[0]["hp"], 250)
+
+    def test_separate_retreat_is_an_ally_action_not_an_extra_turn(self):
+        self.play_round()
+        log = copy.deepcopy(self.battle.log)
+        log.insert(2, {"round": 1, "phase": "ally", "kind": "retreat", "events": ["🏳️ 용사 퇴각"]})
+        self.battle.log = log
+        self.finish()
+        turns = crud.get_battle_replay(self.db, self.battle.id, self.admin).turns
+        self.assertEqual(len(turns), 3)
+        self.assertIn("🏳️ 용사 퇴각", turns[1].events)
+
+    def test_legacy_summon_only_round_is_part_of_next_telegraph(self):
+        self.play_round()
+        self.play_round()
+        log = copy.deepcopy(self.battle.log)
+        snapshots = copy.deepcopy(self.battle.round_snapshots)
+        # Old round 2 was used only to summon; the next actual action is stored as round 3.
+        for entry in log[3:]:
+            entry["round"] = 3
+        summon = {"id": 1, "name": "골렘", "hp": 5, "max_hp": 5, "attack": 0}
+        before_first = {key: value for key, value in snapshots[0].items() if key != "phase"}
+        before_summon = {key: value for key, value in snapshots[3].items() if key != "phase"}
+        before_third = {**copy.deepcopy(before_summon), "round": 3, "summons": [summon]}
+        self.battle.round_snapshots = [before_first, before_summon, before_third]
+        self.battle.summons = [summon]
+        self.battle.log = [*log[:3],
+            {"round": 2, "phase": "telegraph", "events": ["📣 적의 행동 암시!", "🔮 용 - 호출 (소환 예정: 골렘 x1)"]},
+            {"round": 2, "phase": "ally", "events": ["🗡️ 조사단의 행동!"]},
+            {"round": 2, "phase": "enemy", "events": ["👹 에너미의 행동!", "👹 용 소환: 골렘 x1"]},
+            *log[3:]]
+        self.finish()
+        raw_log = copy.deepcopy(self.battle.log)
+        turns = crud.get_battle_replay(self.db, self.battle.id, self.admin).turns
+        self.assertEqual([(t.display_round, t.phase) for t in turns],
+                         [(r, phase) for r in (1, 2) for phase in ("telegraph", "ally", "enemy")])
+        self.assertEqual([t.round for t in turns], [1, 1, 1, 3, 3, 3])
+        self.assertEqual(turns[0].enemies[0]["hp"], 300)
+        self.assertEqual(turns[1].enemies[0]["hp"], 250)
+        self.assertEqual(turns[3].summons[0]["name"], "골렘")
+        self.assertIn("👹 용 소환: 골렘 x1", turns[3].events)
+        self.assertEqual(self.battle.log, raw_log)
+
+    def test_empty_ally_with_enemy_attack_is_not_removed(self):
+        self.play_round()
+        log = copy.deepcopy(self.battle.log)
+        log[1]["events"] = ["🗡️ 조사단의 행동!"]
+        log[1].pop("calculations", None)
+        self.battle.log = log
+        self.battle.round_snapshots = [
+            {key: value for key, value in self.battle.round_snapshots[0].items() if key != "phase"}
+        ]
+        self.finish()
+        turns = crud.get_battle_replay(self.db, self.battle.id, self.admin).turns
+        self.assertEqual([t.phase for t in turns], ["telegraph", "ally", "enemy"])
 
     def test_only_finished_real_battles_can_be_replayed(self):
         self.play_round()

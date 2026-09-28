@@ -16,7 +16,7 @@ import BattleArena, { PHASE_LABEL } from "./BattleArena";
 
 /** 되짚어보기 한 칸의 이름표(예: "3라운드 · 아군 턴"). */
 function turnLabel(turn: BattleReplayTurn): string {
-  return `${turn.round}라운드 · ${turn.phase ? PHASE_LABEL[turn.phase] : "진행"}`;
+  return `${turn.display_round ?? turn.round}라운드 · ${turn.phase ? PHASE_LABEL[turn.phase] : "진행"}`;
 }
 
 /**
@@ -84,7 +84,7 @@ export default function BattleTurnReplay({ sessionId, onExit }: { sessionId: num
     summons: turn.summons,
     pending_enemy_actions: turn.pending_enemy_actions,
     log: replay.turns.slice(0, index + 1).map((entry) => ({
-      round: entry.round,
+      round: entry.display_round ?? entry.round,
       phase: entry.phase ?? undefined,
       kind: entry.kind ?? undefined,
       events: entry.events,
@@ -130,6 +130,7 @@ export default function BattleTurnReplay({ sessionId, onExit }: { sessionId: num
         readOnly
         hideReadOnlyNotice
         replayMode
+        replayDisplayRound={turn.display_round ?? turn.round}
         runnerPreview
         onExit={onExit}
       />

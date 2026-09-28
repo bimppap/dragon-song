@@ -2027,6 +2027,7 @@ export interface BattleEnemyActionInput {
 export interface BattleReplayTurn {
   index: number;
   round: number;
+  display_round?: number | null;
   phase: BattlePhase | null;
   /** 정규 턴은 null, 난입은 "join", 전투 시작 알림은 "start". */
   kind: string | null;

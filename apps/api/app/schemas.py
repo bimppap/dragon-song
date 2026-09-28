@@ -1220,6 +1220,8 @@ class BattleReplayTurn(BaseModel):
     """되짚어보기 한 칸. 그 턴이 끝난 시점의 판 상태와 그 턴의 로그를 함께 담는다."""
     index: int
     round: int
+    # 소환 전용 진행을 암시에 합친 뒤의 화면용 번호. round는 원본 상태 연결에 쓴다.
+    display_round: int | None = None
     phase: BattlePhase | None = None
     # 정규 턴은 None, 난입은 "join", 전투 시작 알림은 "start".
     kind: str | None = None

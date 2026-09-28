@@ -6594,12 +6594,81 @@ def _items_by_logged_name(db: Session, names: set[str]) -> dict[str, tuple[int, 
     return found
 
 
+def _battle_replay_entries(log: list[dict]) -> list[dict]:
+    """난입·별도 퇴각 기록은 같은 라운드의 아군 행동에 포함한다."""
+    def is_transition(entry: dict) -> bool:
+        if entry.get("kind") in {"join", "retreat"}:
+            return True
+        events = entry.get("events") or []
+        return entry.get("kind") is None and bool(events) and all(
+            event.startswith(("🚪", "🏳️")) and "강제 퇴각" not in event for event in events
+        )
+
+    ally_indices = [i for i, entry in enumerate(log)
+                    if entry.get("phase") == "ally"
+                    and entry.get("kind") in (None, "ally") and not is_transition(entry)]
+    attached: dict[int, list[int]] = {}
+    folded: set[int] = set()
+    for i, entry in enumerate(log):
+        if not is_transition(entry) or not ally_indices:
+            continue
+        same_round = [j for j in ally_indices if log[j].get("round") == entry.get("round")]
+        target = same_round[0] if same_round else next((j for j in ally_indices if j > i), ally_indices[-1])
+        attached.setdefault(target, []).append(i)
+        folded.add(i)
+    result = []
+    for i, entry in enumerate(log):
+        if i in folded:
+            continue
+        merged = dict(entry)
+        if i in attached:
+            sources = [log[j] for j in sorted([i, *attached[i]])]
+            merged["events"] = [event for source in sources for event in source.get("events") or []]
+            merged["calculations"] = {key: value for source in sources
+                                      for key, value in (source.get("calculations") or {}).items()}
+        result.append(merged)
+    return result
+
+
+def _fold_legacy_summon_rounds(log: list[dict]) -> list[dict]:
+    """구형 기록의 소환 전용 라운드를 다음 라운드 암시에 합친다.
+
+    아군 행동·적 공격·계산 기록이 하나라도 있으면 보존한다. 실제 무반응 라운드도
+    소환 전용 기록과 일치하지 않으면 그대로 남긴다. 원본 라운드 번호는 유지한다.
+    """
+    result = copy.deepcopy(log)
+    rounds = list(dict.fromkeys(entry.get("round") for entry in result))
+    for round_no in rounds:
+        entries = [entry for entry in result if entry.get("round") == round_no]
+        if len(entries) != 3 or [entry.get("phase") for entry in entries] != ["telegraph", "ally", "enemy"]:
+            continue
+        if any(entry.get("kind") not in (None, entry.get("phase")) or entry.get("calculations") for entry in entries):
+            continue
+        telegraph, ally, enemy = entries
+        if ally.get("events") != ["🗡️ 조사단의 행동!"]:
+            continue
+        hints = [event for event in telegraph.get("events", []) if event != "📣 적의 행동 암시!"]
+        summons = [event for event in enemy.get("events", []) if event != "👹 에너미의 행동!"]
+        if not hints or not all(event.startswith("🔮 ") and "소환 예정:" in event for event in hints):
+            continue
+        if not summons or not all(event.startswith("👹 ") and " 소환:" in event for event in summons):
+            continue
+        following = next((entry for entry in result
+                          if entry.get("round", 0) > round_no and entry.get("phase") == "telegraph"), None)
+        if following is None:
+            continue
+        following["events"] = ["📣 적의 행동 암시!", *hints, *summons,
+                               *(event for event in following.get("events", []) if event != "📣 적의 행동 암시!")]
+        result = [entry for entry in result if entry.get("round") != round_no]
+    return result
+
+
 def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleReplayRead:
     """전투를 1라운드 첫 턴부터 턴 단위로 되짚어볼 수 있게 각 턴의 결과 상태와 로그를 함께 돌려준다.
 
     round_snapshots[i]는 i번째 턴이 시작하기 직전 상태라, i번째 턴의 결과는 다음 스냅샷(마지막 턴은
-    현재 세션 상태)이 된다. 난입·전투 시작처럼 턴이 아닌 로그는 별도 칸으로 두지 않고 바로 뒤따르는
-    턴(보통 그 라운드의 아군 턴)의 로그 앞에 붙인다."""
+    현재 세션 상태)이 된다. 난입·퇴각은 아군 턴에 포함한다. 구형 라운드별 스냅샷은
+    라운드 번호로 연결하고 소환 전용 라운드는 다음 암시에 포함한다."""
     session = db.query(BattleSession).filter(BattleSession.id == session_id).first()
     if not session:
         raise HTTPException(status_code=404, detail="전투를 찾을 수 없습니다.")
@@ -6609,6 +6678,7 @@ def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleRep
         raise HTTPException(status_code=400, detail="완료된 전투만 되짚어볼 수 있습니다.")
 
     snapshots = list(session.round_snapshots or [])
+    legacy_round_snapshots = bool(snapshots) and all(not snapshot.get("phase") for snapshot in snapshots)
     # 각 턴이 끝난 시점의 상태. 마지막 턴의 결과는 현재 세션 상태다.
     resolved = [
         {
@@ -6632,15 +6702,29 @@ def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleRep
     # 난입·전투 시작 기록은 따로 넘기지 않고 다음 턴의 로그 앞에 붙인다.
     pending_events: list[str] = []
     pending_calculations: dict = {}
-    for entry in _battle_log_with_metrics(session.log or []):
+    replay_log = _battle_replay_entries(session.log or [])
+    if legacy_round_snapshots:
+        replay_log = _fold_legacy_summon_rounds(replay_log)
+    display_rounds: dict[int, int] = {}
+    for entry in replay_log:
         kind = entry.get("kind")
         if kind not in (None, "telegraph", "ally", "enemy") or not entry.get("phase"):
             pending_events.extend(entry.get("events") or [])
             pending_calculations.update(entry.get("calculations") or {})
             continue
         state = resolved[min(resolved_index, len(resolved) - 1)]
-        action_preview = snapshots[resolved_index].get("action_preview") or {} if resolved_index < len(snapshots) else {}
+        before = snapshots[resolved_index] if resolved_index < len(snapshots) else {}
+        if legacy_round_snapshots:
+            round_no = int(entry.get("round") or 1)
+            before = next((snapshot for snapshot in snapshots if snapshot.get("round") == round_no), {})
+            # 구형 자료에는 라운드 중간 상태가 없다. 암시는 라운드 시작 상태,
+            # 행동 결과는 다음 라운드 시작 상태(마지막은 세션 최종 상태)로 표시한다.
+            state = (before if entry.get("phase") == "telegraph" and before else
+                     next((snapshot for snapshot in snapshots if snapshot.get("round", 0) > round_no), resolved[-1]))
+        action_preview = (before.get("action_preview") or {}) if entry.get("phase") == "ally" else {}
         resolved_index += 1
+        source_round = int(entry.get("round") or 1)
+        display_rounds.setdefault(source_round, len(display_rounds) + 1)
         enemies = _normalized_battle_enemies(state["enemies"])
         # 행동 기록을 남기기 전에 끝난 전투는 그 턴의 로그에서 아군 행동을 되살린다.
         if not action_preview and entry.get("phase") == "ally":
@@ -6652,6 +6736,7 @@ def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleRep
         turns.append(BattleReplayTurn(
             index=len(turns),
             round=int(entry.get("round") or 1),
+            display_round=display_rounds[source_round],
             phase=entry.get("phase"),
             kind=kind,
             events=[*pending_events, *(entry.get("events") or [])],
@@ -6659,7 +6744,7 @@ def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleRep
             participants=_replay_participants(db, session, state["participants"], enemies, state["summons"]),
             enemies=enemies,
             summons=list(state["summons"]),
-            pending_enemy_actions=list(state["pending_enemy_actions"]),
+            pending_enemy_actions=list(state.get("pending_enemy_actions") or []),
             action_preview=dict(action_preview),
         ))
         pending_events, pending_calculations = [], {}
