@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 
 from app import crud
 from app.db import Base
-from app.models import BattleSession, Character, CharacterSkillUnlock, SkillNode
+from app.models import BattleSession, Character, CharacterItemState, CharacterSkillUnlock, Item, SkillNode
 from app.schemas import BattleAllyTurnRequest, CharacterActionInput, SkillNodeUpdate
 
 
@@ -15,7 +15,7 @@ class EscortSkillTest(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
 
-        # 2단계 위력 10% + 기술 효율 비례 0.1 = 피해 감소 0.2 (스택당)
+        # 2단계: floor(100 * 10% * 1.1) = 체력 +11 (스택당)
         self.caster = Character(
             name="경호원", faction="수비", hp=100, hp_max=100, mp=20, mp_max=20, skill_eff_fixed=0.1,
         )
@@ -77,26 +77,27 @@ class EscortSkillTest(unittest.TestCase):
     def participant(self, result, character_id):
         return next(p for p in result.participants if p["character_id"] == character_id)
 
-    def test_grants_guard_to_ally_and_reduction_to_self(self):
+    def test_grants_guard_to_ally_and_health_to_self(self):
         result = self.cast()
         ally = self.participant(result, self.ally.id)
         caster = self.participant(result, self.caster.id)
         guard = next(e for e in ally["status_effects"] if e.get("effect_type") == "escort_guard")
         self.assertEqual(guard["skill_image_url"], "/skill/escort-test.png")
         self.assertIn("경호 스택", guard["skill_description"])
-        reductions = [e for e in caster["status_effects"] if e.get("effect_type") == "escort_damage_reduction"]
+        reductions = [e for e in caster["status_effects"] if e.get("var_name") == "ab_escort" and e.get("stat") == "max_hp"]
         self.assertEqual(len(reductions), 1)
-        self.assertAlmostEqual(reductions[0]["value"], 0.2)
+        self.assertEqual(reductions[0]["applied_delta"], 11)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (111, 111))
 
-        event = next(e for e in result.log[-1]["events"] if "피해 감소 +20%" in e)
-        self.assertIn("기술 위력 0.1", result.log[-1]["calculations"][event])
+        event = next(e for e in result.log[-1]["events"] if "최대 체력 +11" in e)
+        self.assertIn("체력 증가 비율 0.1", result.log[-1]["calculations"][event])
 
-    def test_escorted_ally_hit_is_redirected_and_reduced(self):
+    def test_escorted_ally_hit_is_redirected_without_damage_reduction(self):
         self.cast()
         result = self.hit(self.ally.id)
-        # 요인은 맞지 않고, 경호원이 대신 맞으며 피해 감소 20%가 적용된다.
+        # 요인은 맞지 않고, 경호원이 대신 맞으며 늘어난 체력 111에서 피해 100을 받는다.
         self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
-        self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 11)
         self.assertTrue(any("대신 방어" in e for e in result.log[-1]["events"]))
 
     def test_other_defender_preserves_guard_for_later_attack(self):
@@ -114,7 +115,7 @@ class EscortSkillTest(unittest.TestCase):
         ))
         result = self.hit()
         self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
-        self.assertEqual(self.participant(result, self.caster.id)["hp"], 100)
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 111)
         self.assertLess(self.participant(result, self.ally2.id)["hp"], 100)
         guards = crud._status_effects_of_type(self.participant(result, self.ally.id), "escort_guard")
         self.assertEqual(len(guards), 1)
@@ -125,7 +126,7 @@ class EscortSkillTest(unittest.TestCase):
         crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(character_actions=[]))
         result = self.hit()
         self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
-        self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 11)
         self.assertEqual(crud._status_effects_of_type(self.participant(result, self.ally.id), "escort_guard"), [])
 
     def test_existing_guard_gets_bookmark_metadata_without_changing_snapshot(self):
@@ -145,22 +146,23 @@ class EscortSkillTest(unittest.TestCase):
         stored_ally = next(p for p in self.battle.participants if p["character_id"] == self.ally.id)
         self.assertNotIn("skill_description", stored_ally["status_effects"][0])
 
-    def test_reduction_applies_without_defending(self):
-        """경호 버프의 피해 감소는 방어 행동 여부와 무관하게 항상 적용된다."""
+    def test_health_bonus_applies_without_defending(self):
+        """경호의 체력 증가는 방어 행동과 무관하게 유지된다."""
         self.cast()
         result = self.hit(self.caster.id)
-        self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 11)
 
-    def test_self_reduction_caps_at_two_stacks(self):
+    def test_self_health_caps_at_two_stacks(self):
         self.cast(self.ally.id)
         self.cast(self.ally2.id)
         result = self.cast(self.ally.id)
         caster = self.participant(result, self.caster.id)
-        reductions = [e for e in caster["status_effects"] if e.get("effect_type") == "escort_damage_reduction"]
+        reductions = [e for e in caster["status_effects"] if e.get("var_name") == "ab_escort" and e.get("stat") == "max_hp"]
         self.assertEqual(len(reductions), 2)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (122, 122))
         self.assertTrue(any("최대치" in e for e in result.log[-1]["events"]))
 
-    def test_edited_nonstacking_reduction_keeps_ally_guards(self):
+    def test_edited_nonstacking_health_keeps_ally_guards(self):
         updated = crud.update_skill_node(self.db, self.node.id, SkillNodeUpdate(
             default_name="경호", stackable=False, power=0.2,
         ))
@@ -169,9 +171,10 @@ class EscortSkillTest(unittest.TestCase):
         self.cast(self.ally.id)
         result = self.cast(self.ally2.id)
         caster = self.participant(result, self.caster.id)
-        reductions = crud._status_effects_of_type(caster, "escort_damage_reduction")
+        reductions = [e for e in caster["status_effects"] if e.get("var_name") == "ab_escort" and e.get("stat") == "max_hp"]
         self.assertEqual(len(reductions), 1)
-        self.assertAlmostEqual(reductions[0]["value"], 0.3)
+        self.assertEqual(reductions[0]["applied_delta"], 22)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (122, 122))
         for character_id in (self.ally.id, self.ally2.id):
             self.assertEqual(len(crud._status_effects_of_type(
                 self.participant(result, character_id), "escort_guard")), 1)
@@ -183,12 +186,54 @@ class EscortSkillTest(unittest.TestCase):
         guards = [e for e in ally["status_effects"] if e.get("effect_type") == "escort_guard"]
         self.assertEqual(len(guards), 1)
 
-    def test_two_stacks_stack_damage_reduction(self):
+    def test_health_bonus_raises_wounded_hp_without_healing_missing_hp(self):
+        self.battle.participants = [{**p, "hp": 40} if p["character_id"] == self.caster.id else p
+                                    for p in self.battle.participants]
+        self.db.commit()
+        result = self.cast()
+        caster = self.participant(result, self.caster.id)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (51, 111))
+        self.assertEqual(result.log[-1]["metrics"]["ally_healing"], 0)
+
+    def test_health_bonus_persists_when_downed_and_reverts_when_dispelled(self):
+        caster = self.participant(self.cast(), self.caster.id)
+        removed, _ = crud._remove_status_effects_by_affinity(caster, "buff", 1)
+        self.assertEqual(removed, 1)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (100, 100))
+        caster = self.participant(self.cast(), self.caster.id)
+        caster["hp"] = 0
+        crud._mark_combatant_downed(caster)
+        self.assertEqual(caster["max_hp"], 122)
+        self.assertEqual(len(caster["status_effects"]), 2)
+
+    def test_recast_increases_current_and_max_hp_together(self):
+        # 재발동 패시브는 턴마다 장착 아이템에서 다시 읽으므로 실제로 장착시킨다.
+        item = Item(name="메아리", item_type="accessory", effects=[{"stat": "skill_recast", "delta": 0.5}])
+        self.db.add(item)
+        self.db.flush()
+        self.db.add(CharacterItemState(character_id=self.caster.id, item_id=item.id, equipped=True))
+        self.db.commit()
+        # floor(11 × 50%) = 5가 한 번 더 붙는다.
+        caster = self.participant(self.cast(), self.caster.id)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (116, 116))
+        caster = self.participant(self.cast(self.ally2.id), self.caster.id)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (132, 132))
+
+    def test_nonstacking_refresh_does_not_restore_lost_health(self):
+        crud.update_skill_node(self.db, self.node.id, SkillNodeUpdate(stackable=False))
+        self.cast()
+        self.battle.participants = [{**p, "hp": 40} if p["character_id"] == self.caster.id else p
+                                    for p in self.battle.participants]
+        self.db.commit()
+        caster = self.participant(self.cast(), self.caster.id)
+        self.assertEqual((caster["hp"], caster["max_hp"]), (40, 111))
+
+    def test_two_stacks_add_health_without_compounding(self):
         self.cast(self.ally.id)
         self.cast(self.ally2.id)
         result = self.hit(self.ally.id)
-        # 스택 2개 → 피해 감소 40% → floor(100 × 0.6) = 60
-        self.assertEqual(self.participant(result, self.caster.id)["hp"], 40)
+        # 스택 2개 → 체력 122에서 피해 100을 받는다.
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 22)
 
     def test_guard_covers_every_attack_in_the_same_enemy_turn(self):
         self.cast()
@@ -199,21 +244,21 @@ class EscortSkillTest(unittest.TestCase):
         }] * 2
         self.db.commit()
         result = crud.resolve_battle_enemy_turn(self.db, self.battle.id)
-        # 두 공격 모두 시전자가 대신 받는다(80 × 2). 요인은 한 번도 맞지 않는다.
+        # 두 공격 모두 시전자가 대신 받는다(100 × 2). 요인은 한 번도 맞지 않는다.
         self.assertEqual(self.participant(result, self.caster.id)["hp"], 0)
         self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
         # 턴이 끝나면 대신 받은 경호 스택이 소모된다.
         self.assertEqual(crud._status_effects_of_type(self.participant(result, self.ally.id), "escort_guard"), [])
 
-    def test_guard_consumed_but_reduction_persists_across_rounds(self):
+    def test_guard_consumed_but_health_persists_across_rounds(self):
         self.cast()
         first = self.hit(self.ally.id)
         self.assertEqual(self.participant(first, self.ally.id)["hp"], 100)
-        # 다음 피격은 아군이 직접 받으며 시전자의 피해 감소는 유지된다.
+        # 다음 피격은 아군이 직접 받으며 시전자의 최대 체력 증가는 유지된다.
         second = self.hit(self.ally.id)
         self.assertEqual(self.participant(second, self.ally.id)["hp"], 0)
-        self.assertEqual(self.participant(second, self.caster.id)["hp"], 20)
-        self.assertEqual(len(crud._status_effects_of_type(self.participant(second, self.caster.id), "escort_damage_reduction")), 1)
+        self.assertEqual(self.participant(second, self.caster.id)["hp"], 11)
+        self.assertEqual(len([e for e in self.participant(second, self.caster.id)["status_effects"] if e.get("stat") == "max_hp"]), 1)
 
 
 class EscortSpecTest(unittest.TestCase):
@@ -231,7 +276,7 @@ class EscortSpecTest(unittest.TestCase):
             spec = self._spec(tier)
             self.assertEqual(spec["default_name"], "경호")
             self.assertEqual(spec["var_name"], "ab_escort")
-            self.assertEqual(spec["power"], {2: 0.1, 3: 0.15, 4: 0.2, 5: 0.25, 6: 0.05}[tier])
+            self.assertEqual(spec["power"], {2: 0.1, 3: 0.15, 4: 0.2, 5: 0.25, 6: 0.3}[tier])
             self.assertEqual(spec["target_side"], "ALLY")
 
     def test_description_scales_with_depth(self):

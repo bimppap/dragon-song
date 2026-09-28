@@ -385,7 +385,7 @@ function isEnemyDebuff(effect: BattleStatusEffect): boolean {
 
 function statModifierAmount(stat: string, totalDelta: number): StackAmount {
   const percent = PERCENT_EFFECT_STATS.has(stat as ItemEffectStat);
-  const label = (EFFECT_STAT_LABELS[stat] ?? stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
+  const label = (stat === "max_hp" ? "최대 체력" : EFFECT_STAT_LABELS[stat] ?? stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
   return { label, value: totalDelta, percent, signed: true };
 }
 

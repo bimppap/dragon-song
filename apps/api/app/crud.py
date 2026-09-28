@@ -4077,7 +4077,7 @@ BATTLE_ITEM_EFFECT_LABELS: dict[str, str] = {
     "hp": "현재 체력", "hp_max": "최대 체력", "hp_heal_p": "체력", "mp": "MP", "mp_max": "MP 최대치",
     "atk": "공격력", "atk_p": "공격력 증폭(%)", "def": "방어력", "def_p": "방어력 증폭(%)", "def_eff": "방어 효율(%)",
     "dmg_p": "피해 증폭(%)", "dmg_r": "피해 감소(%)", "heal_eff": "치유 효율(%)", "skill_target": "기술 대상",
-    "attn": "주목도", "presence": "존재감(%)", "sh": "보호막",
+    "attn": "주목도", "presence": "존재감(%)", "sh": "보호막", "max_hp": "최대 체력",
     "skill_lv": "기술 등급", "skill_eff_true": "기술 효율(고정)", "skill_eff_fixed": "기술 효율(비례, %)",
     "skill_cost": "기술 비용",
     # 에너미 지속 디버프/하수인 약화가 고를 수 있는 능력치(EnemySkill.valid_combat_stat)는 전부 여기에 있어야
@@ -4192,10 +4192,11 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
         power = _resolved_skill_node_value(node, "power")
         max_stacks = 2 if _resolved_skill_node_value(node, "stackable") else 1
         return (
-            f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 피해 감소를 "
-            f"{power * 100:g}% + 기술 효율(비례)만큼 올리는 버프를 최대 {max_stacks}스택까지 부여합니다. "
+            f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 최대 체력을 "
+            f"경호 증가분 제외 최대 체력의 {power * 100:g}% × (1 + 기술 효율 비례)만큼 올리는 버프를 최대 {max_stacks}스택까지 부여합니다. "
+            "증가량은 소수점을 버리며 현재 체력도 같은 양만큼 증가합니다. "
             "경호 스택을 가진 아군이 피격되면 그 턴에 들어오는 공격을 모두 시전자가 대신 받고, 턴이 끝나면 스택이 소모됩니다. "
-            "자신의 피해 감소는 전투 종료까지 유지됩니다."
+            "자신의 최대 체력 증가는 전투 종료까지 유지됩니다."
         )
     if var_name == "ab_clone":
         return dynamic_derived_description(var_name, node.tier, None, {})
@@ -4659,7 +4660,8 @@ def _mark_combatant_downed(target: dict) -> bool:
     newly_downed = not bool(target.get("downed"))
     persistent = [effect for effect in _ensure_status_effects(target)
                   if effect.get("var_name") == "ab_regeneration"
-                  or effect.get("effect_type") == "escort_damage_reduction"]
+                  or effect.get("effect_type") == "escort_damage_reduction"
+                  or (effect.get("var_name") == "ab_escort" and effect.get("stat") == "max_hp")]
     for effect in _ensure_status_effects(target):
         if effect in persistent or effect.get("effect_type") != "stat_modifier":
             continue
@@ -4764,13 +4766,20 @@ def _apply_skill_recast(
     damaged += [("summon", s, before["summons"][id(s)] - s["hp"]) for s in summons if id(s) in before["summons"]]
     damaged = [(kind, target, amount) for kind, target, amount in damaged if amount > 0]
     healed, shielded = [], []
+    previous = {id(effect): values for effect, values in before["effects"]}
     for p in participants:
         if id(p) not in before["allies"]:
             continue
         hp_before, shield_before, revive_used_before = before["allies"][id(p)]
         # 아이템 부활로 생긴 체력은 기술 결과가 아니므로 제외한다.
         if p["hp"] > hp_before and revive_used_before == bool(p.get("revive_once_used")):
-            healed.append((p, p["hp"] - hp_before))
+            escort_gain = sum(
+                effect.get("applied_delta", 0) - previous.get(id(effect), {}).get("applied_delta", 0)
+                for effect in _ensure_status_effects(p)
+                if effect.get("var_name") == "ab_escort" and effect.get("stat") == "max_hp"
+            )
+            if p["hp"] - hp_before > escort_gain:
+                healed.append((p, p["hp"] - hp_before - escort_gain))
         if p.get("shield", 0) > shield_before:
             shielded.append((p, p.get("shield", 0) - shield_before))
     previous = {id(effect): values for effect, values in before["effects"]}
@@ -4842,6 +4851,8 @@ def _apply_skill_recast(
                         continue
                     effect["applied_delta"] = effect.get("applied_delta", 0) + extra
                     target[stat] = target.get(stat, 0) + extra
+                    if stat == "max_hp" and effect.get("var_name") == "ab_escort":
+                        target["hp"] += extra
                     label = BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)
                     shown = f"{extra:+d}" if integer else f"{'+' if extra >= 0 else ''}{_formula_number(round(extra * 100, 4))}%p"
                     notes.append(f"{label} {shown}")
@@ -5070,6 +5081,8 @@ def _remove_status_effects_by_affinity(target: dict, affinity: str, count: int) 
             if effect.get("effect_type") == "stat_modifier":
                 stat = effect["stat"]
                 target[stat] = target.get(stat, 0) - effect.get("applied_delta", 0)
+                if stat == "max_hp":
+                    target["hp"] = min(target["hp"], target["max_hp"])
             removed_names.append(effect.get("skill_name") or effect.get("var_name") or affinity)
             continue
         kept.append(effect)
@@ -5401,8 +5414,8 @@ def _counter_effects_for_target(target: dict) -> list[dict]:
     ]
 
 
-# 경호가 시전자에게 쌓을 수 있는 피해 감소 버프의 최대 스택.
-ESCORT_MAX_REDUCTION_STACKS = 2
+# 경호가 시전자에게 쌓을 수 있는 최대 체력 버프의 최대 스택.
+ESCORT_MAX_HEALTH_STACKS = 2
 
 
 def _escort_damage_reduction(target: dict) -> float:
@@ -8037,34 +8050,42 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     events.append(
                         f"🛡️ {p['name']}의 {skill_name} → {target['name']} 경호 스택 부여 (피격 시 {p['name']}이(가) 대신 방어)"
                     )
-                reduction = max(0.0, skill_power + skill_eff_fixed)
                 stackable = bool(selected_skill.get("stackable"))
-                max_stacks = ESCORT_MAX_REDUCTION_STACKS if stackable else 1
-                if not stackable:
-                    # 일반 중첩 제거는 아군의 경호 스택도 지우므로 자신의 피해 감소만 갱신한다.
-                    p["status_effects"] = [effect for effect in _ensure_status_effects(p)
-                                           if effect.get("effect_type") != "escort_damage_reduction"]
-                own_stacks = len(_status_effects_of_type(p, "escort_damage_reduction"))
-                if own_stacks >= max_stacks:
-                    events.append(
-                        f"🛡️ {p['name']}의 {skill_name} → 피해 감소 "
-                        f"{max_stacks}스택 유지 (최대치)"
-                    )
+                max_stacks = ESCORT_MAX_HEALTH_STACKS if stackable else 1
+                own_effects = [effect for effect in _ensure_status_effects(p)
+                               if effect.get("var_name") == "ab_escort"
+                               and effect.get("stat") == "max_hp"]
+                base_hp = max(0, p["max_hp"] - sum(effect["applied_delta"] for effect in own_effects))
+                increase = max(0, _floor_amount(round(base_hp * skill_power * (1 + skill_eff_fixed), 10)))
+                if stackable and len(own_effects) >= max_stacks:
+                    events.append(f"🛡️ {p['name']}의 {skill_name} → 최대 체력 {max_stacks}스택 유지 (최대치)")
                     continue
+                previous_increase = 0
+                if not stackable:
+                    # 갱신 시 같은 증가량으로 현재 체력을 반복 회복하지 않는다.
+                    previous_increase = sum(effect["applied_delta"] for effect in own_effects)
+                    p["max_hp"] -= previous_increase
+                    p["status_effects"] = [effect for effect in _ensure_status_effects(p) if effect not in own_effects]
                 _add_action_status_effect(p, {
-                    "effect_type": "escort_damage_reduction", "affinity": "buff",
-                    "source_character_id": p["character_id"], "source_name": p["name"],
-                    "skill_name": skill_name, "var_name": var_name, "stackable": True,
-                    "value": reduction,
+                    "effect_type": "stat_modifier", "affinity": "buff", "stat": "max_hp",
+                    "applied_delta": increase, "source_character_id": p["character_id"],
+                    "source_name": p["name"], "skill_name": skill_name,
+                    "var_name": var_name, "stackable": True,
                 }, participants=participants, enemies=enemies)
+                p["max_hp"] += increase
+                if increase >= previous_increase:
+                    p["hp"] += increase - previous_increase
+                else:
+                    p["hp"] = min(p["hp"], p["max_hp"])
                 events.append(
-                    f"🛡️ {p['name']}의 {skill_name} → 피해 감소 +{_floor_amount(reduction * 100)}% "
-                    f"({own_stacks + 1}/{max_stacks}스택 · "
-                    f"합계 {_floor_amount(_escort_damage_reduction(p) * 100)}%)"
+                    f"🛡️ {p['name']}의 {skill_name} → 최대 체력 +{increase} · "
+                    f"현재 체력 {p['hp']}/{p['max_hp']} "
+                    f"({len(own_effects) + 1 if stackable else 1}/{max_stacks}스택)"
                 )
                 calculations[events[-1]] = (
-                    f"floor((기술 위력 {_formula_number(skill_power)} + "
-                    f"기술 효율 비례 {_formula_number(skill_eff_fixed)}) × 100)%"
+                    f"floor(경호 증가분 제외 최대 체력 {_formula_number(base_hp)} × "
+                    f"체력 증가 비율 {_formula_number(skill_power)} × "
+                    f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}))"
                 )
                 continue
 

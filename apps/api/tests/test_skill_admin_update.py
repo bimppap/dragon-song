@@ -110,10 +110,10 @@ class SkillAdminUpdateTest(unittest.TestCase):
         node = next(n for n in nodes if n.branch == 0 and n.col == 1 and n.tier == 3)
         self.assertIsNone(node.description_template)
 
-        updated = update_skill_node(self.db, node.id, SkillNodeUpdate(description="받는 피해 {피해 감소} 감소"))
+        updated = update_skill_node(self.db, node.id, SkillNodeUpdate(description="최대 체력 {체력 증가 비율} 증가"))
 
-        self.assertEqual(updated.description, "받는 피해 15% 감소")
-        self.assertEqual(updated.description_template, "받는 피해 {피해 감소} 감소")
+        self.assertEqual(updated.description, "최대 체력 15% 증가")
+        self.assertEqual(updated.description_template, "최대 체력 {체력 증가 비율} 증가")
 
     def test_marks_skills_whose_description_is_written_automatically(self):
         nodes = crud.get_skill_nodes(self.db, "불굴의 서")

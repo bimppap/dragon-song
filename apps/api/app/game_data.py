@@ -240,7 +240,7 @@ SKILL_POWER_SLOTS: dict[str, list[dict[str, str]]] = {
     ],
     "ab_suppressing": [{"key": "power", "label": "즉발 피해", "unit": "flat"}],
     "ab_sparge": [{"key": "power", "label": "차례마다 주는 전체 피해", "unit": "flat"}],
-    "ab_escort": [{"key": "power", "label": "피해 감소", "unit": "percent"}],
+    "ab_escort": [{"key": "power", "label": "체력 증가 비율", "unit": "percent"}],
     "ab_eruption": [
         {"key": "power", "label": "피격 시 반응 피해", "unit": "flat"},
         {"key": "presence", "label": "존재감 증가", "unit": "percent"},
@@ -347,10 +347,10 @@ SKILL_BOOKS: dict[str, dict] = {
                 ),
                 "derived": _skill(
                     "경호", trigger_type="지속형", category="강화", stackable=True,
-                    var_name="ab_escort", cost=0, power=(0.1, 0.1, 0.15, 0.2, 0.25, 0.05),
+                    var_name="ab_escort", cost=0, power=(0.05, 0.1, 0.15, 0.2, 0.25, 0.3),
                     target="1", target_side="ALLY", order=4,
-                    formula="피해 감소 증가(자신, 최대 2스택): 기술 위력 + 기술 효율 비례. 경호 스택을 가진 아군(아군당 1스택)이 피격되면 그 턴의 공격을 전부 시전자가 대신 받는다.",
-                    description="지정한 아군에게 경호 스택을 부여하고 자신의 피해 감소를 높입니다.",
+                    formula="최대·현재 체력 증가(자신, 최대 2스택): floor(경호 증가분 제외 최대 체력 * 체력 증가 비율 * (1+기술 효율 비례)). 경호 스택을 가진 아군(아군당 1스택)이 피격되면 그 턴의 공격을 전부 시전자가 대신 받는다.",
+                    description="지정한 아군에게 경호 스택을 부여하고 자신의 최대 체력과 현재 체력을 높입니다.",
                 ),
             },
             {
@@ -536,10 +536,11 @@ def dynamic_derived_description(
         )
     if var_name == "ab_escort":
         return (
-            f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 피해 감소를 "
-            f"{value * 100:g}% + 기술 효율(비례)만큼 올리는 버프를 최대 2스택까지 부여합니다. "
+            f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 최대 체력을 "
+            f"경호 증가분 제외 최대 체력의 {value * 100:g}% × (1 + 기술 효율 비례)만큼 올리는 버프를 최대 2스택까지 부여합니다. "
+            "증가량은 소수점을 버리며 현재 체력도 같은 양만큼 증가합니다. "
             "경호 스택을 가진 아군이 피격되면 그 턴에 들어오는 공격을 모두 시전자가 대신 받고, 턴이 끝나면 스택이 소모됩니다. "
-            "자신의 피해 감소는 전투 종료까지 유지됩니다."
+            "자신의 최대 체력 증가는 전투 종료까지 유지됩니다."
         )
     if var_name == "ab_veil":
         return (
