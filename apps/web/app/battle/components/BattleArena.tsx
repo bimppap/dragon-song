@@ -2602,8 +2602,13 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
 
           // 표시할 배지를 먼저 모은다. 바깥 조건을 따로 적어 두면 안쪽 조건과 어긋나기 쉽고,
           // 그때 빈 컨테이너가 남아 space-y 간격만큼 카드가 혼자 높아진다.
-          const bookmarks: AllyTargetBookmark[] = (p.status_effects ?? [])
-            .filter((effect) => effect.effect_type === "escort_guard")
+          const escortGuards = (p.status_effects ?? []).filter((effect) => effect.effect_type === "escort_guard");
+          // 경호는 아군당 1스택이라, 같은 시전자의 경호가 이미 걸려 있으면 그 행동의 북마크를 따로 붙이지 않는다.
+          // 되짚어보기는 행동 뒤 상태라 이번 행동으로 걸린 경호와 저장된 행동이 겹친다.
+          const guardedBy = (casterId: number, skillName: string | null | undefined, isEscort: boolean) =>
+            escortGuards.some((effect) => effect.source_character_id === casterId
+              && (isEscort || (skillName != null && effect.skill_name === skillName)));
+          const bookmarks: AllyTargetBookmark[] = escortGuards
             .map((effect, index) => ({
               key: `escort:${effect.source_character_id}:${index}`,
               casterName: effect.source_name ?? participantsById.get(effect.source_character_id ?? -1)?.name ?? "시전자",
@@ -2622,6 +2627,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
               if (readOnly) {
                 const preview = draftPreview?.[actor.character_id];
                 if (!preview?.ally_target_ids?.includes(p.character_id)) continue;
+                if (preview.kind === "skill" && guardedBy(actor.character_id, preview.skill_name, false)) continue;
                 bookmarks.push({ key: `draft:${actor.character_id}`, casterName: actor.name,
                   name: preview.kind === "skill" ? preview.skill_name ?? "기술" : CHAR_ACTION_LABEL[preview.kind],
                   imageUrl: preview.kind === "skill" ? preview.skill_image_url : FACTION_POSITION_IMAGE[preview.kind === "defend" ? "수비" : "치유"],
@@ -2634,6 +2640,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
                 if (!action) continue;
                 const skill = action.kind === "skill" ? resolveSelectedSkill(actor.character_id, action.skill_node_id) : null;
                 if (!draftAllyTargetIds(actor, action, skill, session).includes(p.character_id)) continue;
+                if (skill && guardedBy(actor.character_id, skill.display_name, skill.var_name === "ab_escort")) continue;
                 bookmarks.push({ key: `draft:${actor.character_id}`, casterName: actor.name,
                   name: skill?.display_name ?? CHAR_ACTION_LABEL[action.kind],
                   imageUrl: skill ? skill.image_url : FACTION_POSITION_IMAGE[action.kind === "defend" ? "수비" : "치유"],
