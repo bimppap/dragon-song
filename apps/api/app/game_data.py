@@ -265,7 +265,7 @@ SKILL_POWER_SLOTS: dict[str, list[dict[str, str]]] = {
     ],
     "ab_weaken": [{"key": "power", "label": "받는 피해 증가", "unit": "percent"}],
     "ab_protect": [
-        {"key": "power", "label": "회복 비율", "unit": "percent"},
+        {"key": "power", "label": "보호막 비율", "unit": "percent"},
         {"key": "attn_transfer", "label": "주목도 이전", "unit": "percent"},
     ],
 }
@@ -374,8 +374,8 @@ SKILL_BOOKS: dict[str, dict] = {
                     "보호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_protect",
                     cost=2, power=0.05, powers={"attn_transfer": (0.2, 0.6, 1.2, 2.0, 3.0, 0.1)},
                     target="1", target_side="ALLY", order=7,
-                    formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율) / 주목도 이전: 주목도 이전*(1+기술 효율 비례)",
-                    description="지정한 아군의 체력을 회복시키며 주목도를 감소시키고, 감소량의 2배만큼 자신의 주목도를 높입니다.",
+                    formula="보호막: floor(대상 최대 체력*보호막 비율*(1+기술 효율 비례)) / 주목도 이전: 주목도 이전*(1+기술 효율 비례)",
+                    description="지정한 아군의 최대 체력에 비례한 보호막을 부여하며 주목도를 감소시키고, 감소량의 2배만큼 자신의 주목도를 높입니다.",
                     tier6_name="수호",
                 ),
                 "derived": _skill(
@@ -512,6 +512,12 @@ def dynamic_derived_description(
     L = int(tier)
     named = powers or {}
     value = 0.0 if power is None else float(power)
+    if var_name == "ab_protect":
+        return (
+            f"지정한 아군에게 대상 최대 체력의 {value * 100:g}% × (1 + 기술 효율 비례)만큼 "
+            "보호막을 부여합니다(소수점 버림). "
+            "대상의 주목도를 감소시키고 감소량의 2배에 존재감을 반영한 만큼 자신의 주목도를 높입니다."
+        )
     if var_name == "ab_eruption":
         return (
             f"자신의 존재감을 {named.get('presence', 0) * 100:g}%p 증가시키고, 에너미 행동 중 피격될 때마다 "

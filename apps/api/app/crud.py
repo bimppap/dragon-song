@@ -8536,25 +8536,27 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 _spend_skill_cost(p, selected_skill)
                 attn_transfer = _skill_power_value(selected_skill, "attn_transfer", 0.0)
                 attn_reduction_pct = min(1.0, max(0.0, attn_transfer * (1 + skill_eff_fixed)))
-                healed_values: list[int] = []
                 protect_entries: list[tuple[str, str | list[str] | None]] = []
                 for target in targets:
-                    heal_amount, heal_formula = _skill_heal_amount(p, target, skill_power, skill_eff_fixed, include_flat_efficiency=False)
-                    before_hp = target["hp"]
-                    healed, revived = _apply_skill_heal(p, target, heal_amount, grant_attention=False)
-                    healed_values.append(healed)
+                    shield = max(0, _floor_amount(target["max_hp"] * skill_power * (1 + skill_eff_fixed)))
+                    shield_formula = (
+                        f"floor(대상 최대 체력 {_formula_number(target['max_hp'])} × "
+                        f"보호막 비율 {_formula_number(skill_power)} × "
+                        f"(1 + 기술 효율 비례 {_formula_number(skill_eff_fixed)}))"
+                    )
+                    target["shield"] = target.get("shield", 0) + shield
                     attn_before = max(0, target["attn"])
                     reduced_attn = _floor_amount(attn_before * attn_reduction_pct)
                     target["attn"] -= reduced_attn
                     gained_attn = _floor_amount((reduced_attn * 2) * (1 + p["presence"]))
                     p["attn"] += gained_attn
-                    if healed <= 0 and not revived and reduced_attn <= 0 and gained_attn <= 0:
+                    if shield <= 0 and reduced_attn <= 0 and gained_attn <= 0:
                         continue
                     protect_entries.append((
-                        f"{target['name']}{_healed_log_fragment(healed, revived)} · [{target['hp']}/{target['max_hp']}]"
+                        f"{target['name']} {shield} 보호막 부여"
                         f" · 주목도 {reduced_attn} 이전 / {gained_attn} 획득",
                         [
-                            *([_skill_heal_formula(target, heal_formula, before_hp)] if healed > 0 or revived else []),
+                            shield_formula,
                             (
                                 f"floor(대상 주목도 {_formula_number(attn_before)} × "
                                 f"주목도 이전 {_formula_number(attn_transfer)} × "
@@ -8567,7 +8569,6 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         ],
                     ))
                 _append_targeted_events(events, calculations, f"🛡️ {p['name']}의 {skill_name}", protect_entries)
-                _apply_multi_heal_attn(p, healed_values)
                 continue
 
             if var_name == "ab_cure":

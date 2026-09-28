@@ -119,13 +119,51 @@ class SkillLogFormulaTest(unittest.TestCase):
         self.assertEqual(len(heals), 1)
         self.assertIn("→ 실험 요정 A", heals[0])
 
+    def test_protect_adds_shield_without_healing_and_keeps_attention_transfer(self):
+        node = self._skill_node("불굴의 서", 2, "보호", "회복", "ab_protect", 0.1, "1", "ALLY")
+        node.col = None
+        node.powers = {"attn_transfer": 0.2}
+        self.db.add(CharacterSkillUnlock(character_id=self.caster.id, node_id=node.id))
+        self.db.commit()
+        for hp in (50, 100):
+            with self.subTest(hp=hp):
+                caster = crud._snapshot_combatant(self.caster)
+                caster.update(skill_eff_fixed=0.5, heal_eff=1.0, skill_eff_true=999, presence=0.25, attn=10)
+                target = crud._snapshot_combatant(self.ally)
+                target.update(hp=hp, shield=7, attn=100)
+                battle = BattleSession(
+                    mode="practice", status="in_progress", round=1, phase="ally",
+                    participants=[caster, target], enemies=self.battle.enemies, summons=[], log=[],
+                )
+                self.db.add(battle)
+                self.db.commit()
+                result = crud.resolve_battle_ally_turn(self.db, battle.id, BattleAllyTurnRequest(character_actions=[
+                    CharacterActionInput(character_id=self.caster.id, kind="skill", skill_node_id=node.id,
+                                         target_character_id=self.ally.id),
+                ]))
+                actor, ally = result.participants
+                self.assertEqual(ally["hp"], hp)
+                self.assertEqual(ally["shield"], 22)  # 7 + floor(100 * 10% * 1.5), 치유 효율 제외
+                self.assertEqual(ally["attn"], 70)
+                self.assertEqual(actor["attn"], 85)  # 10 + floor(30 * 2 * 1.25), 치유 주목도 없음
+                self.assertEqual(actor["mp"], 9)
+                event = next(event for event in result.log[-1]["events"] if "15 보호막 부여" in event)
+                self.assertNotIn("치유 효율", result.log[-1]["calculations"][event][0])
+                self.assertEqual(result.log[-1]["metrics"]["ally_healing"], 0)
+        description = crud._resolved_skill_node_value(node, "description")
+        self.assertIn("보호막", description)
+        self.assertIn("10%", description)
+        self.assertNotIn("치유 효율", description)
+        self.assertIn("보호막:", crud._resolved_skill_node_value(node, "formula"))
+        self.assertNotIn("치유 효율", crud._resolved_skill_node_value(node, "formula"))
+
     def test_basic_skills_exclude_flat_skill_efficiency(self):
         # 강타·분쇄·위해·보호·회복·정화는 기술 효율 고정을 계산에 더하지 않는다.
         cases = [
             ("용맹의 서", 0, "강타", "피해", "ab_strike", 1.5, "ENEMY", "15 피해"),
             ("용맹의 서", 1, "분쇄", "피해", "ab_crushing", 0.75, "ENEMY", "7 피해"),
             ("용맹의 서", 2, "위해", "복합", "ab_harm", 1.0, "ENEMY", "10 피해"),
-            ("불굴의 서", 2, "보호", "회복", "ab_protect", 0.05, "ALLY", "5 치유"),
+            ("불굴의 서", 2, "보호", "회복", "ab_protect", 0.05, "ALLY", "5 보호막 부여"),
             ("헌신의 서", 0, "회복", "회복", "ab_cure", 0.2, "ALLY", "20 치유"),
             ("헌신의 서", 2, "정화", "회복", "ab_purification", 0.15, "ALLY", "15 치유"),
         ]
