@@ -17,7 +17,8 @@ class SkillLogFormulaTest(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
 
-        self.caster = Character(name="실험 요정 D", faction="치유", hp=100, hp_max=100, mp=10, mp_max=10)
+        # 시전자도 체력이 빈 상태여야 자신을 대상으로 골랐을 때 치유 줄이 남는다.
+        self.caster = Character(name="실험 요정 D", faction="치유", hp=80, hp_max=100, mp=10, mp_max=10)
         self.ally = Character(name="실험 요정 A", faction="공격", hp=50, hp_max=100, mp=10, mp_max=10)
         self.db.add_all([self.caster, self.ally])
         self.db.flush()

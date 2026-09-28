@@ -2,13 +2,88 @@
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import Image from "next/image";
-import { CalendarClock, Image as ImageIcon } from "lucide-react";
+import { ArrowRight, CalendarClock, Image as ImageIcon, Play } from "lucide-react";
 import EmptyState from "@/components/common/EmptyState";
 import { useToast } from "@/components/common/ToastProvider";
 import { Badge } from "@/components/ui/badge";
-import { fetchActiveChapter, fetchEnemies, fetchLiveBattle, type BattleSession, type Chapter, type Enemy } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import {
+  fetchActiveChapter, fetchEnemies, fetchFinishedRealBattles, fetchLiveBattle,
+  type BattleSession, type BattleSessionSummary, type Chapter, type Enemy,
+} from "@/lib/api";
 import { useBattleSocket, type BattleDraftPreview } from "@/lib/useBattleSocket";
 import BattleArena from "./BattleArena";
+import BattleTurnReplay from "./BattleTurnReplay";
+
+/** 지난 전투 한 줄의 이름: "챕터1 : 적이름a, 적이름b". */
+function pastBattleName(battle: BattleSessionSummary): string {
+  return `${battle.chapter ?? "챕터 미지정"} : ${battle.enemy_names.join(", ") || "에너미 없음"}`;
+}
+
+/** 지금까지 진행한 실전 전투를 드롭다운으로 펼쳐, 골라서 턴 단위로 되짚어본다. */
+function PastBattlesMenu({ battles, onSelect }: {
+  battles: BattleSessionSummary[];
+  onSelect: (sessionId: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(event: MouseEvent) {
+      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [open]);
+
+  if (battles.length === 0) return null;
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-haspopup="menu"
+        className="flex items-center gap-1 text-sm text-muted transition-colors hover:text-gold"
+        onClick={() => setOpen((current) => !current)}
+      >
+        과거 전투 돌아보기
+        <ArrowRight size={14} />
+      </button>
+      {open && (
+        <ul
+          role="menu"
+          className="absolute right-0 z-20 mt-2 max-h-80 w-max min-w-64 max-w-[min(90vw,28rem)] overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-lg"
+        >
+          {battles.map((battle) => (
+            <li key={battle.id} role="none" className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-inset">
+              <span className="min-w-0 flex-1 truncate text-sm text-ivory">{pastBattleName(battle)}</span>
+              <Button
+                type="button"
+                role="menuitem"
+                variant="ghost"
+                size="sm"
+                className="size-7 shrink-0 p-0 text-gold"
+                aria-label={`${pastBattleName(battle)} 턴 되짚어보기`}
+                onClick={() => { setOpen(false); onSelect(battle.id); }}
+              >
+                <Play size={14} />
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 // 진행 상황 갱신은 WebSocket이 담당하고, 폴링은 연결 실패 시를 대비한 폴백으로만 남긴다.
 const LIVE_BATTLE_POLL_MIN_MS = 15000;
@@ -25,6 +100,9 @@ export default function RunnerBattleOverview() {
   const [liveSession, setLiveSession] = useState<BattleSession | null>(null);
   const [draftPreview, setDraftPreview] = useState<BattleDraftPreview | null>(null);
   const liveVersionRef = useRef<Pick<BattleSession, "id" | "updated_at"> | null>(null);
+  // 과거 전투 돌아보기: 완료된 실전 전투를 턴 단위로 되짚어본다.
+  const [pastBattles, setPastBattles] = useState<BattleSessionSummary[]>([]);
+  const [replaySessionId, setReplaySessionId] = useState<number | null>(null);
 
   const { connected: battleSocketConnected } = useBattleSocket(liveSession?.id ?? null, (msg) => {
     if (msg.type === "battle_update") {
@@ -139,6 +217,20 @@ export default function RunnerBattleOverview() {
     };
   }, [battleSocketConnected, liveSession?.status]);
 
+  // 지난 전투 목록은 자주 바뀌지 않으므로 화면에 들어올 때 한 번만 읽는다.
+  useEffect(() => {
+    let cancelled = false;
+    fetchFinishedRealBattles()
+      .then((battles) => { if (!cancelled) setPastBattles(battles); })
+      .catch(() => { /* 목록을 못 읽어도 전투 화면 자체는 보여준다. */ });
+    return () => { cancelled = true; };
+  }, []);
+
+
+  if (replaySessionId != null) {
+    return <BattleTurnReplay sessionId={replaySessionId} onExit={() => setReplaySessionId(null)} />;
+  }
+
   if (liveSession != null) {
     return (
       <BattleArena
@@ -157,6 +249,11 @@ export default function RunnerBattleOverview() {
 
   return (
     <div className="space-y-6">
+      {/* 지난 실전 전투 되짚어보기. 실전 전투가 진행 중이면 관전 화면으로 넘어가 이 줄 자체가 보이지 않는다. */}
+      <div className="flex justify-end">
+        <PastBattlesMenu battles={pastBattles} onSelect={setReplaySessionId} />
+      </div>
+
       <div className="flex flex-col items-center gap-2 text-center">
         <h1 className="text-xl font-semibold text-ivory">{chapter?.name ?? "진행 중인 챕터 없음"}</h1>
         {chapter?.battle_date ? (

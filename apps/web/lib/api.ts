@@ -335,7 +335,8 @@ export type ItemEffectStat =
   | "delivery_date_slot" | "delivery_freeform"
   | "spirit_stone_customize" | "spirit_stone_exchange"
   | "trait_change"
-  | "battle_revive_once" | "battle_auto_revive" | "skill_recast";
+  | "battle_revive_once" | "battle_auto_revive" | "skill_recast"
+  | "battle_buff_round";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -393,7 +394,16 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "battle_revive_once", label: "전투 당 1회 부활" },
   { value: "battle_auto_revive", label: "전투 이후 자동 부활" },
   { value: "skill_recast", label: "기술 재발동(%)" },
+  { value: "battle_buff_round", label: "일회성 강화(다음 라운드까지)" },
 ];
+
+/** "일회성 강화" 아이템이 함께 담을 수 있는 능력치. 체력·마나·보호막·주목도처럼
+ *  쓰면 사라지는 자원은 강화가 끝날 때 되돌릴 수 없어 제외한다(apps/api/app/schemas.py와 맞춘다). */
+export const BUFFABLE_EFFECT_STATS = new Set<ItemEffectStat>([
+  "atk", "atk_p", "def", "def_p", "def_eff", "dmg_p", "dmg_r", "heal_eff",
+  "presence", "skill_lv", "skill_eff_true", "skill_eff_fixed", "skill_cost", "skill_target",
+  "hp_regen_true", "hp_regen_fixed", "mp_regen",
+]);
 
 /** 장착한 동반자·장신구에서만 동작하는 전투 패시브 효과. 소모품에는 설정할 수 없다. */
 export const EQUIP_PASSIVE_EFFECT_STATS = new Set<ItemEffectStat>(["battle_revive_once", "battle_auto_revive", "skill_recast"]);
@@ -427,6 +437,7 @@ export function formatEffect(effect: ItemEffect): string {
     || effect.stat === "spirit_stone_customize" || effect.stat === "spirit_stone_exchange"
     || effect.stat === "trait_change"
     || effect.stat === "battle_revive_once" || effect.stat === "battle_auto_revive"
+    || effect.stat === "battle_buff_round"
   ) return label;
   if (effect.stat === "skill_recast") return `기술 재발동 ${Math.round(effect.delta * 1000) / 10}% 위력`;
   const sign = effect.delta >= 0 ? "+" : "";
@@ -1626,11 +1637,20 @@ export async function fetchActiveChapter(): Promise<Chapter | null> {
   );
 }
 
-export type EnemySkillType = "지정 공격" | "광역 공격" | "소환" | "지속 디버프" | "환경";
+export type EnemySkillType = "지정 공격" | "광역 공격" | "포지션 광역 공격" | "소환" | "지속 디버프" | "환경";
+
+/** 대상을 자동으로 고르는 방식. 행동 암시에서 이 중 하나로 바꿔 지정할 수 있다. */
+export type EnemyAutoTargetMode = "attention" | "random" | "hp";
+
+export const ENEMY_AUTO_TARGET_MODE_LABELS: Record<EnemyAutoTargetMode, string> = {
+  attention: "주목도 순",
+  random: "무작위",
+  hp: "체력 높은 순",
+};
 
 export interface EnemySkill {
   manual_target_count?: boolean;
-  auto_target_mode?: "attention" | "random";
+  auto_target_mode?: EnemyAutoTargetMode;
   environment_id?: number | null;
   environment_stack_count?: number;
   on_hit_dot?: boolean;
@@ -1847,13 +1867,27 @@ export interface BattleStatusEffect {
   stackable?: boolean;
   stacks?: number;
   value?: number;
+  /** 개선이 올려 주는 기술 효율(비례/고정). */
+  value_fixed?: number;
+  value_true?: number;
+  /** 반격이 막아 주는 피해 비율과 반격 피해 배율. */
+  damage_reduction?: number;
+  counter_damage?: number;
+  /** 정화 6단계의 약화 방지 스택당 피해 증폭. */
+  damage_bonus_per_stack?: number;
+  /** 분출·살포가 스택마다 쓰는 단계(스킬레벨). */
+  skill_lv?: number;
+  /** 분출처럼 피격 시 되돌려주는 반응의 종류. */
+  reaction?: string;
+  /** 라운드 한정 효과가 사라지는 라운드. */
+  expires_round?: number;
 }
 
 export interface BattleParticipant {
   trait?: Trait | null;
   pair_source_character_id?: number;
   pair_source_name?: string;
-  environment_stacks?: { id: number; name: string; color: string; count: number }[];
+  environment_stacks?: { id: number; name: string; color: string; damage_per_stack?: number; count: number }[];
   character_id: number;
   name: string;
   status_effects?: BattleStatusEffect[];
@@ -1874,8 +1908,8 @@ export interface BattleParticipant {
 export interface BattleLogRound {
   round: number;
   phase?: BattlePhase;
-  /** 턴 결과가 아닌 난입·에너미 참가 기록 */
-  kind?: "join";
+  /** 턴 결과가 아닌 기록: 난입·에너미 참가("join"), 전투 시작 시 발동한 상시 효과("start") */
+  kind?: "join" | "start";
   events: string[];
   metrics?: BattleLogMetrics;
   /** 이벤트 문자열을 키로 하는, 계산 당시 실제 피연산자가 대입된 결과식. */
@@ -1895,6 +1929,10 @@ export interface BattlePendingEnemyAction {
   kind: EnemyActionKind;
   skill_index: number | null;
   target_character_ids: number[];
+  /** 포지션 광역 공격에서 확정한 대상 포지션. */
+  target_faction?: Faction | null;
+  /** 이 행동에 적용한 자동 대상 선정 방식. */
+  auto_target_mode?: EnemyAutoTargetMode | null;
 }
 
 /** 전투 응답에 함께 실려 오는 챕터 환경의 표시용 정보(이름표 해석 전용). */
@@ -1902,6 +1940,8 @@ export interface BattleSessionEnvironment {
   id: number;
   name: string;
   color: string;
+  /** 스택 하나가 매 라운드 주는 피해. */
+  damage_per_stack?: number;
 }
 
 export interface BattleSession {
@@ -1977,6 +2017,42 @@ export interface BattleEnemyActionInput {
   kind: EnemyActionKind;
   skill_index?: number | null;
   target_character_ids?: number[];
+  /** 포지션 광역 공격에서 때릴 포지션. */
+  target_faction?: Faction | null;
+  /** 비우면 기술에 설정된 자동 대상 선정 방식을 쓴다. */
+  auto_target_mode?: EnemyAutoTargetMode | null;
+}
+
+/** 되짚어보기 한 칸: 그 턴이 끝난 시점의 판 상태와 그 턴의 로그. */
+export interface BattleReplayTurn {
+  index: number;
+  round: number;
+  phase: BattlePhase | null;
+  /** 정규 턴은 null, 난입은 "join", 전투 시작 알림은 "start". */
+  kind: string | null;
+  events: string[];
+  calculations: Record<string, string | string[]>;
+  participants: BattleParticipant[];
+  enemies: BattleSession["enemies"];
+  summons: BattleSession["summons"];
+  pending_enemy_actions: BattlePendingEnemyAction[];
+  /** 아군 턴에 캐릭터마다 고른 행동(기술·아이템·대상). 러너 카드 표시를 그대로 다시 그린다. */
+  action_preview: Record<string, unknown>;
+}
+
+export interface BattleReplay {
+  session_id: number;
+  turns: BattleReplayTurn[];
+}
+
+/** 완료된 실전 전투를 1라운드 첫 턴부터 턴 단위로 되짚어보기 위한 진행 기록. */
+export async function fetchBattleReplay(sessionId: number): Promise<BattleReplay> {
+  return request<BattleReplay>(`/battles/${sessionId}/replay`, undefined, "전투 진행 기록 조회 실패");
+}
+
+/** 되짚어볼 수 있는 완료된 실전 전투 목록. 러너도 볼 수 있다. */
+export async function fetchFinishedRealBattles(): Promise<BattleSessionSummary[]> {
+  return request<BattleSessionSummary[]>("/battles/finished", undefined, "지난 전투 목록 조회 실패");
 }
 
 export async function fetchBattles(params?: { mode?: BattleMode; status?: BattleStatus }): Promise<BattleSessionSummary[]> {

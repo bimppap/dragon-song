@@ -349,7 +349,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     "경호", trigger_type="지속형", category="강화", stackable=True,
                     var_name="ab_escort", cost=0, power=(0.1, 0.1, 0.15, 0.2, 0.25, 0.05),
                     target="1", target_side="ALLY", order=4,
-                    formula="피해 감소 증가(자신, 최대 2스택): 기술 위력 + 기술 효율 비례. 경호 스택을 가진 아군(아군당 1스택)의 피격을 시전자가 대신 받는다.",
+                    formula="피해 감소 증가(자신, 최대 2스택): 기술 위력 + 기술 효율 비례. 경호 스택을 가진 아군(아군당 1스택)이 피격되면 그 턴의 공격을 전부 시전자가 대신 받는다.",
                     description="지정한 아군에게 경호 스택을 부여하고 자신의 피해 감소를 높입니다.",
                 ),
             },
@@ -489,7 +489,7 @@ SKILL_BOOKS: dict[str, dict] = {
                 "derived": _skill(
                     "복제", trigger_type="즉발형", category="복합", stackable=False, var_name="ab_clone",
                     cost=4, target_side="ALLY",
-                    formula="복제한 기술의 공식을 따르되 기술 효율(비례) -50%+5%*skill_lv, 기술 효율(고정) max(0, -20+2*skill_lv) 보정",
+                    formula="복제한 기술의 비용·공식을 따르되 기술 효율(비례) -50%+5%*skill_lv, 기술 효율(고정) max(0, -20+2*skill_lv) 보정",
                     description="비전투 시 다른 캐릭터의 기술을 저장했다가 전투에서 복제해 사용합니다.",
                 ),
             },
@@ -538,7 +538,8 @@ def dynamic_derived_description(
         return (
             f"지정한 아군 1명에게 경호 스택(아군당 최대 1스택)을 부여하고, 자신에게 피해 감소를 "
             f"{value * 100:g}% + 기술 효율(비례)만큼 올리는 버프를 최대 2스택까지 부여합니다. "
-            "경호 스택을 가진 아군이 피격되면 스택을 소모하고 시전자가 대신 공격을 받습니다. 자신의 피해 감소는 전투 종료까지 유지됩니다."
+            "경호 스택을 가진 아군이 피격되면 그 턴에 들어오는 공격을 모두 시전자가 대신 받고, 턴이 끝나면 스택이 소모됩니다. "
+            "자신의 피해 감소는 전투 종료까지 유지됩니다."
         )
     if var_name == "ab_veil":
         return (
@@ -558,7 +559,8 @@ def dynamic_derived_description(
         )
     if var_name == "ab_clone":
         return (
-            f"비전투 시 다른 캐릭터의 기술을 최대 {L}개 저장하고, 전투에서 복제해 사용합니다(비용 4). "
+            f"비전투 시 다른 캐릭터의 기술을 최대 {L}개 저장하고, 전투에서 복제해 사용합니다"
+            "(기술 비용은 복제한 기술의 비용을 그대로 따릅니다). "
             f"복제 사용 시 기술 효율(비례) {-50 + 5 * L:+d}%, 기술 효율(고정) {-20 + 2 * L:+d}로 보정됩니다"
             f"(기술 효율 고정은 0 밑으로 내려가지 않습니다)."
         )

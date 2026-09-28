@@ -120,7 +120,12 @@ async function runnerScenario(status) {
     '@/components/common/EmptyState': { default: noop },
     '@/components/common/ToastProvider': { useToast: () => ({ toast: noop }) },
     '@/components/ui/badge': {}, './BattleArena': { default: noop },
-    '@/lib/api': { fetchLiveBattle: async () => ++callCount === 1 ? null : next },
+    '@/lib/api': {
+      fetchLiveBattle: async () => ++callCount === 1 ? null : next,
+      fetchFinishedRealBattles: async () => [],
+    },
+    '@/components/ui/button': { Button: noop },
+    './BattleTurnReplay': { default: noop },
     '@/lib/useBattleSocket': { useBattleSocket: () => ({ connected: true }) },
   };
   const { default: Runner } = load('../app/battle/components/RunnerBattleOverview.tsx', dependencies, {

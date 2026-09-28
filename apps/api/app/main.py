@@ -44,6 +44,7 @@ from app.schemas import (
     BattleEnemyJoinRequest,
     BattleJoinRequest,
     BattleRewardPreview,
+    BattleReplayRead,
     BattleSessionRead,
     BattlePairsRequest,
     BattleSessionSummary,
@@ -1378,6 +1379,18 @@ def get_battle_available_items(
 @app.get("/battles/{session_id}", response_model=BattleSessionRead)
 def get_battle(session_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     return crud.get_battle_session(db, session_id, member)
+
+
+@app.get("/battles/finished", response_model=list[BattleSessionSummary])
+def list_finished_real_battles(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """되짚어볼 수 있는 완료된 실전 전투 목록. 러너도 볼 수 있다."""
+    return crud.get_finished_real_battles(db)
+
+
+@app.get("/battles/{session_id}/replay", response_model=BattleReplayRead)
+def get_battle_replay(session_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """완료된 실전 전투를 1라운드 첫 턴부터 턴 단위로 앞뒤로 넘겨 보기 위한 진행 기록."""
+    return crud.get_battle_replay(db, session_id, member)
 
 
 def _load_battle_socket(token: str | None, session_id: int):

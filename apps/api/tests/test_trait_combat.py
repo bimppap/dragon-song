@@ -166,29 +166,45 @@ class TraitCombatTest(unittest.TestCase):
         restored = crud.undo_last_turn(self.db, battle.id)
         self.assertEqual(restored.enemies[0]["status_effects"], [])
 
-    def test_distribution_and_charge_clone_skills_exclude_each_other(self):
-        charge = SkillNode(book="탐구의 서", branch=2, col=0, tier=1, default_name="충전",
-                           trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",
-                           cost=4, power=2, target="1", target_side="ALLY", activation_order=1, is_public=True)
-        self.db.add(charge)
+    def test_distribution_and_clone_skill_exclude_each_other(self):
+        clone = SkillNode(book="탐구의 서", branch=2, col=1, tier=2, default_name="복제",
+                          trigger_type="즉발형", category="복합", stackable=False, var_name="ab_clone",
+                          cost=4, target_side="ALLY", is_public=True)
+        self.db.add(clone)
         self.db.commit()
-        # 충전을 습득한 뒤에는 분배를 장착할 수 없다.
-        self.db.add(CharacterSkillUnlock(character_id=self.actor.id, node_id=charge.id))
+        # 복제를 습득한 뒤에는 분배를 장착할 수 없다.
+        self.db.add(CharacterSkillUnlock(character_id=self.actor.id, node_id=clone.id))
         self.db.commit()
         rules = effects.default_rules("distribution")
         trait = crud.create_trait(self.db, TraitCreate(name="분배", rules=rules))
         with self.assertRaises(HTTPException) as blocked:
             crud.equip_trait(self.db, self.actor.id, trait.id)
-        self.assertIn("충전", blocked.exception.detail)
-        # 다른 특성은 그대로 장착되고, 분배를 장착한 캐릭터는 충전을 습득할 수 없다.
+        self.assertIn("복제", blocked.exception.detail)
+        # 다른 특성은 그대로 장착되고, 분배를 장착한 캐릭터는 복제를 습득할 수 없다.
         self.equip("standard")
         self.db.query(CharacterSkillUnlock).delete()
         self.actor.sp = 99
         self.db.commit()
         crud.equip_trait(self.db, self.actor.id, trait.id, consume_ticket=False)
         with self.assertRaises(HTTPException) as blocked:
-            crud.unlock_character_skill_node(self.db, self.actor.id, charge.id)
-        self.assertIn("충전", blocked.exception.detail)
+            crud.unlock_character_skill_node(self.db, self.actor.id, clone.id)
+        self.assertIn("복제", blocked.exception.detail)
+
+    def test_distribution_allows_the_charge_skill(self):
+        """충전은 더 이상 분배와 함께 가질 수 없는 기술이 아니다."""
+        charge = SkillNode(book="탐구의 서", branch=2, col=0, tier=1, default_name="충전",
+                           trigger_type="즉발형", category="회복", stackable=False, var_name="ab_charge",
+                           cost=4, power=2, target="1", target_side="ALLY", activation_order=1, is_public=True)
+        self.db.add(charge)
+        self.db.commit()
+        self.db.add(CharacterSkillUnlock(character_id=self.actor.id, node_id=charge.id))
+        self.actor.sp = 99
+        self.db.commit()
+        trait = crud.create_trait(self.db, TraitCreate(name="분배", rules=effects.default_rules("distribution")))
+        crud.equip_trait(self.db, self.actor.id, trait.id, consume_ticket=False)
+        self.db.query(CharacterSkillUnlock).delete()
+        self.db.commit()
+        crud.unlock_character_skill_node(self.db, self.actor.id, charge.id)
 
     def test_offense_defense_hit_consumes_only_hit_buffs(self):
         self.equip("offense_defense")
@@ -249,14 +265,29 @@ class TraitCombatTest(unittest.TestCase):
         self.assertIn("HP 부족", " ".join(result.log[-1]["events"]))
 
     def test_opportunist_counts_status_stacks(self):
+        """기사 회생: 강화·약화 하나당 기술 효율 비례와 고정이 함께 오른다."""
         self.equip("opportunist")
         actor = self.battle().participants[0]
         actor["status_effects"] = [{"affinity": "buff", "stacks": 2}, {"affinity": "debuff", "stacks": 1}]
         effects.sync(actor)
+        # 스택 3개(환경 스택 2개 포함) → 비례 +25%, 고정 +5
         self.assertAlmostEqual(actor["skill_eff_fixed"], .25)
+        self.assertEqual(actor["skill_eff_true"], 5)
         actor["status_effects"] = []
         effects.sync(actor)
         self.assertAlmostEqual(actor["skill_eff_fixed"], .1)
+        self.assertEqual(actor["skill_eff_true"], 2)
+
+    def test_opportunist_is_named_knight_revival(self):
+        self.assertEqual(effects.CATALOG["opportunist"][0], "기사 회생")
+        described = effects.describe(effects.default_rules("opportunist"))
+        self.assertIn("기술 효율 비례 +5%", described)
+        self.assertIn("고정 +1", described)
+
+    def test_saved_trait_without_the_new_field_falls_back_to_the_default(self):
+        """효과 유형에 항목이 추가돼도 이미 저장된 특성은 기본값으로 계산된다."""
+        actor = {"trait": {"name": "기사 회생", "rules": {"kind": "opportunist", "values": {"eff": 5}}}}
+        self.assertEqual(effects.values(actor)["flat"], 1)
 
     def test_preparation_start_shield_never_regranted(self):
         self.equip("preparation")

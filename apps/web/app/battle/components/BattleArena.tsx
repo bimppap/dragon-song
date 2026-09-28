@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { FACTION_POSITION_IMAGE, factionRank } from "@/lib/faction";
+import { FACTION_OPTIONS, FACTION_POSITION_IMAGE, factionRank } from "@/lib/faction";
 import {
   fetchBattle,
   fetchBattleActiveSkills,
@@ -35,6 +35,7 @@ import {
   updateBattlePairs,
   invalidateBattleCharacterCache,
   EFFECT_STAT_LABELS,
+  ENEMY_AUTO_TARGET_MODE_LABELS,
   PERCENT_EFFECT_STATS,
   type ItemEffectStat,
   type BattleCharacterActionInput,
@@ -51,6 +52,8 @@ import {
   type Enemy,
   type EnemyActionKind,
   type BattleSessionEnvironment,
+  type EnemyAutoTargetMode,
+  type Faction,
   type SkillBook,
 } from "@/lib/api";
 import InfoTooltip from "@/components/common/InfoTooltip";
@@ -122,6 +125,10 @@ interface TelegraphActionDraft {
   kind: EnemyActionKind;
   skill_index: number | null;
   target_character_ids: number[];
+  /** 포지션 광역 공격에서 때릴 포지션. */
+  target_faction?: Faction | null;
+  /** 이 행동에만 쓰는 자동 대상 선정 방식(비우면 기술에 설정된 방식). */
+  auto_target_mode?: EnemyAutoTargetMode | null;
 }
 
 interface TelegraphDraft {
@@ -242,6 +249,8 @@ function autoSelectEnemyTargets(
       const j = Math.floor(Math.random() * (i + 1));
       [picked[i], picked[j]] = [picked[j], picked[i]];
     }
+  } else if (mode === "hp") {
+    picked.sort((a, b) => b.hp - a.hp);
   } else {
     picked.sort((a, b) => (b.attn + b.presence) - (a.attn + a.presence));
   }
@@ -249,9 +258,24 @@ function autoSelectEnemyTargets(
 }
 
 /** 자동 선정 대상이 있는 기술인지(수동 지정·전체 공격은 미리 채우지 않는다). */
-function autoTargetsForEnemySkill(skill: EnemySkill | null | undefined, candidates: BattleParticipant[]): number[] {
-  if (!skill || skill.manual_target_count || isEnemySkillAoe(skill)) return [];
-  return autoSelectEnemyTargets(candidates, Math.max(1, skill.target_count), skill.auto_target_mode);
+function autoTargetsForEnemySkill(
+  skill: EnemySkill | null | undefined,
+  candidates: BattleParticipant[],
+  mode?: EnemyAutoTargetMode | null,
+): number[] {
+  if (!skill || !usesAutoTargetMode(skill)) return [];
+  return autoSelectEnemyTargets(candidates, Math.max(1, skill.target_count), mode ?? skill.auto_target_mode);
+}
+
+/** 스택 툴팁 맨 위 "종합" 줄에서 같은 이름표끼리 합산하는 수치 한 개. */
+interface StackAmount {
+  /** 합산 기준이 되는 이름표(예: "턴마다 피해", "피해 감소") */
+  label: string;
+  value: number;
+  /** 비율값이라 퍼센트로 보여줄지 */
+  percent?: boolean;
+  /** +/- 부호를 붙일지(피해량처럼 크기만 뜻하는 값은 붙이지 않는다) */
+  signed?: boolean;
 }
 
 interface StackBarItem {
@@ -263,8 +287,37 @@ interface StackBarItem {
   /** 상태이상처럼 강화/약화로 색이 정해지는 경우 */
   tone?: "buff" | "debuff";
   direction?: "left" | "right";
-  /** 툴팁에서 이름 뒤에 붙이는 효과 설명(예: "공격력 -15") */
-  detail?: string;
+  /** 이 항목이 주는 수치. 툴팁에서 "(공격력 -15)"로 보여주고 종합 줄에서 합산한다. */
+  amounts?: StackAmount[];
+  /** 수치로 합산할 수 없는 효과의 짧은 설명. */
+  note?: string;
+}
+
+function formatStackAmount({ label, value, percent, signed }: StackAmount): string {
+  const rounded = percent ? Math.round(value * 1000) / 10 : Math.round(value * 100) / 100;
+  const sign = signed && rounded >= 0 ? "+" : "";
+  return `${label} ${sign}${rounded}${percent ? "%" : ""}`;
+}
+
+function formatStackAmounts(amounts: StackAmount[] | undefined): string {
+  return (amounts ?? []).map(formatStackAmount).join(" · ");
+}
+
+/** 카드에 걸린 모든 스택의 수치를 이름표별로 합쳐 "종합" 줄을 만든다. */
+function summarizeStackAmounts(items: StackBarItem[]): string {
+  const totals = new Map<string, StackAmount>();
+  for (const item of items) {
+    for (const amount of item.amounts ?? []) {
+      const key = `${amount.label}:${amount.percent ? "%" : ""}`;
+      const existing = totals.get(key);
+      if (existing) existing.value += amount.value;
+      else totals.set(key, { ...amount });
+    }
+  }
+  return [...totals.values()]
+    .filter((amount) => Math.abs(amount.value) > 1e-9)
+    .map(formatStackAmount)
+    .join(" | ");
 }
 
 const STACK_BAR_TONE = {
@@ -288,21 +341,31 @@ function casterStackColor(sourceCharacterId: number | null | undefined): string 
 /** 환경 스택·상태이상을 개수만큼 대각선 바로 보여주고, 커서를 올리면 이름과 개수를 알려준다. */
 function StackBars({ items, className }: { items: StackBarItem[]; className?: string }) {
   if (items.length === 0) return null;
+  const summary = summarizeStackAmounts(items);
   return (
     <InfoTooltip content={
       // 걸려 있는 강화·약화를 한 줄에 하나씩, 스택과 같은 색 표시와 함께 전부 보여준다.
-      <span className="flex max-w-64 flex-col gap-0.5">
-        {items.map((item) => (
-          <span key={item.key} className="flex items-baseline gap-1.5">
-            <span aria-hidden="true"
-              className={cn("mt-0.5 block h-2.5 w-0.5 shrink-0 rounded-full", item.direction === "left" ? "-rotate-20" : "rotate-20",
-                !item.color && item.tone && STACK_BAR_TONE[item.tone].bar)}
-              style={item.color ? { backgroundColor: item.color } : undefined} />
-            <span className={item.color ? undefined : item.tone && STACK_BAR_TONE[item.tone].text} style={item.color ? { color: item.color } : undefined}>
-              {item.label}{item.detail ? ` (${item.detail})` : ""} × {item.count}
+      <span className="flex max-w-72 flex-col gap-0.5">
+        {summary && (
+          <>
+            <span className="font-semibold text-ivory">종합 : {summary}</span>
+            <span aria-hidden="true" className="my-0.5 block border-t border-line" />
+          </>
+        )}
+        {items.map((item) => {
+          const detail = [formatStackAmounts(item.amounts), item.note].filter(Boolean).join(" · ");
+          return (
+            <span key={item.key} className="flex items-baseline gap-1.5">
+              <span aria-hidden="true"
+                className={cn("mt-0.5 block h-2.5 w-0.5 shrink-0 rounded-full", item.direction === "left" ? "-rotate-20" : "rotate-20",
+                  !item.color && item.tone && STACK_BAR_TONE[item.tone].bar)}
+                style={item.color ? { backgroundColor: item.color } : undefined} />
+              <span className={item.color ? undefined : item.tone && STACK_BAR_TONE[item.tone].text} style={item.color ? { color: item.color } : undefined}>
+                {item.label}{detail ? ` (${detail})` : ""} × {item.count}
+              </span>
             </span>
-          </span>
-        ))}
+          );
+        })}
       </span>
     }>
       <div
@@ -333,19 +396,51 @@ function StackBars({ items, className }: { items: StackBarItem[]; className?: st
  * 같은 시전자가 같은 기술을 여러 번 건 경우는 한 항목으로 묶어 개수로 보여준다.
  */
 function statusEffectBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
-  const grouped = new Map<string, StackBarItem>();
+  const grouped = new Map<string, { item: StackBarItem; effect: BattleStatusEffect; delta: number }>();
   for (const effect of displayStatusEffects(effects)) {
     const skillName = effect.skill_name || effect.var_name || effect.effect_type;
     const label = effect.source_name ? `${effect.source_name}의 ${skillName}` : skillName;
     const tone = effect.affinity === "buff" ? "buff" : "debuff";
     const color = casterStackColor(effect.source_character_id);
-    const key = `${tone}:${color ?? "-"}:${label}`;
+    const key = `${tone}:${color ?? "-"}:${label}:${effect.effect_type}:${effect.stat ?? "-"}`;
     const count = Math.max(1, effect.stacks ?? 1);
     const existing = grouped.get(key);
-    if (existing) existing.count += count;
-    else grouped.set(key, { key, label, count, tone, color, direction: tone === "buff" ? "left" : "right" });
+    if (existing) {
+      existing.item.count += count;
+      existing.delta += effect.applied_delta ?? 0;
+    } else {
+      grouped.set(key, {
+        item: { key, label, count, tone, color, direction: tone === "buff" ? "left" : "right" },
+        effect,
+        delta: effect.applied_delta ?? 0,
+      });
+    }
   }
-  return [...grouped.values()];
+  return mergeSameStackBarItems([...grouped.values()].map(({ item, effect, delta }) => ({
+    ...item,
+    amounts: statusEffectAmounts(effect, delta, item.count),
+    note: statusEffectNote(effect, item.count),
+  })));
+}
+
+/** 이름과 수치가 똑같이 보이는 항목은 한 줄로 합쳐 개수만 늘린다(출처가 여럿인 같은 약화 등). */
+function mergeSameStackBarItems(items: StackBarItem[]): StackBarItem[] {
+  const merged = new Map<string, StackBarItem>();
+  for (const item of items) {
+    const key = `${item.label}|${item.color ?? "-"}|${item.tone ?? "-"}|${formatStackAmounts(item.amounts)}|${item.note ?? ""}`;
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...item, key });
+      continue;
+    }
+    // 합칠 때는 수치도 개수만큼 같이 더한다(같은 스택이 두 출처로 나뉘어 왔을 뿐이다).
+    existing.amounts = (existing.amounts ?? []).map((amount, index) => ({
+      ...amount,
+      value: amount.value + ((item.amounts ?? [])[index]?.value ?? 0),
+    }));
+    existing.count += item.count;
+  }
+  return [...merged.values()];
 }
 
 const DEFAULT_ENEMY_DEBUFF_COLOR = "#e879f9";
@@ -355,13 +450,63 @@ function isEnemyDebuff(effect: BattleStatusEffect): boolean {
   return effect.affinity === "debuff" && (effect.color != null || /^(enemy|minion):/.test(effect.stack_source ?? ""));
 }
 
-function enemyDebuffDetail(effect: BattleStatusEffect, totalDelta: number): string | undefined {
-  if (effect.effect_type === "ongoing_damage" && effect.damage != null) return `턴마다 피해 ${fmt(effect.damage)}`;
-  if (effect.effect_type !== "stat_modifier" || !effect.stat) return undefined;
-  const percent = PERCENT_EFFECT_STATS.has(effect.stat as ItemEffectStat);
-  const value = percent ? Math.round(totalDelta * 1000) / 10 : Math.round(totalDelta * 100) / 100;
-  const label = (EFFECT_STAT_LABELS[effect.stat] ?? effect.stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
-  return `${label} ${value >= 0 ? "+" : ""}${value}${percent ? "%" : ""}`;
+function statModifierAmount(stat: string, totalDelta: number): StackAmount {
+  const percent = PERCENT_EFFECT_STATS.has(stat as ItemEffectStat);
+  const label = (EFFECT_STAT_LABELS[stat] ?? stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
+  return { label, value: totalDelta, percent, signed: true };
+}
+
+/**
+ * 스택 툴팁에서 기술 이름 뒤에 보여주고 종합 줄에서 합산할 수치
+ * (예: "위해 (턴마다 피해 120)", "경호 (피해 감소 +20%)").
+ * 효과 종류마다 실어 오는 값이 달라 각각 풀어 쓴다. totalDelta·stacks는 같은 출처로 묶은 합계다.
+ */
+function statusEffectAmounts(effect: BattleStatusEffect, totalDelta: number, stacks: number): StackAmount[] {
+  const damage = (label: string, value: number): StackAmount[] => [{ label, value }];
+  const ratio = (label: string, value: number): StackAmount[] => [{ label, value, percent: true, signed: true }];
+  switch (effect.effect_type) {
+    case "ongoing_damage":
+      return effect.damage != null ? damage("턴마다 피해", effect.damage * stacks) : [];
+    case "sparge_telegraph":
+      return effect.damage != null ? damage("암시 턴마다 전체 피해", effect.damage * stacks) : [];
+    case "escort_damage_reduction":
+      return effect.value != null ? ratio("피해 감소", effect.value * stacks) : [];
+    case "counter":
+      return effect.damage_reduction != null ? ratio("피해 감소", effect.damage_reduction) : [];
+    case "outgoing_damage_bonus_once":
+      return effect.value != null ? ratio("다음 공격 피해 증폭", effect.value * stacks) : [];
+    case "outgoing_damage_penalty_once":
+      return effect.value != null ? ratio("다음 공격 피해 증폭", -effect.value * stacks) : [];
+    case "incoming_damage_bonus_round":
+      return effect.value != null ? ratio("아군에게 받는 피해", effect.value * stacks) : [];
+    case "skill_eff_bonus_round":
+      return [
+        ...(effect.value_fixed ? ratio("기술 효율(비례)", effect.value_fixed * stacks) : []),
+        ...(effect.value_true ? [{ label: "기술 효율(고정)", value: effect.value_true * stacks, signed: true }] : []),
+      ];
+    case "purification_guard":
+      return effect.damage_bonus_per_stack ? ratio("피해 증폭", effect.damage_bonus_per_stack * stacks) : [];
+    case "stat_modifier": {
+      if (!effect.stat) return [];
+      return [
+        statModifierAmount(effect.stat, totalDelta),
+        // 분출은 존재감과 함께 피격 시 반응 피해도 쌓인다.
+        ...(effect.reaction === "eruption" && effect.skill_lv != null
+          ? damage("피격 시 전체 에너미 피해", effect.skill_lv * 5 * stacks)
+          : []),
+      ];
+    }
+    default:
+      return [];
+  }
+}
+
+/** 수치가 없는 효과는 대신 짧은 설명을 보여준다(합산 대상은 아니다). */
+function statusEffectNote(effect: BattleStatusEffect, stacks: number): string | undefined {
+  if (effect.effect_type === "escort_guard") return "이번 턴 공격을 시전자가 대신 받음";
+  if (effect.effect_type === "counter" && effect.counter_damage != null) return `반격 피해 ×${effect.counter_damage}`;
+  if (effect.effect_type === "purification_guard") return `약화 방지 ${stacks}스택`;
+  return undefined;
 }
 
 /** 에너미 약화를 환경 스택처럼 지정한 색의 대각선 바로 보여준다. 같은 출처의 중첩은 한 항목으로 묶는다. */
@@ -381,7 +526,11 @@ function enemyDebuffBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
       grouped.set(key, { item: { key, label, count, color }, effect, delta: effect.applied_delta ?? 0 });
     }
   }
-  return [...grouped.values()].map(({ item, effect, delta }) => ({ ...item, detail: enemyDebuffDetail(effect, delta) }));
+  return mergeSameStackBarItems([...grouped.values()].map(({ item, effect, delta }) => ({
+    ...item,
+    amounts: statusEffectAmounts(effect, delta, item.count),
+    note: statusEffectNote(effect, item.count),
+  })));
 }
 
 /** 에너미 행동 줄에 그 공격이 캐릭터 카드 화살표와 같은 색임을 알려주는 점. */
@@ -474,7 +623,7 @@ const CHAR_ACTION_LABEL: Record<CharacterActionKind, string> = {
 // "전원 행동 변경" 일괄 적용은 대상 지정이 필요 없거나 포지션 제한이 없는 행동만 제공한다.
 const BULK_ACTION_KINDS: CharacterActionKind[] = ["attack", "skill", "defend", "item", "none", "retreat"];
 
-const PHASE_LABEL: Record<BattleSession["phase"], string> = {
+export const PHASE_LABEL: Record<BattleSession["phase"], string> = {
   telegraph: "적의 행동 암시",
   ally: "아군 턴",
   enemy: "에너미 턴",
@@ -766,6 +915,16 @@ function isEnemySkillAoe(skill: { skill_type: string; manual_target_count?: bool
   return skill.skill_type === "광역 공격" && !skill.manual_target_count;
 }
 
+/** 포지션 광역 공격: 행동 암시에서 고른 포지션의 캐릭터 전원이 대상이다. */
+function isEnemySkillPositionAoe(skill: { skill_type: string }): boolean {
+  return skill.skill_type === "포지션 광역 공격";
+}
+
+/** 대상을 자동으로 고르는 기술인지(수동 지정·전체·포지션 전체는 고를 것이 없다). */
+function usesAutoTargetMode(skill: { skill_type: string; manual_target_count?: boolean }): boolean {
+  return !skill.manual_target_count && !isEnemySkillAoe(skill) && !isEnemySkillPositionAoe(skill);
+}
+
 /** 에너미가 이번 라운드에 예고한 행동을 사람이 읽을 수 있는 문구로 만든다. */
 function describePendingAction(
   enemy: BattleEnemyState,
@@ -783,10 +942,12 @@ function describePendingAction(
   const isAoe = isEnemySkillAoe(skill);
   const targetLabel = isAoe
     ? "전원"
-    : pending.target_character_ids
-        .map((id) => participantsById.get(id)?.name)
-        .filter((name): name is string => Boolean(name))
-        .join(", ") || "대상 없음";
+    : isEnemySkillPositionAoe(skill)
+      ? `${pending.target_faction ?? "?"} 포지션 전원`
+      : pending.target_character_ids
+          .map((id) => participantsById.get(id)?.name)
+          .filter((name): name is string => Boolean(name))
+          .join(", ") || "대상 없음";
   return `예고: ${skill.name} → ${targetLabel} (${enemySkillSummary(enemy, skill, environmentsById)})`;
 }
 
@@ -1495,6 +1656,14 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         toast(`${enemy.name}: 행동횟수에 맞춰 스킬 ${enemy.action_count ?? 1}개를 순서대로 선택해 주세요.`, "error");
         return;
       }
+      const missingPosition = actions.find((action) => {
+        const skill = action.skill_index != null ? enemy.skills[action.skill_index] : undefined;
+        return action.kind === "attack" && skill != null && isEnemySkillPositionAoe(skill) && !action.target_faction;
+      });
+      if (missingPosition) {
+        toast(`${enemy.name}: 포지션 광역 공격의 대상 포지션을 선택해 주세요.`, "error");
+        return;
+      }
     }
     const enemyActions: BattleEnemyActionInput[] = actingEnemies.flatMap((enemy) =>
       telegraphDrafts[enemy.enemy_id].actions.map((draft) => ({
@@ -1502,6 +1671,8 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         kind: draft.kind,
         skill_index: draft.skill_index ?? undefined,
         target_character_ids: draft.target_character_ids,
+        target_faction: draft.target_faction ?? null,
+        auto_target_mode: draft.auto_target_mode ?? null,
       })),
     );
     try {
@@ -1607,7 +1778,9 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
   }
 
   async function handleCopyTurnLog(round: number, entry: BattleSession["log"][number]) {
-    const label = entry.kind === "join" ? `라운드 ${round} 난입` : entry.phase ? PHASE_LABEL[entry.phase] : `라운드 ${round}`;
+    const label = entry.kind === "join" ? `라운드 ${round} 난입`
+      : entry.kind === "start" ? "전투 시작"
+      : entry.phase ? PHASE_LABEL[entry.phase] : `라운드 ${round}`;
     try {
       await navigator.clipboard.writeText(entry.events.join("\n"));
       toast(`${label} 로그를 복사했습니다.`, "success");
@@ -1848,7 +2021,11 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         if (action.kind !== "attack" || !skill || skill.skill_type === "소환") return [];
         const targetIds = isEnemySkillAoe(skill)
           ? session.participants.filter((p) => isTargetable(p, session.round)).map((p) => p.character_id)
-          : action.target_character_ids;
+          : isEnemySkillPositionAoe(skill) && drafting
+            ? session.participants
+                .filter((p) => p.faction === action.target_faction && isTargetable(p, session.round))
+                .map((p) => p.character_id)
+            : action.target_character_ids;
         return [{ enemy, skill, index, targetIds }];
       });
     });
@@ -2009,7 +2186,11 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                   <p className="text-xs text-muted">위에서 아래로 실행합니다. 소환은 암시 턴에 먼저 처리됩니다.</p>
                   {enemyDraft.actions.map((draft, actionIndex) => {
                     const selectedSkill = draft.skill_index != null ? enemy.skills[draft.skill_index] : null;
-                    const needsManualTargets = draft.kind === "attack" && selectedSkill && (selectedSkill.manual_target_count || !isEnemySkillAoe(selectedSkill));
+                    const needsManualTargets = draft.kind === "attack" && selectedSkill
+                      && !isEnemySkillPositionAoe(selectedSkill)
+                      && (selectedSkill.manual_target_count || !isEnemySkillAoe(selectedSkill));
+                    const needsPosition = draft.kind === "attack" && selectedSkill != null && isEnemySkillPositionAoe(selectedSkill);
+                    const targetMode = draft.auto_target_mode ?? selectedSkill?.auto_target_mode ?? "attention";
                     const targetCount = selectedSkill?.manual_target_count ? targetableParticipants.length : selectedSkill ? Math.max(1, selectedSkill.target_count) : 0;
                     const actionInputId = `enemy:${enemy.enemy_id}:action:${actionIndex}`;
                     return (
@@ -2023,12 +2204,14 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                             value={draft.kind === "none" ? "none" : `${draft.kind}:${draft.skill_index}`}
                             onOpenChange={(open) => updateEditingState(actionInputId, "action", open)}
                             onValueChange={(v) => {
-                              if (v === "none") { patchTelegraphAction(enemy.enemy_id, actionIndex, { kind: "none", skill_index: null, target_character_ids: [] }); return; }
+                              if (v === "none") { patchTelegraphAction(enemy.enemy_id, actionIndex, { kind: "none", skill_index: null, target_character_ids: [], target_faction: null, auto_target_mode: null }); return; }
                               const [kind, idx] = v.split(":");
                               patchTelegraphAction(enemy.enemy_id, actionIndex, {
                                 kind: kind as EnemyActionKind,
                                 skill_index: Number(idx),
                                 target_character_ids: autoTargetsForEnemySkill(enemy.skills[Number(idx)], targetableParticipants),
+                                target_faction: null,
+                                auto_target_mode: null,
                               });
                             }}
                           >
@@ -2040,7 +2223,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                                 <SelectItem value="none">무반응</SelectItem>
                                 {attackSkills.map((s) => (
                                   <SelectItem key={s.index} value={`attack:${s.index}`}>
-                                    {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : `${s.target_count}인 · ${s.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {s.skill_type === "지속 디버프"
+                                    {s.skill_type} · {s.name} ({s.manual_target_count ? "수동 지정" : isEnemySkillAoe(s) ? "전체" : isEnemySkillPositionAoe(s) ? "포지션 전체" : `${s.target_count}인 · ${ENEMY_AUTO_TARGET_MODE_LABELS[s.auto_target_mode ?? "attention"]}`} / {s.skill_type === "지속 디버프"
                                       ? "지속 디버프"
                                       : s.skill_type === "환경"
                                         ? `${s.environment_id != null ? environmentsById.get(s.environment_id)?.name ?? `환경 #${s.environment_id}` : "환경"} +${s.environment_stack_count ?? 1}스택`
@@ -2055,7 +2238,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                               </SelectGroup>
                             </SelectContent>
                           </Select>
-                          {draft.kind === "attack" && (selectedSkill?.skill_type === "지정 공격" || selectedSkill?.skill_type === "광역 공격") && (
+                          {draft.kind === "attack" && (selectedSkill?.skill_type === "지정 공격" || selectedSkill?.skill_type === "광역 공격" || selectedSkill?.skill_type === "포지션 광역 공격") && (
                             <span className="text-xs text-amber-300">{enemySkillSummary(enemy, selectedSkill, environmentsById)}</span>
                           )}
                           {enemyDraft.actions.length > 1 && (
@@ -2066,6 +2249,49 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                           )}
                         </div>
 
+                        {needsPosition && (
+                          <div className="rounded-lg border border-line bg-inset/60 p-2">
+                            <p className="mb-1.5 text-[11px] text-muted">공격할 포지션 선택 (그 포지션 캐릭터 전원이 대상)</p>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1.5">
+                              {FACTION_OPTIONS.map((faction) => {
+                                const count = targetableParticipants.filter((p) => p.faction === faction).length;
+                                return (
+                                  <label key={faction} className="flex items-center gap-1.5 text-xs text-ivory/85">
+                                    <input
+                                      type="radio"
+                                      className="size-3"
+                                      name={`${actionInputId}:faction`}
+                                      checked={draft.target_faction === faction}
+                                      onChange={() => patchTelegraphAction(enemy.enemy_id, actionIndex, { target_faction: faction })}
+                                    />
+                                    {faction} ({count}명)
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {draft.kind === "attack" && selectedSkill && usesAutoTargetMode(selectedSkill) && (
+                          <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 rounded-lg border border-line bg-inset/60 p-2">
+                            <span className="text-[11px] text-muted">자동 대상 선정</span>
+                            {(Object.keys(ENEMY_AUTO_TARGET_MODE_LABELS) as EnemyAutoTargetMode[]).map((mode) => (
+                              <label key={mode} className="flex items-center gap-1.5 text-xs text-ivory/85">
+                                <input
+                                  type="radio"
+                                  className="size-3"
+                                  name={`${actionInputId}:auto-target`}
+                                  checked={targetMode === mode}
+                                  onChange={() => patchTelegraphAction(enemy.enemy_id, actionIndex, {
+                                    auto_target_mode: mode,
+                                    target_character_ids: autoTargetsForEnemySkill(selectedSkill, targetableParticipants, mode),
+                                  })}
+                                />
+                                {ENEMY_AUTO_TARGET_MODE_LABELS[mode]}
+                                {mode === (selectedSkill.auto_target_mode ?? "attention") && <span className="text-[10px] text-muted">(기본)</span>}
+                              </label>
+                            ))}
+                          </div>
+                        )}
                         {needsManualTargets && (
                           <div className="rounded-lg border border-line bg-inset/60 p-2">
                             <p className="mb-1.5 text-[11px] text-muted">
@@ -2490,8 +2716,12 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
           ));
           // 색은 시전자별로 갈리므로, 약화(오른쪽 기울기) → 강화(왼쪽 기울기) 순으로 묶어 둔다.
           const stackBars: StackBarItem[] = [
+            // 환경 스택은 출처가 챕터 환경이라는 것이 드러나게 "환경 : 이름"으로 보여준다.
             ...(p.environment_stacks ?? []).map((stack) => ({
-              key: `environment:${stack.id}`, label: stack.name, count: stack.count, color: stack.color,
+              key: `environment:${stack.id}`, label: `환경 : ${stack.name}`, count: stack.count, color: stack.color,
+              amounts: stack.damage_per_stack
+                ? [{ label: "턴마다 피해", value: stack.damage_per_stack * stack.count }]
+                : [],
             })),
             ...enemyDebuffBarItems(enemyDebuffs),
             ...otherBars.filter((item) => item.tone !== "buff"),
@@ -2732,8 +2962,10 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               {[...group.entries].reverse().map((entry, entryIndex) => (
                 <div key={entryIndex} className="space-y-1 pl-2">
                   <div className="flex items-center gap-1.5">
-                    {(entry.kind === "join" || entry.phase) && (
-                      <span className="text-[11px] font-semibold text-gold/90">{entry.kind === "join" ? "난입" : PHASE_LABEL[entry.phase!]}</span>
+                    {(entry.kind === "join" || entry.kind === "start" || entry.phase) && (
+                      <span className="text-[11px] font-semibold text-gold/90">
+                        {entry.kind === "join" ? "난입" : entry.kind === "start" ? "전투 시작" : PHASE_LABEL[entry.phase!]}
+                      </span>
                     )}
                     <button
                       type="button"

@@ -14,12 +14,12 @@ def field(key, label, default, unit="%", minimum=0, maximum=1000):
 CATALOG = {
     "meditation": ("명상", "공격 대신 명상: 사용할 때마다 치유 효율 +{heal}%, 피해 감소 +{reduction}%, 마나 최대치 +{mana_max}, 마나 +{mana}, 체력 재생력 고정 +{regen} 지속 강화.", [field("heal", "치유 효율", 10), field("reduction", "피해 감소", 5), field("mana_max", "마나 최대치", 1, ""), field("mana", "마나 회복", 1, ""), field("regen", "체력 재생력 고정", 2, "")]),
     "technique": ("기교", "기술을 사용한 뒤마다 자신에게 기술 효율 비례 +{eff}%, 고정 +{flat} 지속 강화.", [field("eff", "기술 효율 비례", 15), field("flat", "기술 효율 고정", 6, "")]),
-    "distribution": ("분배", "인원 지정 기술 대상 +{targets}, 기술 비용 +{cost}, 기술 효율 비례 {eff}%, 고정 {flat}. 충전·복제 기술과 함께 가질 수 없음.", [field("targets", "추가 대상", 1, "", 0, 100), field("cost", "추가 비용", 1, "", -100), field("eff", "기술 효율 비례", -20, "%", -100), field("flat", "기술 효율 고정", -4, "", -1000)]),
+    "distribution": ("분배", "인원 지정 기술 대상 +{targets}, 기술 비용 +{cost}, 기술 효율 비례 {eff}%, 고정 {flat}. 복제 기술과 함께 가질 수 없음.", [field("targets", "추가 대상", 1, "", 0, 100), field("cost", "추가 비용", 1, "", -100), field("eff", "기술 효율 비례", -20, "%", -100), field("flat", "기술 효율 고정", -4, "", -1000)]),
     "offense_defense": ("공방일체", "공격·기술 행동 시 피해 감소 +{reduction}% 일회성 강화(피격 시 해제). 방어 행동 시 기술 효율 +{eff}%, 공격력 증폭 +{attack}% 지속 강화.", [field("reduction", "피격 전 피해 감소", 30), field("eff", "방어 후 기술 효율 비례", 10), field("attack", "방어 후 공격력 증폭", 10)]),
     "prepared": ("만전", "체력이 최대일 때 기술 효율 비례 +{eff}%. 전투 시작 시 약화 방지 {guard}스택(약화와 1:1 상쇄).", [field("eff", "기술 효율 비례", 25), field("guard", "시작 약화 방지 스택", 2, "", 0, 100)]),
     "hero": ("용사", "살아 있는 적 한 명당 공격력 증폭·방어력 증폭·치유 효율 +{amp}%(최대 {cap}%), 기술 효율 고정 +{flat}(최대 {flat_cap}).", [field("amp", "적당 증폭", 5), field("cap", "증폭 상한", 50), field("flat", "적당 기술 효율 고정", 1, ""), field("flat_cap", "고정 상한", 10, "")]),
     "blood": ("혈안", "기술 사용 시 마나 대신 기술 비용 × 최대 체력의 {hp}% 소모. 현재 마나 1당 기술 효율 비례 +{eff}%. 전투 시작 마나 {start_mana}.", [field("hp", "비용 1당 최대 체력 소모", 10, "%", 0, 100), field("eff", "마나당 기술 효율 비례", 5), field("start_mana", "시작 마나", 0, "")]),
-    "opportunist": ("기회주의자", "자신에게 걸린 강화·약화 하나당 기술 효율 비례 +{eff}%.", [field("eff", "강화·약화당 기술 효율", 5)]),
+    "opportunist": ("기사 회생", "자신에게 걸린 강화·약화 하나당 기술 효율 비례 +{eff}%, 고정 +{flat}.", [field("eff", "강화·약화당 기술 효율 비례", 5), field("flat", "강화·약화당 기술 효율 고정", 1, "")]),
     "preparation": ("대비", "최대 체력의 {shield}%만큼 시작 보호막. 보호막이 있을 때 존재감 +{presence}%, 피해 감소 +{reduction}%, 기술 효율 비례 +{eff}%.", [field("shield", "시작 보호막", 10), field("presence", "존재감", 20), field("reduction", "피해 감소", 5), field("eff", "기술 효율 비례", 5)]),
     "onslaught": ("맹공", "공격력 증폭 +{attack}%, 피해 감소 {reduction}%. 방어·소비 행동 사용 불가.", [field("attack", "공격력 증폭", 40), field("reduction", "피해 감소", -20, "%", -100)]),
     "standard": ("규격화", "기술 효율 고정 +{flat}.", [field("flat", "기술 효율 고정", 8, "")]),
@@ -37,6 +37,16 @@ def templates():
 
 def default_rules(kind):
     return dict(kind=kind, values={f["key"]: f["default"] for f in CATALOG[kind][2]})
+
+
+def merged_values(kind, values):
+    """저장된 수치에 현재 항목의 기본값을 덧대어 읽는다.
+
+    효과 유형에 항목을 새로 추가하면 기존 특성에는 그 값이 없으므로, 관리자가 다시 저장하기
+    전까지는 기본값으로 계산한다."""
+    merged = {f["key"]: f["default"] for f in CATALOG.get(kind, (None, None, []))[2]}
+    merged.update(values if isinstance(values, dict) else {})
+    return merged
 
 
 def validate_rules(rules):
@@ -57,7 +67,8 @@ def validate_rules(rules):
 
 
 def describe(rules):
-    return CATALOG[rules["kind"]][1].format(**{k: f"{v:g}" for k, v in rules["values"].items()})
+    merged = merged_values(rules["kind"], rules.get("values"))
+    return CATALOG[rules["kind"]][1].format(**{k: f"{v:g}" for k, v in merged.items()})
 
 
 def rule(p):
@@ -69,7 +80,7 @@ def kind(p):
 
 
 def values(p):
-    return rule(p).get("values", {})
+    return merged_values(kind(p), rule(p).get("values"))
 
 
 def sync(p, enemies=None, summons=None):
@@ -97,6 +108,7 @@ def sync(p, enemies=None, summons=None):
         count = sum(max(1, e.get("stacks", 1)) for e in p.get("status_effects", []) if e.get("affinity") in ("buff", "debuff"))
         count += sum(p.get("env_stacks", {}).values())
         add("skill_eff_fixed", count * v["eff"] / 100)
+        add("skill_eff_true", count * v["flat"])
     elif k == "preparation" and p.get("shield", 0) > 0:
         delta.update(presence=v["presence"] / 100, dmg_r=v["reduction"] / 100, skill_eff_fixed=v["eff"] / 100)
     elif k == "onslaught":

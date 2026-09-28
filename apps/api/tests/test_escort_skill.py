@@ -190,7 +190,7 @@ class EscortSkillTest(unittest.TestCase):
         # 스택 2개 → 피해 감소 40% → floor(100 × 0.6) = 60
         self.assertEqual(self.participant(result, self.caster.id)["hp"], 40)
 
-    def test_guard_is_consumed_between_attacks_in_same_enemy_turn(self):
+    def test_guard_covers_every_attack_in_the_same_enemy_turn(self):
         self.cast()
         self.battle.phase = "enemy"
         self.battle.pending_enemy_actions = [{
@@ -199,8 +199,11 @@ class EscortSkillTest(unittest.TestCase):
         }] * 2
         self.db.commit()
         result = crud.resolve_battle_enemy_turn(self.db, self.battle.id)
-        self.assertEqual(self.participant(result, self.caster.id)["hp"], 20)
-        self.assertEqual(self.participant(result, self.ally.id)["hp"], 0)
+        # 두 공격 모두 시전자가 대신 받는다(80 × 2). 요인은 한 번도 맞지 않는다.
+        self.assertEqual(self.participant(result, self.caster.id)["hp"], 0)
+        self.assertEqual(self.participant(result, self.ally.id)["hp"], 100)
+        # 턴이 끝나면 대신 받은 경호 스택이 소모된다.
+        self.assertEqual(crud._status_effects_of_type(self.participant(result, self.ally.id), "escort_guard"), [])
 
     def test_guard_consumed_but_reduction_persists_across_rounds(self):
         self.cast()

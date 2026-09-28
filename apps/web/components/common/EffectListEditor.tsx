@@ -11,7 +11,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { EQUIP_PASSIVE_EFFECT_STATS, ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS, type Chapter, type ItemEffect } from "@/lib/api";
+import { cn } from "@/lib/utils";
+import {
+  BUFFABLE_EFFECT_STATS, EQUIP_PASSIVE_EFFECT_STATS, ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS,
+  type Chapter, type ItemEffect,
+} from "@/lib/api";
 
 interface Props {
   effects: ItemEffect[];
@@ -29,7 +33,7 @@ const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
   "mission_exp_recollection", "challenge_acquisition",
   "delivery_date_slot", "delivery_freeform",
   "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
-  "battle_revive_once", "battle_auto_revive",
+  "battle_revive_once", "battle_auto_revive", "battle_buff_round",
 ]);
 
 /** 퍼센트형 효과는 비율(0.2)로 저장하지만 입력창에는 퍼센트(20)로 보여준다. 부동소수 오차(0.07*100)는 반올림해 숨긴다. */
@@ -60,6 +64,12 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
   function handleRemove(index: number) {
     onChange(effects.filter((_, i) => i !== index));
   }
+
+  // "일회성 강화"가 있으면 나머지 효과 줄은 영구 변화가 아니라 다음 라운드까지의 강화로 쓰인다.
+  const hasRoundBuff = effects.some((effect) => effect.stat === "battle_buff_round");
+  const unbuffable = hasRoundBuff && effects.some(
+    (effect) => effect.stat !== "battle_buff_round" && !BUFFABLE_EFFECT_STATS.has(effect.stat),
+  );
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-primary bg-inset p-4">
@@ -142,6 +152,13 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
         </div>
       ) : (
         <p className="text-xs text-muted">효과 없음</p>
+      )}
+      {hasRoundBuff && (
+        <p className={cn("text-xs", unbuffable ? "text-red-400" : "text-muted")}>
+          {unbuffable
+            ? "체력·마나·보호막·주목도처럼 쓰면 사라지는 값은 일회성 강화로 올릴 수 없습니다."
+            : "함께 담은 능력치 효과는 아이템을 쓴 라운드부터 다음 라운드가 끝날 때까지만 적용됩니다. \"전투 중에만 사용 가능\"을 켜 두세요."}
+        </p>
       )}
     </div>
   );

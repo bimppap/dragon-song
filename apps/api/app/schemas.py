@@ -7,7 +7,9 @@ from app.game_data import MAX_CHARACTER_LEVEL
 from app.models import KST
 from app.trait_effects import validate_rules
 
-EnemySkillType = Literal["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"]
+EnemySkillType = Literal["지정 공격", "광역 공격", "포지션 광역 공격", "소환", "지속 디버프", "환경"]
+# 4) 자동 대상 선정 방식. 행동 암시에서 이 중 하나로 바꿔 지정할 수 있다.
+EnemyAutoTargetMode = Literal["attention", "random", "hp"]
 Faction = Literal["공격", "수비", "치유"]
 FACTIONS = get_args(Faction)
 # 기술트리 "서" — 캐릭터의 역할(Faction)과 무관한 별개의 축. 모든 캐릭터가 4개 서 전부를 배울 수 있다.
@@ -58,10 +60,25 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 # "spirit_stone_exchange": ("정령석 교환") 사용 시 보유한 정령석 하나를 다른 정령석으로 바꾼다.
 #   정령석은 이름에 "정령석"이 들어간 장착형(동반자·장신구) 아이템이다.
 # "trait_change": ("특성 교체(일회성)") 특성 교체권 1장을 준다. 한 번 장착한 특성은 이 교체권이 있어야 바꿀 수 있다.
+# "battle_buff_round": ("일회성 강화") 전투 중에만 쓸 수 있다. 같은 아이템에 함께 담은 능력치 효과를
+#   영구 변화가 아니라 다음 라운드까지만 유지되는 강화로 적용한다(강화 항목은 여러 개 담을 수 있다).
 ITEM_EFFECT_SPECIAL_STATS = {
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform", "mission_exp_recollection", "challenge_acquisition",
-    "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
+    "spirit_stone_customize", "spirit_stone_exchange", "trait_change", "battle_buff_round",
+}
+# 비율(0.2)로 저장하지만 사람에게는 퍼센트(+20%)로 보여주는 항목.
+# hp_heal_p는 로그에 실제로 채운 체력을 적으므로 여기에 넣지 않는다.
+PERCENT_ITEM_EFFECT_STATS = {
+    "hp_max_p", "hp_regen_fixed", "atk_p", "def_p", "def_eff",
+    "presence", "heal_eff", "dmg_p", "dmg_r", "skill_eff_fixed", "skill_recast",
+}
+# "일회성 강화"로 올릴 수 있는 능력치. 체력·마나·보호막·주목도처럼 쓰면 사라지는 자원은
+# 강화가 끝날 때 되돌릴 수 없으므로 제외한다.
+ITEM_EFFECT_BUFFABLE_STATS = {
+    "atk", "atk_p", "def", "def_p", "def_eff", "dmg_p", "dmg_r", "heal_eff",
+    "presence", "skill_lv", "skill_eff_true", "skill_eff_fixed", "skill_cost", "skill_target",
+    "hp_regen_true", "hp_regen_fixed", "mp_regen",
 }
 # 장착한 동반자·장신구에서만 동작하는 전투 패시브 효과. 캐릭터 능력치를 바꾸지 않는다.
 # "battle_revive_once": 전투마다 한 번, 기절하는 즉시 부활 후 체력(revive_hp) 비율로 되살아난다.
@@ -86,6 +103,7 @@ ItemEffectStat = Literal[
     "mission_exp_recollection", "challenge_acquisition",
     "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
     "battle_revive_once", "battle_auto_revive", "skill_recast",
+    "battle_buff_round",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
 SalePeriodType = Literal["chapter", "date"]
@@ -507,7 +525,7 @@ class ItemCreate(BaseModel):
             if any(e.stat in (
                 "ap_reset", "stat_reset", "full_reset", "hp_heal_p",
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
-                "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
+                "spirit_stone_customize", "spirit_stone_exchange", "trait_change", "battle_buff_round",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
         if self.item_type == "consumable" and any(e.stat in ITEM_EFFECT_EQUIP_PASSIVE_STATS for e in self.effects):
@@ -527,6 +545,18 @@ class ItemCreate(BaseModel):
                 raise ValueError("도전과제 획득 아이템은 전투 전용으로 설정할 수 없습니다.")
             if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
                 raise ValueError("도전과제 획득 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
+        if any(e.stat == "battle_buff_round" for e in self.effects):
+            if not self.battle_only:
+                raise ValueError("일회성 강화 아이템은 전투 중에만 사용할 수 있게 설정해야 합니다.")
+            if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
+                raise ValueError("일회성 강화 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
+            buffs = [e for e in self.effects if e.stat != "battle_buff_round"]
+            if not buffs:
+                raise ValueError("일회성 강화로 올릴 능력치를 1개 이상 추가해 주세요.")
+            if any(e.stat not in ITEM_EFFECT_BUFFABLE_STATS for e in buffs):
+                raise ValueError("일회성 강화로 올릴 수 없는 능력치가 포함되어 있습니다.")
+            if any(e.delta == 0 for e in buffs):
+                raise ValueError("일회성 강화 수치는 0이 아니어야 합니다.")
         if any(e.stat in ("spirit_stone_customize", "spirit_stone_exchange") for e in self.effects):
             if self.battle_only:
                 raise ValueError("정령석 커스텀·교환 아이템은 전투 전용으로 설정할 수 없습니다.")
@@ -975,7 +1005,7 @@ class EnemySkill(BaseModel):
     environment_id: int | None = Field(default=None, gt=0)
     environment_stack_count: int = Field(default=1, ge=1)
     manual_target_count: bool = False
-    auto_target_mode: Literal["attention", "random"] = "attention"
+    auto_target_mode: EnemyAutoTargetMode = "attention"
     on_hit_dot: bool = False
     # 피격 디버프 효과: "dot" 턴마다 고정 피해, "stat" 상세 능력치 변경,
     # "true_damage" 피격 즉시 방어력·피해 감소를 무시하는 고정 피해(dot_damage만큼, 기술 피해와 별도)
@@ -1013,7 +1043,7 @@ class EnemySkill(BaseModel):
     def validate_by_type(self):
         self.dot_name = self.dot_name.strip()
         if self.on_hit_dot:
-            if self.skill_type not in ("지정 공격", "광역 공격"):
+            if self.skill_type not in ("지정 공격", "광역 공격", "포지션 광역 공격"):
                 raise ValueError("피격 디버프는 공격 스킬에만 설정할 수 있습니다.")
             if not self.dot_name:
                 raise ValueError("피격 디버프 이름을 입력해 주세요.")
@@ -1141,6 +1171,10 @@ class EnemyActionInput(BaseModel):
     skill_index: int | None = None
     # 지정 공격일 때 관리자가 직접 고르는 공격 대상(기술의 target_count 명). 광역/소환/무반응은 사용하지 않는다.
     target_character_ids: list[int] = Field(default_factory=list)
+    # 포지션 광역 공격에서 때릴 포지션. 이 포지션의 캐릭터 전원이 대상이 된다.
+    target_faction: Faction | None = None
+    # 자동 대상 선정 방식을 이 행동에서만 바꾼다. 비우면 기술에 설정된 방식을 쓴다.
+    auto_target_mode: EnemyAutoTargetMode | None = None
 
 
 class BattleTelegraphRequest(BaseModel):
@@ -1180,6 +1214,29 @@ class BattleSessionRead(BaseModel):
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BattleReplayTurn(BaseModel):
+    """되짚어보기 한 칸. 그 턴이 끝난 시점의 판 상태와 그 턴의 로그를 함께 담는다."""
+    index: int
+    round: int
+    phase: BattlePhase | None = None
+    # 정규 턴은 None, 난입은 "join", 전투 시작 알림은 "start".
+    kind: str | None = None
+    events: list[str] = Field(default_factory=list)
+    calculations: dict = Field(default_factory=dict)
+    participants: list = Field(default_factory=list)
+    enemies: list = Field(default_factory=list)
+    summons: list = Field(default_factory=list)
+    pending_enemy_actions: list = Field(default_factory=list)
+    # 아군 턴에 캐릭터마다 고른 행동(기술·아이템·대상). 러너 카드에 그때 보이던 표시를 다시 그린다.
+    action_preview: dict = Field(default_factory=dict)
+
+
+class BattleReplayRead(BaseModel):
+    """1라운드 첫 턴부터 마지막 턴까지, 턴 단위로 앞뒤로 넘겨 볼 수 있는 진행 기록."""
+    session_id: int
+    turns: list[BattleReplayTurn] = Field(default_factory=list)
 
 
 class BattleActiveSkillRead(BaseModel):

@@ -29,15 +29,22 @@ import {
   updateEnvironment,
   uploadEnemyImage,
   uploadEnemySummonImage,
+  ENEMY_AUTO_TARGET_MODE_LABELS,
 } from "@/lib/api";
-import type { Chapter, Enemy, EnemyCreate, EnemyOnHitEffect, EnemySkill, Environment } from "@/lib/api";
+import type {
+  Chapter, Enemy, EnemyAutoTargetMode, EnemyCreate, EnemyOnHitEffect, EnemySkill, Environment,
+} from "@/lib/api";
 import { cn, parsePositiveInt, todayDateValue } from "@/lib/utils";
 import { useDialog } from "@/components/common/DialogProvider";
 import { useToast } from "@/components/common/ToastProvider";
 import EmptyState from "@/components/common/EmptyState";
 
-const SKILL_TYPES = ["지정 공격", "광역 공격", "소환", "지속 디버프", "환경"] as const;
+const SKILL_TYPES = ["지정 공격", "광역 공격", "포지션 광역 공격", "소환", "지속 디버프", "환경"] as const;
 type SkillType = (typeof SKILL_TYPES)[number];
+
+const AUTO_TARGET_MODE_OPTIONS: [EnemyAutoTargetMode, string][] = (
+  Object.entries(ENEMY_AUTO_TARGET_MODE_LABELS) as [EnemyAutoTargetMode, string][]
+);
 
 const EFFECT_STATS = [
   ["atk", "공격력"], ["atk_p", "공격력 증가율 (%)"], ["def", "방어력"], ["def_p", "방어력 증가율 (%)"],
@@ -88,7 +95,7 @@ const ALL_CHAPTERS = "__all__";
 
 type SkillFormEntry = {
   manual_target_count: boolean;
-  auto_target_mode: "attention" | "random";
+  auto_target_mode: EnemyAutoTargetMode;
   environment_id: string;
   environment_stack_count: string;
   on_hit_dot: boolean;
@@ -246,6 +253,7 @@ function enemyToForm(enemy: Enemy): EnemyFormState {
 const SKILL_TYPE_COLOR: Record<SkillType, string> = {
   "지정 공격": "bg-blue-500/20 text-blue-300",
   "광역 공격": "bg-orange-500/20 text-orange-300",
+  "포지션 광역 공격": "bg-amber-500/20 text-amber-300",
   소환: "bg-gold/15 text-gold",
   "지속 디버프": "bg-purple-500/20 text-purple-300",
   환경: "bg-emerald-500/20 text-emerald-300",
@@ -711,11 +719,11 @@ export default function EnemyTab() {
                         </span>
                       ) : skill.skill_type === "환경" ? (
                         <span className="text-muted">
-                          {skill.manual_target_count ? "타겟 수동 지정" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {environmentName ?? "환경 미지정"} +{skill.environment_stack_count ?? 1} 스택
+                          {skill.manual_target_count ? "타겟 수동 지정" : `타겟 ${skill.target_count}명 · ${ENEMY_AUTO_TARGET_MODE_LABELS[skill.auto_target_mode ?? "attention"]}`} / {environmentName ?? "환경 미지정"} +{skill.environment_stack_count ?? 1} 스택
                         </span>
                       ) : (
                         <span className="text-muted">
-                          {skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
+                          {skill.skill_type === "포지션 광역 공격" ? "지정 포지션 전원 대상" : skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${ENEMY_AUTO_TARGET_MODE_LABELS[skill.auto_target_mode ?? "attention"]}`} / {skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
                         </span>
                       )}
                         </>;
@@ -1025,6 +1033,7 @@ export default function EnemyTab() {
               const isSummon = skill.skill_type === "소환";
               const isEnvironment = skill.skill_type === "환경";
               const isAoe = skill.skill_type === "광역 공격";
+              const isPositionAoe = skill.skill_type === "포지션 광역 공격";
               const availableEnvironments = environmentCatalog.filter((environment) => environment.chapter === form.chapter);
               return (
                 <div key={idx} className="rounded-xl border border-line bg-surface px-4 py-4 flex flex-col gap-3">
@@ -1067,7 +1076,8 @@ export default function EnemyTab() {
                     </div>
                   </div>
 
-                  {(skill.skill_type === "지정 공격" || skill.skill_type === "광역 공격") && (
+                  {(skill.skill_type === "지정 공격" || skill.skill_type === "광역 공격"
+                    || skill.skill_type === "포지션 광역 공격") && (
                     <div className="space-y-2 rounded-xl border border-line p-3">
                       <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.on_hit_dot} onChange={(event) => updateSkill(idx, "on_hit_dot", event.target.checked)} />피격 대상에게 디버프 부여</label>
                       {skill.on_hit_dot && <>
@@ -1088,8 +1098,12 @@ export default function EnemyTab() {
                     <div className="grid gap-2 sm:grid-cols-3">
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-semibold text-ivory/85">타겟 인원</label>
-                        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.manual_target_count} onChange={(event) => updateSkill(idx, "manual_target_count", event.target.checked)} />수동 지정 (매 라운드 선택)</label>
-                        {isAoe ? (
+                        {!isPositionAoe && (
+                          <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={skill.manual_target_count} onChange={(event) => updateSkill(idx, "manual_target_count", event.target.checked)} />수동 지정 (매 라운드 선택)</label>
+                        )}
+                        {isPositionAoe ? (
+                          <p className="flex h-8 items-center text-xs text-muted">행동 암시에서 고른 포지션 전원</p>
+                        ) : isAoe ? (
                           !skill.manual_target_count && <p className="flex h-8 items-center text-xs text-muted">아군 전원 대상</p>
                         ) : (
                           <Input
@@ -1101,11 +1115,11 @@ export default function EnemyTab() {
                           />
                         )}
                       </div>
-                      {!isAoe && (
+                      {!isAoe && !isPositionAoe && (
                         <SettingSelect
                           label="자동 대상 선정"
                           value={skill.auto_target_mode}
-                          options={[["attention", "주목도 순"], ["random", "무작위"]]}
+                          options={AUTO_TARGET_MODE_OPTIONS}
                           onChange={(value) => updateSkill(idx, "auto_target_mode", value as SkillFormEntry["auto_target_mode"])}
                         />
                       )}

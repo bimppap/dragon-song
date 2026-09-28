@@ -4,6 +4,7 @@
 - 방어력과 피해 감소는 방어 행동을 했는지와 무관하게 늘 적용된다.
 - 인원 지정 기술의 대상 수에는 캐릭터의 "기술 대상" 능력치가 더해진다.
 """
+import re
 import unittest
 
 from sqlalchemy import create_engine
@@ -75,7 +76,8 @@ class SkillTargetStatTest(unittest.TestCase):
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
-        self.caster = Character(name="치유사", faction="치유", hp=100, hp_max=100, mp=20, mp_max=20,
+        # 시전자도 체력이 빈 상태여야 늘어난 대상이 실제로 치유된다(치유량 0은 로그에 남지 않는다).
+        self.caster = Character(name="치유사", faction="치유", hp=10, hp_max=100, mp=20, mp_max=20,
                                 skill_target=1)
         self.allies = [Character(name=f"아군{index}", faction="공격", hp=10, hp_max=100) for index in range(3)]
         self.db.add_all([self.caster, *self.allies])
@@ -109,15 +111,17 @@ class SkillTargetStatTest(unittest.TestCase):
             )],
         ))
 
+    def healed_events(self):
+        # 대상이 여럿이면 시전자 줄 아래로 대상별 줄이 붙으므로 치유량이 적힌 줄만 센다.
+        return [event for event in self.cast().log[-1]["events"] if re.search(r"\d+ 치유", event)]
+
     def test_stat_adds_targets_to_a_single_target_skill(self):
-        healed = [event for event in self.cast().log[-1]["events"] if "치유" in event]
-        self.assertEqual(len(healed), 2)
+        self.assertEqual(len(self.healed_events()), 2)
 
     def test_zero_stat_keeps_the_skill_target_count(self):
         self.caster.skill_target = 0
         self.db.commit()
-        healed = [event for event in self.cast().log[-1]["events"] if "치유" in event]
-        self.assertEqual(len(healed), 1)
+        self.assertEqual(len(self.healed_events()), 1)
 
 
 if __name__ == "__main__":

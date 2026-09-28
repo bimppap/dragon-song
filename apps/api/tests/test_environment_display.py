@@ -20,17 +20,22 @@ class EnvironmentDisplayTest(unittest.TestCase):
         self.engine.dispose()
 
     def test_two_stack_types_keep_counts_and_colors_without_mutating_state(self):
-        first = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="독", color="#ff00ff"))
+        first = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="독", color="#ff00ff", damage_per_stack=3))
         second = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="화상", color="#ff3300"))
         raw = [{"character_id": 1, "env_stacks": {str(first.id): 2, str(second.id): 2}}]
         session = BattleSession(mode="real", chapter="1장", participants=raw, enemies=[], summons=[], log=[])
         self.db.add(session)
         self.db.commit()
         result = crud._to_battle_session_read(self.db, session)
+        # 스택당 피해까지 함께 내려보내 스택 툴팁이 턴당 피해를 합산할 수 있다.
         self.assertEqual(result.participants[0]["environment_stacks"], [
-            {"id": first.id, "name": "독", "color": "#ff00ff", "count": 2},
-            {"id": second.id, "name": "화상", "color": "#ff3300", "count": 2},
+            {"id": first.id, "name": "독", "color": "#ff00ff", "damage_per_stack": 3, "count": 2},
+            {"id": second.id, "name": "화상", "color": "#ff3300", "damage_per_stack": 0, "count": 2},
         ])
+        self.assertEqual(
+            [entry["damage_per_stack"] for entry in result.environments],
+            [3, 0],
+        )
         self.assertNotIn("environment_stacks", session.participants[0])
         crud.update_environment(self.db, first.id, EnvironmentCreate(chapter="1장", name="독", color="#00ff00"))
         self.assertEqual(crud._to_battle_session_read(self.db, session).participants[0]["environment_stacks"][0]["color"], "#00ff00")

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { Ambulance, CalendarClock, Eye, Flag, Heart, History, Image as ImageIcon, Link2, ListOrdered, PlayCircle, RotateCcw, Shield, Shuffle, Sparkles, Swords, Trash2, Zap } from "lucide-react";
+import { Ambulance, CalendarClock, Eye, Flag, Heart, History, Image as ImageIcon, Link2, ListOrdered, Play, PlayCircle, RotateCcw, Shield, Shuffle, Sparkles, Swords, Trash2, Zap } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -29,6 +29,7 @@ import EmptyState from "@/components/common/EmptyState";
 import { useDialog } from "@/components/common/DialogProvider";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
 import BattleArena from "./BattleArena";
+import BattleTurnReplay from "./BattleTurnReplay";
 import BattlePairGrid from "./BattlePairGrid";
 import { PAIR_BATTLE_ENABLED, randomizeBattlePairs, reconcileBattlePairs, swapBattlePairMembers } from "@/lib/battlePairs";
 
@@ -149,6 +150,8 @@ function statusBadge(status: BattleSessionSummary["status"]) {
 export default function BattleTab() {
   const { confirm } = useDialog();
   const { toast } = useToast();
+  // 완료된 실전 전투를 턴 단위로 되짚어보는 화면.
+  const [replaySessionId, setReplaySessionId] = useState<number | null>(null);
   const [enemies, setEnemies] = useState<Enemy[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [activeChapter, setActiveChapter] = useState<Chapter | null>(null);
@@ -316,6 +319,10 @@ export default function BattleTab() {
     } finally {
       setStarting(false);
     }
+  }
+
+  if (replaySessionId != null) {
+    return <BattleTurnReplay sessionId={replaySessionId} onExit={() => setReplaySessionId(null)} />;
   }
 
   if (active) {
@@ -734,6 +741,18 @@ export default function BattleTab() {
                         </div>
                         {statusBadge(session.status)}
                       </button>
+                      {session.mode === "real" && session.status !== "in_progress" && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="size-8 shrink-0 p-0 text-gold"
+                          aria-label={`${session.enemy_names.join(", ") || `전투 #${session.id}`} 턴 되짚어보기`}
+                          onClick={() => setReplaySessionId(session.id)}
+                        >
+                          <Play size={15} />
+                        </Button>
+                      )}
                       {session.mode === "real" ? (
                         <Button
                           type="button"

@@ -109,7 +109,8 @@ class CloneSkillTest(unittest.TestCase):
         entry = entries[0]
         self.assertEqual(entry["display_name"], "복제:강타 I")
         self.assertEqual(entry["var_name"], "ab_strike")
-        self.assertEqual(entry["cost"], 4)
+        # 비용은 복제 노드(4)가 아니라 복제한 강타의 비용(3)을 따른다.
+        self.assertEqual(entry["cost"], 3)
 
     def test_cloned_skill_uses_source_formula_with_eff_penalty(self):
         self._store_slot()
@@ -134,9 +135,9 @@ class CloneSkillTest(unittest.TestCase):
         self.assertIn("89 피해", strike_event)
         self.assertIn("기술 효율 비례 -0.4", result.log[-1]["calculations"][strike_event])
         self.assertNotIn("기술 효율 고정", result.log[-1]["calculations"][strike_event])
-        # 기술 비용은 depth와 무관하게 4다.
+        # 기술 비용은 복제한 강타의 비용(3)을 따른다.
         actor = next(p for p in result.participants if p["character_id"] == self.cloner.id)
-        self.assertEqual(actor["mp"], 6)
+        self.assertEqual(actor["mp"], 7)
         # 임시 기술 효율 보정은 라운드 종료 후 남지 않는다.
         self.assertEqual(actor["skill_eff_fixed"], 0.0)
         self.assertEqual(actor["skill_eff_true"], 0)

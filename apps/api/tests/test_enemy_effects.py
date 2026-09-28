@@ -48,6 +48,23 @@ class EnemyEffectsTest(unittest.TestCase):
         self.db.commit()
         return crud.resolve_battle_enemy_turn(self.db, battle.id)
 
+    def test_ongoing_damage_groups_targets_under_one_source_line(self):
+        """같은 출처의 지속 피해는 시전자 줄 하나 아래에 대상별 줄로 모인다."""
+        skill = EnemySkill(skill_type="광역 공격", name="독무", damage_percent=0,
+                           on_hit_dot=True, dot_name="맹독", dot_damage=4)
+        battle = self.battle([skill])
+        self.telegraph(battle, 0)
+        self.enemy_turn(battle)
+        result = self.telegraph(battle, 0)
+        events = result.log[-1]["events"]
+        header = next(event for event in events if event.startswith("☠️"))
+        self.assertEqual(header, "☠️ 에너미의 맹독")
+        start = events.index(header)
+        sublines = [event for event in events[start + 1:start + 4] if event.startswith(crud.LOG_SUBLINE_PREFIX)]
+        self.assertEqual(len(sublines), 3)
+        for name, subline in zip(("A", "B", "C"), sublines):
+            self.assertTrue(subline.startswith(f"{crud.LOG_SUBLINE_PREFIX}{name} 4 지속 피해 · ["), subline)
+
     def test_on_hit_dot_ticks_next_telegraph_and_cleanses(self):
         skill = EnemySkill(skill_type="지정 공격", name="독니", target_count=1, damage_percent=100,
                            on_hit_dot=True, dot_name="맹독", dot_damage=7)

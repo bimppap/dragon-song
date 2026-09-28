@@ -101,6 +101,30 @@ class DevotionDerivedTest(unittest.TestCase):
         for event in healing_events:
             self.assertIn('12 / 4', result.log[-1]['calculations'][event])
 
+    def test_multi_target_heal_groups_under_one_caster_line(self):
+        """광역힐은 시전자 줄 하나 아래에 대상별 줄로 모인다."""
+        node = self.node(1)
+        battle = self.battle(node)
+        result = self.cast(battle, node)
+        events = result.log[-1]["events"]
+        header = next(event for event in events if event.startswith("💚"))
+        self.assertEqual(header, "💚 시전자의 후광 II")
+        sublines = [event for event in events if event.startswith(crud.LOG_SUBLINE_PREFIX)]
+        self.assertEqual(len(sublines), 2)
+        self.assertTrue(all("치유" in line for line in sublines))
+        # 계산식은 대상별 하위 줄에 붙는다.
+        for line in sublines:
+            self.assertIn("12 / 4", result.log[-1]["calculations"][line])
+
+    def test_zero_healing_is_left_out_of_the_log(self):
+        """체력이 가득 찬 대상에게는 "0 치유" 줄을 남기지 않는다."""
+        node = self.node(1)
+        battle = self.battle(node)
+        battle.participants = [{**p, "hp": p["max_hp"]} for p in battle.participants]
+        self.db.commit()
+        result = self.cast(battle, node)
+        self.assertEqual([e for e in result.log[-1]["events"] if "치유" in e], [])
+
     def test_hex_uses_depth_and_actual_capped_healing_for_random_damage(self):
         node = self.node(2)
         self.ally.hp = 95

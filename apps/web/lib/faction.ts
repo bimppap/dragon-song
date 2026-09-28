@@ -9,6 +9,9 @@ export const FACTION_POSITION_IMAGE: Record<Faction, string> = {
 
 const FACTION_ORDER = Object.keys(FACTION_POSITION_IMAGE) as Faction[];
 
+/** 포지션 선택 UI가 쓰는 순서(공격 → 수비 → 치유). */
+export const FACTION_OPTIONS: readonly Faction[] = FACTION_ORDER;
+
 /** 포지션 정렬용 순위. 포지션이 없는 캐릭터는 맨 뒤로 보낸다. */
 export function factionRank(faction: Faction | null): number {
   const index = faction ? FACTION_ORDER.indexOf(faction) : -1;
