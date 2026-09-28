@@ -133,8 +133,10 @@ def get_stat_grade_refund_ap(current_grade: int) -> int:
     return sum(STAT_GRADE_AP_COST[grade] for grade in range(1, capped + 1))
 
 
-def get_faction_base_dmg_r(faction: str) -> float:
-    """역할별 "피해 감소" 시작값. 수비만 50%에서, 나머지 역할은 30%에서 출발한다."""
+def get_faction_defend_dmg_r(faction: str | None) -> float:
+    """방어 행동을 한 라운드에만 더해지는 역할별 "피해 감소". 수비는 50%, 나머지 역할은 30%다.
+
+    상시 능력치가 아니라 그 라운드 방어에만 붙는 값이라, 캐릭터의 dmg_r에는 넣지 않는다."""
     return 0.5 if faction == "수비" else 0.3
 
 
@@ -143,16 +145,14 @@ def calculate_stat_grade_totals(
     stat_endurance: int,
     stat_charity: int,
     stat_wisdom: int,
-    faction: str | None = None,
 ) -> dict:
     """용기/인내/자애/지혜 등급으로부터 기본 능력치를 계산한다.
 
     각 등급의 보너스는 누적이 아니라 해당 등급의 값만 그대로 더해진다.
-    faction이 주어지면 "피해 감소"(dmg_r) 시작값을 포지션 기본값(수비 50%, 그 외 30%)으로 맞춘다.
+    포지션별 "피해 감소"는 상시 능력치가 아니라 방어 행동을 한 라운드에만 붙으므로
+    (get_faction_defend_dmg_r) 여기서는 더하지 않는다.
     """
     totals = dict(STAT_GRADE_BASE)
-    if faction is not None:
-        totals["dmg_r"] = get_faction_base_dmg_r(faction)
     tracks = (
         (stat_courage, COURAGE_GRADE_BONUS),
         (stat_endurance, ENDURANCE_GRADE_BONUS),

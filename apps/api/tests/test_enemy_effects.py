@@ -138,7 +138,8 @@ class EnemyEffectsTest(unittest.TestCase):
         battle, _ = self.true_damage_hit()
 
         self.assertEqual(battle.participants[0]["hp"], 100)
-        self.assertEqual(battle.participants[1]["hp"], 83)  # 기술 피해 10 + 방어 무시 피해 7
+        # 방어 중이라 기술 피해 10에 역할 방어 감소 30%가 붙어 7, 방어 무시 피해 7은 그대로 들어간다.
+        self.assertEqual(battle.participants[1]["hp"], 86)
 
     def test_environment_alive_dead_conditions_and_existing_stacks(self):
         alive = crud.create_environment(self.db, EnvironmentCreate(chapter="1장", name="생존", enemy_condition="alive", condition_enemy_id=1, stacks_per_round=2, damage_per_stack=3))

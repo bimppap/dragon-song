@@ -50,8 +50,9 @@ class EnemyActionCountTest(unittest.TestCase):
         return crud.resolve_battle_telegraph(self.db, battle.id, BattleTelegraphRequest(enemy_actions=[self.action(index) for index in indices]))
 
     def enemy_turn(self, battle):
+        # 이 파일은 행동 순서를 보는 곳이라, 방어 행동으로 역할 피해 감소가 끼지 않게 무반응으로 넘긴다.
         crud.resolve_battle_ally_turn(self.db, battle.id, BattleAllyTurnRequest(character_actions=[
-            {"character_id": self.character.id, "kind": "defend"},
+            {"character_id": self.character.id, "kind": "none"},
             {"character_id": self.other.id, "kind": "none"},
         ]))
         return crud.resolve_battle_enemy_turn(self.db, battle.id)

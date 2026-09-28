@@ -21,7 +21,7 @@ class ResetItemTest(unittest.TestCase):
         Base.metadata.create_all(self.engine)
         self.db = Session(self.engine)
         # 가입 시 용기 1 / 인내 1(=무료 2포인트)에서 시작해, AP로 용기를 4등급까지 올린 상태를 만든다.
-        stats = calculate_stat_grade_totals(1, 1, 0, 0, faction="공격")
+        stats = calculate_stat_grade_totals(1, 1, 0, 0)
         self.character = Character(
             name="tester", faction="공격", ap=10, sp=100,
             stat_courage=1, stat_endurance=1,
@@ -103,9 +103,9 @@ class ResetItemTest(unittest.TestCase):
         self.assertEqual(self.character.ap, 10 - 4 + 6)
         self.assertEqual(self.character.stat_courage, 0)
         self.assertEqual((self.usage().refunded_sp, self.usage().refunded_ap), (spent_sp, 6))
-        # 공격(30%) -> 수비(50%). 등급 보너스가 사라진 뒤에도 역할 기본값은 남는다.
+        # 역할별 피해 감소는 방어 행동에만 붙는 값이라 역할이 바뀌어도 능력치는 그대로다.
         self.assertEqual(self.character.faction, "수비")
-        self.assertEqual(self.character.dmg_r, 0.5)
+        self.assertEqual(self.character.dmg_r, 0.0)
 
     def test_full_reset_requires_a_faction_and_keeps_the_item(self):
         self.spend_ap_and_sp()
@@ -122,13 +122,15 @@ class ResetItemTest(unittest.TestCase):
         self.assertEqual(self.character.faction, "공격")
         self.assertEqual(self.db.query(ItemUsage).count(), 0)
 
-    def test_keeping_the_same_faction_keeps_its_damage_reduction_base(self):
+    def test_faction_reset_does_not_touch_damage_reduction(self):
+        self.character.dmg_r = 0.1
+        self.db.commit()
         crud.use_item(self.db, self.character.id, self.make_item("full_reset").id, chosen_faction="공격")
         self.db.refresh(self.character)
 
-        # 등급 보너스는 사라지지만 공격 역할의 기본 피해 감소 30%는 중복 가감 없이 그대로 남는다.
+        # 역할별 피해 감소는 저장하지 않으므로, 장신구 등으로 얻은 피해 감소만 그대로 남는다.
         self.assertEqual(self.character.faction, "공격")
-        self.assertEqual(self.character.dmg_r, 0.3)
+        self.assertAlmostEqual(self.character.dmg_r, 0.1)
 
     def test_reset_effects_rejected_on_battle_only_and_equipment(self):
         for stat in ("ap_reset", "stat_reset", "full_reset"):

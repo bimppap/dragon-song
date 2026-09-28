@@ -222,7 +222,8 @@ export default function RunnerBattleOverview() {
     let cancelled = false;
     fetchFinishedRealBattles()
       .then((battles) => { if (!cancelled) setPastBattles(battles); })
-      .catch(() => { /* 목록을 못 읽어도 전투 화면 자체는 보여준다. */ });
+      // 목록을 못 읽어도 전투 화면 자체는 보여준다. 대신 조용히 사라지지 않게 콘솔에는 남긴다.
+      .catch((error) => { if (!cancelled) console.error("지난 전투 목록 조회 실패", error); });
     return () => { cancelled = true; };
   }, []);
 

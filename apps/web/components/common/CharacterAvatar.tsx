@@ -1,3 +1,6 @@
+"use client";
+
+import { useState } from "react";
 import Image from "next/image";
 import { Image as ImageIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -22,10 +25,16 @@ interface Props {
  *  늘수록 월간 최적화 가능 이미지 수 한도에 걸려 일부 이미지가 깨져 보이는 문제가 있어
  *  unoptimized로 렌더링한다(원본을 그대로 서빙, sizes는 참고용으로만 남겨둔다). */
 export default function CharacterAvatar({ src, alt, className, iconSize = 16, sizes = "96px" }: Props) {
-  if (src) {
+  // 캐릭터를 지우면 이미지 파일도 함께 지워져 주소만 남는다(전투 스냅샷에는 그대로 있다).
+  // 그런 주소는 불러오다 실패하므로, 이미지가 아예 없을 때와 똑같이 아이콘으로 보여준다.
+  // 실패한 주소를 기억해 두면 src가 바뀔 때 알아서 다시 시도한다.
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+
+  if (src && failedSrc !== src) {
     return (
       <span className={cn("relative block shrink-0 overflow-hidden", className)}>
-        <Image src={src} alt={alt} fill sizes={sizes} unoptimized className="object-cover" />
+        <Image src={src} alt={alt} fill sizes={sizes} unoptimized className="object-cover"
+          onError={() => setFailedSrc(src)} />
       </span>
     );
   }

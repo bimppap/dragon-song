@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import crud
 from app.db import Base
-from app.models import BattleSession, Character, Member
+from app.models import BattleSession, Character, CharacterSkillUnlock, Member, SkillNode
 from app.schemas import (
     BattleAllyTurnRequest, BattleJoinRequest, BattleTelegraphRequest, CharacterActionInput, EnemySkill,
 )
@@ -166,3 +166,203 @@ class BattleReplayTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BattleReplayLogFallbackTest(unittest.TestCase):
+    """행동 기록(action_preview)을 저장하기 전에 끝난 전투도 로그에서 아군 행동을 되살린다."""
+
+    def setUp(self):
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        self.db = Session(self.engine)
+        self.admin = Member(login_id="admin", password_hash="x", role="ADMIN")
+        self.hero = Character(name="용사", faction="공격", hp=100, hp_max=100, mp=10, mp_max=10, atk=50)
+        self.healer = Character(name="치유사", faction="치유", hp=40, hp_max=100, mp=10, mp_max=10)
+        self.guard = Character(name="방패", faction="수비", hp=80, hp_max=100, mp=10, mp_max=10)
+        self.db.add_all([self.admin, self.hero, self.healer, self.guard])
+        self.db.flush()
+        self.node = SkillNode(
+            book="용맹의 서", branch=0, col=None, tier=1, default_name="강타", trigger_type="즉발형",
+            category="피해", stackable=False, var_name="ab_strike", cost=1, power=1.5,
+            target="1", target_side="ENEMY", activation_order=6, is_public=True,
+        )
+        self.node.image_url = "/skill/strike.png"
+        self.db.add(self.node)
+        self.db.flush()
+        self.db.add(CharacterSkillUnlock(character_id=self.hero.id, node_id=self.node.id))
+        self.battle = BattleSession(
+            mode="real", chapter="1장", status="in_progress", phase="ally", round=1,
+            participants=[crud._snapshot_combatant(c) for c in (self.hero, self.healer, self.guard)],
+            enemies=[{"enemy_id": 1, "name": "용", "hp": 900, "max_hp": 900, "attack": 10,
+                      "skills": [], "status_effects": [], "joined_round": 0}],
+            summons=[], log=[],
+        )
+        self.db.add(self.battle)
+        self.db.commit()
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    def replay_ally_turn(self):
+        """행동 기록을 지워, 예전 전투처럼 로그만 남은 상태로 되짚어본다."""
+        crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(character_actions=[
+            CharacterActionInput(character_id=self.hero.id, kind="skill",
+                                 skill_node_id=self.node.id, target_enemy_id=1),
+            CharacterActionInput(character_id=self.healer.id, kind="heal", target_character_id=self.guard.id),
+            CharacterActionInput(character_id=self.guard.id, kind="defend",
+                                 protect_target_character_id=self.hero.id),
+        ]))
+        self.battle.round_snapshots = [
+            {key: value for key, value in snapshot.items() if key != "action_preview"}
+            for snapshot in self.battle.round_snapshots
+        ]
+        self.battle.status = "early_terminated"
+        self.db.commit()
+        replay = crud.get_battle_replay(self.db, self.battle.id, self.admin)
+        return next(turn for turn in replay.turns if turn.phase == "ally")
+
+    def test_skill_heal_and_defend_are_read_back_from_the_log(self):
+        turn = self.replay_ally_turn()
+
+        attacker = turn.action_preview[str(self.hero.id)]
+        self.assertEqual(attacker["kind"], "skill")
+        self.assertEqual(attacker["skill_name"], "강타")
+        # 이름으로 현재 기술을 찾아 아이콘과 설명까지 채운다.
+        self.assertEqual(attacker["skill_image_url"], "/skill/strike.png")
+        self.assertEqual(attacker["target_names"], ["용"])
+        self.assertEqual(attacker["ally_target_ids"], [])
+
+        healer = turn.action_preview[str(self.healer.id)]
+        self.assertEqual(healer["kind"], "heal")
+        self.assertEqual(healer["target_names"], ["방패"])
+        self.assertEqual(healer["ally_target_ids"], [self.guard.id])
+
+        guard = turn.action_preview[str(self.guard.id)]
+        self.assertEqual(guard["kind"], "defend")
+        self.assertEqual(guard["ally_target_ids"], [self.hero.id])
+
+    def test_stored_actions_are_preferred_over_the_log(self):
+        crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(character_actions=[
+            CharacterActionInput(character_id=self.hero.id, kind="attack", target_enemy_id=1),
+        ]))
+        self.battle.status = "victory"
+        self.db.commit()
+        turn = next(t for t in crud.get_battle_replay(self.db, self.battle.id, self.admin).turns if t.phase == "ally")
+        # 저장된 기록이 있으면 로그를 다시 읽지 않는다(대상 id까지 정확히 남아 있다).
+        self.assertEqual(turn.action_preview[str(self.hero.id)]["kind"], "attack")
+        self.assertEqual(turn.action_preview[str(self.hero.id)]["target_names"], ["용"])
+
+
+class BattleReplaySkippedActionTest(unittest.TestCase):
+    """앞선 공격으로 적이 전멸해 행동이 씹힌 캐릭터도 고른 행동은 그대로 남는다."""
+
+    def setUp(self):
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        self.db = Session(self.engine)
+        self.admin = Member(login_id="admin", password_hash="x", role="ADMIN")
+        self.first = Character(name="선공", faction="공격", hp=100, hp_max=100, mp=10, mp_max=10, atk=500)
+        self.late = Character(name="후공", faction="공격", hp=100, hp_max=100, mp=10, mp_max=10, atk=10)
+        self.db.add_all([self.admin, self.first, self.late])
+        self.db.flush()
+        self.battle = BattleSession(
+            mode="real", chapter="1장", status="in_progress", phase="ally", round=1,
+            participants=[crud._snapshot_combatant(self.first), crud._snapshot_combatant(self.late)],
+            enemies=[{"enemy_id": 1, "name": "용", "hp": 10, "max_hp": 10, "attack": 10,
+                      "skills": [], "status_effects": [], "joined_round": 0}],
+            summons=[], log=[],
+        )
+        self.db.add(self.battle)
+        self.db.commit()
+
+    def tearDown(self):
+        self.db.close()
+        self.engine.dispose()
+
+    def test_skipped_attacker_still_shows_the_chosen_action(self):
+        result = crud.resolve_battle_ally_turn(self.db, self.battle.id, BattleAllyTurnRequest(character_actions=[
+            CharacterActionInput(character_id=self.first.id, kind="attack", target_enemy_id=1),
+            CharacterActionInput(character_id=self.late.id, kind="attack", target_enemy_id=1),
+        ]))
+        self.assertEqual(result.status, "victory")
+        # 뒤에 행동한 캐릭터는 적이 이미 전멸해 로그가 남지 않는다.
+        events = " ".join(result.log[-1]["events"])
+        self.assertIn("선공", events)
+        self.assertNotIn("후공", events)
+
+        turn = next(t for t in crud.get_battle_replay(self.db, self.battle.id, self.admin).turns if t.phase == "ally")
+        # 그래도 고른 행동은 기록돼 있어 되짚어보기에서 카드에 그려진다.
+        self.assertEqual(turn.action_preview[str(self.late.id)]["kind"], "attack")
+        self.assertEqual(turn.action_preview[str(self.first.id)]["target_names"], ["용"])
+
+
+class LoggedSkillNameMatchTest(unittest.TestCase):
+    """로그에 적힌 기술 이름을 단계까지 맞춰 찾는다(엉뚱한 단계의 아이콘이 붙지 않게)."""
+
+    def skill(self, tier: int, image_url: str | None, *, default_name: str = "열격") -> dict:
+        node = SkillNode(
+            book="용맹의 서", branch=0, col=0, tier=tier, default_name=default_name,
+            trigger_type="즉발형", category="피해", stackable=False, var_name="ab_strike",
+            cost=1, power=1.0, target="1", target_side="ENEMY", activation_order=6, is_public=True,
+        )
+        node.id = tier
+        node.image_url = image_url
+        return crud._battle_skill_dict(node, skill_lv=0)
+
+    def test_picks_the_tier_that_matches_the_logged_grade(self):
+        # 뿌리 기술의 등급 숫자는 단계-1이라 "열격 II"는 3단계다.
+        skills = {3: self.skill(3, "/skill/strike3.png"), 5: self.skill(5, "/skill/strike5.png")}
+        matched = crud._skill_by_logged_name(skills, "열격 II")
+        self.assertEqual(matched["image_url"], "/skill/strike3.png")
+        self.assertEqual(crud._skill_by_logged_name(skills, "열격 IV")["image_url"], "/skill/strike5.png")
+
+    def test_missing_tier_falls_back_to_the_latest_of_the_same_skill(self):
+        # 그 단계를 더 이상 갖고 있지 않으면 같은 기술 계열의 최신 습득본 아이콘을 쓴다.
+        skills = {5: self.skill(5, "/skill/strike5.png"), 4: self.skill(4, "/skill/strike4.png")}
+        self.assertEqual(crud._skill_by_logged_name(skills, "열격 II")["image_url"], "/skill/strike5.png")
+
+    def test_renamed_skill_falls_back_to_the_latest_acquired(self):
+        # 이름을 아예 바꿔 못 찾으면, 아이콘이라도 보이게 가장 최근에 습득한 기술을 쓴다.
+        skills = {3: self.skill(3, "/skill/old.png"), 5: self.skill(5, "/skill/new.png", default_name="분쇄")}
+        self.assertEqual(crud._skill_by_logged_name(skills, "개화")["image_url"], "/skill/new.png")
+
+    def test_nothing_to_fall_back_to(self):
+        self.assertIsNone(crud._skill_by_logged_name({}, "없는 기술 II"))
+        self.assertIsNone(crud._skill_by_logged_name({5: self.skill(5, "/x.png")}, None))
+
+
+class AllTargetLabelTest(unittest.TestCase):
+    """전원 대상 기술은 대상 이름을 늘어놓지 않고 "아군 전원"처럼 한 줄로 적는다."""
+
+    def test_label_comes_from_the_skill_target_or_var_name(self):
+        self.assertEqual(crud._all_target_label({"target": "아군 전원"}), "아군 전원")
+        self.assertEqual(crud._all_target_label({"target": "에너미+하수인 전원"}), "에너미+하수인 전원")
+        # 후광·장막은 기술 대상이 SELF로 적혀 있지만 실제로는 아군 전원에게 닿는다.
+        self.assertEqual(crud._all_target_label({"target": "SELF", "var_name": "ab_halo"}), "아군 전원")
+        self.assertIsNone(crud._all_target_label({"target": "2", "var_name": "ab_aid"}))
+        self.assertIsNone(crud._all_target_label(None))
+
+    def party(self, count: int, **overrides) -> list[dict]:
+        return [{"name": f"아군{index}", "downed": False, "retreated": False,
+                 "joined_round": 0, **overrides.get(f"아군{index}", {})} for index in range(count)]
+
+    def test_full_party_coverage_is_detected_without_the_skill(self):
+        party = self.party(4)
+        names = [p["name"] for p in party]
+        self.assertTrue(crud._covers_every_ally(names, party, 2))
+        self.assertFalse(crud._covers_every_ally(names[:-1], party, 2))
+
+    def test_characters_that_could_not_be_targeted_are_ignored(self):
+        # 그 라운드에 난입했거나 퇴각한 캐릭터는 애초에 대상이 되지 않는다.
+        party = self.party(4, **{"아군3": {"joined_round": 2}})
+        self.assertTrue(crud._covers_every_ally([p["name"] for p in party[:3]], party, 2))
+        party = self.party(4, **{"아군3": {"retreated": True}})
+        self.assertTrue(crud._covers_every_ally([p["name"] for p in party[:3]], party, 2))
+        # 기절만 한 캐릭터를 뺀 것도 전원 대상(강화류)으로 본다.
+        party = self.party(4, **{"아군3": {"downed": True}})
+        self.assertTrue(crud._covers_every_ally([p["name"] for p in party[:3]], party, 2))
+
+    def test_two_targets_in_a_two_person_party_is_not_treated_as_everyone(self):
+        party = self.party(5)
+        self.assertFalse(crud._covers_every_ally([p["name"] for p in party[:2]], party, 2))

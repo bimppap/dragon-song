@@ -46,7 +46,7 @@ const BATTLE_DESCRIPTIONS: { label: string; icon: React.ElementType; accent: str
     label: "수비값(=받는 피해량)",
     icon: Shield,
     accent: "text-gold",
-    formula: "에너미가 주는 피해 × (1 − 피해 감소율) − (방어력 × (1 + 방어력 증폭) × (1 + 방어 효율))",
+    formula: "(에너미가 주는 피해 − 방어력 × (1 + 방어력 증폭) × (1 + 방어 효율)) × (1 − 피해 감소율). 방어 행동을 한 라운드에는 피해 감소율에 수비 +50%, 그 외 포지션 +30%가 더해집니다.",
   },
   {
     label: "치유값",

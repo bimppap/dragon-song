@@ -149,7 +149,7 @@ const DETAIL_STATS: {
   { key: "mp_regen", label: "마나 재생력", description: "매 라운드 회복하는 마나입니다." },
   { key: "sh", label: "보호막", description: "체력보다 먼저 피해를 흡수하는 보호막입니다." },
   { key: "dmg_p", label: "피해 증폭", isFloat: true, rawPercent: true, description: "가하는 피해 전체에 적용되는 증폭 배율입니다." },
-  { key: "dmg_r", label: "피해 감소(%)", isFloat: true, rawPercent: true, description: "받는 피해를 비율로 줄여 주는 감소율입니다." },
+  { key: "dmg_r", label: "피해 감소(%)", isFloat: true, rawPercent: true, description: "받는 피해를 비율로 줄여 주는 감소율입니다. 전투에서 방어 행동을 고른 라운드에는 여기에 수비 +50%, 그 외 포지션 +30%가 더해집니다." },
   { key: "skill_eff_true", label: "기술 효율(고정)", description: "기술 피해·치유에 더해지는 고정값입니다." },
   { key: "skill_eff_fixed", label: "기술 효율(비례)", isFloat: true, rawPercent: true, description: "기술 등급과 곱해져 위력을 높이는 비례 계수입니다." },
 ];

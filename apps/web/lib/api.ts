@@ -2561,8 +2561,16 @@ export async function updateTraitStatus(isOpen: boolean): Promise<TraitStatus> {
   return status;
 }
 
-export function equipTrait(characterId: number, traitId: number | null): Promise<CharacterDetail> {
-  return request(`/characters/${characterId}/trait`, { method: "PUT", body: JSON.stringify({ trait_id: traitId }) }, "특성 장착 변경 실패");
+/** 특성을 장착·교체한다. 교체하면 교체권이 1장 줄므로 캐릭터 캐시를 함께 비운다. */
+export async function equipTrait(characterId: number, traitId: number | null): Promise<CharacterDetail> {
+  const detail = await request<CharacterDetail>(
+    `/characters/${characterId}/trait`,
+    { method: "PUT", body: JSON.stringify({ trait_id: traitId }) },
+    "특성 장착 변경 실패",
+  );
+  // 특성은 기술 대상 수(분배)까지 바꾸므로 전투 기술 캐시도 함께 비운다.
+  invalidateApiCache("characters:", "battles:active-skills:");
+  return detail;
 }
 
 export async function fetchTraits(): Promise<Trait[]> {

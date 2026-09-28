@@ -74,6 +74,10 @@ import { skillBookAccent } from "@/components/skill/bookAccent";
 import EnemyAttackArrows, { enemyAttackColor, type EnemyAttackMark } from "./EnemyAttackArrows";
 import PixelBorderGlow from "./PixelBorderGlow";
 import { changedPairPartnerIds, reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
+import {
+  formatStackAmounts, mergeSameStackBarItems, summarizeStackAmounts,
+  type StackAmount, type StackBarItem,
+} from "@/lib/stackTooltip";
 
 function displayStatusEffects(effects: BattleStatusEffect[]): BattleStatusEffect[] {
   const result: BattleStatusEffect[] = [];
@@ -97,6 +101,8 @@ const fmt = (n: number) => numberFormatter.format(Math.max(0, Math.round(n)));
 interface Props {
   sessionId: number;
   readOnly?: boolean;
+  hideReadOnlyNotice?: boolean;
+  replayMode?: boolean;
   runnerPreview?: boolean;
   onExit: () => void;
   /**
@@ -267,59 +273,6 @@ function autoTargetsForEnemySkill(
   return autoSelectEnemyTargets(candidates, Math.max(1, skill.target_count), mode ?? skill.auto_target_mode);
 }
 
-/** 스택 툴팁 맨 위 "종합" 줄에서 같은 이름표끼리 합산하는 수치 한 개. */
-interface StackAmount {
-  /** 합산 기준이 되는 이름표(예: "턴마다 피해", "피해 감소") */
-  label: string;
-  value: number;
-  /** 비율값이라 퍼센트로 보여줄지 */
-  percent?: boolean;
-  /** +/- 부호를 붙일지(피해량처럼 크기만 뜻하는 값은 붙이지 않는다) */
-  signed?: boolean;
-}
-
-interface StackBarItem {
-  key: string;
-  label: string;
-  count: number;
-  /** 환경 스택처럼 색이 데이터로 오는 경우 */
-  color?: string;
-  /** 상태이상처럼 강화/약화로 색이 정해지는 경우 */
-  tone?: "buff" | "debuff";
-  direction?: "left" | "right";
-  /** 이 항목이 주는 수치. 툴팁에서 "(공격력 -15)"로 보여주고 종합 줄에서 합산한다. */
-  amounts?: StackAmount[];
-  /** 수치로 합산할 수 없는 효과의 짧은 설명. */
-  note?: string;
-}
-
-function formatStackAmount({ label, value, percent, signed }: StackAmount): string {
-  const rounded = percent ? Math.round(value * 1000) / 10 : Math.round(value * 100) / 100;
-  const sign = signed && rounded >= 0 ? "+" : "";
-  return `${label} ${sign}${rounded}${percent ? "%" : ""}`;
-}
-
-function formatStackAmounts(amounts: StackAmount[] | undefined): string {
-  return (amounts ?? []).map(formatStackAmount).join(" · ");
-}
-
-/** 카드에 걸린 모든 스택의 수치를 이름표별로 합쳐 "종합" 줄을 만든다. */
-function summarizeStackAmounts(items: StackBarItem[]): string {
-  const totals = new Map<string, StackAmount>();
-  for (const item of items) {
-    for (const amount of item.amounts ?? []) {
-      const key = `${amount.label}:${amount.percent ? "%" : ""}`;
-      const existing = totals.get(key);
-      if (existing) existing.value += amount.value;
-      else totals.set(key, { ...amount });
-    }
-  }
-  return [...totals.values()]
-    .filter((amount) => Math.abs(amount.value) > 1e-9)
-    .map(formatStackAmount)
-    .join(" | ");
-}
-
 const STACK_BAR_TONE = {
   buff: { bar: "bg-emerald-400", text: "text-emerald-400" },
   debuff: { bar: "bg-fuchsia-400", text: "text-fuchsia-400" },
@@ -423,26 +376,6 @@ function statusEffectBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
   })));
 }
 
-/** 이름과 수치가 똑같이 보이는 항목은 한 줄로 합쳐 개수만 늘린다(출처가 여럿인 같은 약화 등). */
-function mergeSameStackBarItems(items: StackBarItem[]): StackBarItem[] {
-  const merged = new Map<string, StackBarItem>();
-  for (const item of items) {
-    const key = `${item.label}|${item.color ?? "-"}|${item.tone ?? "-"}|${formatStackAmounts(item.amounts)}|${item.note ?? ""}`;
-    const existing = merged.get(key);
-    if (!existing) {
-      merged.set(key, { ...item, key });
-      continue;
-    }
-    // 합칠 때는 수치도 개수만큼 같이 더한다(같은 스택이 두 출처로 나뉘어 왔을 뿐이다).
-    existing.amounts = (existing.amounts ?? []).map((amount, index) => ({
-      ...amount,
-      value: amount.value + ((item.amounts ?? [])[index]?.value ?? 0),
-    }));
-    existing.count += item.count;
-  }
-  return [...merged.values()];
-}
-
 const DEFAULT_ENEMY_DEBUFF_COLOR = "#e879f9";
 
 /** 에너미(또는 그 하수인)가 캐릭터에게 건 약화. 색이 저장되기 전의 전투도 출처로 구분한다. */
@@ -463,12 +396,14 @@ function statModifierAmount(stat: string, totalDelta: number): StackAmount {
  */
 function statusEffectAmounts(effect: BattleStatusEffect, totalDelta: number, stacks: number): StackAmount[] {
   const damage = (label: string, value: number): StackAmount[] => [{ label, value }];
+  // 스택마다 같은 값이 붙는 효과는 스택당 값을 보여주고, 종합에서만 개수를 곱한다.
+  const perStackDamage = (label: string, value: number): StackAmount[] => [{ label, value, perStack: true }];
   const ratio = (label: string, value: number): StackAmount[] => [{ label, value, percent: true, signed: true }];
   switch (effect.effect_type) {
     case "ongoing_damage":
-      return effect.damage != null ? damage("턴마다 피해", effect.damage * stacks) : [];
+      return effect.damage != null ? perStackDamage("턴마다 피해", effect.damage) : [];
     case "sparge_telegraph":
-      return effect.damage != null ? damage("암시 턴마다 전체 피해", effect.damage * stacks) : [];
+      return effect.damage != null ? perStackDamage("암시 턴마다 전체 피해", effect.damage) : [];
     case "escort_damage_reduction":
       return effect.value != null ? ratio("피해 감소", effect.value * stacks) : [];
     case "counter":
@@ -774,7 +709,7 @@ function draftTargetNames(
     }
     case "skill": {
       if (skill && isAllSkillTarget(skill.target)) return [skill.target];
-      if (skill && isSkillVar(skill, ALL_ALLY_TARGET_SKILL_VARS)) return ["아군 전체"];
+      if (skill && isSkillVar(skill, ALL_ALLY_TARGET_SKILL_VARS)) return ["아군 전원"];
       const keys = resolvedSkillTargetKeys(actor, draft, skill, session) ?? [];
       if (keys.length > 0) return keys.map(nameForKey).filter(notNull);
       if (isAidSkill(skill)) return draftAllyTargetIds(actor, draft, skill, session).map(allyName).filter(notNull);
@@ -1129,7 +1064,7 @@ function TargetPickerButton({
   );
 }
 
-export default function BattleArena({ sessionId, readOnly = false, runnerPreview = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
+export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyNotice = false, replayMode = false, runnerPreview = false, onExit, externalSession, draftPreview: externalDraftPreview }: Props) {
   const { member } = useAuth();
   const isAdmin = member != null && isAdminRole(member.role);
   const showAdminView = isAdmin && !runnerPreview;
@@ -2107,7 +2042,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
         </AlertBanner>
       )}
 
-      {readOnly && (
+      {readOnly && !hideReadOnlyNotice && (
         <AlertBanner tone="success">
           {session.mode === "practice"
             ? inProgress
@@ -2451,7 +2386,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
                 customDescription: actionPreview.skill_custom_description,
                 customDescriptionColor: actionPreview.skill_custom_description_color,
               }
-            : actionPreview?.kind === "item" && actionPreview.item_id != null
+            : actionPreview?.kind === "item"
               ? { name: actionPreview.item_name ?? "아이템", imageUrl: actionPreview.item_image_url, description: null,
                   book: null, customDescription: null, customDescriptionColor: null }
               : null;
@@ -2677,9 +2612,11 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
               customDescription: effect.skill_custom_description,
               customDescriptionColor: effect.skill_custom_description_color,
             }));
-          if (phase === "ally" && session.status === "in_progress") {
+          // 되짚어보기의 마지막 턴도 완료 상태와 무관하게 저장된 행동의 북마크를 표시한다.
+          if (phase === "ally" && (inProgress || (readOnly && replayMode))) {
             for (const actor of session.participants) {
-              if (!isActive(actor) || actor.joined_round === session.round) continue;
+              // 기록은 행동 후 상태이므로, 행동 뒤 기절한 시전자도 저장된 행동을 표시한다.
+              if (!(readOnly && replayMode) && (!isActive(actor) || actor.joined_round === session.round)) continue;
               if (readOnly) {
                 const preview = draftPreview?.[actor.character_id];
                 if (!preview?.ally_target_ids?.includes(p.character_id)) continue;
@@ -2720,7 +2657,7 @@ export default function BattleArena({ sessionId, readOnly = false, runnerPreview
             ...(p.environment_stacks ?? []).map((stack) => ({
               key: `environment:${stack.id}`, label: `환경 : ${stack.name}`, count: stack.count, color: stack.color,
               amounts: stack.damage_per_stack
-                ? [{ label: "턴마다 피해", value: stack.damage_per_stack * stack.count }]
+                ? [{ label: "턴마다 피해", value: stack.damage_per_stack, perStack: true }]
                 : [],
             })),
             ...enemyDebuffBarItems(enemyDebuffs),

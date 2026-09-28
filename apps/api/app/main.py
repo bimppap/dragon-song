@@ -1356,6 +1356,13 @@ def get_live_battle(
     return session
 
 
+# 아래의 "/battles/{session_id}"보다 먼저 선언해야 "finished"가 session_id로 잡히지 않는다.
+@app.get("/battles/finished", response_model=list[BattleSessionSummary])
+def list_finished_real_battles(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
+    """되짚어볼 수 있는 완료된 실전 전투 목록. 러너도 볼 수 있다."""
+    return crud.get_finished_real_battles(db)
+
+
 @app.get("/battles/{session_id}/active-skills", response_model=BattleActiveSkillsRead)
 def get_battle_active_skills(
     session_id: int,
@@ -1379,12 +1386,6 @@ def get_battle_available_items(
 @app.get("/battles/{session_id}", response_model=BattleSessionRead)
 def get_battle(session_id: int, member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
     return crud.get_battle_session(db, session_id, member)
-
-
-@app.get("/battles/finished", response_model=list[BattleSessionSummary])
-def list_finished_real_battles(member: Member = Depends(get_current_member), db: Session = Depends(get_db)):
-    """되짚어볼 수 있는 완료된 실전 전투 목록. 러너도 볼 수 있다."""
-    return crud.get_finished_real_battles(db)
 
 
 @app.get("/battles/{session_id}/replay", response_model=BattleReplayRead)

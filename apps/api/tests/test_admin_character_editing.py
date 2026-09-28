@@ -158,27 +158,23 @@ class AdminCharacterEditingTest(unittest.TestCase):
         self.assertEqual(ctx.exception.status_code, 400)
 
     # ── 포지션 변경 ──────────────────────────────────────────
-    def test_changing_faction_shifts_damage_reduction_base(self):
-        """수비는 피해 감소 50%, 나머지는 30%에서 출발한다. 포지션을 바꾸면 그 차이만 움직여야 한다."""
+    def test_changing_faction_does_not_touch_damage_reduction(self):
+        """역할별 피해 감소(수비 50%, 그 외 30%)는 방어 행동을 한 라운드에만 붙으므로 능력치에는 없다."""
         character = self.make_admin_character(lv=1)  # 공격
         before = self.detail(character.id)
         self.assertEqual(before.faction, "공격")
-        self.assertAlmostEqual(before.dmg_r, 0.3, places=6)
+        self.assertAlmostEqual(before.dmg_r, 0.0, places=6)
 
         after = crud.patch_admin_character(self.db, character.id, None, {}, "수비")
         self.assertEqual(after.faction, "수비")
-        self.assertAlmostEqual(after.dmg_r, 0.5, places=6)
-
-        back = crud.patch_admin_character(self.db, character.id, None, {}, "치유")
-        self.assertEqual(back.faction, "치유")
-        self.assertAlmostEqual(back.dmg_r, 0.3, places=6)
+        self.assertAlmostEqual(after.dmg_r, 0.0, places=6)
 
     def test_faction_change_keeps_other_damage_reduction_bonuses(self):
-        """기술·장신구로 붙은 피해 감소는 포지션을 바꿔도 남아 있어야 한다."""
+        """기술·장신구로 붙은 피해 감소는 포지션을 바꿔도 그대로 남아 있어야 한다."""
         character = self.make_admin_character(lv=1)
-        crud.patch_admin_character(self.db, character.id, None, {"dmg_r": 0.42})  # 0.3 기본 + 0.12 보너스
+        crud.patch_admin_character(self.db, character.id, None, {"dmg_r": 0.12})
         after = crud.patch_admin_character(self.db, character.id, None, {}, "수비")
-        self.assertAlmostEqual(after.dmg_r, 0.62, places=6)  # 0.5 기본 + 0.12 보너스 유지
+        self.assertAlmostEqual(after.dmg_r, 0.12, places=6)
 
     def test_changing_faction_to_the_same_value_is_a_no_op(self):
         character = self.make_admin_character(lv=1)

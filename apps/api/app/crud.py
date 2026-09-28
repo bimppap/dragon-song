@@ -20,7 +20,7 @@ from app.game_data import (
     build_skill_node_specs,
     calculate_stat_grade_totals,
     dynamic_derived_description,
-    get_faction_base_dmg_r,
+    get_faction_defend_dmg_r,
     get_level_grade_stats,
     get_stat_grade_refund_ap,
     get_stat_upgrade_ap_cost,
@@ -542,7 +542,6 @@ def create_character_for_member(
 
     stats = calculate_stat_grade_totals(
         data.stat_courage, data.stat_endurance, data.stat_charity, data.stat_wisdom,
-        faction=data.faction,
     )
     character = Character(
         name=data.name.strip(),
@@ -653,7 +652,7 @@ def create_character(db: Session, data: CharacterCreate) -> CharacterRead:
         character.ap = 10 + (character.lv - 1) * GROWTH_AP_PER_LEVEL
         for stat in GRADE_STAT_FIELDS:
             setattr(character, stat, 0)
-        totals = calculate_stat_grade_totals(0, 0, 0, 0, faction=data.faction)
+        totals = calculate_stat_grade_totals(0, 0, 0, 0)
         for key, attr in _GRADE_TOTAL_TO_ATTR.items():
             setattr(character, attr, totals[key])
         character.hp = character.hp_max
@@ -4611,6 +4610,18 @@ def _floor_amount(value: float) -> int:
     return math.floor(value) if value >= 0 else -math.ceil(-value)
 
 
+def _damage_reduction(target: dict, extra: float = 0.0) -> float:
+    """받는 피해를 줄이는 총 비율.
+
+    캐릭터가 쌓아 둔 피해 감소(dmg_r, 특성 보정 포함)에, 그 라운드에 방어 행동을 했다면
+    역할별 방어 감소(수비 50%, 그 외 30%)를 더한다. extra는 반격·경호처럼 방어 여부와
+    무관하게 항상 붙는 감소분이다."""
+    base = float(target.get("dmg_r", 0.0))
+    if target.get("defending"):
+        base += get_faction_defend_dmg_r(target.get("faction"))
+    return min(0.95, max(-1.0, base + extra))
+
+
 def _eff_def(p: dict) -> int:
     return _floor_amount(p["def"] * (1 + p["def_p"]) * (1 + p["def_eff"]))
 
@@ -5326,7 +5337,7 @@ def _apply_minion_phase(participants: list[dict], enemies: list[dict], summons: 
                     events.append(f"👹 하수인 {name} 약화 → {target['name']} {BATTLE_ITEM_EFFECT_LABELS.get(stat, stat)} -{amount}%{' (방지)' if not applied else ''}")
                 elif kind == "explosion":
                     raw = max(0, minion["attack"] - _eff_def(target))
-                    damage = max(0, _floor_amount(raw * (1 - target.get("dmg_r", 0))))
+                    damage = max(0, _floor_amount(raw * (1 - _damage_reduction(target))))
                     damage, absorbed = _apply_hit(target, damage)
                     events.append(f"💥 하수인 {name} 폭발 → {target['name']} {damage} 피해 [{target['hp']}/{target['max_hp']}]")
                     if phase == "enemy":
@@ -5493,6 +5504,11 @@ def _battle_skill_cost(actor: dict, skill: dict) -> int:
 
 def _formula_number(value: int | float) -> str:
     return f"{value:g}" if isinstance(value, float) else str(value)
+
+
+def _overkill_note(overkill: bool, damage: int | float) -> str:
+    """오버킬이면 남은 체력에 잘리기 전 실제로 가해진 피해까지 함께 적는다."""
+    return f" (오버킬 - 가해진 피해 {_formula_number(damage)})" if overkill else ""
 
 
 def _signed_number(value: int | float) -> str:
@@ -5722,7 +5738,7 @@ def _apply_ongoing_telegraph_skill_effects(
             events.append(
                 f"☠️ {source_name}의 {skill_name} → "
                 f"{enemy['name']}에게 {dealt} 지속 피해 · [{enemy['hp']}/{enemy['max_hp']}]"
-                f"{' (오버킬)' if overkill else ''}"
+                f"{_overkill_note(overkill, sum(damages))}"
             )
             total_formula = " + ".join(str(damage) for damage in damages)
             if overkill:
@@ -6337,6 +6353,234 @@ def _replay_participants(db: Session, session: BattleSession, participants: list
     ])
 
 
+# 후광·장막은 기술 대상이 SELF로 적혀 있지만 실제로는 아군 전원에게 닿는다(전투 화면 표기와 같은 규칙).
+ALL_ALLY_SKILL_VAR_NAMES = {"ab_halo", "ab_veil"}
+
+
+def _all_target_label(skill: dict | None) -> str | None:
+    """전원을 때리거나 살리는 기술이면 대상 이름을 늘어놓는 대신 쓸 한 줄 표기. 아니면 None."""
+    if not skill:
+        return None
+    if skill.get("target") in ALL_SKILL_TARGETS:
+        return str(skill["target"])
+    if skill.get("var_name") in ALL_ALLY_SKILL_VAR_NAMES:
+        return "아군 전원"
+    return None
+
+
+def _name_at_start(text: str, names: list[str]) -> str | None:
+    """텍스트가 시작하는 자리에 있는 이름. 이름끼리 접두어가 될 수 있어 긴 이름부터 찾는다."""
+    stripped = text.lstrip()
+    if stripped.startswith("하수인 "):
+        stripped = stripped[len("하수인 "):]
+    return next((name for name in names if stripped.startswith(name)), None)
+
+
+def _parse_ally_turn_log(events: list[str], participants: list[dict], enemies: list[dict], summons: list[dict]) -> dict[str, dict]:
+    """아군 턴 로그에서 "누가 무엇을 하고 누구를 겨냥했는지"를 되살린다.
+
+    action_preview를 저장하기 전에 끝난 전투를 되짚어볼 때 쓴다. 아군 턴 로그는 모두
+    "{표시} {행동한 캐릭터}의 {기술} → {대상} …" 같은 정해진 형식이라, 참가자 이름을 기준으로
+    행동 종류·기술/아이템 이름·겨냥한 대상을 읽어낼 수 있다. 확실히 읽히지 않는 줄은 버린다."""
+    actor_names = sorted((p["name"] for p in participants), key=len, reverse=True)
+    all_names = sorted(
+        {p["name"] for p in participants}
+        | {e.get("name", "") for e in enemies}
+        | {s.get("name", "") for s in summons},
+        key=len, reverse=True,
+    )
+    parsed: dict[str, dict] = {}
+    current_actor: str | None = None
+
+    def entry_for(actor: str) -> dict:
+        return parsed.setdefault(actor, {"kind": None, "skill_name": None, "item_name": None, "targets": []})
+
+    def add_target(entry: dict, text: str) -> None:
+        name = _name_at_start(text, all_names)
+        if name and name not in entry["targets"]:
+            entry["targets"].append(name)
+
+    for event in events:
+        # 묶인 로그의 대상별 하위 줄은 바로 앞 시전자 줄에 딸린 대상이다.
+        if event.startswith(LOG_SUBLINE_PREFIX):
+            if current_actor:
+                add_target(parsed[current_actor], event[len(LOG_SUBLINE_PREFIX):])
+            continue
+        body = event.split(" ", 1)[1] if " " in event else ""
+        actor = next((name for name in actor_names if body.startswith(name)), None)
+        if actor is None:
+            current_actor = None
+            continue
+        rest = body[len(actor):]
+        entry = entry_for(actor)
+        if rest.startswith("의 "):
+            entry["kind"] = entry["kind"] or "skill"
+            tail = rest[len("의 "):]
+            for separator in (" → ", ": ", " · "):
+                tail = tail.split(separator, 1)[0]
+            if tail and not entry["skill_name"]:
+                entry["kind"] = "skill"
+                entry["skill_name"] = tail.strip()
+        elif rest.startswith(" 공격:"):
+            entry["kind"] = entry["kind"] or "attack"
+        elif rest.startswith(" 방어 태세"):
+            entry["kind"] = "defend"
+        elif rest.startswith(" 퇴각"):
+            entry["kind"] = "retreat"
+        elif rest.startswith(" 명상"):
+            entry["kind"] = entry["kind"] or "attack"
+        elif rest.startswith(" 기술 비용: HP"):
+            entry["kind"] = entry["kind"] or "skill"
+        elif event.startswith("🎒") and " 사용" in rest:
+            entry["kind"] = "item"
+            entry["item_name"] = rest.split(" 사용", 1)[0].strip() or None
+        elif rest.startswith(" → ") and " 구조" in rest:
+            entry["kind"] = "rescue"
+        elif rest.startswith(" → ") and " 치유" in rest:
+            entry["kind"] = "heal"
+        else:
+            current_actor = None
+            continue
+        for segment in rest.split(" → ")[1:]:
+            add_target(entry, segment)
+        current_actor = actor
+    return {actor: entry for actor, entry in parsed.items() if entry["kind"]}
+
+
+def _unlocked_battle_skills_by_participant(db: Session, participants: list[dict]) -> dict[int, dict[int, dict]]:
+    """되짚어보기 전용: 참가자가 습득한 **모든 단계**의 기술.
+
+    전투에서 실제로 쓰는 기술은 서마다 가장 깊은 단계 하나뿐이라 _query_active_battle_skills_by_character는
+    그것만 남긴다. 하지만 지난 전투에서는 그때의 단계로 기술을 썼으므로, 로그에 적힌 이름
+    ("열격 III")에 맞는 단계를 찾으려면 거쳐 온 단계까지 모두 봐야 한다."""
+    sources = {p["character_id"]: p.get("pair_source_character_id", p["character_id"]) for p in participants}
+    source_ids = list(set(sources.values()))
+    if not source_ids:
+        return {}
+    skill_levels = dict(db.query(Character.id, Character.skill_lv).filter(Character.id.in_(source_ids)).all())
+    rows = (
+        db.query(CharacterSkillUnlock, SkillNode)
+        .join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id)
+        .filter(CharacterSkillUnlock.character_id.in_(source_ids), SkillNode.tier > 0)
+        .all()
+    )
+    by_source: dict[int, dict[int, dict]] = {source_id: {} for source_id in source_ids}
+    for unlock, node in rows:
+        # 이름이 바뀌어 못 찾는 기술의 아이콘을 고를 때 쓰는 습득 시점(응답에는 나가지 않는다).
+        by_source.setdefault(unlock.character_id, {})[node.id] = {"_unlocked_at": unlock.unlocked_at, **_battle_skill_dict(
+            node,
+            skill_lv=skill_levels.get(unlock.character_id, 0),
+            custom_name=unlock.custom_name,
+            custom_image_url=unlock.custom_image_url,
+            custom_description=unlock.custom_description,
+            custom_description_color=unlock.custom_description_color,
+        )}
+    return {character_id: by_source.get(source_id, {}) for character_id, source_id in sources.items()}
+
+
+def _skill_by_logged_name(skills: dict[int, dict], logged_name: str | None) -> dict | None:
+    """로그에 남은 기술 이름으로 현재 기술을 찾는다.
+
+    로그에 적히는 이름은 _battle_skill_name(노드 단계에서 뽑은 등급 숫자)이라 그것부터 맞춰 본다.
+    기술 목록의 display_name은 캐릭터의 기술 등급 스탯을 쓰기 때문에 숫자가 다를 수 있다.
+    이름이 그 뒤에 바뀌어 아무것도 못 찾으면, 아이콘이라도 보이도록 가장 최근에 습득한 기술을 쓴다."""
+    if not logged_name:
+        return None
+    candidates = list(skills.values())
+    if not candidates:
+        return None
+
+    def latest(items: list[dict]) -> dict:
+        return max(items, key=lambda skill: (skill.get("_unlocked_at") or 0, int(skill.get("tier") or 0)))
+
+    for resolve_name in (_battle_skill_name, lambda skill: str(skill.get("display_name") or "")):
+        exact = next((skill for skill in candidates if resolve_name(skill) == logged_name), None)
+        if exact is not None:
+            return exact
+    base = _strip_trailing_roman_suffix(logged_name)
+    matched = [
+        skill for skill in candidates
+        if base in {
+            _strip_trailing_roman_suffix(str(skill.get("display_name") or "")),
+            _strip_trailing_roman_suffix(str(skill.get("default_name") or "")),
+            _strip_trailing_roman_suffix(_battle_skill_name(skill)),
+        }
+    ]
+    # 이름만 같고 단계를 못 찾으면 그 기술 계열에서, 이름까지 다르면 전체에서 최신 습득본을 쓴다.
+    return latest(matched or candidates)
+
+
+def _covers_every_ally(targets: list[str], participants: list[dict], round_no: int) -> bool:
+    """겨냥한 아군이 "그 턴에 대상이 될 수 있던 아군 전부"인지.
+
+    기술을 못 찾아도(이름을 바꾼 경우 등) 전원 대상 기술이면 이름을 늘어놓지 않기 위해 쓴다.
+    그 라운드에 난입했거나 퇴각한 캐릭터는 애초에 대상이 되지 않으므로 빼고 따진다."""
+    chosen = set(targets)
+    eligible = {
+        p["name"] for p in participants
+        if not p.get("retreated") and p.get("joined_round") != round_no
+    }
+    if len(eligible) >= 2 and eligible <= chosen:
+        return True
+    active = {name for name in eligible
+              if not next((p for p in participants if p["name"] == name), {}).get("downed")}
+    return len(active) >= 2 and active <= chosen
+
+
+def _rebuilt_action_preview(
+    parsed: dict[str, dict],
+    participants: list[dict],
+    round_no: int,
+    skills_by_character: dict[int, dict[int, dict]],
+    items_by_name: dict[str, tuple[int, str | None]],
+) -> dict[str, dict]:
+    """로그에서 읽어낸 행동을 되짚어보기 화면이 쓰는 미리보기 형태로 맞춘다."""
+    by_name = {p["name"]: p for p in participants}
+    ally_ids = {p["name"]: p["character_id"] for p in participants}
+    preview: dict[str, dict] = {}
+    for actor_name, entry in parsed.items():
+        actor = by_name.get(actor_name)
+        if actor is None:
+            continue
+        skill = _skill_by_logged_name(skills_by_character.get(actor["character_id"], {}), entry["skill_name"])
+        all_target_label = _all_target_label(skill)
+        if not all_target_label and entry["kind"] == "skill" and _covers_every_ally(entry["targets"], participants, round_no):
+            all_target_label = "아군 전원"
+        preview[str(actor["character_id"])] = {
+            "kind": entry["kind"],
+            "skill_node_id": (skill or {}).get("id"),
+            "skill_name": entry["skill_name"],
+            "skill_image_url": (skill or {}).get("image_url"),
+            "skill_description": (skill or {}).get("description"),
+            "skill_book": (skill or {}).get("book"),
+            "skill_custom_description": (skill or {}).get("custom_description"),
+            "skill_custom_description_color": (skill or {}).get("custom_description_color"),
+            "item_id": items_by_name.get(entry["item_name"] or "", (None, None))[0],
+            "item_name": entry["item_name"],
+            "item_image_url": items_by_name.get(entry["item_name"] or "", (None, None))[1],
+            "target_character_id": None,
+            "protect_target_character_id": None,
+            "target_names": [all_target_label] if all_target_label else list(entry["targets"]),
+            "ally_target_ids": [ally_ids[name] for name in entry["targets"] if name in ally_ids],
+        }
+    return preview
+
+
+def _items_by_logged_name(db: Session, names: set[str]) -> dict[str, tuple[int, str | None]]:
+    """로그에서 읽은 아이템 이름 → (id, 아이콘). 구매 후 이름이 따로 있는 아이템도 그 이름으로 찾는다."""
+    if not names:
+        return {}
+    rows = db.query(Item).filter(
+        Item.name.in_(names) | Item.name_after_purchase.in_(names)
+    ).all()
+    found: dict[str, tuple[int, str | None]] = {}
+    for item in rows:
+        for name in {item.name, _item_owned_name(item)}:
+            if name in names:
+                found[name] = (item.id, _item_owned_image_url(item))
+    return found
+
+
 def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleReplayRead:
     """전투를 1라운드 첫 턴부터 턴 단위로 되짚어볼 수 있게 각 턴의 결과 상태와 로그를 함께 돌려준다.
 
@@ -6370,6 +6614,8 @@ def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleRep
 
     turns: list[BattleReplayTurn] = []
     resolved_index = 0
+    # 로그에서 되살린 아군 행동. 기술·아이템 아이콘을 채우려면 조회가 필요해 한 번에 모아 처리한다.
+    rebuilt_actions: list[tuple[int, dict, list[dict], int]] = []
     # 난입·전투 시작 기록은 따로 넘기지 않고 다음 턴의 로그 앞에 붙인다.
     pending_events: list[str] = []
     pending_calculations: dict = {}
@@ -6383,6 +6629,13 @@ def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleRep
         action_preview = snapshots[resolved_index].get("action_preview") or {} if resolved_index < len(snapshots) else {}
         resolved_index += 1
         enemies = _normalized_battle_enemies(state["enemies"])
+        # 행동 기록을 남기기 전에 끝난 전투는 그 턴의 로그에서 아군 행동을 되살린다.
+        if not action_preview and entry.get("phase") == "ally":
+            parsed = _parse_ally_turn_log(
+                list(entry.get("events") or []), state["participants"], enemies, list(state["summons"]),
+            )
+            if parsed:
+                rebuilt_actions.append((len(turns), parsed, state["participants"], int(entry.get("round") or 1)))
         turns.append(BattleReplayTurn(
             index=len(turns),
             round=int(entry.get("round") or 1),
@@ -6401,6 +6654,18 @@ def get_battle_replay(db: Session, session_id: int, member: Member) -> BattleRep
     if pending_events and turns:
         turns[-1].events.extend(pending_events)
         turns[-1].calculations.update(pending_calculations)
+
+    if rebuilt_actions:
+        # 기술 목록은 전투 전체에서 한 번만 읽고, 아이템 아이콘은 이름으로 한 번에 찾는다.
+        skills_by_character = _unlocked_battle_skills_by_participant(db, session.participants or [])
+        items_by_name = _items_by_logged_name(db, {
+            entry["item_name"] for _index, parsed, _players, _round in rebuilt_actions
+            for entry in parsed.values() if entry["item_name"]
+        })
+        for index, parsed, turn_participants, turn_round in rebuilt_actions:
+            turns[index].action_preview = _rebuilt_action_preview(
+                parsed, turn_participants, turn_round, skills_by_character, items_by_name,
+            )
     return BattleReplayRead(session_id=session.id, turns=turns)
 
 
@@ -7645,6 +7910,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             "protect_target_character_id": action.protect_target_character_id,
             "target_names": [],
             "ally_target_ids": [],
+            # 전원 대상 기술은 이름을 늘어놓지 않고 "아군 전원"처럼 한 줄로 적는다.
+            "_all_target_label": _all_target_label(chosen_skill),
         }
 
     for _priority, _order_index, p, action, selected_skill in queued_actions:
@@ -7892,7 +8159,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         events.append(
                             f"✨ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
-                            f"{' (오버킬)' if overkill else ''}"
+                            f"{_overkill_note(overkill, damage)}"
                         )
                         calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -7904,7 +8171,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         events.append(
                             f"✨ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
-                            f"{' (오버킬)' if overkill else ''}"
+                            f"{_overkill_note(overkill, weaken_damage)}"
                         )
                         calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -7929,7 +8196,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         events.append(
                             f"🌊 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
-                            f"{' (오버킬)' if overkill else ''}"
+                            f"{_overkill_note(overkill, damage)}"
                         )
                         calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -7942,7 +8209,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     events.append(
                         f"🌊 {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
                         f"[{target['hp']}/{target['max_hp']}]"
-                        f"{' (오버킬)' if overkill else ''}"
+                        f"{_overkill_note(overkill, weaken_damage)}"
                     )
                     calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
@@ -7990,7 +8257,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         summon_name = _summon_log_name(target)
                         events.append(
                             f"💉 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
-                            f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
+                            f"[{target['hp']}/{target['max_hp']}]{_overkill_note(overkill, damage if target_kind == 'summon' else weaken_damage)}"
                         )
                         calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -8001,7 +8268,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         total_dealt += dealt
                         events.append(
                             f"💉 {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
-                            f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
+                            f"[{target['hp']}/{target['max_hp']}]{_overkill_note(overkill, damage if target_kind == 'summon' else weaken_damage)}"
                         )
                         calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -8049,7 +8316,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         total_dealt += dealt
                         events.append(
                             f"💥 {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
-                            f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
+                            f"[{target['hp']}/{target['max_hp']}]{_overkill_note(overkill, damage if target_kind == 'summon' else weaken_damage)}"
                         )
                         calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -8060,7 +8327,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     total_dealt += dealt
                     events.append(
                         f"💥 {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
-                        f"[{target['hp']}/{target['max_hp']}]{' (오버킬)' if overkill else ''}"
+                        f"[{target['hp']}/{target['max_hp']}]{_overkill_note(overkill, damage if target_kind == 'summon' else weaken_damage)}"
                     )
                     calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
                     if target["hp"] <= 0:
@@ -8107,7 +8374,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         events.append(
                             f"☠️ {p['name']}의 {skill_name} → 하수인 {summon_name} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
-                            f"{' (오버킬)' if overkill else ''}"
+                            f"{_overkill_note(overkill, damage)}"
                         )
                         calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -8119,7 +8386,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         events.append(
                             f"☠️ {p['name']}의 {skill_name} → {target['name']} {dealt} 피해 · "
                             f"[{target['hp']}/{target['max_hp']}]"
-                            f"{' (오버킬)' if overkill else ''}"
+                            f"{_overkill_note(overkill, weaken_damage)}"
                         )
                         calculations[events[-1]] = f"min({weaken_formula}, 남은 체력 {target['hp'] + dealt})"
                         if target["hp"] <= 0:
@@ -8605,7 +8872,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 events.append(
                     f"⚔️ {action_label}: 하수인 {target_summon_name}에게 {dealt} 피해 "
                     f"[{target_summon['hp']}/{target_summon['max_hp']}]"
-                    f"{' (오버킬)' if overkill else ''}"
+                    f"{_overkill_note(overkill, dmg)}"
                 )
                 calculations[events[-1]] = f"min({damage_formula}, 남은 체력 {target_summon['hp'] + dealt})"
                 if target_summon["hp"] <= 0:
@@ -8625,7 +8892,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             events.append(
                 f"⚔️ {action_label}: {dealt} 피해 · "
                 f"{target_enemy['name']} [{target_enemy['hp']}/{target_enemy['max_hp']}]"
-                f"{' (오버킬)' if overkill else ''}"
+                f"{_overkill_note(overkill, dmg)}"
             )
             calculations[events[-1]] = (
                 f"min({damage_formula}, 남은 체력 {target_enemy['hp'] + dealt})"
@@ -8786,8 +9053,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
     preview_actor_id[0] = None
     for character_id, entry in turn_action_preview.items():
         resolved = preview_targets.get(int(character_id), {})
+        all_target_label = entry.pop("_all_target_label", None)
         entry["ally_target_ids"] = list(resolved.get("ally_ids") or [])
-        entry["target_names"] = list(resolved.get("names") or [])
+        entry["target_names"] = [all_target_label] if all_target_label else list(resolved.get("names") or [])
         # 방어·치유는 대상 해석 함수를 거치지 않으므로 입력값을 그대로 쓴다.
         fallback_target = (
             entry["protect_target_character_id"] if entry["kind"] == "defend"
@@ -8795,7 +9063,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         )
         if not entry["ally_target_ids"] and fallback_target is not None:
             entry["ally_target_ids"] = [fallback_target]
-        if not entry["target_names"] and fallback_target is not None:
+        if not entry["target_names"] and not all_target_label and fallback_target is not None:
             name = by_char_id.get(fallback_target, {}).get("name")
             entry["target_names"] = [name] if name else []
     turn_snapshot["item_usages"] = turn_item_usages
@@ -8877,9 +9145,9 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             sum(float(effect.get("damage_reduction", 0.0)) for effect in counter_effects)
             + _escort_damage_reduction(recipient)
         )
-        # 방어력을 먼저 빼고 남은 피해에 피해 감소율을 적용한다(방어 행동 여부와 무관하게 상시 적용).
-        # recipient["dmg_r"]에는 특성 보정이 이미 반영돼 있다.
-        total_reduction = min(0.95, max(-1.0, recipient["dmg_r"] + extra_reduction))
+        # 방어력을 먼저 빼고 남은 피해에 피해 감소율을 적용한다.
+        # recipient["dmg_r"]에는 특성 보정이 이미 반영돼 있고, 방어 행동을 했다면 역할별 방어 감소가 더해진다.
+        total_reduction = _damage_reduction(recipient, extra_reduction)
         effective_defense = _eff_def(recipient)
         after_defense = max(0, base - effective_defense)
         dmg = _floor_amount(after_defense * (1 - total_reduction))
@@ -8954,6 +9222,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 "skill_name": effect.get("skill_name") or "반격",
                 "counterattacker_name": counterattacker_name,
                 "damage": dealt,
+                "raw_damage": counter_damage,
                 "enemy_hp": attacker["hp"],
                 "enemy_max_hp": attacker["max_hp"],
                 "overkill": overkill,
@@ -9101,7 +9370,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                     events.append(
                         f"↩️ {counter['counterattacker_name']}의 {counter['skill_name']} → {enemy['name']} "
                         f"{counter['damage']} 피해 · [{counter['enemy_hp']}/{counter['enemy_max_hp']}]"
-                        f"{' (오버킬)' if counter['overkill'] else ''}"
+                        f"{_overkill_note(counter['overkill'], counter['raw_damage'])}"
                     )
                     calculations[events[-1]] = counter["formula"]
                 if enemy["hp"] <= 0:
@@ -10034,13 +10303,11 @@ def _reset_character_skills(db: Session, character: Character) -> int:
 
 
 def _change_character_faction(character: Character, faction: str) -> None:
-    """역할을 바꾸고, 역할별로 다른 "피해 감소" 기본값(수비 50%, 그 외 30%)의 차이만 반영한다.
+    """역할을 바꾼다.
 
-    기존 역할에서 받은 기본값을 빼고 새 역할의 기본값을 더하므로, 기술·장신구로 붙은
-    피해 감소 보너스는 그대로 남는다.
+    역할별 "피해 감소"(수비 50%, 그 외 30%)는 방어 행동을 한 라운드에만 붙는 값이라
+    캐릭터 능력치에 저장하지 않으므로, 여기서 조정할 것이 없다.
     """
-    before = get_faction_base_dmg_r(character.faction) if character.faction else 0.0
-    character.dmg_r = round(character.dmg_r + get_faction_base_dmg_r(faction) - before, 6)
     character.faction = faction
 
 

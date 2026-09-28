@@ -128,6 +128,8 @@ export default function BattleTurnReplay({ sessionId, onExit }: { sessionId: num
         // 아군 턴이면 그때 고른 행동을 그대로 넘겨, 기술·아이템 아이콘과 카드 색·북마크를 다시 그린다.
         draftPreview={turn.phase === "ally" ? (turn.action_preview as BattleDraftPreview) : null}
         readOnly
+        hideReadOnlyNotice
+        replayMode
         runnerPreview
         onExit={onExit}
       />
