@@ -264,6 +264,12 @@ SKILL_POWER_SLOTS: dict[str, list[dict[str, str]]] = {
         {"key": "eff_true", "label": "기술 효율(고정) 증가", "unit": "flat"},
     ],
     "ab_weaken": [{"key": "power", "label": "받는 피해 증가", "unit": "percent"}],
+    # 복제는 복제한 기술의 위력을 쓰므로 자체 위력이 없고, depth마다 저장 칸 수와 효율 감소만 달라진다.
+    "ab_clone": [
+        {"key": "clone_slots", "label": "저장 가능 기술 수", "unit": "flat"},
+        {"key": "eff_fixed_penalty", "label": "기술 효율(비례) 감소", "unit": "percent"},
+        {"key": "eff_true_penalty", "label": "기술 효율(고정) 감소", "unit": "flat"},
+    ],
     "ab_protect": [
         {"key": "power", "label": "보호막 비율", "unit": "percent"},
         {"key": "attn_transfer", "label": "주목도 이전", "unit": "percent"},
@@ -333,6 +339,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     cost=4, power=(12, 12, 18, 24, 30, 0), target="SELF", target_side="ALLY", order=2,
                     formula="암시 턴 피해(에너미+하수인 전체): 스택마다 전체 피해 + 기술 효율 고정",
                     description="적의 행동 암시 턴마다 모든 적에게 피해를 주는 버프를 자신에게 중첩해 쌓습니다.",
+                    tier6_effect="기술 사용 시 살포 대상 전체에게 강화 피해(기술 위력 + 기술 효율 고정)의 2배만큼 피해를 줍니다.",
                 ),
             },
         ],
@@ -503,7 +510,13 @@ SKILL_BOOKS: dict[str, dict] = {
                 "derived": _skill(
                     "복제", trigger_type="즉발형", category="복합", stackable=False, var_name="ab_clone",
                     cost=4, target_side="ALLY",
-                    formula="복제한 기술의 비용·공식을 따르되 기술 효율(비례) -50%+5%*skill_lv, 기술 효율(고정) max(0, -20+2*skill_lv) 보정",
+                    # depth별 기본값: 저장 칸 = depth, 효율 감소 = 50%-5%×depth / 20-2×depth, 6단계는 감소 없음.
+                    powers={
+                        "clone_slots": (1, 2, 3, 4, 5, 6),
+                        "eff_fixed_penalty": (0.45, 0.40, 0.35, 0.30, 0.25, 0.0),
+                        "eff_true_penalty": (18, 16, 14, 12, 10, 0),
+                    },
+                    formula="복제한 기술의 비용·공식을 따르되 기술 효율(비례)을 기술 효율(비례) 감소만큼, 기술 효율(고정)을 기술 효율(고정) 감소만큼 낮춤(0 미만으로는 내려가지 않음)",
                     description="비전투 시 다른 캐릭터의 기술을 저장했다가 전투에서 복제해 사용합니다.",
                     tier6_effect="복제한 기술을 기술 효율 보정(약화) 없이 사용합니다.",
                 ),
@@ -573,18 +586,19 @@ def dynamic_derived_description(
             f"지정한 적 1명에게 이번 라운드 동안 아군에게 받는 피해가 {value * 100:g}%(+시전자 기술 효율 비례) "
             f"증가하는 약화 스택을 부여합니다."
         )
-    if var_name == "ab_clone" and L >= 6:
-        return (
-            f"비전투 시 다른 캐릭터의 기술을 최대 {L}개 저장하고, 전투에서 복제해 사용합니다"
-            "(기술 비용은 복제한 기술의 비용을 그대로 따릅니다). "
-            "기술 효율 보정 없이 원본 그대로 사용합니다."
-        )
     if var_name == "ab_clone":
-        return (
-            f"비전투 시 다른 캐릭터의 기술을 최대 {L}개 저장하고, 전투에서 복제해 사용합니다"
+        slots = int(named.get("clone_slots", L))
+        fixed_penalty = named.get("eff_fixed_penalty", 0.0 if L >= 6 else 0.50 - 0.05 * L)
+        true_penalty = named.get("eff_true_penalty", 0 if L >= 6 else 20 - 2 * L)
+        text = (
+            f"비전투 시 다른 캐릭터의 기술을 최대 {slots}개 저장하고, 전투에서 복제해 사용합니다"
             "(기술 비용은 복제한 기술의 비용을 그대로 따릅니다). "
-            f"복제 사용 시 기술 효율(비례) {-50 + 5 * L:+d}%, 기술 효율(고정) {-20 + 2 * L:+d}로 보정됩니다"
-            f"(기술 효율 고정은 0 밑으로 내려가지 않습니다)."
+        )
+        if L >= 6 or (fixed_penalty <= 0 and true_penalty <= 0):
+            return text + "기술 효율 보정 없이 원본 그대로 사용합니다."
+        return text + (
+            f"복제 사용 시 기술 효율(비례) {-fixed_penalty * 100:+g}%, 기술 효율(고정) {-true_penalty:+g}로 보정됩니다"
+            "(기술 효율 고정은 0 밑으로 내려가지 않습니다)."
         )
     return None
 

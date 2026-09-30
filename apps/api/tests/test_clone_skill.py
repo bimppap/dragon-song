@@ -83,6 +83,15 @@ class CloneSkillTest(unittest.TestCase):
         self.assertEqual(result["slot_count"], 2)
         self.assertEqual(result["slots"], [])
 
+    def test_slot_count_and_penalty_follow_edited_values(self):
+        self.clone.powers = {"clone_slots": 4, "eff_fixed_penalty": 0.1, "eff_true_penalty": 3}
+        self.db.commit()
+        self.assertEqual(crud.get_character_cloned_skills(self.db, self.cloner.id)["slot_count"], 4)
+        self._store_slot()
+        skills = crud._query_active_battle_skills_by_character(self.db, [self.cloner.id])
+        entry = next(iter(skills[self.cloner.id].values()))
+        self.assertEqual((entry["clone_eff_fixed_delta"], entry["clone_eff_true_delta"]), (-0.1, -3))
+
     def test_store_and_read_back_slot(self):
         result = self._store_slot()
         self.assertEqual(len(result["slots"]), 1)

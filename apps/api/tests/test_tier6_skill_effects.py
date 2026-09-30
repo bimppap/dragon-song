@@ -92,6 +92,14 @@ class Tier6SkillEffectTest(unittest.TestCase):
         # 기술 피해(6단계 즉발 피해 0 + 기술 효율 고정 10) 10에, 하수인에게 입힌 5가 추가로 들어간다.
         self.assertEqual(result.enemies[0]["hp"], 1000 - 10 - 5)
 
+    def test_sparge_tier6_bursts_double_damage_on_use(self):
+        node = self.unlock(self.caster, "용맹의 서", 2, 1, settings_overrides={"power": 36})
+        battle = self.battle(summons=[{"id": 1, "name": "하수인", "hp": 500, "max_hp": 500, "attack": 1}])
+        result = self.ally_turn(battle, self.skill(node))
+        # (36 + 기술 효율 고정 10) × 2 = 92, 에너미와 하수인 모두
+        self.assertEqual(result.enemies[0]["hp"], 1000 - 92)
+        self.assertEqual(result.summons[0]["hp"], 500 - 92)
+
     def test_harm_normal_attack_applies_ongoing_damage(self):
         self.unlock(self.caster, "용맹의 서", 2, 0)
         result = self.ally_turn(self.battle(), CharacterActionInput(character_id=self.caster.id, kind="attack"))

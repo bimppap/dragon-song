@@ -4212,7 +4212,7 @@ def derived_auto_description(node: SkillNode, spec: dict | None = None) -> str |
             "자신의 최대 체력 증가는 전투 종료까지 유지됩니다."
         )
     if var_name == "ab_clone":
-        return dynamic_derived_description(var_name, node.tier, None, {})
+        return dynamic_derived_description(var_name, node.tier, None, _resolved_skill_node_powers(node))
     if var_name in DEVOTION_DERIVED_VARS:
         return _devotion_derived_description(node, resolved_spec)
     return dynamic_derived_description(
@@ -5265,8 +5265,7 @@ def _apply_sparge_telegraph(
                 continue
             skill_name = str(scoped_effects[0].get("skill_name") or "살포")
             stack_formula = " + ".join(
-                f"max(0, floor(스킬레벨 {effect.get('skill_lv', 2)} × 6 + 기술 효율 고정))"
-                for effect in scoped_effects
+                f"스택 피해 {max(0, int(effect.get('damage', 0)))}" for effect in scoped_effects
             )
             total_dealt = 0
             for kind, target in _all_skill_targets({"target": scope}, participants, enemies, summons, round_no, active_only=True) or []:
@@ -6114,13 +6113,18 @@ def _expand_clone_skills(db: Session, by_character: dict[int, dict[int, dict]]) 
         depth = int(clone_entry.get("tier") or 2)
         # "복제:기술명"(커스텀 이름을 쓰면 "커스텀명:기술명")으로 보이도록 등급 접미사는 뗀다.
         prefix = _strip_trailing_roman_suffix(str(clone_entry.get("display_name") or "복제")) or "복제"
-        # 부동소수 오차가 계산식 표시까지 번지지 않도록 보정값을 정리해 둔다.
-        eff_fixed_delta = round(-0.50 + 0.05 * depth, 6)
-        eff_true_delta = -20 + 2 * depth
+        # 효율 감소는 depth별로 편집한 값을 쓴다. 부동소수 오차가 계산식 표시까지 번지지 않도록 정리해 둔다.
+        clone_powers = clone_entry.get("powers") or {}
+        eff_fixed_delta = round(-float(clone_powers.get("eff_fixed_penalty", 0.50 - 0.05 * depth)), 6)
+        eff_true_delta = -int(clone_powers.get("eff_true_penalty", 20 - 2 * depth))
         if depth >= 6:
             # 6단계: 복제한 기술을 기술 효율 보정(약화) 없이 쓴다.
             eff_fixed_delta, eff_true_delta = 0.0, 0
+        slot_count = _clone_slot_count(clone_entry.get("powers"), depth)
         for slot in slots_by_character.get(character_id, []):
+            # 저장 칸 수를 줄였으면 넘치는 칸의 기술은 쓰지 못한다.
+            if slot.slot_index >= slot_count:
+                continue
             source_node = nodes_by_id.get(slot.source_node_id)
             if source_node is None:
                 continue
@@ -8616,10 +8620,37 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 events.append(
                     f"🌪️ {p['name']}의 {skill_name} → 암시 턴 전체 피해 {sparge_damage} 부여 ({stacks}중첩)"
                 )
-                calculations[events[-1]] = (
+                sparge_formula = (
                     f"max(0, floor(기술 위력 {_formula_number(skill_power)} + "
                     f"기술 효율 고정 {_formula_number(p['skill_eff_true'])}))"
                 )
+                calculations[events[-1]] = sparge_formula
+                if tier6_bonus and sparge_damage > 0:
+                    # 6단계: 사용 즉시 살포 스택과 같은 범위에 강화 피해의 2배를 준다.
+                    burst_damage = sparge_damage * 2
+                    burst_formula = f"{sparge_formula} × 2"
+                    scope = selected_skill.get("target") if selected_skill.get("target") in ALL_SKILL_TARGETS else "에너미+하수인 전원"
+                    total_dealt = 0
+                    for kind, target in _all_skill_targets({"target": scope}, participants, enemies, summons, round_no, active_only=True) or []:
+                        damage, formula = (
+                            _apply_weaken_amp(target, burst_damage, burst_formula)
+                            if kind == "enemy" else (burst_damage, burst_formula)
+                        )
+                        dealt, overkill = _apply_damage_to_enemy(target, damage)
+                        total_dealt += dealt
+                        name = f"하수인 {_summon_log_name(target)}" if kind == "summon" else target["name"]
+                        events.append(
+                            f"🌪️ {p['name']}의 {skill_name} → {name} {dealt} 피해 · "
+                            f"[{target['hp']}/{target['max_hp']}]{_overkill_note(overkill, damage)}"
+                        )
+                        calculations[events[-1]] = f"min({formula}, 남은 체력 {target['hp'] + dealt})"
+                        if target["hp"] <= 0:
+                            if kind == "ally":
+                                _mark_combatant_downed(target)
+                                events.append(f"💫 {name} 기절")
+                            else:
+                                events.append(f"💀 {name} {'처치' if kind == 'summon' else '격파'}")
+                    _apply_damage_attn(p, total_dealt)
                 continue
 
             if var_name == "ab_harm":
@@ -10242,10 +10273,15 @@ _CLONE_BRANCH = 2
 _CLONE_COL = 1
 
 
-def _character_clone_tier(db: Session, character_id: int) -> int:
-    """캐릭터가 습득한 복제 노드의 최고 tier(=저장 슬롯 수). 없으면 0."""
-    result = (
-        db.query(func.max(SkillNode.tier))
+def _clone_slot_count(powers: dict | None, tier: int) -> int:
+    """복제 노드의 저장 칸 수. 편집한 값이 없으면 depth만큼이다."""
+    return max(0, int((powers or {}).get("clone_slots", tier)))
+
+
+def _character_clone_slot_count(db: Session, character_id: int) -> int:
+    """캐릭터가 습득한 복제 노드 중 최고 depth 노드의 저장 칸 수. 없으면 0."""
+    node = (
+        db.query(SkillNode)
         .join(CharacterSkillUnlock, CharacterSkillUnlock.node_id == SkillNode.id)
         .filter(
             CharacterSkillUnlock.character_id == character_id,
@@ -10254,9 +10290,12 @@ def _character_clone_tier(db: Session, character_id: int) -> int:
             SkillNode.col == _CLONE_COL,
             SkillNode.tier >= 2,
         )
-        .scalar()
+        .order_by(SkillNode.tier.desc())
+        .first()
     )
-    return int(result or 0)
+    if node is None:
+        return 0
+    return _clone_slot_count(_resolved_skill_node_powers(node), node.tier)
 
 
 # 분배는 인원 지정 기술의 대상 수를 늘리는데, 복제는 대상이 늘어나는 것을 전제로 설계된
@@ -10288,7 +10327,7 @@ def get_character_cloned_skills(db: Session, character_id: int) -> dict:
     character = db.get(Character, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
-    slot_count = _character_clone_tier(db, character_id)
+    slot_count = _character_clone_slot_count(db, character_id)
     slots = (
         db.query(CharacterClonedSkill)
         .filter(CharacterClonedSkill.character_id == character_id)
@@ -10343,7 +10382,7 @@ def set_character_cloned_skills(db: Session, character_id: int, slots: list) -> 
     character = db.get(Character, character_id)
     if character is None:
         raise HTTPException(status_code=404, detail="캐릭터를 찾을 수 없습니다.")
-    slot_count = _character_clone_tier(db, character_id)
+    slot_count = _character_clone_slot_count(db, character_id)
     if slot_count <= 0:
         raise HTTPException(status_code=400, detail="복제 기술을 먼저 습득해야 합니다.")
 
