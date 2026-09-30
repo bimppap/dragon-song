@@ -1428,6 +1428,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
           skill_book: skill?.book ?? null,
           skill_custom_description: skill?.custom_description ?? null,
           skill_custom_description_color: skill?.custom_description_color ?? null,
+          skill_tier: skill?.tier ?? null,
           item_id: charDraft.item_id,
           item_name: item?.item_name ?? null,
           item_image_url: item?.item_image_url ?? null,
@@ -2447,10 +2448,11 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
                 book: actionPreview.skill_book,
                 customDescription: actionPreview.skill_custom_description,
                 customDescriptionColor: actionPreview.skill_custom_description_color,
+                tier6: (actionPreview.skill_tier ?? 0) >= 6,
               }
             : actionPreview?.kind === "item"
               ? { name: actionPreview.item_name ?? "아이템", imageUrl: actionPreview.item_image_url, description: null,
-                  book: null, customDescription: null, customDescriptionColor: null }
+                  book: null, customDescription: null, customDescriptionColor: null, tier6: false }
               : null;
           const kindOptions = allowedKinds(p, hasDowned, battleSkills.length > 0);
           const selectedSkill = draft?.skill_node_id != null
@@ -2803,7 +2805,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
                               sizes="64px"
                             />
                           </div>
-                          <PixelBorderGlow />
+                          <PixelBorderGlow tone={previewIcon.tier6 ? "blue" : "red"} />
                         </div>
                       </InfoTooltip>
                     )}

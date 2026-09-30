@@ -8131,6 +8131,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             "skill_book": (chosen_skill or {}).get("book"),
             "skill_custom_description": (chosen_skill or {}).get("custom_description"),
             "skill_custom_description_color": (chosen_skill or {}).get("custom_description_color"),
+            "skill_tier": (chosen_skill or {}).get("tier"),
             "item_id": action.item_id,
             "item_name": item_name,
             "item_image_url": item_image_url,

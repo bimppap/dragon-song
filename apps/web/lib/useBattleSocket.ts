@@ -21,6 +21,8 @@ export interface BattleDraftPreviewEntry {
   /** 러너가 직접 쓴 설명(과 강조색). 원본 설명과 함께 보여준다. */
   skill_custom_description?: string | null;
   skill_custom_description_color?: string | null;
+  /** 기술 단계. 6단계 기술은 아이콘 테두리 효과를 푸른색으로 보여준다. */
+  skill_tier?: number | null;
   item_id: number | null;
   item_name: string | null;
   item_image_url: string | null;

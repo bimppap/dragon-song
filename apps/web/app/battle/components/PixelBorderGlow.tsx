@@ -6,14 +6,15 @@ const TRACK = { x: 1.5, y: 1.5, width: 65, height: 65 } as const;
 /**
  * 아이콘 테두리를 따라 픽셀 불꽃이 끊어지듯 이동하는 효과. 부모는 relative여야 하고,
  * 아이콘 박스보다 2px 바깥까지 그려지므로 부모에 overflow-hidden을 두지 않는다.
+ * tone "blue"는 6단계 기술에만 쓰는 푸른 불꽃이다.
  */
-export default function PixelBorderGlow({ className }: { className?: string }) {
+export default function PixelBorderGlow({ className, tone = "red" }: { className?: string; tone?: "red" | "blue" }) {
   return (
     <svg
       aria-hidden="true"
       viewBox="0 0 68 68"
       shapeRendering="crispEdges"
-      className={cn("pixel-border-glow pointer-events-none absolute -left-0.5 -top-0.5 h-[calc(100%+4px)] w-[calc(100%+4px)] overflow-visible", className)}
+      className={cn("pixel-border-glow", tone === "blue" && "pixel-border-glow-blue", "pointer-events-none absolute -left-0.5 -top-0.5 h-[calc(100%+4px)] w-[calc(100%+4px)] overflow-visible", className)}
     >
       <rect {...TRACK} className="pixel-border-glow-trail" />
       <rect {...TRACK} className="pixel-border-glow-core" />

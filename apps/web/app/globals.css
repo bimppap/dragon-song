@@ -216,6 +216,20 @@
     stroke-dasharray: 1 13 1 22 1 96;
     animation: pixel-border-glow-run 2.4s steps(134) infinite, pixel-border-glow-flicker 0.36s steps(2, jump-none) infinite;
   }
+  /* 6단계 기술: 같은 움직임을 푸른 불꽃으로 */
+  .pixel-border-glow-blue .pixel-border-glow-trail {
+    stroke: #3b82f6;
+    filter: drop-shadow(0 0 3px #60a5fa) drop-shadow(0 0 6px rgb(59 130 246 / 0.8));
+  }
+  .pixel-border-glow-blue .pixel-border-glow-core {
+    stroke: #7dd3fc;
+  }
+  .pixel-border-glow-blue .pixel-border-glow-tip {
+    stroke: #f0f9ff;
+  }
+  .pixel-border-glow-blue rect.pixel-border-glow-spark {
+    stroke: #bae6fd;
+  }
 }
 
 @keyframes pixel-border-glow-run {
