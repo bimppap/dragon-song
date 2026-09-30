@@ -478,7 +478,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     powers={"eff_true": (4, 4, 6, 8, 10, 0)}, target="1", target_side="ALLY", order=1,
                     formula="기술 효율(비례) 증가: 기술 위력 + 시전자 기술 효율 비례 / 기술 효율(고정) 증가: 기술 효율(고정) 증가값 + 시전자 기술 효율 고정/2",
                     description="지정한 아군에게 이번 라운드 동안 기술 효율을 증가시킵니다.",
-                    tier6_name="쇄신",
+                    tier6_effect="대상이 이번 라운드에 사용하는 기술의 비용이 1 줄어듭니다.",
                 ),
             },
             {

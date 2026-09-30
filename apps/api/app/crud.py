@@ -811,9 +811,13 @@ def get_character_card_details(db: Session, *, admin: bool = False) -> list[Char
         return []
     by_id = {character.id: character for character in characters}
     result = {character.id: CharacterCardDetailsRead(character_id=character.id) for character in characters}
-    # 깊은 기술 우선, 같은 단계는 최근 습득 우선. 서 루트와 비공개 기술은 표시하지 않는다.
+    # 깊은 기술 우선, 같은 단계는 최근 습득 우선. 서 루트는 표시하지 않고, 비공개 기술은 관리자에게만 보인다
+    # (관리자는 아직 공개 전인 6단계 기술을 가진 캐릭터의 기술도 복제 대상으로 골라야 한다).
+    skill_filters = [CharacterSkillUnlock.character_id.in_(by_id), SkillNode.tier > 0]
+    if not admin:
+        skill_filters.append(SkillNode.is_public.is_(True))
     skills = db.query(CharacterSkillUnlock, SkillNode).join(SkillNode, CharacterSkillUnlock.node_id == SkillNode.id).filter(
-        CharacterSkillUnlock.character_id.in_(by_id), SkillNode.tier > 0, SkillNode.is_public.is_(True),
+        *skill_filters,
     ).order_by(SkillNode.tier.desc(), CharacterSkillUnlock.unlocked_at.desc(), SkillNode.id).all()
     for unlock, node in skills:
         card = result[unlock.character_id]
@@ -5537,8 +5541,17 @@ def _revert_temp_skill_eff(actor: dict) -> None:
         actor["skill_eff_true"] = int(actor["skill_eff_true"] or 0) - true_temp
 
 
+def _round_skill_cost_reduction(actor: dict) -> int:
+    """6단계 개선이 남긴 이번 라운드 기술 비용 감소. 여러 번 받아도 1만 준다."""
+    return max(
+        (int(effect.get("cost_reduction", 0)) for effect in _ensure_status_effects(actor)
+         if effect.get("effect_type") == "skill_eff_bonus_round"),
+        default=0,
+    )
+
+
 def _battle_skill_cost(actor: dict, skill: dict) -> int:
-    return max(0, _floor_amount(float(skill.get("cost") or 0) + actor["skill_cost"]))
+    return max(0, _floor_amount(float(skill.get("cost") or 0) + actor["skill_cost"]) - _round_skill_cost_reduction(actor))
 
 
 def _formula_number(value: int | float) -> str:
@@ -6068,6 +6081,22 @@ def _battle_skill_dict(
     }
 
 
+def _owned_clone_sources(db: Session, slots: list[CharacterClonedSkill]) -> set[tuple[int, int]]:
+    """복제 칸에 저장된 (원본 캐릭터, 기술) 중 원본 캐릭터가 지금도 습득하고 있는 쌍."""
+    source_ids = {slot.source_character_id for slot in slots}
+    node_ids = {slot.source_node_id for slot in slots}
+    if not source_ids or not node_ids:
+        return set()
+    return set(
+        db.query(CharacterSkillUnlock.character_id, CharacterSkillUnlock.node_id)
+        .filter(
+            CharacterSkillUnlock.character_id.in_(source_ids),
+            CharacterSkillUnlock.node_id.in_(node_ids),
+        )
+        .all()
+    )
+
+
 # 복제 슬롯의 합성 기술 id는 실제 노드 id(작은 양수)와 겹치지 않도록 큰 오프셋을 쓴다.
 CLONE_SKILL_ID_BASE = 900_000_000
 
@@ -6099,8 +6128,12 @@ def _expand_clone_skills(db: Session, by_character: dict[int, dict[int, dict]]) 
         .filter(Character.id.in_(source_character_ids))
         .all()
     ) if source_character_ids else {}
+    owned_sources = _owned_clone_sources(db, slots)
     slots_by_character: dict[int, list[CharacterClonedSkill]] = {}
     for slot in slots:
+        # 원본 캐릭터가 더 이상 갖고 있지 않은 기술은 복제해 쓸 수 없다(빈 칸으로 본다).
+        if (slot.source_character_id, slot.source_node_id) not in owned_sources:
+            continue
         slots_by_character.setdefault(slot.character_id, []).append(slot)
 
     for character_id, clone_entry in clone_by_character.items():
@@ -9003,6 +9036,8 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                             "stackable": bool(selected_skill.get("stackable")),
                             "value_fixed": fixed_bonus,
                             "value_true": true_bonus,
+                            # 6단계: 대상이 이번 라운드에 쓰는 기술의 비용을 1 줄인다.
+                            "cost_reduction": 1 if tier6_bonus else 0,
                             "expires_round": round_no,
                         },
                         participants=participants,
@@ -9010,7 +9045,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     )
                     events.append(
                         f"📈 {p['name']}의 {skill_name} → {target['name']} 기술 효율(비례) +{_floor_amount(fixed_bonus * 100)}% · "
-                        f"기술 효율(고정) +{true_bonus}"
+                        f"기술 효율(고정) +{true_bonus}{' · 기술 비용 -1' if tier6_bonus else ''}"
                     )
                     calculations[events[-1]] = (
                         f"기술 효율(비례): floor((기술 위력 {_formula_number(skill_power)} + "
@@ -10233,10 +10268,11 @@ _INQUIRY_DERIVED_VAR_NAMES = {"ab_improve", "ab_weaken", "ab_clone"}
 
 
 def reconcile_inquiry_derived_skills(db: Session) -> None:
-    """개선/쇠약/복제(탐구의 서 파생, col 1)를 최신 스펙에 맞춘다.
+    """개선/쇠약/복제(탐구의 서 파생, col 1) 자리에 남은 옛 기술을 최신 스펙으로 바꾼다.
 
     과거 placeholder(속박/공명 등)로 시드된 기존 DB의 이름·메타(var_name·비용·위력·대상 등)를
-    현재 game_data 스펙으로 갱신한다. 최초 시딩 전이면 시딩이 스펙대로 채우므로 아무것도 하지 않는다.
+    현재 game_data 스펙으로 갱신한다. 이미 스펙과 같은 기술인 노드는 건드리지 않는다(서버가 뜰 때마다
+    돌기 때문에, 덮어쓰면 관리자가 고친 값이 되돌아간다). 최초 시딩 전이면 시딩이 스펙대로 채우므로 아무것도 하지 않는다.
     """
     book = "탐구의 서"
     if not db.query(SkillNode).filter(SkillNode.book == book).first():
@@ -10259,6 +10295,9 @@ def reconcile_inquiry_derived_skills(db: Session) -> None:
     for node in nodes:
         spec = spec_map.get((node.branch, node.col, node.tier))
         if not spec or spec.get("var_name") not in _INQUIRY_DERIVED_VAR_NAMES:
+            continue
+        # 이미 같은 기술로 맞춰진 노드는 관리자가 고친 이름·비용·위력을 그대로 둔다.
+        if node.var_name == spec.get("var_name"):
             continue
         for field in sync_fields:
             new_value = spec.get(field)
@@ -10362,9 +10401,11 @@ def get_character_cloned_skills(db: Session, character_id: int) -> dict:
     items: list[dict] = []
     for slot in slots:
         node = nodes.get(slot.source_node_id)
-        if node is None:
-            continue
         unlock = unlocks.get((slot.source_character_id, slot.source_node_id))
+        # 원본 캐릭터가 그 기술을 잃었거나(단계를 바꾼 경우 등) 칸 수가 줄어 넘치는 칸은 빈 칸으로 보여,
+        # 다른 칸을 저장할 때 함께 다시 보내 검증에 걸리지 않게 한다.
+        if node is None or unlock is None or slot.slot_index >= slot_count:
+            continue
         items.append({
             "slot_index": slot.slot_index,
             "source_character_id": slot.source_character_id,

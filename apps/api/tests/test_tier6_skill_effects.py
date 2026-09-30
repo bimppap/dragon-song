@@ -247,6 +247,19 @@ class Tier6SkillEffectTest(unittest.TestCase):
         result = crud.resolve_battle_enemy_turn(self.db, battle.id)
         self.assertEqual(result.enemies[0]["attack"], 10)
 
+    def test_improve_tier6_reduces_target_skill_cost_by_one(self):
+        improve = self.unlock(self.caster, "탐구의 서", 0, 1)
+        strike = self.unlock(self.ally, "용맹의 서", 0, 0, cost=3, activation_order=improve.activation_order + 1)
+        result = self.ally_turn(
+            self.battle(caster={"mp": 10}, ally={"mp": 2}),
+            self.skill(improve, target_character_id=self.ally.id),
+            self.skill(strike, self.ally, target_enemy_id=1),
+        )
+        # 강타 비용 3에서 1 줄어든 2를 낸다(마나 2로도 쓸 수 있다).
+        self.assertEqual(result.participants[1]["mp"], 0)
+        self.assertTrue(any(e.startswith("✨ 아군의") for e in result.log[-1]["events"]))
+        self.assertTrue(any("기술 비용 -1" in e for e in result.log[-1]["events"]))
+
     def test_charge_raises_max_mana_once(self):
         node = self.unlock(self.caster, "탐구의 서", 2, 0)
         result = self.ally_turn(self.battle(), self.skill(node, target_character_id=self.ally.id))

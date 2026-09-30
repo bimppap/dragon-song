@@ -100,6 +100,19 @@ class InquiryDerivedReconcileTest(unittest.TestCase):
         self.assertEqual(clone.var_name, "ab_clone")
         self.assertEqual(clone.cost, 4)
 
+    def test_reconcile_keeps_admin_edits_on_synced_nodes(self):
+        crud.reconcile_inquiry_derived_skills(self.db)
+        improve = self.db.query(SkillNode).filter_by(branch=1, col=1, tier=6).one()
+        weaken = self.db.query(SkillNode).filter_by(var_name="ab_weaken", tier=3).one()
+        improve_or_weaken = improve if improve.var_name else weaken
+        improve_or_weaken.default_name = "관리자가 지은 이름"
+        improve_or_weaken.cost = 9
+        self.db.commit()
+        # 서버가 다시 떠도 이미 스펙과 같은 기술인 노드는 되돌리지 않는다.
+        crud.reconcile_inquiry_derived_skills(self.db)
+        self.db.refresh(improve_or_weaken)
+        self.assertEqual((improve_or_weaken.default_name, improve_or_weaken.cost), ("관리자가 지은 이름", 9))
+
     def test_description_is_computed_per_tier_even_for_old_rows(self):
         crud.reconcile_inquiry_derived_skills(self.db)
         nodes = {

@@ -92,6 +92,16 @@ class CloneSkillTest(unittest.TestCase):
         entry = next(iter(skills[self.cloner.id].values()))
         self.assertEqual((entry["clone_eff_fixed_delta"], entry["clone_eff_true_delta"]), (-0.1, -3))
 
+    def test_slot_whose_source_lost_the_skill_reads_as_empty(self):
+        self._store_slot()
+        self.db.query(CharacterSkillUnlock).filter_by(character_id=self.source.id, node_id=self.strike.id).delete()
+        self.db.commit()
+        crud.invalidate_active_battle_skills_cache()
+        # 빈 칸으로 보이고, 전투에서도 쓸 수 없으며, 남은 칸을 저장해도 막히지 않는다.
+        self.assertEqual(crud.get_character_cloned_skills(self.db, self.cloner.id)["slots"], [])
+        self.assertEqual(crud._query_active_battle_skills_by_character(self.db, [self.cloner.id]).get(self.cloner.id, {}), {})
+        self.assertEqual(crud.set_character_cloned_skills(self.db, self.cloner.id, [])["slots"], [])
+
     def test_store_and_read_back_slot(self):
         result = self._store_slot()
         self.assertEqual(len(result["slots"]), 1)

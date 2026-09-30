@@ -595,6 +595,7 @@ const MULTI_ALLY_SKILL_VARS = new Set([AID_SKILL_VAR]);
 const ALL_ALLY_TARGET_SKILL_VARS = new Set(["ab_halo", "ab_veil"]);                    // 후광·장막
 const AUTO_ALLY_TARGET_SKILL_VARS = new Set([...ALL_ALLY_TARGET_SKILL_VARS]);
 // 충전은 기절한 아군에게는 걸 수 없고 시전자 자신도 대상이 되지 않는다(서버 ab_charge와 동일 조건).
+const IMPROVE_SKILL_VAR = "ab_improve";                                                // 개선
 const CHARGE_SKILL_VAR = "ab_charge";                                                  // 충전
 const ACTIVE_ALLY_SKILL_VARS = new Set([CHARGE_SKILL_VAR, "ab_regeneration"]);         // 충전·재생
 const SELF_EXCLUDED_SKILL_VARS = new Set([CHARGE_SKILL_VAR]);
@@ -793,11 +794,17 @@ function firstBattleSkillId(skills: BattleActiveSkill[]) {
   return skills[0]?.id ?? null;
 }
 
-function battleSkillCost(skill: BattleActiveSkill, p: BattleParticipant): number {
-  return Math.max(0, Math.floor((skill.cost ?? 0) + p.skill_cost));
+/** 이번 턴 계획(아군의 충전·개선)을 반영해 행동 가능 여부를 따질 때 쓰는 참가자. */
+type PlannedParticipant = BattleParticipant & {
+  /** 6단계 개선을 받아 이번 턴 기술 비용이 줄어드는 양. */
+  planned_skill_cost_reduction?: number;
+};
+
+function battleSkillCost(skill: BattleActiveSkill, p: PlannedParticipant): number {
+  return Math.max(0, Math.floor((skill.cost ?? 0) + p.skill_cost) - (p.planned_skill_cost_reduction ?? 0));
 }
 
-function affordableBattleSkills(skills: BattleActiveSkill[], p: BattleParticipant): BattleActiveSkill[] {
+function affordableBattleSkills(skills: BattleActiveSkill[], p: PlannedParticipant): BattleActiveSkill[] {
   return skills.filter((skill) => canPayMana(p, battleSkillCost(skill, p)));
 }
 
@@ -826,9 +833,32 @@ function plannedChargeMp(
   return restored;
 }
 
-/** 충전받을 마나까지 더해 이번 턴에 쓸 수 있는 마나로 본 참가자. */
-function withPlannedMp(p: BattleParticipant, plannedMp: number | undefined): BattleParticipant {
-  return plannedMp == null || plannedMp === p.mp ? p : { ...p, mp: plannedMp };
+/**
+ * 이번 턴에 아군의 6단계 개선을 받아 줄어드는 기술 비용. 서버는 개선을 먼저 처리하고,
+ * 여러 번 받아도 1만 줄인다. 시전자가 개선 비용을 못 내면 세지 않는다.
+ */
+function plannedImproveCostReduction(
+  target: BattleParticipant,
+  drafts: Record<number, CharDraft>,
+  skillsByCharacter: Record<number, BattleActiveSkill[]>,
+  session: BattleSession,
+): number {
+  for (const actor of session.participants) {
+    if (actor.character_id === target.character_id || !isTargetable(actor, session.round)) continue;
+    const draft = drafts[actor.character_id];
+    if (draft?.kind !== "skill") continue;
+    const affordable = affordableBattleSkills(skillsByCharacter[actor.character_id] ?? [], actor);
+    const skill = (draft.skill_node_id != null ? affordable.find((entry) => entry.id === draft.skill_node_id) : null) ?? affordable[0] ?? null;
+    if (!skill || skill.var_name !== IMPROVE_SKILL_VAR || skill.tier < 6) continue;
+    if (draftAllyTargetIds(actor, draft, skill, session).includes(target.character_id)) return 1;
+  }
+  return 0;
+}
+
+/** 충전받을 마나와 개선으로 줄어드는 기술 비용까지 반영해, 이번 턴에 쓸 수 있는 자원으로 본 참가자. */
+function withPlannedMp(p: BattleParticipant, plannedMp: number | undefined, costReduction = 0): PlannedParticipant {
+  if ((plannedMp == null || plannedMp === p.mp) && costReduction === 0) return p;
+  return { ...p, mp: plannedMp ?? p.mp, planned_skill_cost_reduction: costReduction };
 }
 
 function getCharacterCardTone(kind: CharacterActionKind | null | undefined) {
@@ -1315,8 +1345,12 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
         const next = { ...prev };
         for (const raw of session.participants) {
         if (!isTargetable(raw, session.round)) continue;
-        // 충전을 받을 예정이면 그 마나까지 쓸 수 있는 것으로 보고 판단한다.
-        const participant = withPlannedMp(raw, Math.min(raw.max_mp, raw.mp + plannedChargeMp(raw, prev, skillsByCharacter, session)));
+        // 충전을 받을 예정이면 그 마나까지, 6단계 개선을 받을 예정이면 줄어든 비용으로 쓸 수 있는 것으로 보고 판단한다.
+        const participant = withPlannedMp(
+          raw,
+          Math.min(raw.max_mp, raw.mp + plannedChargeMp(raw, prev, skillsByCharacter, session)),
+          plannedImproveCostReduction(raw, prev, skillsByCharacter, session),
+        );
         const draft = next[participant.character_id];
         if (!draft) continue;
         const battleSkills = skillsByCharacter[participant.character_id];
@@ -1918,9 +1952,19 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
     }
     return usable;
   }, [session, charDrafts, skillsByCharacter]);
+  // 이번 턴에 아군의 6단계 개선으로 줄어드는 캐릭터별 기술 비용.
+  const costReductionById = useMemo(() => {
+    const reductions = new Map<number, number>();
+    if (!session) return reductions;
+    for (const participant of session.participants) {
+      const reduction = plannedImproveCostReduction(participant, charDrafts, skillsByCharacter, session);
+      if (reduction > 0) reductions.set(participant.character_id, reduction);
+    }
+    return reductions;
+  }, [session, charDrafts, skillsByCharacter]);
   const withUsableMp = useCallback(
-    (p: BattleParticipant) => withPlannedMp(p, usableMpById.get(p.character_id)),
-    [usableMpById],
+    (p: BattleParticipant) => withPlannedMp(p, usableMpById.get(p.character_id), costReductionById.get(p.character_id)),
+    [usableMpById, costReductionById],
   );
 
   /** 캐릭터 카드와 같은 규칙으로 이 캐릭터가 사용할 기술을 찾는다. */
