@@ -153,15 +153,20 @@ class Tier6SkillEffectTest(unittest.TestCase):
         result = crud.resolve_battle_enemy_turn(self.db, battle.id)
         self.assertEqual(result.enemies[0]["hp"], 1000)
 
-    def test_eruption_reaction_triples_for_tier6_stack(self):
+    def test_eruption_tier6_bursts_triple_reaction_damage_on_use(self):
+        node = self.unlock(self.caster, "불굴의 서", 1, 1, settings_overrides={"power": 5})
+        result = self.ally_turn(self.battle(), self.skill(node))
+        # 사용 즉시 (반응 피해 5 + 기술 효율 고정 10) × 3 = 45
+        self.assertEqual(result.enemies[0]["hp"], 1000 - 45)
+        self.assertTrue(any("45 피해" in e for e in result.log[-1]["events"]))
+
+    def test_eruption_reaction_is_not_tripled(self):
         enemies = [{"enemy_id": 1, "name": "적", "hp": 1000, "max_hp": 1000, "status_effects": [], "joined_round": 0}]
         recipient = {"name": "시전자", "skill_eff_true": 10, "attn": 0, "presence": 0, "faction": "수비", "status_effects": [
             {"reaction": "eruption", "damage": 5, "skill_lv": 6},
-            {"reaction": "eruption", "damage": 5, "skill_lv": 5},
         ]}
         crud._apply_eruption_reaction(recipient, enemies, 1, [], {})
-        # 6단계 스택 (5 + 10) × 3 = 45, 5단계 스택 5 + 10 = 15
-        self.assertEqual(enemies[0]["hp"], 1000 - 45 - 15)
+        self.assertEqual(enemies[0]["hp"], 1000 - 15)
 
     def test_protect_gives_caster_same_shield(self):
         node = self.unlock(self.caster, "불굴의 서", 2, 0)
@@ -239,6 +244,7 @@ class Tier6SkillEffectTest(unittest.TestCase):
         result = self.ally_turn(self.battle(), self.skill(node, target_character_id=self.ally.id))
         ally = result.participants[1]
         self.assertEqual(ally["max_mp"], 6)
+        self.assertTrue(any("아군 최대 MP +1" in e for e in result.log[-1]["events"]))
         crud._set_single_stat_stack(ally, {"var_name": "ab_charge_max_mp"}, stat="max_mp", pool="mp", amount=1)
         self.assertEqual(ally["max_mp"], 6)
 

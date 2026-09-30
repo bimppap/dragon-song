@@ -5220,17 +5220,10 @@ def _apply_eruption_reaction(recipient: dict, enemies: list[dict], round_no: int
     efficiency = recipient["skill_eff_true"]
     # damage는 기술에 설정된 반응 피해. 이 값이 없는 옛 전투 스냅샷만 예전 계산(스킬레벨 × 5)을 쓴다.
     powers = [float(effect.get("damage", int(effect.get("skill_lv") or 2) * 5)) for effect in effects]
-    # 6단계 분출로 건 스택은 반응 피해를 3배로 준다.
-    multipliers = [3 if int(effect.get("skill_lv") or 0) >= 6 else 1 for effect in effects]
-    damages = [
-        max(0, _floor_amount((power + efficiency) * multiplier))
-        for power, multiplier in zip(powers, multipliers)
-    ]
+    damages = [max(0, _floor_amount(power + efficiency)) for power in powers]
     formula = " + ".join(
-        f"max(0, floor((반응 피해 {_formula_number(power)} + 기술 효율 고정 {_formula_number(efficiency)}) × 3))"
-        if multiplier == 3 else
         f"max(0, floor(반응 피해 {_formula_number(power)} + 기술 효율 고정 {_formula_number(efficiency)}))"
-        for power, multiplier in zip(powers, multipliers)
+        for power in powers
     )
     total_dealt = 0
     for enemy in enemies:
@@ -8177,6 +8170,28 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                         f"존재감 {_formula_number(presence_bonus)} × 100% (중첩마다 가산) / "
                         f"반응 피해 {reaction_damage} + 기술 효율 고정"
                     )
+                if tier6_bonus:
+                    # 6단계: 사용 즉시 하수인을 제외한 모든 에너미에게 반응 피해의 3배를 준다.
+                    burst_damage = max(0, _floor_amount((reaction_damage + p["skill_eff_true"]) * 3))
+                    burst_formula = (
+                        f"max(0, floor((반응 피해 {_formula_number(reaction_damage)} + "
+                        f"기술 효율 고정 {_formula_number(p['skill_eff_true'])}) × 3))"
+                    )
+                    total_dealt = 0
+                    for enemy in enemies:
+                        if not _enemy_targetable(enemy, round_no):
+                            continue
+                        damage, formula = _apply_weaken_amp(enemy, burst_damage, burst_formula)
+                        dealt, overkill = _apply_damage_to_enemy(enemy, damage)
+                        total_dealt += dealt
+                        events.append(
+                            f"🌋 {p['name']}의 {skill_name} → {enemy['name']} {dealt} 피해 · "
+                            f"[{enemy['hp']}/{enemy['max_hp']}]{_overkill_note(overkill, damage)}"
+                        )
+                        calculations[events[-1]] = f"min({formula}, 적 남은 체력 {enemy['hp'] + dealt})"
+                        if enemy["hp"] <= 0:
+                            events.append(f"💀 {enemy['name']} 격파")
+                    _apply_damage_attn(p, total_dealt)
                 continue
 
             if var_name == "ab_escort":
@@ -9101,10 +9116,19 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 for target in targets:
                     if tier6_bonus:
                         # 6단계: 최대 마나 +1 지속 강화(누적되지 않음). 처음 걸릴 때 현재 마나도 1 오른다.
+                        before_max_mp = target["max_mp"]
                         _set_single_stat_stack(target, {
                             "source_character_id": p["character_id"], "source_name": p["name"],
                             "skill_name": skill_name, "var_name": "ab_charge_max_mp",
                         }, stat="max_mp", pool="mp", amount=1)
+                        max_mp_note = (
+                            f"최대 MP +{target['max_mp'] - before_max_mp}"
+                            if target["max_mp"] > before_max_mp else "최대 MP +1 강화 유지 (누적되지 않음)"
+                        )
+                        events.append(
+                            f"🔋 {p['name']}의 {skill_name} → {target['name']} {max_mp_note} · "
+                            f"[{target['mp']}/{target['max_mp']}]"
+                        )
                     before_mp = target["mp"]
                     target["mp"] = min(target["max_mp"], target["mp"] + mana_restored)
                     actually_restored = target["mp"] - before_mp
