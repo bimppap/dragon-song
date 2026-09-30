@@ -150,15 +150,33 @@ const EDITING_STATE_TTL_MS = 8_000;
 const EDITING_STATE_HEARTBEAT_MS = EDITING_STATE_TTL_MS / 2;
 const EDITING_INDICATOR_GRACE_MS = 2_000;
 
-function defaultCharKind(faction: string | null, mp: number): CharacterActionKind {
-  if (faction === "수비") return "defend";
-  if (faction === "치유") return mp >= 1 ? "heal" : "none";
+function defaultCharKind(p: BattleParticipant): CharacterActionKind {
+  if (p.faction === "수비") return "defend";
+  if (p.faction === "치유") return canSpendOneMp(p) ? "heal" : "none";
   return "attack";
+}
+
+/** 혈안은 마나 비용을 체력으로 낸다(비용 × 최대 체력의 설정 %, 소수점 버림). */
+function isBloodTrait(p: BattleParticipant): boolean {
+  return p.trait?.rules?.kind === "blood";
+}
+
+function bloodHpCost(p: BattleParticipant, cost: number): number {
+  return Math.floor(Number((p.max_hp * (p.trait?.rules?.values.hp ?? 0) * cost / 100).toFixed(8)));
+}
+
+/** 마나 비용을 낼 수 있는지. 혈안은 체력이 비용보다 많아야 한다(체력이 0이 되게 쓸 수 없다). */
+function canPayMana(p: BattleParticipant, cost: number, mp = p.mp): boolean {
+  return isBloodTrait(p) ? p.hp > bloodHpCost(p, cost) : mp >= cost;
 }
 
 /** 마나 1이 드는 행동(치유, 다른 캐릭터 보호)을 할 수 있는지. 평화 특성은 마나 없이도 할 수 있다. */
 function canSpendOneMp(p: BattleParticipant, mp = p.mp): boolean {
-  return mp >= 1 || p.trait?.rules?.kind === "peace";
+  return canPayMana(p, 1, mp) || p.trait?.rules?.kind === "peace";
+}
+
+function manaLabel(p: BattleParticipant): string {
+  return isBloodTrait(p) ? "HP" : "MP";
 }
 
 function sameDraftValue(a: unknown, b: unknown): boolean {
@@ -780,9 +798,7 @@ function battleSkillCost(skill: BattleActiveSkill, p: BattleParticipant): number
 }
 
 function affordableBattleSkills(skills: BattleActiveSkill[], p: BattleParticipant): BattleActiveSkill[] {
-  return skills.filter((skill) => p.trait?.rules?.kind === "blood"
-    ? p.hp > Math.floor(Number((p.max_hp * p.trait.rules.values.hp * battleSkillCost(skill, p) / 100).toFixed(8)))
-    : p.mp >= battleSkillCost(skill, p));
+  return skills.filter((skill) => canPayMana(p, battleSkillCost(skill, p)));
 }
 
 /**
@@ -1310,7 +1326,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
         if (!kinds.includes(draft.kind) || (draft.kind === "heal" && !canSpendOneMp(participant))) {
           next[participant.character_id] = {
             ...draft,
-            kind: defaultCharKind(participant.faction, participant.mp),
+            kind: defaultCharKind(participant),
             skill_node_id: firstBattleSkillId(affordableBattleSkills(battleSkills, participant)),
           };
           changed = true;
@@ -1331,7 +1347,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
         if (affordable.length === 0) {
           next[participant.character_id] = {
             ...draft,
-            kind: defaultCharKind(participant.faction, participant.mp),
+            kind: defaultCharKind(participant),
             skill_node_id: null,
           };
           changed = true;
@@ -1403,7 +1419,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
       if (!isTargetable(p, data.round)) continue;
       const battleSkills = skillsByCharacter[p.character_id] ?? [];
       next[p.character_id] = {
-        kind: defaultCharKind(p.faction, p.mp),
+        kind: defaultCharKind(p),
         skill_node_id: firstBattleSkillId(affordableBattleSkills(battleSkills, p)),
         target_enemy_id: data.enemies.find((enemy) => isEnemyTargetable(enemy, data.round))?.enemy_id ?? null,
         target_character_id: p.character_id,
@@ -2543,7 +2559,7 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
                     const disabled = !isSelf && !canSpendOneMp(p, usableMp);
                     return {
                       key: String(target.character_id),
-                      label: isSelf ? "본인" : disabled ? `${target.name} (MP 부족)` : target.name,
+                      label: isSelf ? "본인" : disabled ? `${target.name} (${manaLabel(p)} 부족)` : target.name,
                       disabled,
                     };
                   })}
@@ -2585,9 +2601,9 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
                         return (
                           <SelectItem key={kind} value={kind} disabled={unavailable}>
                             {skillUnavailable
-                              ? `기술(${p.trait?.rules?.kind === "blood" ? "HP" : "MP"} 부족)`
+                              ? `기술(${manaLabel(p)} 부족)`
                               : healUnavailable
-                                ? "치유(MP 부족)"
+                                ? `치유(${manaLabel(p)} 부족)`
                                 : kind === "attack" && p.trait?.rules?.kind === "meditation" ? "명상" : CHAR_ACTION_LABEL[kind]}
                           </SelectItem>
                         );

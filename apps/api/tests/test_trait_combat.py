@@ -264,6 +264,20 @@ class TraitCombatTest(unittest.TestCase):
         self.assertAlmostEqual(result.participants[0]["skill_eff_fixed"], .25)
         self.assertIn("HP 부족", " ".join(result.log[-1]["events"]))
 
+    def test_blood_pays_heal_and_protect_with_hp(self):
+        """혈안은 기술뿐 아니라 치유·보호 대상 지정의 마나 1도 체력(최대 체력의 10%)으로 낸다."""
+        self.equip("blood")
+        battle = self.battle()
+        result = self.act(battle, kind="heal", target_character_id=self.ally.id)
+        actor, ally = result.participants
+        self.assertEqual((actor["hp"], actor["mp"], ally["hp"]), (90, 0, 65))
+        self.assertIn("🩸 특성 실험 치유 비용: HP -10 [90/100]", result.log[-1]["events"])
+
+        battle.participants = [{**actor, "faction": "수비"}, ally]
+        result = self.act(battle, kind="defend", protect_target_character_id=self.ally.id)
+        actor = result.participants[0]
+        self.assertEqual((actor["hp"], actor["protect_target"]), (80, self.ally.id))
+
     def test_opportunist_counts_status_stacks(self):
         """기사 회생: 강화·약화 하나당 기술 효율 비례와 고정이 함께 오른다."""
         self.equip("opportunist")

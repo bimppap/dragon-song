@@ -7666,6 +7666,16 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 "text": f" · MP -{spent} [{actor['mp']}/{actor['max_mp']}]",
             })
 
+    def _spend_mana(actor: dict, cost: int, label: str) -> None:
+        """마나를 쓰는 행동의 비용을 낸다. 혈안은 모든 마나 비용을 체력으로 대신 낸다."""
+        if trait_effects.kind(actor) == "blood":
+            spent = trait_effects.hp_cost(actor, cost)
+            actor["hp"] -= spent
+            events.append(f"🩸 {actor['name']} {label} 비용: HP -{spent} [{actor['hp']}/{actor['max_hp']}]")
+        else:
+            actor["mp"] -= cost
+            _note_mp_spent(actor, cost)
+
     def _flush_mp_note() -> None:
         if not pending_mp_note:
             return
@@ -7736,7 +7746,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             and p["faction"] == "수비"
             and protect_target is not None
             and _combatant_targetable(protect_target, round_no)
-            and (p["mp"] >= 1 or trait_effects.kind(p) == "peace")
+            and (_trait_can_pay(p, 1) or trait_effects.kind(p) == "peace")
         )
         protect_target_id = requested_target_id if can_redirect else p["character_id"]
         p["defending"] = True
@@ -7752,14 +7762,14 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if trait_effects.kind(p) == "peace":
                 trait_effects.trigger(p, "protect")
             else:
-                p["mp"] -= 1
-                _note_mp_spent(p, 1)
+                _spend_mana(p, 1, "보호 대상 지정")
             events.append(
                 f"🛡️ {p['name']} 방어 태세 → {by_char_id[protect_target_id]['name']} 보호 · "
                 f"+{attn_gain} 주목도"
             )
-        elif wants_redirect and p["faction"] == "수비" and p["mp"] < 1:
-            events.append(f"⚠️ {p['name']} MP 부족으로 보호 대상을 지정하지 못해 본인만 방어합니다.")
+        elif wants_redirect and p["faction"] == "수비" and not _trait_can_pay(p, 1):
+            resource = "HP" if trait_effects.kind(p) == "blood" else "MP"
+            events.append(f"⚠️ {p['name']} {resource} 부족으로 보호 대상을 지정하지 못해 본인만 방어합니다.")
             events.append(f"🛡️ {p['name']} 방어 태세 · +{attn_gain} 주목도")
         else:
             events.append(f"🛡️ {p['name']} 방어 태세 · +{attn_gain} 주목도")
@@ -7973,13 +7983,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
         skill_cost = _battle_skill_cost(actor, skill) if skill is not None else max(0, int(actor["skill_cost"]))
         if not _trait_can_pay(actor, skill_cost):
             return
-        if trait_effects.kind(actor) == "blood":
-            spent = trait_effects.hp_cost(actor, skill_cost)
-            actor["hp"] -= spent
-            events.append(f"🩸 {actor['name']} 기술 비용: HP -{spent} [{actor['hp']}/{actor['max_hp']}]")
-        else:
-            actor["mp"] -= skill_cost
-            _note_mp_spent(actor, skill_cost)
+        _spend_mana(actor, skill_cost, "기술")
         pending_trait_skills.append(actor)
 
     queued_actions: list[tuple[int, int, dict, CharacterActionInput, dict | None]] = []
@@ -9377,8 +9381,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if p["faction"] != "치유":
                 events.append(f"⚠️ {p['name']}: 치유 포지션만 치유를 사용할 수 있습니다.")
                 continue
-            if p["mp"] < 1 and trait_effects.kind(p) != "peace":
-                events.append(f"⚠️ {p['name']} 치유 실패 (MP 부족)")
+            if not _trait_can_pay(p, 1) and trait_effects.kind(p) != "peace":
+                resource = "HP" if trait_effects.kind(p) == "blood" else "MP"
+                events.append(f"⚠️ {p['name']} 치유 실패 ({resource} 부족)")
                 continue
 
             chosen = by_char_id.get(action.target_character_id) if action.target_character_id else None
@@ -9387,8 +9392,7 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
             if trait_effects.kind(p) == "peace":
                 trait_effects.trigger(p, "heal")
             else:
-                p["mp"] -= 1
-                _note_mp_spent(p, 1)
+                _spend_mana(p, 1, "치유")
 
             before = target["hp"]
             next_hp = target["hp"] + heal

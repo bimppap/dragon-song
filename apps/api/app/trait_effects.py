@@ -18,7 +18,7 @@ CATALOG = {
     "offense_defense": ("공방일체", "공격·기술 행동 시 피해 감소 +{reduction}% 일회성 강화(피격 시 해제). 방어 행동 시 기술 효율 +{eff}%, 공격력 증폭 +{attack}% 지속 강화.", [field("reduction", "피격 전 피해 감소", 30), field("eff", "방어 후 기술 효율 비례", 10), field("attack", "방어 후 공격력 증폭", 10)]),
     "prepared": ("만전", "체력이 최대일 때 기술 효율 비례 +{eff}%. 전투 시작 시 약화 방지 {guard}스택(약화와 1:1 상쇄).", [field("eff", "기술 효율 비례", 25), field("guard", "시작 약화 방지 스택", 2, "", 0, 100)]),
     "hero": ("용사", "살아 있는 적 한 명당 공격력 증폭·방어력 증폭·치유 효율 +{amp}%(최대 {cap}%), 기술 효율 고정 +{flat}(최대 {flat_cap}).", [field("amp", "적당 증폭", 5), field("cap", "증폭 상한", 50), field("flat", "적당 기술 효율 고정", 1, ""), field("flat_cap", "고정 상한", 10, "")]),
-    "blood": ("혈안", "기술 사용 시 마나 대신 기술 비용 × 최대 체력의 {hp}% 소모. 현재 마나 1당 기술 효율 비례 +{eff}%. 전투 시작 마나 {start_mana}.", [field("hp", "비용 1당 최대 체력 소모", 10, "%", 0, 100), field("eff", "마나당 기술 효율 비례", 5), field("start_mana", "시작 마나", 0, "")]),
+    "blood": ("혈안", "마나를 쓰는 모든 행동(기술·보호 대상 지정·치유)에 마나 대신 비용 × 최대 체력의 {hp}% 소모. 현재 마나 1당 기술 효율 비례 +{eff}%. 전투 시작 마나 {start_mana}.", [field("hp", "비용 1당 최대 체력 소모", 10, "%", 0, 100), field("eff", "마나당 기술 효율 비례", 5), field("start_mana", "시작 마나", 0, "")]),
     "opportunist": ("기사 회생", "자신에게 걸린 강화·약화 하나당 기술 효율 비례 +{eff}%, 고정 +{flat}.", [field("eff", "강화·약화당 기술 효율 비례", 5), field("flat", "강화·약화당 기술 효율 고정", 1, "")]),
     "preparation": ("대비", "최대 체력의 {shield}%만큼 시작 보호막. 보호막이 있을 때 존재감 +{presence}%, 피해 감소 +{reduction}%, 기술 효율 비례 +{eff}%.", [field("shield", "시작 보호막", 10), field("presence", "존재감", 20), field("reduction", "피해 감소", 5), field("eff", "기술 효율 비례", 5)]),
     "onslaught": ("맹공", "공격력 증폭 +{attack}%, 피해 감소 {reduction}%. 방어·소비 행동 사용 불가.", [field("attack", "공격력 증폭", 40), field("reduction", "피해 감소", -20, "%", -100)]),
