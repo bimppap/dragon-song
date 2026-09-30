@@ -78,7 +78,10 @@ class SkillAdminUpdateTest(unittest.TestCase):
             cleared = update_skill_node(self.db, node.id, SkillNodeUpdate(
                 default_name=node.default_name, tier6_effect="  ",
             ))
-            self.assertIsNone(cleared.tier6_effect)
+            # 비우면 스펙의 기본 6단계 효과 설명으로 돌아간다.
+            spec = crud._skill_spec_for_node(self.db.get(crud.SkillNode, node.id))
+            self.assertEqual(cleared.tier6_effect, spec["tier6_effect"])
+            self.assertIsNotNone(cleared.tier6_effect)
 
     def test_update_without_name_keeps_current_name(self):
         updated = update_skill_node(self.db, self.node_id, SkillNodeUpdate(cost=4))

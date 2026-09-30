@@ -128,7 +128,7 @@ class SkillLogFormulaTest(unittest.TestCase):
         for hp in (50, 100):
             with self.subTest(hp=hp):
                 caster = crud._snapshot_combatant(self.caster)
-                caster.update(skill_eff_fixed=0.5, heal_eff=1.0, skill_eff_true=999, presence=0.25, attn=10)
+                caster.update(max_hp=200, skill_eff_fixed=0.5, heal_eff=1.0, skill_eff_true=999, presence=0.25, attn=10)
                 target = crud._snapshot_combatant(self.ally)
                 target.update(hp=hp, shield=7, attn=100)
                 battle = BattleSession(
@@ -143,11 +143,11 @@ class SkillLogFormulaTest(unittest.TestCase):
                 ]))
                 actor, ally = result.participants
                 self.assertEqual(ally["hp"], hp)
-                self.assertEqual(ally["shield"], 22)  # 7 + floor(100 * 10% * 1.5), 치유 효율 제외
+                self.assertEqual(ally["shield"], 37)  # 7 + floor(시전자 최대 체력 200 * 10% * 1.5), 치유 효율 제외
                 self.assertEqual(ally["attn"], 70)
                 self.assertEqual(actor["attn"], 85)  # 10 + floor(30 * 2 * 1.25), 치유 주목도 없음
                 self.assertEqual(actor["mp"], 9)
-                event = next(event for event in result.log[-1]["events"] if "15 보호막 부여" in event)
+                event = next(event for event in result.log[-1]["events"] if "30 보호막 부여" in event)
                 self.assertNotIn("치유 효율", result.log[-1]["calculations"][event][0])
                 self.assertEqual(result.log[-1]["metrics"]["ally_healing"], 0)
         # 보호는 자동 설명 기술이 아니라 관리자가 쓴 설명을 그대로 쓰고 자리표시자만 채운다.

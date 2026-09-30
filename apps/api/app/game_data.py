@@ -293,7 +293,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="((1+skill_lv)*skill_power)*(1+skill_eff_fixed)",
                     description="즉발성 피해를 주는 단순한 기술입니다.",
                     tier6_name="격류",
-                    tier6_effect="[상시적용] 일반 공격 위력 상승, 일반 공격 시 마나 회복",
+                    tier6_effect="[상시적용] 일반 공격 시 마나 1 회복, 일반 공격 피해 + 기술 등급×0.2(최종값 소수점 버림).",
                 ),
                 "derived": _skill(
                     "주입", trigger_type="즉발형", category="복합", stackable=True, var_name="ab_enchant",
@@ -309,13 +309,14 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="((1+skill_lv)*skill_power)*(1+skill_eff_fixed)",
                     description="복수의 적에게 즉발성 피해를 주는 기술입니다.",
                     tier6_name="파괴",
-                    tier6_effect="피격 대상에게 일회성 약화(피해 감소 -5%) 부여",
+                    tier6_effect="피격한 에너미에게 받는 피해 +5% 일회성 약화 부여(라운드 종료 시 해제). 발동 순서가 같은 용맹의 서 기술보다 먼저 발동합니다.",
                 ),
                 "derived": _skill(
                     "제압", trigger_type="즉발형", category="피해", stackable=False, var_name="ab_suppressing",
                     cost=4, power=(10, 10, 15, 20, 25, 0), target="에너미+하수인 전원", target_side="ENEMY", order=4,
                     formula="피해(에너미+하수인 전원): 즉발 피해 + 기술 효율 고정 / 보유 시 상시 공격력: 스킬레벨*2 + 기술 효율 고정",
                     description="사용 시 모든 적(에너미+하수인)에게 피해를 주고, 보유만으로 공격력이 오릅니다.",
+                    tier6_effect="하수인을 처치하면 그 하수인에게 입힌 피해만큼 하수인을 제외한 무작위 에너미 1명에게 피해를 줍니다.",
                 ),
             },
             {
@@ -324,6 +325,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     cost=3, power=1.0, target="1", target_side="ENEMY", order=3,
                     formula="(skill_lv*skill_power)*(1+skill_eff_fixed)",
                     description="적에게 즉발형 피해를 입히고, 차례 시작 시 지속 피해를 입히는 약화 스택을 하나 부여합니다.",
+                    tier6_effect="[상시적용] 일반 공격 시에도 기술과 같이 그 피해만큼 매 라운드 지속 피해를 주는 약화 스택을 부여합니다.",
                     placeholder=True,
                 ),
                 "derived": _skill(
@@ -344,6 +346,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율) / 주목도: 회복량*스킬레벨",
                     description="자신을 회복하고 설정된 수만큼 가장 오래된 해제 가능 환경 스택을 제거합니다. 회복량만큼 주목도를 얻습니다.",
                     tier6_name="불굴",
+                    tier6_effect="오버힐 가능. 회복량의 25%만큼 수비 포지션 캐릭터 전원에게 보호막 부여, 수비 포지션 캐릭터 전원의 주목도가 각자 보유 주목도의 20%만큼 증가합니다.",
                 ),
                 "derived": _skill(
                     "경호", trigger_type="지속형", category="강화", stackable=True,
@@ -351,6 +354,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     target="1", target_side="ALLY", order=4,
                     formula="최대·현재 체력 증가(자신, 최대 2스택): floor(경호 증가분 제외 최대 체력 * 체력 증가 비율 * (1+기술 효율 비례)). 경호 스택을 가진 아군(아군당 1스택)이 피격되면 그 턴의 공격을 전부 시전자가 대신 받는다.",
                     description="지정한 아군에게 경호 스택을 부여하고 자신의 최대 체력과 현재 체력을 높입니다.",
+                    tier6_effect="기술 사용 시 시전자가 자신의 최대 체력의 10%만큼 체력을 회복합니다.",
                 ),
             },
             {
@@ -359,6 +363,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     cost=3, power=0.05, powers={"counter_damage": 2.0}, target="1", target_side="ALLY", order=3,
                     formula="피해 감소: 기술 위력*(1+방어 효율) / 반격 피해: (공격력+방어력)*반격 피해*(1+기술 효율 비례)",
                     description="자신 또는 지정한 아군에게 오는 공격을 막으며 반격합니다.",
+                    tier6_effect="[상시적용] 일반 방어 중 피격되면 (공격력 + 방어력) × 200%만큼 공격한 적에게 피해를 주고 마나 2를 회복합니다.",
                     placeholder=True,
                 ),
                 "derived": _skill(
@@ -374,9 +379,10 @@ SKILL_BOOKS: dict[str, dict] = {
                     "보호", trigger_type="즉발형", category="회복", stackable=False, var_name="ab_protect",
                     cost=2, power=0.05, powers={"attn_transfer": (0.2, 0.6, 1.2, 2.0, 3.0, 0.1)},
                     target="1", target_side="ALLY", order=7,
-                    formula="보호막: floor(대상 최대 체력*보호막 비율*(1+기술 효율 비례)) / 주목도 이전: 주목도 이전*(1+기술 효율 비례)",
-                    description="지정한 아군의 최대 체력에 비례한 보호막을 부여하며 주목도를 감소시키고, 감소량의 2배만큼 자신의 주목도를 높입니다.",
+                    formula="보호막: floor(시전자 최대 체력*보호막 비율*(1+기술 효율 비례)) / 주목도 이전: 주목도 이전*(1+기술 효율 비례)",
+                    description="시전자의 최대 체력에 비례한 보호막을 지정한 아군에게 부여하며 주목도를 감소시키고, 감소량의 2배만큼 자신의 주목도를 높입니다.",
                     tier6_name="수호",
+                    tier6_effect="아군에게 보호막을 부여하면 자신에게도 같은 수치의 보호막을 부여합니다.",
                 ),
                 "derived": _skill(
                     "장막", trigger_type="즉발형", category="강화", stackable=False,
@@ -384,6 +390,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     powers={"shield": (2, 2, 3, 4, 5, 0)}, target="SELF", target_side="ALLY", order=4,
                     formula="체력 소모: floor(시전자 최대 체력*max(0, 체력 소모 비율-기술 효율 비례)). 보호막: floor(보호막+기술 효율 고정/2)",
                     description="시전자의 체력을 소모하고 아군 전원에게 고정 보호막을 부여합니다.",
+                    tier6_effect="보호막이 보호막 수치 + 시전자 기술 효율(고정)/2 대신 보호막 수치 + 시전자 기술 효율(고정)이 됩니다.",
                 ),
             },
         ],
@@ -397,13 +404,14 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)",
                     description="지정한 아군의 체력을 회복시키는 기본 회복 기술입니다.",
                     tier6_name="생명",
-                    tier6_effect="오버힐 허용, 대상에게 걸린 약화 n개 해제(n = skill_lv mod 6)",
+                    tier6_effect="오버힐 가능. 대상에게 걸린 약화 2개를 오래된 순으로 해제합니다.",
                 ),
                 "derived": _skill(
                     "재생", trigger_type="지속형", category="강화", stackable=False, order=4,
                     var_name="ab_regeneration", cost=0, power=4, target="1", target_side="ALLY",
                     formula="체력 재생력 증가: floor(기본값 + 시전자 기술 효율(고정)/4)",
                     description="지정한 아군 1명에게 전투 종료까지 체력 재생력(고정)을 기본값 + 시전자 기술 효율(고정)/4만큼 증가시키는 버프를 부여합니다.",
+                    tier6_effect="대상에게 최대 체력이 시전자 기술 효율(고정)/2만큼 증가하는 강화 스택을 부여합니다(현재 체력도 함께 증가, 누적되지 않고 다시 걸면 새 값으로 교체, 전투 종료까지 유지).",
                 ),
             },
             {
@@ -412,7 +420,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     cost=3, power=0.1, target="2", target_side="ALLY", order=2,
                     formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)",
                     description="복수의 아군을 체력이 낮은 순서대로 회복시킵니다.",
-                    tier6_effect="일회성 강화 부여: 기술 등급만큼 피해 증폭",
+                    tier6_effect="회복한 대상에게 이번 라운드 한정 피해 증폭 +10% 일회성 강화 부여.",
                     placeholder=True,
                 ),
                 "derived": _skill(
@@ -420,6 +428,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     var_name="ab_halo", cost=0, power=4, target="SELF", target_side="ALLY",
                     formula="전체 회복량: 기본값 + 시전자 기술 효율(고정)/4",
                     description="아군 전원의 현재 체력을 기본값 + 시전자 기술 효율(고정)/4만큼 회복합니다.",
+                    tier6_effect="아군 전원에게 걸린 약화를 1개씩 해제합니다.",
                 ),
             },
             {
@@ -430,7 +439,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="회복: 최대 체력*기술 위력*(1+기술 효율 비례)*(1+치유 효율)",
                     description="지정한 아군의 체력을 회복시키고 기술 등급만큼 약화 스택을 제거합니다.",
                     tier6_name="승화",
-                    tier6_effect="해제한 약화 수만큼 강화 스택 부여(약화 상태 방지, 스택*5만큼 피해 증폭)",
+                    tier6_effect="해제한 약화 수만큼 대상에게 약화 상쇄 스택 부여(에너미가 거는 약화 1개와 짝지어 함께 사라짐). 약화 상쇄 스택 1개당 피해 증폭 +4%.",
                 ),
                 "derived": _skill(
                     "주술", trigger_type="즉발형", category="복합", stackable=False, order=2,
@@ -438,6 +447,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     target="1", target_side="ALLY",
                     formula="회복: 대상 최대 체력*회복 비율*(1+기술 효율 비례)*(1+치유 효율). 무작위 적 피해: floor(실제 회복량 + 시전자 기술 효율 고정)",
                     description="지정한 아군 1명을 회복하고 실제 회복량 + 시전자 기술 효율 고정만큼 무작위 에너미 1명에게 피해를 줍니다.",
+                    tier6_effect="오버힐 가능.",
                 ),
             },
         ],
@@ -451,6 +461,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="강화 수치: 기술 위력*(1+기술 효율 비례)",
                     description="지정한 아군에게 일회성 강화를 부여합니다.",
                     tier6_name="각성",
+                    tier6_effect="대상에게 이번 라운드 한정 공격력 증폭 +20% 강화 스택도 부여합니다.",
                     placeholder=True,
                 ),
                 "derived": _skill(
@@ -469,6 +480,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="약화 수치: 기술 위력*(1+기술 효율 비례)",
                     description="지정한 적군의 피해 증폭을 감소시킵니다.",
                     tier6_name="봉인",
+                    tier6_effect="대상 에너미에게 이번 라운드 한정 공격력 -5 약화 스택도 부여합니다.",
                 ),
                 "derived": _skill(
                     # 그 라운드 아군 피해를 키우는 기술이라 아군 공격보다 먼저 발동해야 한다.
@@ -484,6 +496,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     cost=4, power=2, target="1", target_side="ALLY", order=1,
                     formula="마나 회복: 기술 위력(등급별 값) / 기술 비용: 노드에 설정된 값",
                     description="지정한 아군의 마나를 회복시킵니다. 자신은 대상이 되지 않습니다.",
+                    tier6_effect="대상에게 최대 마나 +1 지속 강화 스택을 부여합니다(현재 마나도 1 증가, 누적되지 않음).",
                     placeholder=True,
                 ),
                 "derived": _skill(
@@ -491,6 +504,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     cost=4, target_side="ALLY",
                     formula="복제한 기술의 비용·공식을 따르되 기술 효율(비례) -50%+5%*skill_lv, 기술 효율(고정) max(0, -20+2*skill_lv) 보정",
                     description="비전투 시 다른 캐릭터의 기술을 저장했다가 전투에서 복제해 사용합니다.",
+                    tier6_effect="복제한 기술을 기술 효율 보정(약화) 없이 사용합니다.",
                 ),
             },
         ],
@@ -558,6 +572,12 @@ def dynamic_derived_description(
             f"지정한 적 1명에게 이번 라운드 동안 아군에게 받는 피해가 {value * 100:g}%(+시전자 기술 효율 비례) "
             f"증가하는 약화 스택을 부여합니다."
         )
+    if var_name == "ab_clone" and L >= 6:
+        return (
+            f"비전투 시 다른 캐릭터의 기술을 최대 {L}개 저장하고, 전투에서 복제해 사용합니다"
+            "(기술 비용은 복제한 기술의 비용을 그대로 따릅니다). "
+            "기술 효율 보정 없이 원본 그대로 사용합니다."
+        )
     if var_name == "ab_clone":
         return (
             f"비전투 시 다른 캐릭터의 기술을 최대 {L}개 저장하고, 전투에서 복제해 사용합니다"
@@ -591,13 +611,10 @@ def build_skill_node_specs(book: str) -> list[dict]:
             key: (value[tier - 1] if isinstance(value, tuple) else value)
             for key, value in skill["powers"].items()
         }
-        # 6단계 효과는 기존 개요를 대체하지 않고 추가로 붙는다.
         # 수치가 들어가는 파생기의 설명은 그 노드의 위력으로 만든다.
         description = dynamic_derived_description(
             skill["var_name"], tier, power, powers,
         ) or skill["description"]
-        if is_top and skill["tier6_effect"]:
-            description = f"{description}\n[6단계 추가 효과] {skill['tier6_effect']}" if description else f"[6단계 추가 효과] {skill['tier6_effect']}"
         # 1단계·6단계는 실제 기획 데이터, 2~5단계는 근거 데이터가 없어 항상 임시값이다.
         placeholder = skill["placeholder"] or tier not in (1, 6)
         cleanse_count = skill["cleanse_count"]
@@ -618,6 +635,8 @@ def build_skill_node_specs(book: str) -> list[dict]:
             "cleanse_count": cleanse_count,
             "formula": skill["formula"],
             "description": description,
+            # 6단계에만 붙는 추가 효과. 개요와 섞지 않고 "6단계 효과" 칸에 따로 보여준다.
+            "tier6_effect": skill["tier6_effect"] if is_top else None,
             "is_placeholder": placeholder,
         }
 

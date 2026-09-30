@@ -58,7 +58,8 @@ class VeilSkillTest(unittest.TestCase):
     def test_high_efficiency_never_heals_caster(self):
         result = self.cast(tier=6, efficiency=0.7)
         self.assertEqual(result.participants[0]['hp'], 100)
-        self.assertEqual(result.participants[1]['shield'], 6)
+        # 6단계는 기술 효율 고정을 절반이 아니라 그대로 더한다: 0 + 12
+        self.assertEqual(result.participants[1]['shield'], 12)
 
     def test_insufficient_health_grants_no_shield_and_spends_no_mp(self):
         result = self.cast(hp=30)

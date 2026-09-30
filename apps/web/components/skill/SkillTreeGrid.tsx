@@ -201,7 +201,7 @@ export function SkillTooltipContent({
       )}
       {node.tier === 6 && (variant === "admin" || node.is_public) && (
         <div className="border-t border-ivory/10 pt-2">
-          <p className="mb-1 text-xs font-semibold text-ivory/60">6단계 효과</p>
+          <p className="mb-1 text-xs font-semibold text-ivory/60">6단계 전용 효과</p>
           <p className="whitespace-pre-wrap text-sm text-ivory/90">
             {node.tier6_effect ? <DescriptionText text={node.tier6_effect} className={accent.text} /> : "등록된 효과가 없습니다."}
           </p>
