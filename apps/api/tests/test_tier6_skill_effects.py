@@ -260,6 +260,14 @@ class Tier6SkillEffectTest(unittest.TestCase):
         self.assertTrue(any(e.startswith("✨ 아군의") for e in result.log[-1]["events"]))
         self.assertTrue(any("기술 비용 -1" in e for e in result.log[-1]["events"]))
 
+    def test_improve_tier6_cost_reduction_never_goes_below_zero(self):
+        target = {"skill_cost": 0, "status_effects": [
+            {"effect_type": "skill_eff_bonus_round", "cost_reduction": 1},
+            {"effect_type": "skill_eff_bonus_round", "cost_reduction": 1},
+        ]}
+        self.assertEqual(crud._battle_skill_cost(target, {"cost": 0}), 0)
+        self.assertEqual(crud._battle_skill_cost(target, {"cost": 3}), 2)
+
     def test_charge_raises_max_mana_once(self):
         node = self.unlock(self.caster, "탐구의 서", 2, 0)
         result = self.ally_turn(self.battle(), self.skill(node, target_character_id=self.ally.id))
