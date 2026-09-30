@@ -4637,11 +4637,11 @@ def _damage_reduction(target: dict, extra: float = 0.0) -> float:
 
     캐릭터가 쌓아 둔 피해 감소(dmg_r, 특성 보정 포함)에, 그 라운드에 방어 행동을 했다면
     역할별 방어 감소(수비 50%, 그 외 30%)를 더한다. extra는 반격·경호처럼 방어 여부와
-    무관하게 항상 붙는 감소분이다."""
+    무관하게 항상 붙는 감소분이다. 음수면 그만큼 받는 피해가 늘며 하한은 없다."""
     base = float(target.get("dmg_r", 0.0))
     if target.get("defending"):
         base += get_faction_defend_dmg_r(target.get("faction"))
-    return min(0.95, max(-1.0, base + extra))
+    return min(0.95, base + extra)
 
 
 def _eff_def(p: dict) -> int:
@@ -5179,6 +5179,10 @@ def _cleanse_combat_debuffs(db: Session, target: dict, count: int) -> tuple[int,
     return removed, names
 
 
+# 약화로 0 밑까지 내려갈 수 있는 능력치.
+NEGATIVE_ALLOWED_DEBUFF_STATS = {"dmg_r"}
+
+
 def _add_combat_stat_stack(target: dict, *, source: str, name: str, stat: str, amount: float, percent: bool, stackable: bool, debuff: bool = True, direction: str | None = None, color: str | None = None, source_name: str | None = None) -> bool:
     effects = list(_ensure_status_effects(target))
     matching = [effect for effect in effects if effect.get("stack_source") == source]
@@ -5195,8 +5199,10 @@ def _add_combat_stat_stack(target: dict, *, source: str, name: str, stat: str, a
         delta = _floor_amount(delta)
     decreasing = direction == "decrease" if direction is not None else debuff
     delta = -delta if decreasing else delta
-    if decreasing:
-        delta = max(-current, delta)
+    # 피해 감소율은 음수(받는 피해 증가)까지 내려갈 수 있다. 다른 능력치는 0 밑으로 깎지 않고,
+    # 이미 음수인 능력치는 더 깎지도 되돌려 올리지도 않는다.
+    if decreasing and stat not in NEGATIVE_ALLOWED_DEBUFF_STATS:
+        delta = max(-max(current, 0), delta)
     target[stat] = current + delta
     target["status_effects"] = effects + [{
         "effect_type": "stat_modifier", "affinity": "debuff" if debuff else "buff", "skill_name": name,
@@ -5214,10 +5220,17 @@ def _apply_eruption_reaction(recipient: dict, enemies: list[dict], round_no: int
     efficiency = recipient["skill_eff_true"]
     # damage는 기술에 설정된 반응 피해. 이 값이 없는 옛 전투 스냅샷만 예전 계산(스킬레벨 × 5)을 쓴다.
     powers = [float(effect.get("damage", int(effect.get("skill_lv") or 2) * 5)) for effect in effects]
-    damages = [max(0, _floor_amount(power + efficiency)) for power in powers]
+    # 6단계 분출로 건 스택은 반응 피해를 3배로 준다.
+    multipliers = [3 if int(effect.get("skill_lv") or 0) >= 6 else 1 for effect in effects]
+    damages = [
+        max(0, _floor_amount((power + efficiency) * multiplier))
+        for power, multiplier in zip(powers, multipliers)
+    ]
     formula = " + ".join(
+        f"max(0, floor((반응 피해 {_formula_number(power)} + 기술 효율 고정 {_formula_number(efficiency)}) × 3))"
+        if multiplier == 3 else
         f"max(0, floor(반응 피해 {_formula_number(power)} + 기술 효율 고정 {_formula_number(efficiency)}))"
-        for power in powers
+        for power, multiplier in zip(powers, multipliers)
     )
     total_dealt = 0
     for enemy in enemies:
@@ -5945,7 +5958,10 @@ def _apply_item_effects_to_snapshot(db: Session, p: dict, effects: list[dict], s
             delta_hp = p["max_hp"] * effect["delta"] * sign
             next_hp = _floor_amount(p["hp"] + delta_hp)
             if not p["over_heal"]:
+                # 이미 오버힐된 캐릭터는 회복되지 않고 초과분도 깎이지 않는다.
                 next_hp = min(next_hp, p["max_hp"])
+                if delta_hp > 0:
+                    next_hp = max(p["hp"], next_hp)
             p["hp"] = next_hp
             applied = p["hp"] - before_hp
             if applied != 0:
