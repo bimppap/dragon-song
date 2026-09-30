@@ -9470,6 +9470,7 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
         for character_id, skills in _battle_skills_by_participant(db, participants).items()
         if (skill := _owned_tier6_skill(skills, "ab_counter")) is not None
     }
+    counter_mana_char_ids: dict[int, dict] = {}
 
     def hit(
         attacker: dict,
@@ -9605,9 +9606,8 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
             passive_damage, passive_formula = _apply_weaken_amp(attacker, passive_damage, passive_formula)
             dealt, overkill = _apply_damage_to_enemy(attacker, passive_damage)
             _apply_damage_attn(recipient, dealt)
-            before_mp = recipient["mp"]
-            recipient["mp"] = min(recipient["max_mp"], recipient["mp"] + 2)
-            gained_mp = recipient["mp"] - before_mp
+            # 마나는 피격마다가 아니라 이번 턴 피격이 모두 끝난 뒤 한 번만 회복한다.
+            counter_mana_char_ids.setdefault(recipient["character_id"], counter_passive)
             counter_results.append({
                 "skill_name": _battle_skill_name(counter_passive),
                 "counterattacker_name": recipient["name"],
@@ -9616,7 +9616,6 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 "enemy_hp": attacker["hp"],
                 "enemy_max_hp": attacker["max_hp"],
                 "overkill": overkill,
-                "suffix": f" · MP +{gained_mp} [{recipient['mp']}/{recipient['max_mp']}]" if gained_mp > 0 else "",
                 "formula": f"min({passive_formula}, 남은 체력 {_formula_number(attacker['hp'] + dealt)})",
             })
         return recipient, dmg, absorbed, redirected, counter_results, damage_formula
@@ -9810,6 +9809,18 @@ def resolve_battle_enemy_turn(db: Session, session_id: int) -> BattleSessionRead
                 events.append(f"💀 하수인 {_summon_log_name(summon)} 처치")
 
     _flush_battle_revive_events(participants, events)
+    # 6단계 반격: 이번 턴에 한 번이라도 반격했다면 피격이 모두 끝난 뒤 마나 2를 한 번만 회복한다.
+    for character_id, counter_passive in counter_mana_char_ids.items():
+        p = by_char_id[character_id]
+        if not _combatant_active(p) or p["hp"] <= 0:
+            continue
+        before_mp = p["mp"]
+        p["mp"] = min(p["max_mp"], p["mp"] + 2)
+        if p["mp"] > before_mp:
+            events.append(
+                f"💧 {p['name']}의 {_battle_skill_name(counter_passive)} · MP +{p['mp'] - before_mp} "
+                f"[{p['mp']}/{p['max_mp']}]"
+            )
     # 쇠약처럼 이번 라운드 한정인 적 상태이상은 에너미 턴까지 유지되다가 여기서 소멸한다.
     # 일회성 강화 아이템도 이 라운드의 에너미 턴까지 버티고 여기서 사라진다.
     _expire_round_status_effects([*participants, *enemies], round_no)

@@ -127,6 +127,22 @@ class Tier6SkillEffectTest(unittest.TestCase):
         self.assertEqual(result.enemies[0]["hp"], 970)
         self.assertEqual(result.participants[0]["mp"], 7)
 
+    def test_counter_passive_restores_mana_once_after_all_hits(self):
+        self.unlock(self.caster, "불굴의 서", 1, 0)
+        enemy_skill = EnemySkill(skill_type="지정 공격", name="내리치기", target_count=1, damage_percent=100)
+        action = {"enemy_id": 1, "kind": "attack", "skill_index": 0, "target_character_ids": [self.caster.id]}
+        battle = self.battle(enemy={"skills": [enemy_skill.model_dump()], "action_count": 3},
+                             pending=[dict(action) for _ in range(3)])
+        self.ally_turn(battle, CharacterActionInput(character_id=self.caster.id, kind="defend"))
+        result = crud.resolve_battle_enemy_turn(self.db, battle.id)
+        # 세 번 맞아 세 번 반격하지만, 마나는 피격이 모두 끝난 뒤 한 번만 5 → 7
+        self.assertEqual(result.enemies[0]["hp"], 1000 - 30 * 3)
+        self.assertEqual(result.participants[0]["mp"], 7)
+        events = result.log[-1]["events"]
+        mana_index = next(i for i, e in enumerate(events) if e.startswith("💧"))
+        last_counter_index = max(i for i, e in enumerate(events) if e.startswith("↩️"))
+        self.assertGreater(mana_index, last_counter_index)
+
     def test_counter_passive_needs_defend_action(self):
         self.unlock(self.caster, "불굴의 서", 1, 0)
         enemy_skill = EnemySkill(skill_type="지정 공격", name="내리치기", target_count=1, damage_percent=100)

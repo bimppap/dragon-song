@@ -363,7 +363,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     cost=3, power=0.05, powers={"counter_damage": 2.0}, target="1", target_side="ALLY", order=3,
                     formula="피해 감소: 기술 위력*(1+방어 효율) / 반격 피해: (공격력+방어력)*반격 피해*(1+기술 효율 비례)",
                     description="자신 또는 지정한 아군에게 오는 공격을 막으며 반격합니다.",
-                    tier6_effect="[상시적용] 일반 방어 중 피격되면 (공격력 + 방어력) × 200%만큼 공격한 적에게 피해를 주고 마나 2를 회복합니다.",
+                    tier6_effect="[상시적용] 일반 방어 중 피격되면 (공격력 + 방어력) × 200%만큼 공격한 적에게 피해를 줍니다. 이번 턴 피격이 모두 끝난 뒤 마나 2를 회복합니다(여러 번 맞아도 1회).",
                     placeholder=True,
                 ),
                 "derived": _skill(
