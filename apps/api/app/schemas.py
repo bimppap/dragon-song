@@ -63,10 +63,13 @@ GRADE_STAT_FIELDS = ("stat_courage", "stat_endurance", "stat_charity", "stat_wis
 #   한 번 장착한 특성은 이 아이템을 다시 쓰기 전까지 바꿀 수 없다.
 # "battle_buff_round": ("일회성 강화") 전투 중에만 쓸 수 있다. 같은 아이템에 함께 담은 능력치 효과를
 #   영구 변화가 아니라 다음 라운드까지만 유지되는 강화로 적용한다(강화 항목은 여러 개 담을 수 있다).
+# "accessory_upgrade": ("장신구 강화") "성장의 목걸이"를 가진 캐릭터가 쓰면 목걸이와 이 아이템이 사라지고,
+#   효과의 item_id로 지정한 아이템 1개를 받는다.
 ITEM_EFFECT_SPECIAL_STATS = {
     "ap_reset", "stat_reset", "full_reset", "grade_choice_1", "grade_choice_2", "cleanse_debuffs",
     "delivery_date_slot", "delivery_freeform", "mission_exp_recollection", "challenge_acquisition",
     "spirit_stone_customize", "spirit_stone_exchange", "trait_change", "battle_buff_round",
+    "accessory_upgrade",
 }
 # 비율(0.2)로 저장하지만 사람에게는 퍼센트(+20%)로 보여주는 항목.
 # hp_heal_p는 로그에 실제로 채운 체력을 적으므로 여기에 넣지 않는다.
@@ -104,7 +107,7 @@ ItemEffectStat = Literal[
     "mission_exp_recollection", "challenge_acquisition",
     "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
     "battle_revive_once", "battle_auto_revive", "skill_recast",
-    "battle_buff_round",
+    "battle_buff_round", "accessory_upgrade",
 ]
 ItemType = Literal["consumable", "companion", "accessory"]
 SalePeriodType = Literal["chapter", "date"]
@@ -121,6 +124,8 @@ class ItemEffect(BaseModel):
     stat: ItemEffectStat
     delta: float
     chapter: str | None = None
+    # 장신구 강화로 지급할 아이템. 다른 효과에는 쓰지 않으며, 비어 있으면 저장하지 않는다.
+    item_id: int | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @model_validator(mode="after")
     def validate_chapter(self):
@@ -132,6 +137,11 @@ class ItemEffect(BaseModel):
             self.chapter = None
         else:
             self.chapter = self.chapter.strip()
+        if self.stat == "accessory_upgrade":
+            if not self.item_id or self.item_id <= 0:
+                raise ValueError("장신구 강화로 지급할 아이템을 선택해야 합니다.")
+        else:
+            self.item_id = None
         return self
 
 
@@ -527,6 +537,7 @@ class ItemCreate(BaseModel):
                 "ap_reset", "stat_reset", "full_reset", "hp_heal_p",
                 "cleanse_debuffs", "mission_exp_recollection", "challenge_acquisition",
                 "spirit_stone_customize", "spirit_stone_exchange", "trait_change", "battle_buff_round",
+                "accessory_upgrade",
             ) for e in self.effects):
                 raise ValueError("동반자와 장신구에는 일회성 효과를 설정할 수 없습니다.")
         if self.item_type == "consumable" and any(e.stat in ITEM_EFFECT_EQUIP_PASSIVE_STATS for e in self.effects):
@@ -568,6 +579,11 @@ class ItemCreate(BaseModel):
                 raise ValueError("특성 해제 아이템은 전투 전용으로 설정할 수 없습니다.")
             if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
                 raise ValueError("특성 해제 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
+        if any(e.stat == "accessory_upgrade" for e in self.effects):
+            if self.battle_only:
+                raise ValueError("장신구 강화 아이템은 전투 전용으로 설정할 수 없습니다.")
+            if sum(e.stat in ITEM_EFFECT_SPECIAL_STATS for e in self.effects) != 1:
+                raise ValueError("장신구 강화 효과는 다른 특수 효과와 함께 설정할 수 없습니다.")
         if not self.price_gold and not self.price_cp:
             raise ValueError("골드 또는 CP 중 하나 이상의 가격을 설정해야 합니다.")
         return self

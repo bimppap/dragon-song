@@ -1206,6 +1206,12 @@ def _validate_item_acquisition_chapter(db: Session, data: ItemCreate) -> None:
             raise HTTPException(status_code=400, detail="도전과제 획득 효과에 지정된 챕터가 존재하지 않습니다.")
 
 
+def _validate_item_upgrade_target(db: Session, data: ItemCreate) -> None:
+    for effect in data.effects:
+        if effect.stat == "accessory_upgrade" and db.get(Item, effect.item_id) is None:
+            raise HTTPException(status_code=400, detail="장신구 강화로 지급할 아이템이 존재하지 않습니다.")
+
+
 def _item_owned_name(item: Item) -> str:
     """구매한 캐릭터에게 보이는 이름. 특수 상인 아이템의 구매 후 값이 비어 있으면 구매 전 값을 쓴다."""
     return (item.name_after_purchase or "").strip() or item.name if item.special_merchant else item.name
@@ -1220,6 +1226,8 @@ def _item_owned_image_url(item: Item) -> str | None:
 
 
 SPIRIT_STONE_KEYWORD = "정령석"
+# 장신구 강화(accessory_upgrade)로 바꿔 주는 장신구. 이름으로 찾는다.
+GROWTH_NECKLACE_NAME = "성장의 목걸이"
 
 
 def _is_spirit_stone(item: Item) -> bool:
@@ -1265,6 +1273,7 @@ def create_item(db: Session, data: ItemCreate) -> Item:
     _validate_item_restricted_mission(db, data)
     _validate_item_recollection_chapter(db, data)
     _validate_item_acquisition_chapter(db, data)
+    _validate_item_upgrade_target(db, data)
     item = Item(
         name=data.name,
         # 새 아이템은 관리자가 순서를 정하기 전까지 목록 맨 뒤에 붙는다.
@@ -1286,6 +1295,9 @@ def update_item(db: Session, item_id: int, data: ItemCreate) -> Item:
     _validate_item_restricted_mission(db, data)
     _validate_item_recollection_chapter(db, data)
     _validate_item_acquisition_chapter(db, data)
+    _validate_item_upgrade_target(db, data)
+    if any(effect.stat == "accessory_upgrade" and effect.item_id == item_id for effect in data.effects):
+        raise HTTPException(status_code=400, detail="장신구 강화로 자기 자신을 지급할 수는 없습니다.")
     equipped = db.query(CharacterItemState).filter(
         CharacterItemState.item_id == item_id, CharacterItemState.equipped.is_(True)
     ).first()
@@ -1593,6 +1605,10 @@ def use_item(
     if "trait_change" in special_stats and character.trait_id is None:
         raise HTTPException(status_code=400, detail="장착한 특성이 없어 사용할 수 없습니다.")
 
+    accessory_upgrade = None
+    if "accessory_upgrade" in special_stats:
+        accessory_upgrade = _validate_accessory_upgrade(db, character_id, item)
+
     # 역할 변경은 효과 적용 전에 검증해, 잘못된 선택이 아이템만 소모시키지 않게 한다.
     if "full_reset" in special_stats and chosen_faction not in FACTIONS:
         raise HTTPException(status_code=400, detail="바꿀 역할(공격/수비/치유)을 선택해 주세요.")
@@ -1644,6 +1660,8 @@ def use_item(
         _touch_trait_battles(db)
     if spirit_stone_exchange is not None:
         _exchange_spirit_stone(db, character, *spirit_stone_exchange)
+    if accessory_upgrade is not None:
+        _swap_owned_item(db, character, *accessory_upgrade)
     first_quantity = len(gift_payloads[0]["recipient_ids"]) if gift_payloads else 1
     for _ in range(first_quantity - 1):
         _apply_item_effects(character, item.effects or [], sign=1)
@@ -1713,7 +1731,12 @@ def _validate_spirit_stone_exchange(db: Session, character_id: int, from_item_id
 
 
 def _exchange_spirit_stone(db: Session, character: Character, from_item: Item, to_item: Item) -> None:
-    """보유 정령석 1개를 내놓고 다른 정령석 1개를 받는다. 내놓은 정령석을 장착 중이었다면 먼저 해제한다."""
+    """보유 정령석 1개를 내놓고 다른 정령석 1개를 받는다."""
+    _swap_owned_item(db, character, from_item, to_item)
+
+
+def _swap_owned_item(db: Session, character: Character, from_item: Item, to_item: Item) -> None:
+    """보유 아이템 1개를 내놓고 다른 아이템 1개를 받는다. 내놓은 아이템을 장착 중이었다면 먼저 해제한다."""
     remaining = _sum_quantity(db, from_item.id, character.id) - 1
     from_state = _get_or_create_item_state(db, character.id, from_item.id)
     if remaining <= 0 and from_state.equipped:
@@ -1725,6 +1748,22 @@ def _exchange_spirit_stone(db: Session, character: Character, from_item: Item, t
     # 소유 수량은 구매 기록 합계라, 내놓은 쪽은 -1, 받은 쪽은 +1 기록을 남긴다(구매 이력에는 보이지 않는다).
     db.add(Purchase(character_id=character.id, item_id=from_item.id, quantity=-1, source="exchange"))
     db.add(Purchase(character_id=character.id, item_id=to_item.id, quantity=1, source="exchange"))
+
+
+def _validate_accessory_upgrade(db: Session, character_id: int, item: Item) -> tuple[Item, Item]:
+    """장신구 강화에 쓸 보유 "성장의 목걸이"와 지급할 아이템을 찾는다."""
+    necklace = next((
+        candidate for candidate in db.query(Item)
+        .filter(Item.item_type == "accessory", Item.name == GROWTH_NECKLACE_NAME).order_by(Item.id).all()
+        if _sum_quantity(db, candidate.id, character_id) > 0
+    ), None)
+    if necklace is None:
+        raise HTTPException(status_code=400, detail=f"'{GROWTH_NECKLACE_NAME}'을(를) 보유하고 있어야 사용할 수 있습니다.")
+    reward_id = next(effect.get("item_id") for effect in item.effects or [] if effect.get("stat") == "accessory_upgrade")
+    reward = db.get(Item, reward_id) if reward_id else None
+    if reward is None:
+        raise HTTPException(status_code=400, detail="장신구 강화로 받을 아이템이 지정되지 않았습니다. 운영진에게 문의해 주세요.")
+    return necklace, reward
 
 
 def get_spirit_stone_options(db: Session, character_id: int) -> list[SpiritStoneOptionRead]:
@@ -6305,7 +6344,7 @@ def get_battle_available_items(db: Session, session_id: int) -> BattleAvailableI
         used_quantity = state.used_quantity if state is not None else 0
         if row.quantity <= used_quantity:
             continue
-        if item.battle_unusable or any(effect.get("stat") in ("challenge_acquisition", "trait_change") for effect in (item.effects or [])):
+        if item.battle_unusable or any(effect.get("stat") in ("challenge_acquisition", "trait_change", "accessory_upgrade") for effect in (item.effects or [])):
             continue
         items_by_character[row.character_id].append(CharacterOwnedItemRead(
             item_id=item.id,
@@ -9349,6 +9388,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                 continue
             if any(effect.get("stat") == "trait_change" for effect in (item.effects or [])):
                 events.append(f"⚠️ {p['name']}: 특성 해제 아이템은 캐릭터 정보에서 사용해 주세요.")
+                continue
+            if any(effect.get("stat") == "accessory_upgrade" for effect in (item.effects or [])):
+                events.append(f"⚠️ {p['name']}: 장신구 강화 아이템은 캐릭터 정보에서 사용해 주세요.")
                 continue
             if item.battle_unusable:
                 events.append(f"⚠️ {p['name']}: {item.name}은(는) 전투 중에 사용할 수 없습니다.")

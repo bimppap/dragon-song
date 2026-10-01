@@ -14,7 +14,7 @@ import {
 import { cn } from "@/lib/utils";
 import {
   BUFFABLE_EFFECT_STATS, EQUIP_PASSIVE_EFFECT_STATS, ITEM_EFFECT_STAT_OPTIONS, PERCENT_EFFECT_STATS,
-  type Chapter, type ItemEffect,
+  type Chapter, type ItemEffect, type ItemName,
 } from "@/lib/api";
 
 interface Props {
@@ -26,6 +26,8 @@ interface Props {
   /** 부활·기술 재발동처럼 장착해야 동작하는 전투 패시브 효과 노출 여부(동반자·장신구). */
   allowEquipPassives?: boolean;
   chapters?: Chapter[];
+  /** 장신구 강화로 지급할 아이템 후보. */
+  items?: ItemName[];
 }
 
 const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
@@ -33,7 +35,7 @@ const SPECIAL_STATS = new Set<ItemEffect["stat"]>([
   "mission_exp_recollection", "challenge_acquisition",
   "delivery_date_slot", "delivery_freeform",
   "spirit_stone_customize", "spirit_stone_exchange", "trait_change",
-  "battle_revive_once", "battle_auto_revive", "battle_buff_round",
+  "battle_revive_once", "battle_auto_revive", "battle_buff_round", "accessory_upgrade",
 ]);
 
 /** 퍼센트형 효과는 비율(0.2)로 저장하지만 입력창에는 퍼센트(20)로 보여준다. 부동소수 오차(0.07*100)는 반올림해 숨긴다. */
@@ -46,7 +48,7 @@ function toStoredDelta(stat: ItemEffect["stat"], displayValue: number): number {
 }
 
 /** 아이템·기술 등에서 공용으로 쓰는 효과 목록 편집 UI. */
-export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, allowGradeChoice = false, allowEquipPassives = false, chapters = [] }: Props) {
+export default function EffectListEditor({ effects, onChange, allowSpecialStats = false, allowGradeChoice = false, allowEquipPassives = false, chapters = [], items = [] }: Props) {
   const options = ITEM_EFFECT_STAT_OPTIONS.filter((option) => {
     if (EQUIP_PASSIVE_EFFECT_STATS.has(option.value)) return allowEquipPassives;
     if (allowSpecialStats) return true;
@@ -94,6 +96,7 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
                     // 입력창에 보이던 숫자는 유지하고, 퍼센트형 여부가 바뀌면 저장값만 다시 환산한다.
                     delta: toStoredDelta(value as ItemEffect["stat"], toDisplayDelta(effect)),
                     chapter: (value === "mission_exp_recollection" || value === "challenge_acquisition") ? effect.chapter ?? null : null,
+                    item_id: value === "accessory_upgrade" ? effect.item_id ?? null : null,
                   })}
                 >
                   <SelectTrigger className="flex-1">
@@ -133,6 +136,23 @@ export default function EffectListEditor({ effects, onChange, allowSpecialStats 
                       <SelectGroup>
                         {chapters.map((chapter) => (
                           <SelectItem key={chapter.id} value={chapter.name}>{chapter.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
+                )}
+                {effect.stat === "accessory_upgrade" && (
+                  <Select
+                    value={effect.item_id ? String(effect.item_id) : undefined}
+                    onValueChange={(itemId) => handleUpdate(index, { item_id: Number(itemId) })}
+                  >
+                    <SelectTrigger className="min-w-48 flex-1">
+                      <SelectValue placeholder="지급할 아이템 선택" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {items.map((item) => (
+                          <SelectItem key={item.id} value={String(item.id)}>{item.name}</SelectItem>
                         ))}
                       </SelectGroup>
                     </SelectContent>

@@ -3,8 +3,8 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { Image as ImageIcon, PlusCircle, Trash2, X } from "lucide-react";
-import { createItem, deleteItem, fetchChapters, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
-import type { Chapter, Item, ItemCreate, ItemType, Mission, SalePeriodType } from "@/lib/api";
+import { createItem, deleteItem, fetchChapters, fetchItemNames, fetchMissions, updateItem, uploadItemImage } from "@/lib/api";
+import type { Chapter, Item, ItemCreate, ItemName, ItemType, Mission, SalePeriodType } from "@/lib/api";
 import { joinKstDateTime, splitKstDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -176,6 +176,7 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
   const [saleDates, setSaleDates] = useState<SaleDateDraft>(() => toSaleDateDraft(item));
   const [chapters, setChapters] = useState<Chapter[]>([]);
   const [missions, setMissions] = useState<Mission[]>([]);
+  const [itemNames, setItemNames] = useState<ItemName[]>([]);
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -216,6 +217,7 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
   useEffect(() => {
     fetchChapters().then(setChapters).catch(console.error);
     fetchMissions().then(setMissions).catch(console.error);
+    fetchItemNames().then(setItemNames).catch(console.error);
   }, []);
 
   const isEditMode = editingItemId != null;
@@ -421,6 +423,7 @@ export default function AddItemForm({ item = null, onSubmitted, onDeleted, title
             allowGradeChoice={form.item_type === "accessory"}
             allowEquipPassives={form.item_type !== "consumable"}
             chapters={chapters}
+            items={itemNames.filter((option) => option.id !== editingItemId)}
           />
 
           <Section title="구매 조건">

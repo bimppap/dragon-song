@@ -336,7 +336,8 @@ export type ItemEffectStat =
   | "spirit_stone_customize" | "spirit_stone_exchange"
   | "trait_change"
   | "battle_revive_once" | "battle_auto_revive" | "skill_recast"
-  | "battle_buff_round";
+  | "battle_buff_round"
+  | "accessory_upgrade";
 
 export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[] = [
   { value: "lv", label: "성장 등급" },
@@ -395,6 +396,7 @@ export const ITEM_EFFECT_STAT_OPTIONS: { value: ItemEffectStat; label: string }[
   { value: "battle_auto_revive", label: "전투 이후 자동 부활" },
   { value: "skill_recast", label: "기술 재발동(%)" },
   { value: "battle_buff_round", label: "일회성 강화(다음 라운드까지)" },
+  { value: "accessory_upgrade", label: "장신구 강화" },
 ];
 
 /** "일회성 강화" 아이템이 함께 담을 수 있는 능력치. 체력·마나·보호막·주목도처럼
@@ -437,7 +439,7 @@ export function formatEffect(effect: ItemEffect): string {
     || effect.stat === "spirit_stone_customize" || effect.stat === "spirit_stone_exchange"
     || effect.stat === "trait_change"
     || effect.stat === "battle_revive_once" || effect.stat === "battle_auto_revive"
-    || effect.stat === "battle_buff_round"
+    || effect.stat === "battle_buff_round" || effect.stat === "accessory_upgrade"
   ) return label;
   if (effect.stat === "skill_recast") return `기술 재발동 ${Math.round(effect.delta * 1000) / 10}% 위력`;
   const sign = effect.delta >= 0 ? "+" : "";
@@ -452,6 +454,8 @@ export interface ItemEffect {
   stat: ItemEffectStat;
   delta: number;
   chapter?: string | null;
+  /** 장신구 강화(accessory_upgrade)로 지급할 아이템. */
+  item_id?: number | null;
 }
 
 export interface RecollectionMission {
@@ -702,7 +706,7 @@ export interface CharacterDetail extends Character {
 
 export type RewardGrant =
   | { type: "item"; item_id: number; quantity: number }
-  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition" | "spirit_stone_customize" | "spirit_stone_exchange" | "trait_change">; amount: number };
+  | { type: "stat"; stat: Exclude<ItemEffectStat, "ap_reset" | "stat_reset" | "full_reset" | "grade_choice_1" | "grade_choice_2" | "challenge_acquisition" | "spirit_stone_customize" | "spirit_stone_exchange" | "trait_change" | "accessory_upgrade">; amount: number };
 
 export type ChallengeRewardItemGrant = RewardGrant;
 
