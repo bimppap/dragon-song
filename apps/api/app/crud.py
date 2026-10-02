@@ -5789,11 +5789,11 @@ def _skill_has_tier6_bonus(skill: dict) -> bool:
 
 
 def _owned_tier6_skill(skills: dict[int, dict], var_name: str) -> dict | None:
-    """[상시적용] 6단계 효과를 주는 보유 기술. 복제로 빌려 온 기술은 보유로 치지 않는다."""
+    """[상시적용] 6단계 효과를 주는 보유 기술. 6단계 기술을 복제해 저장했으면 그 효과도 따라온다."""
     return next(
         (
             skill for skill in skills.values()
-            if skill.get("var_name") == var_name and _skill_has_tier6_bonus(skill) and not skill.get("is_clone")
+            if skill.get("var_name") == var_name and _skill_has_tier6_bonus(skill)
         ),
         None,
     )
@@ -9308,10 +9308,9 @@ def resolve_battle_ally_turn(db: Session, session_id: int, data: BattleAllyTurnR
                     f"(1 + 피해 증폭 {_formula_number(damage_amp)})"
                 )
                 if strike_passive is not None:
-                    # [상시적용] 6단계 강타: 일반 공격 피해에 기술 등급 × 0.2를 더한 뒤 소수점을 버린다.
-                    strike_tier = int(strike_passive.get("tier") or 6)
-                    raw = round(raw + strike_tier * 0.2, 10)
-                    damage_formula += f" + 기술 등급 {strike_tier} × 0.2"
+                    # [상시적용] 6단계 강타: 일반 공격 피해가 120%가 된다(소수점 버림).
+                    raw = round(raw * 1.2, 10)
+                    damage_formula = f"{damage_formula} × 120%"
                 damage_formula = f"floor({damage_formula})"
             dmg = max(0, _floor_amount(raw))
 
@@ -10408,6 +10407,17 @@ def _is_distribution_trait(trait: Trait | None) -> bool:
     return bool(trait and (trait.rules or {}).get("kind") == "distribution")
 
 
+def _clone_source_character_ids(db: Session, cloner: Character) -> set[int]:
+    """cloner가 기술을 복제해 올 수 있는 캐릭터 id(자신 제외)."""
+    query = db.query(Character.id)
+    if cloner.member_id is not None:
+        # 러너 화면 캐릭터 목록(get_characters_visible_to_runner)과 같은 규칙이다.
+        query = query.outerjoin(Member, Character.member_id == Member.id).filter(
+            Member.role.in_(["RUNNER", "STAFF"]) | (Character.member_id.is_(None) & Character.is_public.is_(True))
+        )
+    return {character_id for (character_id,) in query.all()} - {cloner.id}
+
+
 def get_character_cloned_skills(db: Session, character_id: int) -> dict:
     """복제 슬롯 수와 저장된 아군 기술 목록을 돌려준다. 커서 툴팁·전투 표기에 쓴다."""
     character = db.get(Character, character_id)
@@ -10462,7 +10472,11 @@ def get_character_cloned_skills(db: Session, character_id: int) -> dict:
             ),
             "image_url": (unlock.custom_image_url if unlock else None) or node.image_url,
         })
-    return {"slot_count": slot_count, "slots": items}
+    return {
+        "slot_count": slot_count,
+        "slots": items,
+        "source_character_ids": sorted(_clone_source_character_ids(db, character)),
+    }
 
 
 def set_character_cloned_skills(db: Session, character_id: int, slots: list) -> dict:
@@ -10474,6 +10488,7 @@ def set_character_cloned_skills(db: Session, character_id: int, slots: list) -> 
     if slot_count <= 0:
         raise HTTPException(status_code=400, detail="복제 기술을 먼저 습득해야 합니다.")
 
+    allowed_sources = _clone_source_character_ids(db, character)
     seen_index: set[int] = set()
     normalized: list[tuple[int, int, int]] = []
     for slot in slots:
@@ -10485,6 +10500,8 @@ def set_character_cloned_skills(db: Session, character_id: int, slots: list) -> 
         seen_index.add(idx)
         if slot.source_character_id == character_id:
             raise HTTPException(status_code=400, detail="자신의 기술은 복제할 수 없습니다.")
+        if slot.source_character_id not in allowed_sources:
+            raise HTTPException(status_code=400, detail="이 캐릭터가 복제할 수 없는 캐릭터의 기술입니다.")
         node = db.get(SkillNode, slot.source_node_id)
         if node is None:
             raise HTTPException(status_code=404, detail="복제할 기술을 찾을 수 없습니다.")

@@ -65,8 +65,8 @@ class Tier6SkillEffectTest(unittest.TestCase):
     def test_strike_normal_attack_adds_tier_bonus_and_restores_mana(self):
         self.unlock(self.caster, "용맹의 서", 0, 0)
         result = self.ally_turn(self.battle(), CharacterActionInput(character_id=self.caster.id, kind="attack"))
-        # floor(10 + 6 × 0.2) = 11
-        self.assertEqual(result.enemies[0]["hp"], 989)
+        # floor(10 × 120%) = 12
+        self.assertEqual(result.enemies[0]["hp"], 988)
         self.assertEqual(result.participants[0]["mp"], 6)
 
     def test_crushing_marks_enemy_and_acts_before_same_order_valor_skill(self):

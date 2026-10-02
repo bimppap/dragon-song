@@ -1,11 +1,13 @@
 import unittest
 
+from fastapi import HTTPException
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app import crud
 from app.db import Base
-from app.models import BattleSession, Character, CharacterSkillUnlock, SkillNode
+from app.models import BattleSession, Character, CharacterSkillUnlock, Member, SkillNode
 from app.schemas import (
     BattleAllyTurnRequest,
     CharacterActionInput,
@@ -101,6 +103,39 @@ class CloneSkillTest(unittest.TestCase):
         self.assertEqual(crud.get_character_cloned_skills(self.db, self.cloner.id)["slots"], [])
         self.assertEqual(crud._query_active_battle_skills_by_character(self.db, [self.cloner.id]).get(self.cloner.id, {}), {})
         self.assertEqual(crud.set_character_cloned_skills(self.db, self.cloner.id, [])["slots"], [])
+
+    def test_admin_made_cloner_can_clone_any_character(self):
+        # 복제가·검사 모두 관리자가 만든 비공개 캐릭터다.
+        self.assertEqual(crud.get_character_cloned_skills(self.db, self.cloner.id)["source_character_ids"], [self.source.id])
+        self.assertEqual(len(self._store_slot()["slots"]), 1)
+
+    def test_runner_cloner_can_clone_only_runner_visible_characters(self):
+        member = Member(login_id="runner", password_hash="x", role="RUNNER")
+        self.db.add(member)
+        self.db.flush()
+        self.cloner.member_id = member.id
+        self.db.commit()
+        # 공개하지 않은 관리자 캐릭터는 고를 수 없다.
+        self.assertEqual(crud.get_character_cloned_skills(self.db, self.cloner.id)["source_character_ids"], [])
+        with self.assertRaises(HTTPException):
+            self._store_slot()
+        # 러너에게 공개하면 고를 수 있다.
+        self.source.is_public = True
+        self.db.commit()
+        self.assertEqual(crud.get_character_cloned_skills(self.db, self.cloner.id)["source_character_ids"], [self.source.id])
+        self.assertEqual(len(self._store_slot()["slots"]), 1)
+
+    def test_cloned_tier6_strike_passive_follows(self):
+        self.strike.tier = 6
+        self.db.commit()
+        self._store_slot()
+        battle = self._make_battle()
+        result = crud.resolve_battle_ally_turn(self.db, battle.id, BattleAllyTurnRequest(character_actions=[
+            CharacterActionInput(character_id=self.cloner.id, kind="attack", target_enemy_id=1),
+        ]))
+        # 복제한 6단계 강타의 [상시적용] 효과: 일반 공격 100 × 120% = 120, 마나 +1
+        self.assertEqual(result.enemies[0]["hp"], 2500 - 120)
+        self.assertEqual(result.participants[0]["mp"], 10)
 
     def test_store_and_read_back_slot(self):
         result = self._store_slot()

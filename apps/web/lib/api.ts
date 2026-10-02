@@ -2399,6 +2399,8 @@ export interface ClonedSkills {
   /** 복제 기술 depth만큼 늘어나는 저장 칸 수. 복제를 배우지 않았으면 0. */
   slot_count: number;
   slots: ClonedSkill[];
+  /** 이 캐릭터가 기술을 복제해 올 수 있는 캐릭터 id. 관리자가 만든 캐릭터는 모든 캐릭터, 러너 캐릭터는 러너에게 보이는 캐릭터. */
+  source_character_ids: number[];
 }
 
 export async function fetchClonedSkills(characterId: number): Promise<ClonedSkills> {

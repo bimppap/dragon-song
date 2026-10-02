@@ -1616,6 +1616,9 @@ class ClonedSkillRead(BaseModel):
 class ClonedSkillsRead(BaseModel):
     slot_count: int
     slots: list[ClonedSkillRead]
+    # 이 캐릭터가 기술을 복제해 올 수 있는 캐릭터. 관리자가 만든 캐릭터는 모든 캐릭터,
+    # 러너 캐릭터는 러너에게 보이는 캐릭터(러너·스텝 캐릭터와 공개된 관리자 캐릭터)다.
+    source_character_ids: list[int] = []
 
 
 class SkillCustomizationUpdate(BaseModel):

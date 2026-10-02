@@ -299,7 +299,7 @@ SKILL_BOOKS: dict[str, dict] = {
                     formula="((1+skill_lv)*skill_power)*(1+skill_eff_fixed)",
                     description="즉발성 피해를 주는 단순한 기술입니다.",
                     tier6_name="격류",
-                    tier6_effect="[상시적용] 일반 공격 시 마나 1 회복, 일반 공격 피해 + 기술 등급×0.2(최종값 소수점 버림).",
+                    tier6_effect="[상시적용] 일반 공격 시 마나 1 회복, 일반 공격 피해가 120%가 됩니다(최종값 소수점 버림).",
                 ),
                 "derived": _skill(
                     "주입", trigger_type="즉발형", category="복합", stackable=True, var_name="ab_enchant",
