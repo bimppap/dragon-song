@@ -4120,6 +4120,8 @@ BATTLE_ITEM_EFFECT_LABELS: dict[str, str] = {
     # 에너미 지속 디버프/하수인 약화가 고를 수 있는 능력치(EnemySkill.valid_combat_stat)는 전부 여기에 있어야
     # 로그에 raw 키(hp_regen_true 등)가 그대로 새어 나가지 않는다.
     "hp_regen_true": "체력 재생력(고정)", "hp_regen_fixed": "체력 재생력(비례, %)", "mp_regen": "마나 재생력",
+    # 전투 스냅샷 키(BATTLE_ITEM_EFFECT_KEYS의 값)도 강화 증폭 로그 등에 쓰이므로 함께 둔다.
+    "max_mp": "최대 MP", "shield": "보호막",
 }
 
 SKILL_LEVEL_SUFFIX_VAR_NAMES = {

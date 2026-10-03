@@ -403,12 +403,16 @@ function isEnemyDebuff(effect: BattleStatusEffect): boolean {
   return effect.affinity === "debuff" && (effect.color != null || /^(enemy|minion):/.test(effect.stack_source ?? ""));
 }
 
-// 전투 참가자의 최대치 능력치는 아이템 효과(hp_max·mp_max)와 키 이름이 달라 따로 이름을 붙인다.
-const BATTLE_POOL_STAT_LABELS: Record<string, string> = { max_hp: "최대 체력", max_mp: "최대 마나" };
+// 전투 스냅샷에만 있는 능력치 키. 참가자의 최대치·보호막은 아이템 효과(hp_max·mp_max·sh)와 키 이름이 다르고,
+// attack·damage_bonus는 에너미 능력치(저주 6단계·하수인 강화)다.
+const BATTLE_STAT_LABELS: Record<string, string> = {
+  max_hp: "최대 체력", max_mp: "최대 마나", shield: "보호막", attack: "공격력", damage_bonus: "피해량 증폭",
+};
+const BATTLE_PERCENT_STATS = new Set(["damage_bonus"]);
 
 function statModifierAmount(stat: string, totalDelta: number, stacks: number): StackAmount {
-  const percent = PERCENT_EFFECT_STATS.has(stat as ItemEffectStat);
-  const label = (BATTLE_POOL_STAT_LABELS[stat] ?? EFFECT_STAT_LABELS[stat] ?? stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
+  const percent = PERCENT_EFFECT_STATS.has(stat as ItemEffectStat) || BATTLE_PERCENT_STATS.has(stat);
+  const label = (BATTLE_STAT_LABELS[stat] ?? EFFECT_STAT_LABELS[stat] ?? stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
   return { label, value: totalDelta / Math.max(1, stacks), percent, signed: true, perStack: true };
 }
 
