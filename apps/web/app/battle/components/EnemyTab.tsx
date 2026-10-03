@@ -647,11 +647,6 @@ export default function EnemyTab() {
                       )}
                     </div>
                     <span className="font-semibold text-ivory">{enemy.name}</span>
-                    {enemy.chapter && (
-                      <span className="text-xs text-muted border border-line rounded px-1.5 py-0.5">
-                        {enemy.chapter}
-                      </span>
-                    )}
                   </div>
                   <div className="flex items-center gap-3 text-xs text-muted">
                     <span>HP {enemy.base_hp.toLocaleString()}</span>
