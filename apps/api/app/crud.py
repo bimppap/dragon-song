@@ -4528,7 +4528,11 @@ def _korean_subject_particle(name: str) -> str:
 
 
 def _snapshot_combatant(character: Character) -> dict:
-    max_hp = max(_floor_amount(character.hp_max * (1 + character.hp_max_p)), character.hp, 1)
+    max_hp = max(_floor_amount(character.hp_max * (1 + character.hp_max_p)), 1)
+    # 저장된 현재 체력은 최대 체력 보정(hp_max_p) 전 기준이므로, 전투에는 같은 비율로 옮긴다.
+    hp = (_rescale_battle_pool(character.hp, max(character.hp_max, 1), max_hp, health=True, overheal=True)
+          if character.hp > 0 else max_hp)
+    max_hp = max(max_hp, hp)
     return {
         "character_id": character.id,
         "trait_id": character.trait_id,
@@ -4550,7 +4554,7 @@ def _snapshot_combatant(character: Character) -> dict:
         "revive_hp": character.revive_hp, "act_time": character.act_time,
         # 주목도(attn)는 캐릭터 고정 스탯이 아니라 전투 중 행동으로 쌓이는 값이다. 전투/난입 시작 시 0에서 출발한다.
         "attn": 0, "presence": character.presence, "lv": character.lv,
-        "hp": min(character.hp, max_hp) if character.hp > 0 else max_hp,
+        "hp": hp,
         "max_hp": max_hp,
         "shield": (character.sh or 0) + (character.start_sh or 0),
         "mp": min(character.mp, character.mp_max), "max_mp": character.mp_max,

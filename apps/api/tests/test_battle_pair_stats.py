@@ -98,6 +98,14 @@ class BattlePairStatsTest(unittest.TestCase):
         self.db.refresh(self.moa)
         self.assertEqual(self.moa.hp, 30)
 
+    def test_max_hp_bonus_raises_current_hp_by_same_ratio_at_start(self):
+        self.moa.hp = self.moa.hp_max
+        self.db.commit()
+        result = self.start(paired=False)
+        moa, soa = self.participant(result, self.moa), self.participant(result, self.soa)
+        self.assertEqual((moa["hp"], moa["max_hp"]), (300, 300))  # 200/200 × 1.5
+        self.assertEqual((soa["hp"], soa["max_hp"]), (500, 1000))  # 400/800 × 1.25
+
     def test_zero_overheal_and_tiny_positive_health(self):
         for value, expected in [(0, 0), (2000, 200), (1, 1)]:
             with self.subTest(value=value):
@@ -151,7 +159,7 @@ class BattlePairStatsTest(unittest.TestCase):
         restored = crud.undo_last_turn(self.db, result.id)
         moa = self.participant(restored, self.moa)
         self.assertEqual((moa["faction"], moa["atk"], moa["max_hp"]), ("치유", 30, 500))
-        self.assertEqual(moa["hp"], 200)  # 스냅샷의 400/1000 비율 유지
+        self.assertEqual(moa["hp"], 250)  # 스냅샷의 500/1000 비율 유지
         self.assertEqual(moa["pair_source_character_id"], self.third.id)
 
     def test_join_fills_waiter_with_borrowed_stats(self):
@@ -246,7 +254,7 @@ class BattlePairStatsTest(unittest.TestCase):
             CharacterActionInput(character_id=self.moa.id, kind="item", item_id=potion.id),
             CharacterActionInput(character_id=self.soa.id, kind="item", item_id=potion.id),
         ]))
-        self.assertEqual(self.participant(resolved, self.moa)["hp"], 430)
+        self.assertEqual(self.participant(resolved, self.moa)["hp"], 530)
         usages = self.db.query(ItemUsage).all()
         self.assertEqual([(u.character_id, u.item_id) for u in usages], [(self.moa.id, potion.id)])
         state = self.db.query(CharacterItemState).filter_by(character_id=self.soa.id, item_id=potion.id).one()
