@@ -18,13 +18,16 @@ export function debuffStatText(skill: EnemySkill): string {
   return `${label} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}`;
 }
 
+/** 공격 스킬의 피격 디버프 문구. 디버프가 없으면 null. */
+export function onHitDebuffText(skill: EnemySkill): string | null {
+  if (!skill.on_hit_dot) return null;
+  const effect = skill.on_hit_effect ?? "dot";
+  const detail = effect === "stat" ? debuffStatText(skill) : `${ON_HIT_EFFECT_OPTIONS.find(([key]) => key === effect)?.[1]} ${skill.dot_damage ?? 1}`;
+  return `디버프 ${skill.dot_name || "지속 피해"} (${detail})`;
+}
+
 // 공격 스킬 요약: 피해율(0%면 생략)과 피격 디버프.
 export function attackSkillEffectParts(skill: EnemySkill): string[] {
-  const parts = skill.damage_percent ? [`피해 ${skill.damage_percent}%`] : [];
-  if (skill.on_hit_dot) {
-    const effect = skill.on_hit_effect ?? "dot";
-    const detail = effect === "stat" ? debuffStatText(skill) : `${ON_HIT_EFFECT_OPTIONS.find(([key]) => key === effect)?.[1]} ${skill.dot_damage ?? 1}`;
-    parts.push(`디버프 ${skill.dot_name || "지속 피해"} (${detail})`);
-  }
-  return parts;
+  const debuff = onHitDebuffText(skill);
+  return [...(skill.damage_percent ? [`피해 ${skill.damage_percent}%`] : []), ...(debuff ? [debuff] : [])];
 }

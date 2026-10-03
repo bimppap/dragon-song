@@ -72,6 +72,7 @@ import CafeActionImport from "./CafeActionImport";
 import { QuotedDescription } from "@/components/skill/SkillTreeGrid";
 import { skillBookAccent } from "@/components/skill/bookAccent";
 import EnemyAttackArrows, { enemyAttackColor, type EnemyAttackMark } from "./EnemyAttackArrows";
+import { debuffStatText, onHitDebuffText } from "./enemySkillText";
 import PixelBorderGlow from "./PixelBorderGlow";
 import { changedPairPartnerIds, reconcileBattlePairs, sameBattleCombatState, swapBattlePairMembers } from "@/lib/battlePairs";
 import {
@@ -391,7 +392,7 @@ function statusEffectBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
   return mergeSameStackBarItems([...grouped.values()].map(({ item, effect, delta }) => ({
     ...item,
     amounts: statusEffectAmounts(effect, delta, item.count),
-    note: statusEffectNote(effect, item.count),
+    note: statusEffectNote(effect),
   })));
 }
 
@@ -402,10 +403,13 @@ function isEnemyDebuff(effect: BattleStatusEffect): boolean {
   return effect.affinity === "debuff" && (effect.color != null || /^(enemy|minion):/.test(effect.stack_source ?? ""));
 }
 
-function statModifierAmount(stat: string, totalDelta: number): StackAmount {
+// 전투 참가자의 최대치 능력치는 아이템 효과(hp_max·mp_max)와 키 이름이 달라 따로 이름을 붙인다.
+const BATTLE_POOL_STAT_LABELS: Record<string, string> = { max_hp: "최대 체력", max_mp: "최대 마나" };
+
+function statModifierAmount(stat: string, totalDelta: number, stacks: number): StackAmount {
   const percent = PERCENT_EFFECT_STATS.has(stat as ItemEffectStat);
-  const label = (stat === "max_hp" ? "최대 체력" : EFFECT_STAT_LABELS[stat] ?? stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
-  return { label, value: totalDelta, percent, signed: true };
+  const label = (BATTLE_POOL_STAT_LABELS[stat] ?? EFFECT_STAT_LABELS[stat] ?? stat).replace(/\(%\)$/, "").replace(/, %\)$/, ")");
+  return { label, value: totalDelta / Math.max(1, stacks), percent, signed: true, perStack: true };
 }
 
 /**
@@ -414,39 +418,38 @@ function statModifierAmount(stat: string, totalDelta: number): StackAmount {
  * 효과 종류마다 실어 오는 값이 달라 각각 풀어 쓴다. totalDelta·stacks는 같은 출처로 묶은 합계다.
  */
 function statusEffectAmounts(effect: BattleStatusEffect, totalDelta: number, stacks: number): StackAmount[] {
-  const damage = (label: string, value: number): StackAmount[] => [{ label, value }];
-  // 스택마다 같은 값이 붙는 효과는 스택당 값을 보여주고, 종합에서만 개수를 곱한다.
+  // 줄은 "이름 (수치) × 개수"라 수치는 모두 스택 하나당 값으로 적고, 종합에서만 개수를 곱한다.
   const perStackDamage = (label: string, value: number): StackAmount[] => [{ label, value, perStack: true }];
-  const ratio = (label: string, value: number): StackAmount[] => [{ label, value, percent: true, signed: true }];
+  const ratio = (label: string, value: number): StackAmount[] => [{ label, value, percent: true, signed: true, perStack: true }];
   switch (effect.effect_type) {
     case "ongoing_damage":
       return effect.damage != null ? perStackDamage("턴마다 피해", effect.damage) : [];
     case "sparge_telegraph":
       return effect.damage != null ? perStackDamage("암시 턴마다 전체 피해", effect.damage) : [];
     case "escort_damage_reduction":
-      return effect.value != null ? ratio("피해 감소", effect.value * stacks) : [];
+      return effect.value != null ? ratio("피해 감소", effect.value) : [];
     case "counter":
       return effect.damage_reduction != null ? ratio("피해 감소", effect.damage_reduction) : [];
     case "outgoing_damage_bonus_once":
-      return effect.value != null ? ratio("다음 공격 피해 증폭", effect.value * stacks) : [];
+      return effect.value != null ? ratio("다음 공격 피해 증폭", effect.value) : [];
     case "outgoing_damage_penalty_once":
-      return effect.value != null ? ratio("다음 공격 피해 증폭", -effect.value * stacks) : [];
+      return effect.value != null ? ratio("다음 공격 피해 증폭", -effect.value) : [];
     case "incoming_damage_bonus_round":
-      return effect.value != null ? ratio("아군에게 받는 피해", effect.value * stacks) : [];
+      return effect.value != null ? ratio("아군에게 받는 피해", effect.value) : [];
     case "skill_eff_bonus_round":
       return [
-        ...(effect.value_fixed ? ratio("기술 효율(비례)", effect.value_fixed * stacks) : []),
-        ...(effect.value_true ? [{ label: "기술 효율(고정)", value: effect.value_true * stacks, signed: true }] : []),
+        ...(effect.value_fixed ? ratio("기술 효율(비례)", effect.value_fixed) : []),
+        ...(effect.value_true ? [{ label: "기술 효율(고정)", value: effect.value_true, signed: true, perStack: true }] : []),
       ];
     case "purification_guard":
-      return effect.damage_bonus_per_stack ? ratio("피해 증폭", effect.damage_bonus_per_stack * stacks) : [];
+      return effect.damage_bonus_per_stack ? ratio("피해 증폭", effect.damage_bonus_per_stack) : [];
     case "stat_modifier": {
       if (!effect.stat) return [];
       return [
-        statModifierAmount(effect.stat, totalDelta),
+        statModifierAmount(effect.stat, totalDelta, stacks),
         // 분출은 존재감과 함께 피격 시 반응 피해도 쌓인다.
         ...(effect.reaction === "eruption" && effect.skill_lv != null
-          ? damage("피격 시 전체 에너미 피해", effect.skill_lv * 5 * stacks)
+          ? perStackDamage("피격 시 전체 에너미 피해", effect.skill_lv * 5)
           : []),
       ];
     }
@@ -456,10 +459,10 @@ function statusEffectAmounts(effect: BattleStatusEffect, totalDelta: number, sta
 }
 
 /** 수치가 없는 효과는 대신 짧은 설명을 보여준다(합산 대상은 아니다). */
-function statusEffectNote(effect: BattleStatusEffect, stacks: number): string | undefined {
+function statusEffectNote(effect: BattleStatusEffect): string | undefined {
   if (effect.effect_type === "escort_guard") return "이번 턴 공격을 시전자가 대신 받음";
   if (effect.effect_type === "counter" && effect.counter_damage != null) return `반격 피해 ×${effect.counter_damage}`;
-  if (effect.effect_type === "purification_guard") return `약화 방지 ${stacks}스택`;
+  if (effect.effect_type === "purification_guard") return "약화 방지 1스택";
   return undefined;
 }
 
@@ -483,7 +486,7 @@ function enemyDebuffBarItems(effects: BattleStatusEffect[]): StackBarItem[] {
   return mergeSameStackBarItems([...grouped.values()].map(({ item, effect, delta }) => ({
     ...item,
     amounts: statusEffectAmounts(effect, delta, item.count),
-    note: statusEffectNote(effect, item.count),
+    note: statusEffectNote(effect),
   })));
 }
 
@@ -938,6 +941,27 @@ function enemySkillTrueDamage(skill: EnemySkill): number {
   return skill.on_hit_dot && skill.on_hit_effect === "true_damage" ? Math.max(1, skill.dot_damage ?? 1) : 0;
 }
 
+/** 에너미 공격 기술의 예상 피해(방어 계산 전). 즉사·지속 디버프·환경은 피해가 없다. */
+function enemySkillExpectedDamage(enemy: BattleEnemyState, skill: EnemySkill): { damage: number; trueDamage: number } {
+  if (skill.skill_type === "즉사" || skill.skill_type === "지속 디버프" || skill.skill_type === "환경") return { damage: 0, trueDamage: 0 };
+  return { damage: Math.floor((enemy.attack * skill.damage_percent) / 100), trueDamage: enemySkillTrueDamage(skill) };
+}
+
+function enemySkillEnvironmentText(skill: EnemySkill, environmentsById: Map<number, BattleSessionEnvironment>): string {
+  const environmentName = skill.environment_id != null
+    ? environmentsById.get(skill.environment_id)?.name ?? `환경 #${skill.environment_id}`
+    : "환경";
+  return `${environmentName} +${skill.environment_stack_count ?? 1}스택`;
+}
+
+/** 피해 말고 대상에게 남는 효과의 짧은 이름. 방어 무시 피해는 피해에 포함한다. */
+function enemySkillSideEffects(skill: EnemySkill, environmentsById: Map<number, BattleSessionEnvironment>): string[] {
+  if (skill.skill_type === "즉사") return ["강제 퇴각"];
+  if (skill.skill_type === "지속 디버프") return [debuffStatText(skill)];
+  if (skill.skill_type === "환경") return [enemySkillEnvironmentText(skill, environmentsById)];
+  return skill.on_hit_dot && skill.on_hit_effect !== "true_damage" ? [skill.dot_name || "지속 피해"] : [];
+}
+
 /** 에너미 공격 기술이 대상에게 주는 효과를 짧게 요약한다. */
 function enemySkillSummary(
   enemy: BattleEnemyState,
@@ -945,15 +969,14 @@ function enemySkillSummary(
   environmentsById: Map<number, BattleSessionEnvironment>,
 ): string {
   if (skill.skill_type === "즉사") return "행동 암시 시 강제 퇴각";
-  if (skill.skill_type === "지속 디버프") return "지속 디버프";
-  if (skill.skill_type === "환경") {
-    const environmentName = skill.environment_id != null
-      ? environmentsById.get(skill.environment_id)?.name ?? `환경 #${skill.environment_id}`
-      : "환경";
-    return `${environmentName} +${skill.environment_stack_count ?? 1}스택`;
-  }
-  const trueDamage = enemySkillTrueDamage(skill);
-  return `예상 피해 ${fmt(Math.floor((enemy.attack * skill.damage_percent) / 100))}${trueDamage ? ` + 방어 무시 ${fmt(trueDamage)}` : ""}`;
+  if (skill.skill_type === "지속 디버프") return debuffStatText(skill);
+  if (skill.skill_type === "환경") return enemySkillEnvironmentText(skill, environmentsById);
+  const { damage, trueDamage } = enemySkillExpectedDamage(enemy, skill);
+  const debuff = skill.on_hit_effect !== "true_damage" ? onHitDebuffText(skill) : null;
+  const damageText = skill.damage_percent || !debuff
+    ? `예상 피해 ${fmt(damage)}${trueDamage ? ` + 방어 무시 ${fmt(trueDamage)}` : ""}`
+    : trueDamage ? `방어 무시 ${fmt(trueDamage)}` : "";
+  return [damageText, debuff].filter(Boolean).join(" · ");
 }
 
 interface TargetOption {
@@ -2034,6 +2057,8 @@ export default function BattleArena({ sessionId, readOnly = false, hideReadOnlyN
         actionNumber: index + 1,
         skillName: skill.name,
         summary: enemySkillSummary(enemy, skill, environmentsById),
+        ...enemySkillExpectedDamage(enemy, skill),
+        sideEffects: enemySkillSideEffects(skill, environmentsById),
         color: enemyAttackColor(order, attacks.length),
       };
       colorByAction.set(mark.key, mark.color);
