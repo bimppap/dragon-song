@@ -26,6 +26,7 @@ import {
 import { useToast } from "@/components/common/ToastProvider";
 import CharacterAvatar from "@/components/common/CharacterAvatar";
 import EmptyState from "@/components/common/EmptyState";
+import { attackSkillEffectParts, debuffStatText } from "./enemySkillText";
 import { useDialog } from "@/components/common/DialogProvider";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
 import BattleArena from "./BattleArena";
@@ -500,8 +501,8 @@ export default function BattleTab() {
                                       : skill.skill_type === "환경"
                                         ? `${skill.environment_id != null ? environmentsById.get(skill.environment_id)?.name ?? `환경 #${skill.environment_id}` : "환경"} · ${numberFormatter.format(skill.environment_stack_count ?? 1)}스택 부여 · ${skill.manual_target_count ? "수동 지정" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`}`
                                         : skill.skill_type === "지속 디버프"
-                                          ? `${skill.manual_target_count ? "수동 지정" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} · 지속 디버프`
-                                          : `${skill.manual_target_count ? "수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} · 피해 ${numberFormatter.format(skill.damage_percent)}%`}
+                                          ? `${skill.manual_target_count ? "수동 지정" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`} · ${debuffStatText(skill)}`
+                                          : [skill.manual_target_count ? "수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `대상 ${numberFormatter.format(skill.target_count)}명 · ${skill.auto_target_mode === "random" ? "무작위" : "주목도 순"}`, ...attackSkillEffectParts(skill)].join(" · ")}
                                   </p>
                                 </div>
                               ))}
@@ -520,7 +521,7 @@ export default function BattleTab() {
             <CardHeader className="flex flex-row items-start justify-between gap-3">
               <div>
                 <CardTitle>캐릭터 선택</CardTitle>
-                <CardDescription>전투에 참여할 캐릭터를 선택하세요. 진영 구성에 따라 에너미 체력이 증가합니다.</CardDescription>
+                <CardDescription>전투에 참여할 캐릭터를 선택하세요.</CardDescription>
               </div>
               <Button
                 type="button"
