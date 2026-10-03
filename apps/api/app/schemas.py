@@ -1081,9 +1081,6 @@ class EnemyCreate(BaseModel):
     name: str
     chapter: str | None = None
     base_hp: int = Field(ge=0)
-    hp_per_attacker: int = Field(default=0, ge=0)
-    hp_per_defender: int = Field(default=0, ge=0)
-    hp_per_healer: int = Field(default=0, ge=0)
     attack: int = Field(ge=0)
     skills: list[EnemySkill] = Field(default_factory=list)
 
@@ -1095,9 +1092,6 @@ class EnemyRead(BaseModel):
     chapter: str | None
     image_url: str | None = None
     base_hp: int
-    hp_per_attacker: int
-    hp_per_defender: int
-    hp_per_healer: int
     attack: int
     skills: list[EnemySkill]
     created_at: datetime

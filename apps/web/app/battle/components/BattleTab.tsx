@@ -109,18 +109,6 @@ function countSelectedParty(characters: Character[], selectedCharacterIds: Set<n
   }, { attackers: 0, defenders: 0, healers: 0 });
 }
 
-function getEnemyFinalStats(enemy: Enemy, partyCounts: PartyCounts) {
-  const bonusHp =
-    partyCounts.attackers * enemy.hp_per_attacker
-    + partyCounts.defenders * enemy.hp_per_defender
-    + partyCounts.healers * enemy.hp_per_healer;
-
-  return {
-    bonusHp,
-    finalHp: enemy.base_hp + bonusHp,
-  };
-}
-
 function getCharacterNameFontSize(name: string): number {
   return Math.min(14, 132 / Math.max(1, Array.from(name).length));
 }
@@ -455,7 +443,6 @@ export default function BattleTab() {
               ) : (
                 <div className="grid gap-4 xl:grid-cols-2">
                   {currentChapterEnemies.map((enemy) => {
-                    const { bonusHp, finalHp } = getEnemyFinalStats(enemy, selectedPartyCounts);
                     const checked = selectedEnemyIds.has(enemy.id);
 
                     return (
@@ -484,34 +471,14 @@ export default function BattleTab() {
                             </div>
                             <div className="grid gap-2 text-sm sm:grid-cols-2">
                               <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
-                                <p className="text-xs text-muted">기본 HP</p>
-                                <p className="font-num font-semibold text-ivory">{numberFormatter.format(enemy.base_hp)}</p>
-                              </div>
-                              <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
-                                <p className="text-xs text-muted">최종 HP</p>
-                                <p className="font-num font-semibold text-gold">{numberFormatter.format(finalHp)}</p>
-                              </div>
-                              <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
-                                <p className="text-xs text-muted">파티 보정 HP</p>
-                                <p className="font-num font-semibold text-ivory">{bonusHp > 0 ? `+${numberFormatter.format(bonusHp)}` : "0"}</p>
+                                <p className="text-xs text-muted">HP</p>
+                                <p className="font-num font-semibold text-gold">{numberFormatter.format(enemy.base_hp)}</p>
                               </div>
                               <div className="rounded-lg border border-line bg-inset/40 px-3 py-2">
                                 <p className="text-xs text-muted">공격력</p>
                                 <p className="font-num font-semibold text-ivory">{numberFormatter.format(enemy.attack)}</p>
                               </div>
                             </div>
-                          </div>
-                        </div>
-
-                        <div className="grid gap-2 text-xs text-muted sm:grid-cols-3">
-                          <div className="rounded-lg border border-line bg-inset/30 px-3 py-2">
-                            공격 러너당 +{numberFormatter.format(enemy.hp_per_attacker)} HP
-                          </div>
-                          <div className="rounded-lg border border-line bg-inset/30 px-3 py-2">
-                            수비 러너당 +{numberFormatter.format(enemy.hp_per_defender)} HP
-                          </div>
-                          <div className="rounded-lg border border-line bg-inset/30 px-3 py-2">
-                            치유 러너당 +{numberFormatter.format(enemy.hp_per_healer)} HP
                           </div>
                         </div>
 

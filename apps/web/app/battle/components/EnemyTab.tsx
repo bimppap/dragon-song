@@ -150,9 +150,6 @@ type EnemyFormState = {
   name: string;
   chapter: string;
   base_hp: string;
-  hp_per_attacker: string;
-  hp_per_defender: string;
-  hp_per_healer: string;
   attack: string;
   skills: SkillFormEntry[];
 };
@@ -181,9 +178,6 @@ const DEFAULT_FORM: EnemyFormState = {
   name: "",
   chapter: "",
   base_hp: "0",
-  hp_per_attacker: "0",
-  hp_per_defender: "0",
-  hp_per_healer: "0",
   attack: "0",
   skills: [{ ...EMPTY_SKILL }],
 };
@@ -220,9 +214,6 @@ function toPayload(form: EnemyFormState): EnemyCreate {
     name: form.name.trim(),
     chapter: form.chapter.trim() || null,
     base_hp: parsePositiveInt(form.base_hp),
-    hp_per_attacker: parsePositiveInt(form.hp_per_attacker),
-    hp_per_defender: parsePositiveInt(form.hp_per_defender),
-    hp_per_healer: parsePositiveInt(form.hp_per_healer),
     attack: parsePositiveInt(form.attack),
     skills,
   };
@@ -234,9 +225,6 @@ function enemyToForm(enemy: Enemy): EnemyFormState {
     name: enemy.name,
     chapter: enemy.chapter ?? "",
     base_hp: String(enemy.base_hp),
-    hp_per_attacker: String(enemy.hp_per_attacker),
-    hp_per_defender: String(enemy.hp_per_defender),
-    hp_per_healer: String(enemy.hp_per_healer),
     attack: String(enemy.attack),
     skills: enemy.skills.length > 0
       ? enemy.skills.map((s) => ({
@@ -709,14 +697,6 @@ export default function EnemyTab() {
                   </div>
                 </div>
 
-                {(enemy.hp_per_attacker > 0 || enemy.hp_per_defender > 0 || enemy.hp_per_healer > 0) && (
-                  <div className="flex gap-3 text-xs text-muted">
-                    {enemy.hp_per_attacker > 0 && <span>공격 인원당 +{enemy.hp_per_attacker.toLocaleString()} HP</span>}
-                    {enemy.hp_per_defender > 0 && <span>수비 인원당 +{enemy.hp_per_defender.toLocaleString()} HP</span>}
-                    {enemy.hp_per_healer > 0 && <span>치유 인원당 +{enemy.hp_per_healer.toLocaleString()} HP</span>}
-                  </div>
-                )}
-
                 <div className="flex flex-col gap-1.5">
                   {enemy.skills.map((skill, idx) => (
                     <div key={idx} className="flex flex-wrap items-center gap-2 text-sm">
@@ -1024,19 +1004,6 @@ export default function EnemyTab() {
               <Input id="enemy-action-count" type="number" min={1} step={1} required value={form.action_count}
                 onChange={(e) => setField("action_count", e.target.value)} aria-describedby="enemy-action-count-help" />
               <p id="enemy-action-count-help" className="text-xs text-muted">1 이상의 정수. 암시 턴에 이 횟수만큼 스킬을 실행 순서대로 선택합니다.</p>
-            </div>
-            <p className="text-xs font-semibold text-muted">인원당 증가 체력</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                { key: "hp_per_attacker" as const, label: "공격 인원" },
-                { key: "hp_per_defender" as const, label: "수비 인원" },
-                { key: "hp_per_healer" as const, label: "치유 인원" },
-              ].map(({ key, label }) => (
-                <div key={key} className="flex flex-col gap-1.5">
-                  <label className="text-xs font-semibold text-ivory/85">{label}</label>
-                  <Input type="number" min={0} value={form[key]} onChange={(e) => setField(key, e.target.value)} placeholder="0" />
-                </div>
-              ))}
             </div>
           </div>
 

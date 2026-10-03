@@ -1688,9 +1688,6 @@ export interface Enemy {
   chapter: string | null;
   image_url: string | null;
   base_hp: number;
-  hp_per_attacker: number;
-  hp_per_defender: number;
-  hp_per_healer: number;
   attack: number;
   skills: EnemySkill[];
   created_at: string;
@@ -1701,9 +1698,6 @@ export interface EnemyCreate {
   name: string;
   chapter: string | null;
   base_hp: number;
-  hp_per_attacker: number;
-  hp_per_defender: number;
-  hp_per_healer: number;
   attack: number;
   skills: EnemySkill[];
 }

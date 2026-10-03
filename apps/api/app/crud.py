@@ -3970,9 +3970,6 @@ def _to_enemy_read(enemy: Enemy) -> EnemyRead:
         chapter=enemy.chapter,
         image_url=enemy.image_url,
         base_hp=enemy.base_hp,
-        hp_per_attacker=enemy.hp_per_attacker,
-        hp_per_defender=enemy.hp_per_defender,
-        hp_per_healer=enemy.hp_per_healer,
         attack=enemy.attack,
         action_count=enemy.action_count,
         skills=_enemy_skill_models(enemy.skills),
@@ -4006,9 +4003,6 @@ def create_enemy(db: Session, data: EnemyCreate) -> EnemyRead:
         name=data.name.strip(),
         chapter=data.chapter.strip() if data.chapter else None,
         base_hp=data.base_hp,
-        hp_per_attacker=data.hp_per_attacker,
-        hp_per_defender=data.hp_per_defender,
-        hp_per_healer=data.hp_per_healer,
         attack=data.attack,
         action_count=data.action_count,
         skills=[s.model_dump() for s in data.skills],
@@ -4027,9 +4021,6 @@ def update_enemy(db: Session, enemy_id: int, data: EnemyCreate) -> EnemyRead:
     enemy.name = data.name.strip()
     enemy.chapter = data.chapter.strip() if data.chapter else None
     enemy.base_hp = data.base_hp
-    enemy.hp_per_attacker = data.hp_per_attacker
-    enemy.hp_per_defender = data.hp_per_defender
-    enemy.hp_per_healer = data.hp_per_healer
     enemy.attack = data.attack
     enemy.action_count = data.action_count
     enemy.skills = [s.model_dump() for s in data.skills]
@@ -5935,21 +5926,13 @@ def _build_protect_map(participants: list[dict]) -> dict[int, int]:
     return protect_map
 
 
-def _snapshot_enemy(enemy: Enemy, party: list[Character]) -> dict:
-    hp = enemy.base_hp
-    for c in party:
-        if c.faction == "공격":
-            hp += enemy.hp_per_attacker
-        elif c.faction == "수비":
-            hp += enemy.hp_per_defender
-        elif c.faction == "치유":
-            hp += enemy.hp_per_healer
+def _snapshot_enemy(enemy: Enemy) -> dict:
     return {
         "enemy_id": enemy.id,
         "name": enemy.name,
         "attack": enemy.attack,
-        "hp": hp,
-        "max_hp": hp,
+        "hp": enemy.base_hp,
+        "max_hp": enemy.base_hp,
         "action_count": enemy.action_count,
         "skills": _normalized_enemy_skill_payloads(enemy.skills),
         "joined_round": 0,
@@ -7117,7 +7100,7 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
     participants = [_snapshot_combatant(c) for c in characters]
     if data.pair_battle:
         participants = _apply_battle_pair_stats(participants, pairs, initial=True)
-    _sync_battle_traits(db, participants, [_snapshot_enemy(e, characters) for e in enemies_db], [], initial=True)
+    _sync_battle_traits(db, participants, [_snapshot_enemy(e) for e in enemies_db], [], initial=True)
     start_events = _apply_anvil_start_attention(db, participants)
     session = BattleSession(
         mode=data.mode,
@@ -7126,7 +7109,7 @@ def start_battle(db: Session, member: Member, data: BattleStartRequest) -> Battl
         chapter=enemies_db[0].chapter,
         status="in_progress",
         round=1,
-        enemies=[_snapshot_enemy(e, characters) for e in enemies_db],
+        enemies=[_snapshot_enemy(e) for e in enemies_db],
         summons=[],
         participants=participants,
         log=[{"round": 1, "phase": None, "kind": "start", "events": start_events}] if start_events else [],
@@ -7325,9 +7308,7 @@ def join_battle_enemy(db: Session, session_id: int, data: BattleEnemyJoinRequest
     if any(e["enemy_id"] == enemy.id for e in enemies):
         raise HTTPException(status_code=400, detail="이미 전투에 참여 중인 에너미입니다.")
 
-    character_ids = [p["character_id"] for p in session.participants]
-    party = db.query(Character).filter(Character.id.in_(character_ids)).all() if character_ids else []
-    snapshot = _snapshot_enemy(enemy, party)
+    snapshot = _snapshot_enemy(enemy)
     snapshot["joined_round"] = session.round
     enemies.append(snapshot)
     session.enemies = enemies
