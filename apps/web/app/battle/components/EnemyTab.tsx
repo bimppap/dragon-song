@@ -77,6 +77,22 @@ const ON_HIT_EFFECT_HELP: Record<EnemyOnHitEffect, string> = {
   true_damage: "피격 즉시 스킬 피해와 별개로, 맞은 캐릭터의 방어력과 피해 감소를 무시하는 고정 피해를 줍니다. 보호막은 먼저 흡수합니다.",
 };
 
+function debuffStatText(skill: EnemySkill): string {
+  const label = EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat;
+  return `${label} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}`;
+}
+
+// 에너미 카드의 공격 스킬 요약: 피해율(0%면 생략)과 피격 디버프.
+function attackSkillEffectParts(skill: EnemySkill): string[] {
+  const parts = skill.damage_percent ? [`피해 ${skill.damage_percent}%`] : [];
+  if (skill.on_hit_dot) {
+    const effect = skill.on_hit_effect ?? "dot";
+    const detail = effect === "stat" ? debuffStatText(skill) : `${ON_HIT_EFFECT_OPTIONS.find(([key]) => key === effect)?.[1]} ${skill.dot_damage ?? 1}`;
+    parts.push(`디버프 ${skill.dot_name || "지속 피해"} (${detail})`);
+  }
+  return parts;
+}
+
 function SettingSelect({ label, value, options, onChange }: { label: string; value: string; options: string[][]; onChange: (value: string) => void }) {
   return <div className="flex min-w-0 flex-col gap-1.5 text-xs text-ivory/85">
     <span>{label}</span>
@@ -724,7 +740,10 @@ export default function EnemyTab() {
                         </span>
                       ) : (
                         <span className="text-muted">
-                          {skill.skill_type === "포지션 광역 공격" ? "지정 포지션 전원 대상" : skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${ENEMY_AUTO_TARGET_MODE_LABELS[skill.auto_target_mode ?? "attention"]}`} / {skill.skill_type === "즉사" ? "행동 암시 시 강제 퇴각" : skill.skill_type === "지속 디버프" ? `${EFFECT_STATS.find(([key]) => key === skill.debuff_stat)?.[1] ?? skill.debuff_stat} ${skill.debuff_direction === "increase" ? "+" : "-"}${skill.debuff_amount} · ${skill.debuff_stackable ? "중첩 허용" : "중첩 불가"}` : `피해 ${skill.damage_percent}%`}
+                          {[
+                            skill.skill_type === "포지션 광역 공격" ? "지정 포지션 전원 대상" : skill.manual_target_count ? "타겟 수동 지정" : skill.skill_type === "광역 공격" ? "아군 전원 대상" : `타겟 ${skill.target_count}명 · ${ENEMY_AUTO_TARGET_MODE_LABELS[skill.auto_target_mode ?? "attention"]}`,
+                            ...(skill.skill_type === "즉사" ? ["행동 암시 시 강제 퇴각"] : skill.skill_type === "지속 디버프" ? [debuffStatText(skill)] : attackSkillEffectParts(skill)),
+                          ].join(" / ")}
                         </span>
                       )}
                         </>;
