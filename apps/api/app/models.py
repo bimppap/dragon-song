@@ -100,7 +100,7 @@ class Member(Base):
 
 
 class RefreshToken(Base):
-    """7일짜리 refresh token. 로그아웃/재발급 시 revoked_at을 채워 무효화한다."""
+    """마지막 사용 후 7일까지 유효한 refresh token. 재발급에 쓸 때마다 만료를 연장하고, 로그아웃 시 revoked_at을 채워 무효화한다."""
 
     __tablename__ = "refresh_tokens"
 

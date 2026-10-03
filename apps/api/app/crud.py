@@ -375,7 +375,7 @@ def issue_refresh_token(db: Session, member_id: int) -> str:
 
 def _get_valid_refresh_token(db: Session, token: str) -> RefreshToken:
     row = db.query(RefreshToken).filter(RefreshToken.token == token).first()
-    if not row or row.revoked_at is not None or row.expires_at < now_kst():
+    if not row or row.revoked_at is not None or _as_kst(row.expires_at) < now_kst():
         raise HTTPException(status_code=401, detail="유효하지 않거나 만료된 refresh token입니다.")
     return row
 
@@ -385,6 +385,10 @@ def refresh_access_token(db: Session, token: str) -> str:
     member = db.get(Member, row.member_id)
     if not member:
         raise HTTPException(status_code=401, detail="회원을 찾을 수 없습니다.")
+    # 쓰는 동안에는 만료를 뒤로 미룬다. 마지막 사용 후 7일 동안 접속하지 않아야 만료된다.
+    # (토큰을 새로 바꾸면 같은 토큰을 쓰는 다른 탭의 동시 재발급이 거부되므로 토큰은 그대로 둔다.)
+    row.expires_at = now_kst() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
+    db.commit()
     return create_access_token(member.id)
 
 
