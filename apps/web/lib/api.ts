@@ -18,7 +18,7 @@ function notifySessionExpired() {
 // 동시에 여러 요청이 401을 받아도 재발급은 한 번만 일어나도록 진행 중인 시도를 공유한다.
 let refreshInFlight: Promise<boolean> | null = null;
 
-async function tryRefreshAccessToken(): Promise<boolean> {
+export async function tryRefreshAccessToken(): Promise<boolean> {
   if (!refreshInFlight) {
     refreshInFlight = (async () => {
       const refreshToken = getRefreshToken();

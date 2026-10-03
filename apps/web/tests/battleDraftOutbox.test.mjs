@@ -57,7 +57,7 @@ test('socket waits for snapshot, retransmits interrupted writes and clears them 
     sent = [];
     constructor() { sockets.push(this); }
     send(data) { this.sent.push(JSON.parse(data)); }
-    close() { this.readyState = 3; this.onclose?.(); }
+    close(code = 1000) { this.readyState = 3; this.onclose?.({ code }); }
     receive(data) { this.onmessage({ data: JSON.stringify(data) }); }
   }
   const react = {
@@ -66,7 +66,8 @@ test('socket waits for snapshot, retransmits interrupted writes and clears them 
     useEffectEvent: (callback) => callback, useEffect: (effect) => effects.push(effect),
   };
   const { useBattleSocket } = load('useBattleSocket.ts', {
-    react, '@/lib/token': { getToken: () => 'token' }, './battleDraftOutbox': outboxModule,
+    react, '@/lib/token': { getToken: () => 'token' }, '@/lib/api': { tryRefreshAccessToken: async () => true },
+    './battleDraftOutbox': outboxModule,
   }, { process: { env: {} }, WebSocket: Socket, setTimeout: (fn) => timers.push(fn), clearTimeout: () => {} });
   const hook = useBattleSocket(1, (message) => received.push(message));
   const cleanup = effects[0]();
@@ -88,6 +89,41 @@ test('socket waits for snapshot, retransmits interrupted writes and clears them 
   second.receive({ ...echo(second.sent[0]), editor_client_id: hook.clientId });
   second.receive(snapshot());
   assert.equal(second.sent.length, 1);
+  cleanup();
+});
+
+test('socket refreshes an expired access token before reconnecting', async () => {
+  const effects = [], sockets = [], timers = [];
+  let token = 'expired', refreshes = 0;
+  class Socket {
+    static OPEN = 1;
+    readyState = 1;
+    constructor(url) { this.url = url; sockets.push(this); }
+    send() {}
+    close(code = 1000) { this.readyState = 3; this.onclose?.({ code }); }
+  }
+  const react = {
+    useState: (initial) => [typeof initial === 'function' ? initial() : initial, () => {}],
+    useRef: (current) => ({ current }), useCallback: (callback) => callback,
+    useEffectEvent: (callback) => callback, useEffect: (effect) => effects.push(effect),
+  };
+  const { useBattleSocket } = load('useBattleSocket.ts', {
+    react, '@/lib/token': { getToken: () => token },
+    '@/lib/api': { tryRefreshAccessToken: async () => { refreshes += 1; token = 'fresh'; return true; } },
+    './battleDraftOutbox': outboxModule,
+  }, { process: { env: {} }, WebSocket: Socket, setTimeout: (fn) => timers.push(fn), clearTimeout: () => {} });
+  useBattleSocket(1, () => {});
+  const cleanup = effects[0]();
+  sockets[0].close(4401);
+  assert.equal(timers.length, 0);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(refreshes, 1);
+  timers.shift()();
+  assert.match(sockets[1].url, /token=fresh/);
+  // 일반 끊김은 재발급 없이 다시 붙는다.
+  sockets[1].close();
+  assert.equal(timers.length, 1);
+  assert.equal(refreshes, 1);
   cleanup();
 });
 

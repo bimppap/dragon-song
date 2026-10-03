@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useEffectEvent, useRef, useState } from "react";
 import { BattleDraftOutbox } from "./battleDraftOutbox";
 import { getToken } from "@/lib/token";
-import type { BattleSession, CharacterActionKind, SkillBook } from "@/lib/api";
+import { tryRefreshAccessToken, type BattleSession, type CharacterActionKind, type SkillBook } from "@/lib/api";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+// 서버(battle_ws)가 토큰 검증에 실패했을 때 닫는 코드.
+const WS_UNAUTHORIZED_CLOSE_CODE = 4401;
 
 /** 확정 전 초안 미리보기 페이로드. 카드 표시에 필요한 값(기술/아이템 아이콘, 행동 대상)만 담는다. */
 export interface BattleDraftPreviewEntry {
@@ -127,13 +129,23 @@ export function useBattleSocket(sessionId: number | null, onMessage: (msg: Battl
           // 잘못된 메시지는 무시한다.
         }
       };
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         if (cancelled || wsRef.current !== ws) return;
         readyVersionRef.current = null;
         setConnectedSessionId(null);
-        const delay = Math.min(1000 * 2 ** attemptRef.current, 15000) + Math.random() * 500;
-        attemptRef.current += 1;
-        timer = setTimeout(connect, delay);
+        const scheduleReconnect = () => {
+          if (cancelled || wsRef.current !== ws) return;
+          const delay = Math.min(1000 * 2 ** attemptRef.current, 15000) + Math.random() * 500;
+          attemptRef.current += 1;
+          timer = setTimeout(connect, delay);
+        };
+        // 4401: 액세스 토큰 만료. 같은 토큰으로는 다시 붙을 수 없으니 재발급받은 뒤 재연결한다.
+        // refresh token까지 거부되면 API 계층이 로그아웃시키고 토큰이 없어져 connect가 멈춘다.
+        if (event.code === WS_UNAUTHORIZED_CLOSE_CODE) {
+          void tryRefreshAccessToken().then(scheduleReconnect);
+          return;
+        }
+        scheduleReconnect();
       };
       ws.onerror = () => ws.close();
     }
