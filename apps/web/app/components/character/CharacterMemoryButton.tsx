@@ -9,8 +9,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { fetchCharacterSkillTree, type CharacterDetail, type SkillBook } from "@/lib/api";
 import { deepestLearnedSkill } from "@/lib/skillProgression";
 import {
-  MEMORY_BACKGROUND_SIZE, MEMORY_HEIGHT, MEMORY_OVERLAY, MEMORY_THEMES, MEMORY_TITLES, MEMORY_WIDTH, renderCharacterMemory,
-  type MemoryTheme,
+  MEMORY_BACKGROUND_SIZE, MEMORY_GLASSES, MEMORY_HEIGHT, MEMORY_OVERLAY, MEMORY_THEMES, MEMORY_TITLES, MEMORY_WIDTH,
+  renderCharacterMemory, type MemoryGlass, type MemoryTheme,
 } from "./characterMemoryImage";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
@@ -35,7 +35,8 @@ export default function CharacterMemoryButton({ character }: { character: Charac
   useEffect(() => () => { if (backgroundUrl) URL.revokeObjectURL(backgroundUrl); }, [backgroundUrl]);
 
   // 슬라이더를 움직이는 동안 매번 다시 그리지 않도록, 손을 멈춘 뒤의 값으로만 그린다.
-  const [overlay, setOverlay] = useState(MEMORY_OVERLAY.default);
+  const [glass, setGlass] = useState<MemoryGlass>("dark");
+  const [overlay, setOverlay] = useState(MEMORY_OVERLAY.defaults.dark);
   const [appliedOverlay, setAppliedOverlay] = useState(overlay);
   useEffect(() => {
     const timer = setTimeout(() => setAppliedOverlay(overlay), 250);
@@ -57,6 +58,7 @@ export default function CharacterMemoryButton({ character }: { character: Charac
           theme,
           backgroundImage: backgroundUrl,
           overlay: appliedOverlay,
+          glass,
         });
         if (cancelled) return;
         url = URL.createObjectURL(blob);
@@ -69,7 +71,7 @@ export default function CharacterMemoryButton({ character }: { character: Charac
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [open, character, titleImage, theme, backgroundUrl, appliedOverlay]);
+  }, [open, character, titleImage, theme, backgroundUrl, appliedOverlay, glass]);
 
   function openModal() {
     setImageUrl(null);
@@ -89,6 +91,13 @@ export default function CharacterMemoryButton({ character }: { character: Charac
     setImageUrl(null);
     setError(null);
     setTheme(value);
+  }
+
+  function changeGlass(value: MemoryGlass) {
+    setGlass(value);
+    // 유리 색과 기본 진하기를 한 번에 반영해, 기다렸다가 한 번 더 그리지 않게 한다.
+    setOverlay(MEMORY_OVERLAY.defaults[value]);
+    setAppliedOverlay(MEMORY_OVERLAY.defaults[value]);
   }
 
   function changeBackground(file: File | null) {
@@ -162,8 +171,22 @@ export default function CharacterMemoryButton({ character }: { character: Charac
             </Button>
           )}
           {backgroundUrl && (
+            <Select value={glass} onValueChange={(value) => changeGlass(value as MemoryGlass)}>
+              <SelectTrigger className="h-8 w-32" aria-label="카드 유리 색">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectGroup>
+                  {MEMORY_GLASSES.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          )}
+          {backgroundUrl && (
             <label className="flex items-center gap-2 text-sm text-muted">
-              배경 어둡기
+              {glass === "dark" ? "배경 어둡기" : "배경 밝기"}
               <input
                 type="range"
                 min={MEMORY_OVERLAY.min}

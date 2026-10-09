@@ -79,11 +79,30 @@ const LIGHT: Palette = {
   textHalo: null,
 };
 
-/** "직접 등록" 테마의 배경 어둡기 기본값과 범위(테두리 안쪽을 덮는 막의 불투명도). */
-export const MEMORY_OVERLAY = { default: 0.3, min: 0, max: 0.8, step: 0.05 };
+/** "직접 등록" 테마에서 배경 위를 덮는 막(유리)의 색. */
+export type MemoryGlass = "dark" | "light";
 
-/** 직접 등록한 배경 위: 어두운 테마를 바탕으로 테두리 안쪽을 overlay만큼, 카드는 그보다 조금 더 진하게 덮는다. */
-function customPalette(overlay: number): Palette {
+/** 막 진하기(테두리 안쪽을 덮는 막의 불투명도)의 범위와 유리 색별 기본값.
+ *  밝은 유리는 글씨가 어두워, 어두운 배경에서도 읽히도록 기본값을 더 진하게 둔다. */
+export const MEMORY_OVERLAY = { min: 0, max: 0.8, step: 0.05, defaults: { dark: 0.3, light: 0.5 } as Record<MemoryGlass, number> };
+
+export const MEMORY_GLASSES: { value: MemoryGlass; label: string }[] = [
+  { value: "dark", label: "어두운 유리" },
+  { value: "light", label: "밝은 유리" },
+];
+
+/** 직접 등록한 배경 위: 어두운/밝은 테마를 바탕으로 테두리 안쪽을 overlay만큼, 카드는 그보다 조금 더 진하게 덮는다.
+ *  밝은 유리는 글씨가 어두워 배경이 비치면 덜 읽히므로 카드를 조금 더 진하게 덮는다. */
+function customPalette(overlay: number, glass: MemoryGlass): Palette {
+  if (glass === "light") {
+    return {
+      ...LIGHT,
+      line: "rgba(42, 51, 46, 0.16)",
+      frame: `rgba(255, 253, 247, ${overlay})`,
+      card: `rgba(255, 253, 247, ${Math.min(overlay + 0.25, 0.92)})`,
+      textHalo: "rgba(255, 255, 255, 0.9)",
+    };
+  }
   return {
     ...DARK,
     line: "rgba(241, 238, 220, 0.16)",
@@ -146,8 +165,9 @@ export interface MemoryImageData {
   theme: MemoryTheme;
   /** "직접 등록" 테마에서 러너가 고른 배경 이미지 URL(로컬 파일의 object URL). 없으면 어두운 테마로 그린다. */
   backgroundImage?: string | null;
-  /** "직접 등록" 테마의 배경 어둡기(0~1). */
+  /** "직접 등록" 테마의 막 진하기(0~1)와 막의 색. */
   overlay?: number;
+  glass?: MemoryGlass;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -594,7 +614,7 @@ function todayLabel() {
 }
 
 export async function renderCharacterMemory({
-  character, skill, titleImage, theme, backgroundImage, overlay = MEMORY_OVERLAY.default,
+  character, skill, titleImage, theme, backgroundImage, glass = "dark", overlay = MEMORY_OVERLAY.defaults[glass],
 }: MemoryImageData): Promise<Blob> {
   const equipped = (type: CharacterOwnedItem["item_type"]) =>
     character.owned_items.find((item) => item.equipped && item.item_type === type && item.quantity > 0) ?? null;
@@ -647,7 +667,7 @@ export async function renderCharacterMemory({
   ctx.scale(SCALE, SCALE);
 
   // 여기서부터 끝까지 await 없이 그린다(COLOR·cardBackdrop은 이 구간에서만 쓰인다).
-  COLOR = background ? customPalette(overlay) : PALETTES[theme === "custom" ? "dark" : theme];
+  COLOR = background ? customPalette(overlay, glass) : PALETTES[theme === "custom" ? "dark" : theme];
   cardBackdrop = background ? blurredBackdrop(background) : null;
 
   // 바탕과 금색 테두리. 배경 이미지가 있으면 화면 전체를 채우고 테두리 안쪽을 반투명하게 덮는다.
