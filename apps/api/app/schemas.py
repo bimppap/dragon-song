@@ -869,6 +869,9 @@ class CharacterDetailRead(CharacterRead):
     # 진행 중인 실전 전투 참가자면 아이템 사용·장착을 막는다(화면에서도 버튼을 감춘다).
     in_live_battle: bool = False
     spirit_stone_custom_unlocked: bool = False
+    # 보상 이력으로 받은 골드·CP의 합(회수분은 빼고, 상점에서 쓴 금액은 빼지 않는다).
+    total_gold_earned: int = 0
+    total_cp_earned: int = 0
 
 
 class ChallengeCreate(BaseModel):

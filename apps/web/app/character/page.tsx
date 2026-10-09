@@ -155,7 +155,7 @@ function MyCharacterConsole({ role }: { role: MemberRole }) {
           다른 캐릭터 보러 가기 &gt;&gt;
         </button>
       </div>
-      <CharacterInfo characters={character ? [character] : []} loading={loading} showSelector={false} showId={false} />
+      <CharacterInfo characters={character ? [character] : []} loading={loading} showSelector={false} showId={false} showMemoryButton />
     </>}
 
     {view.mode === "list" && <>

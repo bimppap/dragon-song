@@ -702,6 +702,9 @@ export interface CharacterDetail extends Character {
   /** 진행 중인 실전 전투 참가자면 true. 아이템 사용·장착 변경이 막힌다. */
   in_live_battle: boolean;
   spirit_stone_custom_unlocked: boolean;
+  /** 보상 이력으로 받은 골드·CP의 합(회수분은 빼고, 상점에서 쓴 금액은 빼지 않는다). */
+  total_gold_earned: number;
+  total_cp_earned: number;
 }
 
 export type RewardGrant =

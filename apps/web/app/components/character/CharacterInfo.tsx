@@ -28,6 +28,7 @@ import {
 import CharacterOwnedSkills from "./CharacterOwnedSkills";
 import CharacterClonedSkills from "./CharacterClonedSkills";
 import CharacterEquipmentSlots from "./CharacterEquipmentSlots";
+import CharacterMemoryButton from "./CharacterMemoryButton";
 import CharacterTrait from "./CharacterTrait";
 import SpiritStoneCustomizeModal from "./SpiritStoneCustomizeModal";
 import SpiritStoneExchangeForm from "./SpiritStoneExchangeForm";
@@ -57,6 +58,7 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
+import { getRankGrade } from "@/lib/rankGrade";
 import {
   MAX_CHARACTER_LEVEL,
   patchAdminCharacter,
@@ -110,6 +112,8 @@ interface Props {
   onDeleted?: (characterId: number) => void;
   /** 지정하면, 관리자가 만든 캐릭터(러너 계정 미연결)에 한해 수정 버튼을 노출한다(관리자 콘솔 전용). */
   adminMode?: boolean;
+  /** 이름표 오른쪽에 "추억 남기기" 버튼을 띄운다(러너 본인 캐릭터 화면 전용). */
+  showMemoryButton?: boolean;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -146,43 +150,6 @@ const CORE_STATS: {
     accent: "text-purple-500",
   },
 ];
-
-const RANK_GRADES = [
-  {
-    name: "동",
-    description: "입문의 증표. 모헙가로서 첫발을 내디딘 자에게 주어지는 패.",
-    medalImage: "/medal/medal_1.png",
-  },
-  {
-    name: "은",
-    description:
-      "신뢰의 증표. 모험가로서 능력과 신뢰를 인정받은 자에게 주어지는 패.",
-    medalImage: "/medal/medal_2.png",
-  },
-  {
-    name: "금",
-    description:
-      "공훈의 증표. 탁월한 공적을 세워 길드와 사람들에게 큰 기여를 한 자에게 주어지는 패.",
-    medalImage: "/medal/medal_3.png",
-  },
-  {
-    name: "백금",
-    description:
-      "위업의 증표. 한 국가의 역사에 남을 만한 업적을 세운 자에게 주어지는 패.",
-    medalImage: "/medal/medal_4.png",
-  },
-  {
-    name: "용린",
-    description:
-      "전설의 증표. 시대의 한계를 넘어설 정도의 업적을 세운 자에게 주어지는 패.",
-    medalImage: "/medal/medal_4.png",
-  },
-] as const;
-
-/** 모험가 등급(rank) 1~5를 동/은/금/백금/용린 패로 바꾼다. 범위를 벗어나면 가장 가까운 등급으로 본다. */
-function getRankGrade(rank: number) {
-  return RANK_GRADES[Math.min(Math.max(rank, 1), RANK_GRADES.length) - 1];
-}
 
 const DETAIL_STATS: {
   key: keyof Pick<
@@ -1946,6 +1913,7 @@ export default function CharacterInfo({
   showHistory,
   onDeleted,
   adminMode = false,
+  showMemoryButton = false,
 }: Props) {
   const canViewHistory = showHistory ?? !readOnly;
   const { toast } = useToast();
@@ -2402,6 +2370,9 @@ export default function CharacterInfo({
                       <Badge variant="outline" className="font-num">
                         ID {selectedDetail.id}
                       </Badge>
+                    )}
+                    {showMemoryButton && (
+                      <CharacterMemoryButton character={selectedDetail} />
                     )}
                     {canAdminEdit && (
                       <Button

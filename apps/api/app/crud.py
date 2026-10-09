@@ -1000,6 +1000,8 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
     trait_preview["trait"] = equipped_trait
     # 전투 시작 자원은 지급하지 않는다. 현재 체력·마나와 상시 보정만 표시한다.
     trait_effects.sync(trait_preview)
+    reward_history = get_rewards_by_character(db, character.id)
+    total_gold_earned, total_cp_earned = _earned_currency_totals(reward_history)
     return CharacterDetailRead(
         **_character_read_kwargs(character),
         trait_id=character.trait_id,
@@ -1039,8 +1041,10 @@ def get_character_detail(db: Session, character_id: int) -> CharacterDetailRead:
             for row in achieved_mission_rows
         ],
         item_history=get_item_history(db, character.id),
-        reward_history=get_rewards_by_character(db, character.id),
+        reward_history=reward_history,
         attendance_streak=_attendance_streak(db, character.id),
+        total_gold_earned=total_gold_earned,
+        total_cp_earned=total_cp_earned,
     )
 
 
@@ -2992,6 +2996,19 @@ def get_attendance_streak_ranking(db: Session) -> list[AttendanceStreakEntry]:
             rank=rank,
         ))
     return result
+
+
+def _earned_currency_totals(rewards: list[RewardRead]) -> tuple[int, int]:
+    """보상 이력에 남은 골드·CP 지급량의 합. 회수(revoke) 이력은 음수라 자연히 빠진다."""
+    gold = cp = 0.0
+    for reward in rewards:
+        for entry in reward.reward_items:
+            currency = entry.stat if entry.type == "stat" else entry.type
+            if currency == "gold":
+                gold += entry.amount or 0
+            elif currency == "cp":
+                cp += entry.amount or 0
+    return int(gold), int(cp)
 
 
 def get_rewards_by_character(db: Session, character_id: int) -> list[RewardRead]:
