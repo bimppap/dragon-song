@@ -39,6 +39,9 @@ const GROWTH_EXP_PER_LEVEL = 20; // app/crud.py의 GROWTH_EXP_PER_LEVEL과 같�
 const MISSION_COLUMNS = 4;
 const CHALLENGE_COLUMNS = 2;
 const ACHIEVEMENT_ROWS = 6;
+// 이만큼 달성하면 패널 오른쪽 위에 ALL CLEAR를 띄운다(공개된 임무·도전과제 전체 개수).
+const ALL_CLEAR_MISSIONS = 24;
+const ALL_CLEAR_CHALLENGES = 12;
 
 const GROUP_BADGE = { name: "조사단 증표", imageUrl: "/group_badge.png" };
 
@@ -193,6 +196,15 @@ function currencyParts(label: string, color: string, current: number, total: num
     { text: "(누적", color: COLOR.muted, size: 12 },
     { text: `${numberFormatter.format(total)})`, color: COLOR.muted, size: 13, family: "GalmuriMono11" },
   ];
+}
+
+/** 패널 오른쪽 위의 금색 ALL CLEAR 표시. */
+function drawAllClear(ctx: CanvasRenderingContext2D, rightX: number, centerY: number) {
+  const text = "ALL CLEAR";
+  ctx.font = font(13, { family: "GalmuriMono11", bold: true });
+  const w = ctx.measureText(text).width + 20;
+  box(ctx, rightX - w, centerY - 12, w, 24, { fill: "rgba(232, 201, 54, 0.15)", stroke: COLOR.gold, radius: 4 });
+  drawText(ctx, text, rightX - w / 2, centerY + 1, { size: 13, color: COLOR.gold, align: "center", family: "GalmuriMono11", bold: true });
 }
 
 function emptyNote(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, w: number, h: number) {
@@ -616,6 +628,7 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
     const hidden = missionRows.slice(ACHIEVEMENT_ROWS).reduce((sum, row) => sum + row.entries.length, 0);
     if (hidden > 0) drawText(ctx, `외 ${hidden}개`, right + missionWidth - 16, achievementY + 22, { size: 12, color: COLOR.muted, align: "right" });
   }
+  if (character.achieved_missions.length >= ALL_CLEAR_MISSIONS) drawAllClear(ctx, right + missionWidth - 16, achievementY + 22);
 
   bodyY = panel(ctx, challengeX, achievementY, challengeWidth, achievementHeight, "달성한 도전과제", `${challenges.length}개`);
   if (challenges.length === 0) {
@@ -633,6 +646,7 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
       drawText(ctx, `외 ${challenges.length - capacity}개`, challengeX + challengeWidth - 16, achievementY + 22, { size: 12, color: COLOR.muted, align: "right" });
     }
   }
+  if (challenges.length >= ALL_CLEAR_CHALLENGES) drawAllClear(ctx, challengeX + challengeWidth - 16, achievementY + 22);
 
   // 보유 아이템(개수 포함)
   const itemsY = achievementY + achievementHeight + 16;
