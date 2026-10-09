@@ -30,8 +30,6 @@ interface Palette {
   hp: string;
   mp: string;
   cp: string;
-  /** 이름표 안쪽 그라데이션의 맨 위 색. */
-  bannerTop: string;
   /** 금색 테두리 안쪽 전체 바탕. */
   frame: string;
   /** 패널·장비·능력치 카드 바탕. */
@@ -53,7 +51,6 @@ const DARK: Palette = {
   hp: "#f43f5e",
   mp: "#0ea5e9",
   cp: "#22d3ee",
-  bannerTop: "#3a4d40",
   frame: "#222b28",
   card: "#1b2321",
   textShadow: "rgba(0, 0, 0, 0.6)",
@@ -72,7 +69,6 @@ const LIGHT: Palette = {
   hp: "#e11d48",
   mp: "#0284c7",
   cp: "#0e7490",
-  bannerTop: "#fff8dc",
   frame: "#f5f1e4",
   card: "#fffdf7",
   textShadow: "rgba(0, 0, 0, 0.2)",
@@ -379,51 +375,24 @@ function emptyNote(ctx: CanvasRenderingContext2D, text: string, x: number, y: nu
   drawText(ctx, text, x + w / 2, y + h / 2, { size: 13, color: COLOR.muted, align: "center" });
 }
 
-/** 이름표: 정보 카드와 같은 육각 띠(금색 테두리 + 어두운 안쪽). */
-function drawNameBanner(ctx: CanvasRenderingContext2D, name: string, factionImage: HTMLImageElement | null, x: number, y: number) {
-  const h = 64;
-  const iconSize = factionImage ? 40 : 0;
-  const nameText = fitText(ctx, name, 640, 32, { family: "Galmuri14", minSize: 22 });
-  const nameFont = ctx.font;
-  const textWidth = ctx.measureText(nameText).width;
-  const w = textWidth + iconSize + (iconSize ? 12 : 0) + 80;
-  const hexagon = (inset: number) => {
-    const cut = 28 - inset * 0.4;
-    ctx.beginPath();
-    ctx.moveTo(x + cut, y + inset);
-    ctx.lineTo(x + w - cut, y + inset);
-    ctx.lineTo(x + w - inset, y + h / 2);
-    ctx.lineTo(x + w - cut, y + h - inset);
-    ctx.lineTo(x + cut, y + h - inset);
-    ctx.lineTo(x + inset, y + h / 2);
-    ctx.closePath();
-  };
-  const outer = ctx.createLinearGradient(0, y, 0, y + h);
-  outer.addColorStop(0, "rgba(232, 201, 54, 0.9)");
-  outer.addColorStop(0.5, "rgba(232, 201, 54, 0.55)");
-  outer.addColorStop(1, "rgba(232, 201, 54, 0.85)");
-  hexagon(0);
-  ctx.fillStyle = outer;
-  ctx.fill();
-  const inner = ctx.createLinearGradient(0, y, 0, y + h);
-  inner.addColorStop(0, COLOR.bannerTop);
-  inner.addColorStop(0.5, COLOR.surface);
-  inner.addColorStop(1, COLOR.inset);
-  hexagon(4);
-  ctx.fillStyle = inner;
-  ctx.fill();
-  let cursor = x + 40;
-  if (factionImage) {
-    drawContain(ctx, factionImage, cursor, y + (h - iconSize) / 2, iconSize, iconSize);
-    cursor += iconSize + 12;
+const NAMEPLATE = { width: 400, height: 72 }; // public/profile/name_bg.png 원본 크기
+// 명패 그림은 테마와 관계없이 같은 갈색이라 이름도 늘 같은 금색으로 쓴다.
+const NAMEPLATE_TEXT = "#e8c936";
+
+/** 이름표: 명패 그림(name_bg.png) 가운데에 이름을 쓴다. 원본 크기로 그려 픽셀이 고르게 보인다. */
+function drawNameplate(ctx: CanvasRenderingContext2D, name: string, plate: HTMLImageElement | null, x: number, y: number) {
+  const { width, height } = NAMEPLATE;
+  if (plate) {
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(plate, x, y, width, height);
   }
-  ctx.font = nameFont;
-  ctx.fillStyle = COLOR.gold;
-  ctx.textAlign = "left";
+  const nameText = fitText(ctx, name, width - 72, 26, { family: "Galmuri14", minSize: 16 });
+  ctx.fillStyle = NAMEPLATE_TEXT;
+  ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.shadowColor = COLOR.textShadow;
+  ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
   ctx.shadowOffsetY = 2;
-  ctx.fillText(nameText, cursor, y + h / 2 + 1);
+  ctx.fillText(nameText, x + width / 2, y + height / 2 + 1);
   ctx.shadowColor = "transparent";
   ctx.shadowOffsetY = 0;
 }
@@ -639,8 +608,9 @@ export async function renderCharacterMemory({
     if (!imageCache.has(src)) imageCache.set(src, loadImage(src));
     return imageCache.get(src)!;
   };
-  const [frame, photo, medal, faction, title, skillImage, companionImage, accessoryImage, traitImage, background] = await Promise.all([
+  const [frame, nameplate, photo, medal, faction, title, skillImage, companionImage, accessoryImage, traitImage, background] = await Promise.all([
     image("/profile/frame.png"),
+    image("/profile/name_bg.png"),
     image(character.image_url),
     image(grade.medalImage),
     image(character.faction ? FACTION_POSITION_IMAGE[character.faction] : null),
@@ -687,20 +657,23 @@ export async function renderCharacterMemory({
   if (frame) drawContain(ctx, frame, frameX, frameY, 240, 240);
   if (photo) drawCover(ctx, photo, frameX + 20, frameY + 20, 200, 200);
 
-  // 메달과 그 오른쪽의 성장 등급(Lv. n, 아래에 총 획득 경험치). 묶음 전체를 사진 폭(200) 안 가운데에 둔다.
+  // 메달과 그 오른쪽의 성장 등급(Lv. n + 포지션 아이콘, 아래에 총 획득 경험치). 묶음 전체를 사진 폭(200) 안 가운데에 둔다.
   const photoX = frameX + 20;
   const photoWidth = 200;
   const medalSize = 72;
   const medalGap = 10;
+  const factionSize = faction ? 28 : 0;
+  const factionGap = faction ? 8 : 0;
   let y = frameY + 256;
   const levelText = `Lv. ${character.lv}`;
   const totalExp = Math.max(0, (character.lv - 1) * GROWTH_EXP_PER_LEVEL + character.exp);
   const textMaxWidth = photoWidth - medalSize - medalGap;
-  ctx.font = font(28, { family: "GalmuriMono11" });
-  const levelWidth = ctx.measureText(levelText).width;
+  const levelMaxWidth = textMaxWidth - factionSize - factionGap;
+  const levelLine = fitText(ctx, levelText, levelMaxWidth, 28, { family: "GalmuriMono11", minSize: 18 });
+  const levelWidth = ctx.measureText(levelLine).width;
   const totalText = fitText(ctx, `Total ${numberFormatter.format(totalExp)} EXP`, textMaxWidth, 15, { family: "GalmuriMono11", minSize: 10 });
   const totalFont = ctx.font;
-  const textWidth = Math.min(Math.max(levelWidth, ctx.measureText(totalText).width), textMaxWidth);
+  const textWidth = Math.max(levelWidth + factionGap + factionSize, ctx.measureText(totalText).width);
   const groupX = photoX + (photoWidth - medalSize - medalGap - textWidth) / 2;
   if (medal) {
     ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
@@ -710,7 +683,8 @@ export async function renderCharacterMemory({
     ctx.shadowBlur = 0;
   }
   const textX = groupX + medalSize + medalGap;
-  drawText(ctx, levelText, textX, y + 24, { size: 28, color: COLOR.gold, family: "GalmuriMono11", maxWidth: textMaxWidth, minSize: 18 });
+  drawText(ctx, levelText, textX, y + 24, { size: 28, color: COLOR.gold, family: "GalmuriMono11", maxWidth: levelMaxWidth, minSize: 18 });
+  if (faction) drawContain(ctx, faction, textX + levelWidth + factionGap, y + 24 - factionSize / 2 - 1, factionSize, factionSize);
   ctx.font = totalFont;
   ctx.fillStyle = COLOR.ivory;
   ctx.textAlign = "left";
@@ -744,7 +718,7 @@ export async function renderCharacterMemory({
   const right = 368;
   const rightWidth = MEMORY_WIDTH - 48 - right;
 
-  drawNameBanner(ctx, character.name, faction, right, 48);
+  drawNameplate(ctx, character.name, nameplate, right, 44);
   drawText(ctx, todayLabel(), right + rightWidth, 80, { size: 14, color: COLOR.muted, align: "right", family: "GalmuriMono11" });
 
   // 기술·동반자·장신구·특성(설명 포함). 칸 높이는 설명이 가장 긴 칸에 맞춘다.

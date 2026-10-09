@@ -15,19 +15,12 @@ import {
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 
-/** 처음에는 임무를 달성한 가장 늦은 챕터의 타이틀을 고른다. */
-function defaultTitle(character: CharacterDetail): string {
-  const chapters = character.achieved_missions.map((mission) => Number.parseInt(mission.chapter, 10)).filter(Number.isFinite);
-  const latest = chapters.length ? Math.max(...chapters) : 1;
-  return (MEMORY_TITLES.find((title) => title.label === `챕터 ${latest}`) ?? MEMORY_TITLES[0]).value;
-}
-
 /** 캐릭터 정보를 16:9 이미지 한 장으로 만들어 미리 보고 내려받는 "추억 남기기" 버튼. */
 export default function CharacterMemoryButton({ character }: { character: CharacterDetail }) {
   const [open, setOpen] = useState(false);
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [titleImage, setTitleImage] = useState(() => defaultTitle(character));
+  const [titleImage, setTitleImage] = useState<string>(MEMORY_TITLES[0].value);
   const [theme, setTheme] = useState<MemoryTheme>("dark");
   // "직접 등록" 테마에서 러너가 고른 배경 파일의 object URL. 서버에 올리지 않고 이 창에서만 쓴다.
   const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null);
