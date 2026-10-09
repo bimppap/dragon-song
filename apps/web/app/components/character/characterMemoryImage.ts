@@ -538,19 +538,17 @@ function loadoutCardHeight(lineCount: number) {
 function drawLoadoutCard(
   ctx: CanvasRenderingContext2D,
   { label, name, nameColor = COLOR.ivory, image, border, lines }: {
-    label: string; name: string | null; nameColor?: string; image: HTMLImageElement | null;
+    label: string; name: string; nameColor?: string; image: HTMLImageElement | null;
     border: string; lines: TextPiece[][];
   },
   x: number, y: number, w: number, h: number,
 ) {
   cardBox(ctx, x, y, w, h);
   const iconSize = 52;
-  drawIcon(ctx, name ? image : null, x + 12, y + 12, iconSize, name ? border : COLOR.line);
+  drawIcon(ctx, image, x + 12, y + 12, iconSize, border);
   const textX = x + 24 + iconSize;
   drawText(ctx, label, textX, y + 26, { size: 12, color: COLOR.muted });
-  drawText(ctx, name ?? "없음", textX, y + 50, {
-    size: 16, color: name ? nameColor : COLOR.muted, maxWidth: x + w - 12 - textX, minSize: 11,
-  });
+  drawText(ctx, name, textX, y + 50, { size: 16, color: nameColor, maxWidth: x + w - 12 - textX, minSize: 11 });
   if (lines.length === 0) return;
   ctx.fillStyle = COLOR.line;
   ctx.fillRect(x + 12, y + LOADOUT_HEADER_HEIGHT, w - 24, 1);
@@ -754,32 +752,29 @@ export async function renderCharacterMemory({
   drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, barsX, barsY, barWidth);
   drawBar(ctx, "MP", character.mp, character.mp_max, COLOR.mp, barsX + barWidth + 32, barsY, barWidth);
 
-  // 기술·동반자·장신구·특성(설명 포함). 장착하지 않은 동반자·장신구 칸은 빼고, 남은 칸이 폭을 나눠 쓴다.
+  // 기술·동반자·장신구·특성(설명 포함). 없는 칸은 빼고 남은 칸이 폭을 나눠 쓴다. 넷 다 없으면 이 줄을 통째로 뺀다.
   // 칸 높이는 설명이 가장 긴 칸에 맞춘다.
   const loadoutY = 124;
   const plain = (text: string | null | undefined): TextRun[] => (text ? [{ text, color: COLOR.muted }] : []);
   const loadout = [
-    {
-      label: "기술", name: skill?.display_name ?? null, image: skillImage,
-      nameColor: skill?.custom_description_color || COLOR.ivory,
-      border: COLOR.iconBorder, description: skill ? skillDescriptionRuns(skill) : [],
-    },
+    ...(skill ? [{
+      label: "기술", name: skill.display_name, image: skillImage,
+      nameColor: skill.custom_description_color || COLOR.ivory,
+      border: COLOR.iconBorder, description: skillDescriptionRuns(skill),
+    }] : []),
     ...(companion ? [{ label: "동반자", name: companion.item_name, image: companionImage, border: COLOR.iconBorder, description: plain(companion.item_description) }] : []),
     ...(accessory ? [{ label: "장신구", name: accessory.item_name, image: accessoryImage, border: COLOR.iconBorder, description: plain(accessory.item_description) }] : []),
-    { label: "특성", name: trait?.name ?? null, image: traitImage, border: COLOR.iconBorder, description: plain(trait?.description) },
+    ...(trait ? [{ label: "특성", name: trait.name, image: traitImage, border: COLOR.iconBorder, description: plain(trait.description) }] : []),
   ];
-  const cardWidth = (rightWidth - 12 * (loadout.length - 1)) / loadout.length;
-  const cards = loadout.map((slot) => ({
-    ...slot,
-    lines: slot.name ? wrapRichText(ctx, slot.description, cardWidth - 24, LOADOUT_TEXT) : [],
-  }));
-  const loadoutHeight = loadoutCardHeight(Math.max(...cards.map((card) => card.lines.length)));
+  const cardWidth = (rightWidth - 12 * (loadout.length - 1)) / Math.max(loadout.length, 1);
+  const cards = loadout.map((slot) => ({ ...slot, lines: wrapRichText(ctx, slot.description, cardWidth - 24, LOADOUT_TEXT) }));
+  const loadoutHeight = cards.length ? loadoutCardHeight(Math.max(...cards.map((card) => card.lines.length))) : 0;
   cards.forEach((card, index) => {
     drawLoadoutCard(ctx, card, right + index * (cardWidth + 12), loadoutY, cardWidth, loadoutHeight);
   });
 
   // 달성 임무(4개씩, 챕터별) · 도전과제(2개씩)
-  const achievementY = loadoutY + loadoutHeight + 16;
+  const achievementY = cards.length ? loadoutY + loadoutHeight + 16 : loadoutY;
   const achievementHeight = 304;
   const rowHeight = 36;
   const rowGap = 6;
