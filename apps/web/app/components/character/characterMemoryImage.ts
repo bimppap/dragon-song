@@ -41,10 +41,25 @@ const ACHIEVEMENT_ROWS = 6;
 
 const GROUP_BADGE = { name: "조사단 증표", imageUrl: "/group_badge.png" };
 
+/** 왼쪽 아래에 넣을 수 있는 타이틀 이미지(public/title). */
+export const MEMORY_TITLES = [
+  { value: "/title/title1.png", label: "챕터 1" },
+  { value: "/title/title2.png", label: "챕터 2" },
+  { value: "/title/title3.png", label: "챕터 3" },
+  { value: "/title/title4.png", label: "챕터 4" },
+  { value: "/title/title5.png", label: "챕터 5" },
+  { value: "/title/title6.png", label: "챕터 6" },
+  { value: "/title/title_after.png", label: "엔딩" },
+] as const;
+// 타이틀 이미지(1080×240)는 둘레가 투명하고 그림마다 장식 높이가 달라, 모두를 감싸는 같은 영역을 잘라 쓴다.
+const TITLE_CROP = { x: 280, y: 32, w: 552, h: 168 };
+
 export interface MemoryImageData {
   character: CharacterDetail;
   /** 가장 깊이 배운 기술(정보 카드의 기술 슬롯과 같다). */
   skill: CharacterSkillNode | null;
+  /** 왼쪽 아래 타이틀 이미지 경로(MEMORY_TITLES 중 하나). */
+  titleImage: string;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -147,14 +162,36 @@ function drawIcon(
   ctx.strokeRect(x + 1, y + 1, size - 2, size - 2);
 }
 
-/** 제목·개수가 붙은 패널 테두리. 본문이 시작되는 y를 돌려준다. */
+/** 제목·개수가 붙은 패널 테두리. 개수는 제목 바로 뒤에 쓴다. 본문이 시작되는 y를 돌려준다. */
 function panel(
-  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, title: string, count?: string,
+  ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, title: string, count: string,
 ): number {
   box(ctx, x, y, w, h, { fill: COLOR.inset, stroke: COLOR.line, radius: 10 });
   drawText(ctx, title, x + 16, y + 22, { size: 16, color: COLOR.gold, bold: true });
-  if (count) drawText(ctx, count, x + w - 16, y + 22, { size: 13, color: COLOR.muted, align: "right", family: "GalmuriMono11" });
+  const titleWidth = ctx.measureText(title).width;
+  drawText(ctx, count, x + 16 + titleWidth + 10, y + 22, { size: 13, color: COLOR.muted, family: "GalmuriMono11" });
   return y + 44;
+}
+
+/** 오른쪽 끝에서부터 [글자, 색, 크기, 글꼴] 조각들을 차례로 이어 쓴다(보유 아이템 제목 옆 골드·CP). */
+function drawRightAlignedRun(
+  ctx: CanvasRenderingContext2D, parts: { text: string; color: string; size: number; family?: string }[],
+  rightX: number, y: number, gap = 6,
+) {
+  let x = rightX;
+  for (const part of parts.toReversed()) {
+    drawText(ctx, part.text, x, y, { size: part.size, color: part.color, align: "right", family: part.family });
+    x -= ctx.measureText(part.text).width + gap;
+  }
+}
+
+function currencyParts(label: string, color: string, current: number, total: number) {
+  return [
+    { text: label, color, size: 14 },
+    { text: numberFormatter.format(current), color: COLOR.ivory, size: 15, family: "GalmuriMono11" },
+    { text: "(누적", color: COLOR.muted, size: 12 },
+    { text: `${numberFormatter.format(total)})`, color: COLOR.muted, size: 13, family: "GalmuriMono11" },
+  ];
 }
 
 function emptyNote(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, w: number, h: number) {
@@ -223,31 +260,6 @@ function drawBar(
   if (ratio > 0) box(ctx, x, y + 22, Math.max(w * ratio, 8), 8, { fill: color, radius: 4 });
 }
 
-/** 위에 작은 라벨, 아래에 큰 값을 쓰는 칸. */
-function drawValueBox(
-  ctx: CanvasRenderingContext2D, label: string, value: string, x: number, y: number, w: number, h: number,
-  valueColor: string = COLOR.gold,
-) {
-  box(ctx, x, y, w, h, { fill: COLOR.inset, stroke: COLOR.line });
-  drawText(ctx, label, x + 12, y + 18, { size: 12, color: COLOR.muted });
-  drawText(ctx, value, x + 12, y + h - 18, { size: 18, color: valueColor, family: "GalmuriMono11", maxWidth: w - 24, minSize: 12 });
-}
-
-function drawCurrencyBox(
-  ctx: CanvasRenderingContext2D, label: string, color: string, current: number, total: number,
-  x: number, y: number, w: number, h: number,
-) {
-  box(ctx, x, y, w, h, { fill: COLOR.inset, stroke: COLOR.line });
-  drawText(ctx, label, x + 12, y + 18, { size: 13, color, bold: true });
-  for (const [index, [name, value]] of ([["현재", current], ["누적", total]] as const).entries()) {
-    const rowY = y + 44 + index * 24;
-    drawText(ctx, name, x + 12, rowY, { size: 12, color: COLOR.muted });
-    drawText(ctx, numberFormatter.format(value), x + w - 12, rowY, {
-      size: 15, align: "right", family: "GalmuriMono11", maxWidth: w - 60, minSize: 11,
-    });
-  }
-}
-
 function drawLoadoutCard(
   ctx: CanvasRenderingContext2D, label: string, name: string | null, image: HTMLImageElement | null,
   border: string, x: number, y: number, w: number, h: number,
@@ -309,7 +321,7 @@ function todayLabel() {
   return `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
 }
 
-export async function renderCharacterMemory({ character, skill }: MemoryImageData): Promise<Blob> {
+export async function renderCharacterMemory({ character, skill, titleImage }: MemoryImageData): Promise<Blob> {
   const equipped = (type: CharacterOwnedItem["item_type"]) =>
     character.owned_items.find((item) => item.equipped && item.item_type === type && item.quantity > 0) ?? null;
   const companion = equipped("companion");
@@ -336,7 +348,7 @@ export async function renderCharacterMemory({ character, skill }: MemoryImageDat
     image(character.image_url),
     image(grade.medalImage),
     image(character.faction ? FACTION_POSITION_IMAGE[character.faction] : null),
-    image("/dragonsong_title.png"),
+    image(titleImage),
     image(skill?.image_url),
     image(companion?.item_image_url),
     image(accessory?.item_image_url),
@@ -363,33 +375,39 @@ export async function renderCharacterMemory({ character, skill }: MemoryImageDat
   box(ctx, 16, 16, MEMORY_WIDTH - 32, MEMORY_HEIGHT - 32, { fill: COLOR.surface, stroke: "rgba(232, 201, 54, 0.55)", radius: 14, lineWidth: 3 });
   box(ctx, 24, 24, MEMORY_WIDTH - 48, MEMORY_HEIGHT - 48, { stroke: COLOR.line, radius: 10 });
 
-  // ── 왼쪽: 프로필·성장·능력치·재화 ──
+  // ── 왼쪽: 프로필·성장·능력치·타이틀 ──
   const left = 48;
   const leftWidth = 288;
   const frameX = left + (leftWidth - 240) / 2;
   const frameY = 52;
   if (frame) drawContain(ctx, frame, frameX, frameY, 240, 240);
   if (photo) drawCover(ctx, photo, frameX + 20, frameY + 20, 200, 200);
+
+  // 성장 등급(Lv. n, 아래에 총 획득 경험치)과 그 오른쪽 메달
+  const medalSize = 72;
+  let y = frameY + 256;
+  const gradeWidth = leftWidth - medalSize - 12;
+  box(ctx, left, y, gradeWidth, medalSize, { fill: COLOR.inset, stroke: COLOR.line });
+  drawText(ctx, `Lv. ${character.lv}`, left + 14, y + 26, { size: 24, color: COLOR.gold, family: "GalmuriMono11" });
+  const totalExp = Math.max(0, (character.lv - 1) * GROWTH_EXP_PER_LEVEL + character.exp);
+  drawText(ctx, `총 획득 경험치 ${numberFormatter.format(totalExp)} EXP`, left + 14, y + 54, {
+    size: 12, color: COLOR.muted, maxWidth: gradeWidth - 28, minSize: 10,
+  });
   if (medal) {
     ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
     ctx.shadowBlur = 4;
-    drawContain(ctx, medal, frameX - 20, frameY - 20, 72, 72);
+    drawContain(ctx, medal, left + leftWidth - medalSize, y, medalSize, medalSize);
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
   }
 
-  const halfWidth = (leftWidth - 12) / 2;
-  let y = frameY + 256;
-  drawValueBox(ctx, "성장 등급", `Lv.${character.lv}`, left, y, halfWidth, 60);
-  const totalExp = Math.max(0, (character.lv - 1) * GROWTH_EXP_PER_LEVEL + character.exp);
-  drawValueBox(ctx, "총 획득 경험치", `${numberFormatter.format(totalExp)} EXP`, left + halfWidth + 12, y, halfWidth, 60);
-
-  y += 80;
+  y += medalSize + 24;
   drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, left, y, leftWidth);
   y += 46;
   drawBar(ctx, "MP", character.mp, character.mp_max, COLOR.mp, left, y, leftWidth);
 
   y += 52;
+  const halfWidth = (leftWidth - 12) / 2;
   GRADE_STATS.forEach((stat, index) => {
     const x = left + (index % 2) * (halfWidth + 12);
     const cellY = y + Math.floor(index / 2) * 52;
@@ -398,14 +416,13 @@ export async function renderCharacterMemory({ character, skill }: MemoryImageDat
     drawText(ctx, String(character[stat.key]), x + halfWidth - 12, cellY + 21, { size: 18, align: "right", family: "GalmuriMono11" });
   });
 
-  y += 112;
-  drawCurrencyBox(ctx, "골드", COLOR.gold, character.gold, character.total_gold_earned, left, y, halfWidth, 92);
-  drawCurrencyBox(ctx, "CP", "#22d3ee", character.cp, character.total_cp_earned, left + halfWidth + 12, y, halfWidth, 92);
-
   if (title) {
-    // 원본은 좌우·위아래 여백이 넓어 글자 부분만 잘라 쓴다.
+    // 절반 크기로 그리면 실제 PNG(SCALE 2)에서 원본 픽셀과 1:1이 되어 픽셀 아트가 고르게 보인다.
+    const titleWidth = TITLE_CROP.w / SCALE;
+    const titleHeight = TITLE_CROP.h / SCALE;
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(title, 290, 70, 500, 130, left + (leftWidth - 250) / 2, MEMORY_HEIGHT - 48 - 65 - 8, 250, 65);
+    ctx.drawImage(title, TITLE_CROP.x, TITLE_CROP.y, TITLE_CROP.w, TITLE_CROP.h,
+      left + (leftWidth - titleWidth) / 2, MEMORY_HEIGHT - 48 - titleHeight - 8, titleWidth, titleHeight);
   }
 
   // ── 오른쪽 ──
@@ -468,7 +485,7 @@ export async function renderCharacterMemory({ character, skill }: MemoryImageDat
       });
     });
     const hidden = missionRows.slice(ACHIEVEMENT_ROWS).reduce((sum, row) => sum + row.entries.length, 0);
-    if (hidden > 0) drawText(ctx, `외 ${hidden}개`, right + missionWidth - 90, achievementY + 22, { size: 12, color: COLOR.muted, align: "right" });
+    if (hidden > 0) drawText(ctx, `외 ${hidden}개`, right + missionWidth - 16, achievementY + 22, { size: 12, color: COLOR.muted, align: "right" });
   }
 
   bodyY = panel(ctx, challengeX, achievementY, challengeWidth, achievementHeight, "달성한 도전과제", `${challenges.length}개`);
@@ -484,7 +501,7 @@ export async function renderCharacterMemory({ character, skill }: MemoryImageDat
         bodyY + Math.floor(index / CHALLENGE_COLUMNS) * (rowHeight + rowGap), cellWidth, rowHeight);
     });
     if (challenges.length > capacity) {
-      drawText(ctx, `외 ${challenges.length - capacity}개`, challengeX + challengeWidth - 70, achievementY + 22, { size: 12, color: COLOR.muted, align: "right" });
+      drawText(ctx, `외 ${challenges.length - capacity}개`, challengeX + challengeWidth - 16, achievementY + 22, { size: 12, color: COLOR.muted, align: "right" });
     }
   }
 
@@ -492,6 +509,11 @@ export async function renderCharacterMemory({ character, skill }: MemoryImageDat
   const itemsY = achievementY + achievementHeight + 16;
   const itemsHeight = MEMORY_HEIGHT - 48 - itemsY;
   bodyY = panel(ctx, right, itemsY, rightWidth, itemsHeight, "보유 아이템", `${ownedItems.length}종`);
+  drawRightAlignedRun(ctx, [
+    ...currencyParts("골드", COLOR.gold, character.gold, character.total_gold_earned),
+    { text: "·", color: COLOR.line, size: 14 },
+    ...currencyParts("CP", "#22d3ee", character.cp, character.total_cp_earned),
+  ], right + rightWidth - 16, itemsY + 22);
   const itemColumns = 5;
   const itemGap = 8;
   const itemRowHeight = 40;
