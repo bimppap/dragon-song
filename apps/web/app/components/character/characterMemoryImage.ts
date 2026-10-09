@@ -702,24 +702,22 @@ export async function renderCharacterMemory({
   fillText(ctx, totalLine, textX, y + 54);
   if (faction) drawContain(ctx, faction, textX + textWidth + gap, y + (medalSize - factionSize) / 2, factionSize, factionSize);
 
-  y += medalSize + 24;
-  drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, left, y, leftWidth);
-  y += 46;
-  drawBar(ctx, "MP", character.mp, character.mp_max, COLOR.mp, left, y, leftWidth);
+  y += medalSize;
 
   const titleHeight = TITLE_CROP.h / SCALE;
   const titleY = MEMORY_HEIGHT - 48 - titleHeight - 8;
 
-  // 용기·인내·자애·지혜 그림을 여백 없이 위아래로 붙여, MP 바와 타이틀 사이 가운데에 둔다.
-  // 절반 크기로 그리면 실제 PNG(SCALE 2)에서 원본 픽셀과 1:1이 되어 픽셀 아트가 고르게 보인다.
-  const statsTop = y + 40;
-  const statsHeight = gradeStatImages.reduce((sum, img) => sum + (img ? img.naturalHeight / SCALE : 0), 0);
+  // 용기·인내·자애·지혜 그림을 여백 없이 위아래로 붙여, 메달 줄과 타이틀 사이 가운데에 둔다.
+  // 그림은 4px 단위 픽셀 아트라, 실제 PNG에서 1.25배(한 칸 5px)로 그려도 칸 크기가 고르게 유지된다.
+  const statScale = 1.25 / SCALE;
+  const statsTop = y + 12;
+  const statsHeight = gradeStatImages.reduce((sum, img) => sum + (img ? img.naturalHeight * statScale : 0), 0);
   let statY = statsTop + Math.max(0, (titleY - statsTop - statsHeight) / 2);
   ctx.imageSmoothingEnabled = false;
   for (const img of gradeStatImages) {
     if (!img) continue;
-    const width = img.naturalWidth / SCALE;
-    const height = img.naturalHeight / SCALE;
+    const width = img.naturalWidth * statScale;
+    const height = img.naturalHeight * statScale;
     ctx.drawImage(img, left + (leftWidth - width) / 2, statY, width, height);
     statY += height;
   }
@@ -736,6 +734,12 @@ export async function renderCharacterMemory({
   const rightWidth = MEMORY_WIDTH - 48 - right;
 
   drawNameplate(ctx, character.name, nameplate, right, 44);
+  // HP·MP 바는 명패 오른쪽에 가로로 나란히 두고, 명패 높이 가운데에 맞춘다.
+  const barsX = right + NAMEPLATE.width + 32;
+  const barWidth = (right + rightWidth - barsX - 32) / 2;
+  const barsY = 44 + NAMEPLATE.height / 2 - 15;
+  drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, barsX, barsY, barWidth);
+  drawBar(ctx, "MP", character.mp, character.mp_max, COLOR.mp, barsX + barWidth + 32, barsY, barWidth);
 
   // 기술·동반자·장신구·특성(설명 포함). 칸 높이는 설명이 가장 긴 칸에 맞춘다.
   const loadoutY = 124;
