@@ -724,7 +724,6 @@ export async function renderCharacterMemory({
   const rightWidth = MEMORY_WIDTH - 48 - right;
 
   drawNameplate(ctx, character.name, nameplate, right, 44);
-  drawText(ctx, todayLabel(), right + rightWidth, 80, { size: 14, color: COLOR.muted, align: "right", family: "GalmuriMono11" });
 
   // 기술·동반자·장신구·특성(설명 포함). 칸 높이는 설명이 가장 긴 칸에 맞춘다.
   const loadoutY = 124;
@@ -812,7 +811,9 @@ export async function renderCharacterMemory({
 
   // 보유 아이템(개수 포함)
   const itemsY = achievementY + achievementHeight + 16;
-  const itemsHeight = MEMORY_HEIGHT - 48 - itemsY;
+  // 아래쪽에 날짜 한 줄을 쓸 자리를 남긴다.
+  const footerHeight = 24;
+  const itemsHeight = MEMORY_HEIGHT - 48 - footerHeight - itemsY;
   bodyY = panel(ctx, right, itemsY, rightWidth, itemsHeight, "보유 아이템", `${ownedItems.length}종`);
   drawRightAlignedRun(ctx, [
     ...currencyParts("골드", COLOR.gold, character.gold, character.total_gold_earned),
@@ -840,6 +841,11 @@ export async function renderCharacterMemory({
     box(ctx, x, cellY, itemCellWidth, itemRowHeight, { fill: COLOR.cell, radius: 6 });
     drawText(ctx, `외 ${ownedItems.length - shownItems.length}종`, x + itemCellWidth / 2, cellY + itemRowHeight / 2, { size: 13, color: COLOR.muted, align: "center" });
   }
+
+  // 날짜는 오른쪽 아래, 보유 아이템 패널과 테두리 사이에 쓴다.
+  drawText(ctx, todayLabel(), right + rightWidth, itemsY + itemsHeight + footerHeight / 2 + 2, {
+    size: 13, color: COLOR.muted, align: "right", family: "GalmuriMono11",
+  });
 
   cardBackdrop = null; // 큰 캔버스를 다음 그리기까지 붙잡아 두지 않는다.
   return new Promise((resolve, reject) => {
