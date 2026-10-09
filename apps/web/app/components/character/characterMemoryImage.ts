@@ -122,12 +122,18 @@ const BOOK_COLOR: Record<SkillBook, string> = {
   "탐구의 서": "#a855f7",
 };
 
+// 용기·인내·자애·지혜 순서. 등급(0~9)별 그림 public/stat/<name><등급>.png를 위에서부터 이어 붙이면
+// 하나의 액자처럼 이어진다(맨 위·맨 아래 그림에 액자 장식이 있다).
 const GRADE_STATS = [
-  { key: "stat_courage", label: "용기", color: "#ef4444" },
-  { key: "stat_endurance", label: "인내", color: "#3b82f6" },
-  { key: "stat_charity", label: "자애", color: "#10b981" },
-  { key: "stat_wisdom", label: "지혜", color: "#a855f7" },
+  { key: "stat_courage", image: "courage" },
+  { key: "stat_endurance", image: "endurance" },
+  { key: "stat_charity", image: "charity" },
+  { key: "stat_wisdom", image: "wisdom" },
 ] as const;
+
+function gradeStatImage(stat: (typeof GRADE_STATS)[number], grade: number) {
+  return `/stat/${stat.image}${Math.min(Math.max(Math.trunc(grade), 0), 9)}.png`;
+}
 
 const GROWTH_EXP_PER_LEVEL = 20; // app/crud.py의 GROWTH_EXP_PER_LEVEL과 같다.
 const MISSION_COLUMNS = 4;
@@ -626,7 +632,8 @@ export async function renderCharacterMemory({
     image(theme === "custom" ? backgroundImage : null),
     loadFonts(),
   ]);
-  const [missionImages, challengeImages, itemImages] = await Promise.all([
+  const [gradeStatImages, missionImages, challengeImages, itemImages] = await Promise.all([
+    Promise.all(GRADE_STATS.map((stat) => image(gradeStatImage(stat, character[stat.key])))),
     Promise.all(missions.map((mission) => image(mission.image_url))),
     Promise.all(challenges.map((challenge) => image(challenge.image_url))),
     Promise.all(ownedItems.map((item) => image(item.image_url))),
@@ -700,23 +707,28 @@ export async function renderCharacterMemory({
   y += 46;
   drawBar(ctx, "MP", character.mp, character.mp_max, COLOR.mp, left, y, leftWidth);
 
-  y += 52;
-  const halfWidth = (leftWidth - 12) / 2;
-  GRADE_STATS.forEach((stat, index) => {
-    const x = left + (index % 2) * (halfWidth + 12);
-    const cellY = y + Math.floor(index / 2) * 52;
-    cardBox(ctx, x, cellY, halfWidth, 42);
-    drawText(ctx, stat.label, x + 12, cellY + 21, { size: 15, color: stat.color, bold: true });
-    drawText(ctx, String(character[stat.key]), x + halfWidth - 12, cellY + 21, { size: 18, align: "right", family: "GalmuriMono11" });
-  });
+  const titleHeight = TITLE_CROP.h / SCALE;
+  const titleY = MEMORY_HEIGHT - 48 - titleHeight - 8;
+
+  // 용기·인내·자애·지혜 그림을 여백 없이 위아래로 붙여, MP 바와 타이틀 사이 가운데에 둔다.
+  // 절반 크기로 그리면 실제 PNG(SCALE 2)에서 원본 픽셀과 1:1이 되어 픽셀 아트가 고르게 보인다.
+  const statsTop = y + 40;
+  const statsHeight = gradeStatImages.reduce((sum, img) => sum + (img ? img.naturalHeight / SCALE : 0), 0);
+  let statY = statsTop + Math.max(0, (titleY - statsTop - statsHeight) / 2);
+  ctx.imageSmoothingEnabled = false;
+  for (const img of gradeStatImages) {
+    if (!img) continue;
+    const width = img.naturalWidth / SCALE;
+    const height = img.naturalHeight / SCALE;
+    ctx.drawImage(img, left + (leftWidth - width) / 2, statY, width, height);
+    statY += height;
+  }
 
   if (title) {
-    // 절반 크기로 그리면 실제 PNG(SCALE 2)에서 원본 픽셀과 1:1이 되어 픽셀 아트가 고르게 보인다.
     const titleWidth = TITLE_CROP.w / SCALE;
-    const titleHeight = TITLE_CROP.h / SCALE;
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(title, TITLE_CROP.x, TITLE_CROP.y, TITLE_CROP.w, TITLE_CROP.h,
-      left + (leftWidth - titleWidth) / 2, MEMORY_HEIGHT - 48 - titleHeight - 8, titleWidth, titleHeight);
+      left + (leftWidth - titleWidth) / 2, titleY, titleWidth, titleHeight);
   }
 
   // ── 오른쪽 ──
