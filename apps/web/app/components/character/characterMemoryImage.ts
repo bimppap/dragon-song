@@ -457,8 +457,10 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
       .filter((item) => !item.equipped && ownedItemCount(item) > 0)
       .map((item) => ({ name: item.item_name, image_url: item.item_image_url, count: ownedItemCount(item) })),
   ];
-  const missionRows = chapterRows(character.achieved_missions, MISSION_COLUMNS);
-  const challenges = character.achieved_challenges;
+  // 서버는 달성 목록을 최근 달성 순으로 내려준다(get_character_detail). 이미지는 오래된 순으로 그린다.
+  const missions = character.achieved_missions.toReversed();
+  const challenges = character.achieved_challenges.toReversed();
+  const missionRows = chapterRows(missions, MISSION_COLUMNS);
   const grade = getRankGrade(character.rank);
 
   const imageCache = new Map<string, Promise<HTMLImageElement | null>>();
@@ -480,11 +482,11 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
     loadFonts(),
   ]);
   const [missionImages, challengeImages, itemImages] = await Promise.all([
-    Promise.all(character.achieved_missions.map((mission) => image(mission.image_url))),
+    Promise.all(missions.map((mission) => image(mission.image_url))),
     Promise.all(challenges.map((challenge) => image(challenge.image_url))),
     Promise.all(ownedItems.map((item) => image(item.image_url))),
   ]);
-  const missionImageById = new Map(character.achieved_missions.map((mission, index) => [mission.mission_id, missionImages[index]]));
+  const missionImageById = new Map(missions.map((mission, index) => [mission.mission_id, missionImages[index]]));
 
   const canvas = document.createElement("canvas");
   canvas.width = MEMORY_WIDTH * SCALE;
@@ -507,22 +509,34 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
   if (frame) drawContain(ctx, frame, frameX, frameY, 240, 240);
   if (photo) drawCover(ctx, photo, frameX + 20, frameY + 20, 200, 200);
 
-  // 성장 등급(Lv. n, 아래에 총 획득 경험치)과 그 오른쪽 메달
+  // 메달과 그 오른쪽의 성장 등급(Lv. n, 아래에 총 획득 경험치). 묶음 전체를 사진 폭(200) 안 가운데에 둔다.
+  const photoX = frameX + 20;
+  const photoWidth = 200;
   const medalSize = 72;
+  const medalGap = 10;
   let y = frameY + 256;
-  const gradeWidth = leftWidth - medalSize - 12;
-  drawText(ctx, `Lv. ${character.lv}`, left + 4, y + 24, { size: 28, color: COLOR.gold, family: "GalmuriMono11" });
+  const levelText = `Lv. ${character.lv}`;
   const totalExp = Math.max(0, (character.lv - 1) * GROWTH_EXP_PER_LEVEL + character.exp);
-  drawText(ctx, `Total ${numberFormatter.format(totalExp)} EXP`, left + 4, y + 54, {
-    size: 15, color: COLOR.ivory, family: "GalmuriMono11", maxWidth: gradeWidth - 8, minSize: 11,
-  });
+  const textMaxWidth = photoWidth - medalSize - medalGap;
+  ctx.font = font(28, { family: "GalmuriMono11" });
+  const levelWidth = ctx.measureText(levelText).width;
+  const totalText = fitText(ctx, `Total ${numberFormatter.format(totalExp)} EXP`, textMaxWidth, 15, { family: "GalmuriMono11", minSize: 10 });
+  const totalFont = ctx.font;
+  const textWidth = Math.min(Math.max(levelWidth, ctx.measureText(totalText).width), textMaxWidth);
+  const groupX = photoX + (photoWidth - medalSize - medalGap - textWidth) / 2;
   if (medal) {
     ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
     ctx.shadowBlur = 4;
-    drawContain(ctx, medal, left + leftWidth - medalSize, y, medalSize, medalSize);
+    drawContain(ctx, medal, groupX, y, medalSize, medalSize);
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
   }
+  const textX = groupX + medalSize + medalGap;
+  drawText(ctx, levelText, textX, y + 24, { size: 28, color: COLOR.gold, family: "GalmuriMono11", maxWidth: textMaxWidth, minSize: 18 });
+  ctx.font = totalFont;
+  ctx.fillStyle = COLOR.ivory;
+  ctx.textAlign = "left";
+  ctx.fillText(totalText, textX, y + 54);
 
   y += medalSize + 24;
   drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, left, y, leftWidth);
