@@ -754,9 +754,9 @@ export async function renderCharacterMemory({
   drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, barsX, barsY, barWidth);
   drawBar(ctx, "MP", character.mp, character.mp_max, COLOR.mp, barsX + barWidth + 32, barsY, barWidth);
 
-  // 기술·동반자·장신구·특성(설명 포함). 칸 높이는 설명이 가장 긴 칸에 맞춘다.
+  // 기술·동반자·장신구·특성(설명 포함). 장착하지 않은 동반자·장신구 칸은 빼고, 남은 칸이 폭을 나눠 쓴다.
+  // 칸 높이는 설명이 가장 긴 칸에 맞춘다.
   const loadoutY = 124;
-  const cardWidth = (rightWidth - 36) / 4;
   const plain = (text: string | null | undefined): TextRun[] => (text ? [{ text, color: COLOR.muted }] : []);
   const loadout = [
     {
@@ -764,10 +764,11 @@ export async function renderCharacterMemory({
       nameColor: skill?.custom_description_color || COLOR.ivory,
       border: COLOR.iconBorder, description: skill ? skillDescriptionRuns(skill) : [],
     },
-    { label: "동반자", name: companion?.item_name ?? null, image: companionImage, border: COLOR.iconBorder, description: plain(companion?.item_description) },
-    { label: "장신구", name: accessory?.item_name ?? null, image: accessoryImage, border: COLOR.iconBorder, description: plain(accessory?.item_description) },
+    ...(companion ? [{ label: "동반자", name: companion.item_name, image: companionImage, border: COLOR.iconBorder, description: plain(companion.item_description) }] : []),
+    ...(accessory ? [{ label: "장신구", name: accessory.item_name, image: accessoryImage, border: COLOR.iconBorder, description: plain(accessory.item_description) }] : []),
     { label: "특성", name: trait?.name ?? null, image: traitImage, border: COLOR.iconBorder, description: plain(trait?.description) },
   ];
+  const cardWidth = (rightWidth - 12 * (loadout.length - 1)) / loadout.length;
   const cards = loadout.map((slot) => ({
     ...slot,
     lines: slot.name ? wrapRichText(ctx, slot.description, cardWidth - 24, LOADOUT_TEXT) : [],
