@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { Camera, Download } from "lucide-react";
+import { Camera, Download, ImageIcon, X } from "lucide-react";
 import Modal from "@/components/common/Modal";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { fetchCharacterSkillTree, type CharacterDetail, type SkillBook } from "@/lib/api";
 import { deepestLearnedSkill } from "@/lib/skillProgression";
-import { MEMORY_HEIGHT, MEMORY_TITLES, MEMORY_WIDTH, renderCharacterMemory } from "./characterMemoryImage";
+import { MEMORY_BACKGROUND_SIZE, MEMORY_HEIGHT, MEMORY_TITLES, MEMORY_WIDTH, renderCharacterMemory } from "./characterMemoryImage";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
 
@@ -25,6 +25,10 @@ export default function CharacterMemoryButton({ character }: { character: Charac
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [titleImage, setTitleImage] = useState(() => defaultTitle(character));
+  // 러너가 고른 배경 파일의 object URL. 서버에 올리지 않고 이 창에서만 쓴다.
+  const [backgroundUrl, setBackgroundUrl] = useState<string | null>(null);
+
+  useEffect(() => () => { if (backgroundUrl) URL.revokeObjectURL(backgroundUrl); }, [backgroundUrl]);
 
   // 창을 열 때마다 최신 정보로 다시 그린다.
   useEffect(() => {
@@ -38,6 +42,7 @@ export default function CharacterMemoryButton({ character }: { character: Charac
           character,
           skill: deepestLearnedSkill(trees.flatMap((tree) => tree.nodes)),
           titleImage,
+          backgroundImage: backgroundUrl,
         });
         if (cancelled) return;
         url = URL.createObjectURL(blob);
@@ -50,7 +55,7 @@ export default function CharacterMemoryButton({ character }: { character: Charac
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [open, character, titleImage]);
+  }, [open, character, titleImage, backgroundUrl]);
 
   function openModal() {
     setImageUrl(null);
@@ -63,6 +68,12 @@ export default function CharacterMemoryButton({ character }: { character: Charac
     setImageUrl(null);
     setError(null);
     setTitleImage(value);
+  }
+
+  function changeBackground(file: File | null) {
+    setImageUrl(null);
+    setError(null);
+    setBackgroundUrl(file ? URL.createObjectURL(file) : null);
   }
 
   return <>
@@ -80,6 +91,30 @@ export default function CharacterMemoryButton({ character }: { character: Charac
               {error ?? "이미지를 만드는 중입니다..."}
             </div>
           )}
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className={buttonVariants({ variant: "outline", size: "sm", className: "cursor-pointer gap-1.5" })}>
+            <ImageIcon size={14} />
+            {backgroundUrl ? "배경 바꾸기" : "배경 이미지 등록"}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                changeBackground(event.target.files?.[0] ?? null);
+                event.target.value = "";
+              }}
+            />
+          </label>
+          {backgroundUrl && (
+            <Button type="button" size="sm" variant="ghost" className="gap-1" onClick={() => changeBackground(null)}>
+              <X size={14} />
+              기본 배경
+            </Button>
+          )}
+          <span className="text-xs text-muted">
+            권장 크기 {MEMORY_BACKGROUND_SIZE}(16:9). 비율이 다르면 가운데를 기준으로 잘립니다.
+          </span>
         </div>
         <div className="flex flex-wrap items-center justify-end gap-2">
           <span className="text-sm text-muted">타이틀</span>

@@ -7,6 +7,8 @@ import { getRankGrade } from "@/lib/rankGrade";
 export const MEMORY_WIDTH = 1600;
 export const MEMORY_HEIGHT = 900;
 const SCALE = 2;
+/** 배경 이미지 권장 크기: 실제 PNG 크기(3200×1800)와 같으면 확대·잘림 없이 그대로 들어간다. */
+export const MEMORY_BACKGROUND_SIZE = `${MEMORY_WIDTH * SCALE}×${MEMORY_HEIGHT * SCALE}`;
 
 const COLOR = {
   ground: "#171e1e",
@@ -64,6 +66,8 @@ export interface MemoryImageData {
   skill: CharacterSkillNode | null;
   /** 왼쪽 아래 타이틀 이미지 경로(MEMORY_TITLES 중 하나). */
   titleImage: string;
+  /** 러너가 고른 배경 이미지 URL(로컬 파일의 object URL). 없으면 기본 단색 배경. */
+  backgroundImage?: string | null;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -145,11 +149,15 @@ function drawContain(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: 
   ctx.drawImage(image, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
 }
 
-function drawCover(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, w: number, h: number) {
+/** smooth를 주면 확대할 때도 부드럽게 보간한다(사진처럼 픽셀 아트가 아닌 이미지). */
+function drawCover(
+  ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, w: number, h: number, smooth = false,
+) {
   const ratio = Math.max(w / image.naturalWidth, h / image.naturalHeight);
   const sw = w / ratio;
   const sh = h / ratio;
   setSmoothing(ctx, image, w);
+  if (smooth) ctx.imageSmoothingEnabled = true;
   ctx.drawImage(image, (image.naturalWidth - sw) / 2, (image.naturalHeight - sh) / 2, sw, sh, x, y, w, h);
 }
 
@@ -445,7 +453,7 @@ function todayLabel() {
   return `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
 }
 
-export async function renderCharacterMemory({ character, skill, titleImage }: MemoryImageData): Promise<Blob> {
+export async function renderCharacterMemory({ character, skill, titleImage, backgroundImage }: MemoryImageData): Promise<Blob> {
   const equipped = (type: CharacterOwnedItem["item_type"]) =>
     character.owned_items.find((item) => item.equipped && item.item_type === type && item.quantity > 0) ?? null;
   const companion = equipped("companion");
@@ -469,7 +477,7 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
     if (!imageCache.has(src)) imageCache.set(src, loadImage(src));
     return imageCache.get(src)!;
   };
-  const [frame, photo, medal, faction, title, skillImage, companionImage, accessoryImage, traitImage] = await Promise.all([
+  const [frame, photo, medal, faction, title, skillImage, companionImage, accessoryImage, traitImage, background] = await Promise.all([
     image("/profile/frame.png"),
     image(character.image_url),
     image(grade.medalImage),
@@ -479,6 +487,7 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
     image(companion?.item_image_url),
     image(accessory?.item_image_url),
     image(trait?.image_url),
+    image(backgroundImage),
     loadFonts(),
   ]);
   const [missionImages, challengeImages, itemImages] = await Promise.all([
@@ -495,10 +504,13 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
   if (!ctx) throw new Error("이미지를 그릴 수 없는 브라우저입니다.");
   ctx.scale(SCALE, SCALE);
 
-  // 바탕과 금색 테두리.
+  // 바탕과 금색 테두리. 배경 이미지가 있으면 화면 전체를 채우고, 글씨가 읽히도록 테두리 안쪽만 반투명하게 어둡게 덮는다.
   ctx.fillStyle = COLOR.ground;
   ctx.fillRect(0, 0, MEMORY_WIDTH, MEMORY_HEIGHT);
-  box(ctx, 16, 16, MEMORY_WIDTH - 32, MEMORY_HEIGHT - 32, { fill: COLOR.surface, stroke: "rgba(232, 201, 54, 0.55)", radius: 14, lineWidth: 3 });
+  if (background) drawCover(ctx, background, 0, 0, MEMORY_WIDTH, MEMORY_HEIGHT, true);
+  box(ctx, 16, 16, MEMORY_WIDTH - 32, MEMORY_HEIGHT - 32, {
+    fill: background ? "rgba(23, 30, 30, 0.55)" : COLOR.surface, stroke: "rgba(232, 201, 54, 0.55)", radius: 14, lineWidth: 3,
+  });
   box(ctx, 24, 24, MEMORY_WIDTH - 48, MEMORY_HEIGHT - 48, { stroke: COLOR.line, radius: 10 });
 
   // ── 왼쪽: 프로필·성장·능력치·타이틀 ──
