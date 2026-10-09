@@ -232,7 +232,7 @@ export interface TokenResponse {
 export interface CharacterOnboardingCreate {
   name: string;
   faction: Faction;
-  rank: 1 | 4;
+  rank: 1 | 2;
   stat_courage: number;
   stat_endurance: number;
   stat_charity: number;

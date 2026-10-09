@@ -1,4 +1,4 @@
-"""도전과제 '종전의 기사'(12)를 달성한 캐릭터의 메달을 백금메달(rank >= 10, medal_4.png)로 변경한다.
+"""도전과제 '종전의 기사'(12)를 달성한 캐릭터의 메달을 백금메달(rank 4, medal_4.png)로 변경한다.
 
 기본은 미리보기. --apply로 적용하며 기존 등급은 임시 JSON 파일에 백업한다.
 """
@@ -14,7 +14,7 @@ from app.models import Challenge, ChallengeProgress, Character
 
 CHALLENGE_ID = 12
 CHALLENGE_NAME = "종전의 기사"
-PLATINUM_RANK = 10
+PLATINUM_RANK = 4
 
 
 def main():

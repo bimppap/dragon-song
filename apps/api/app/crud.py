@@ -17,6 +17,8 @@ from app.auth import REFRESH_TOKEN_EXPIRE_DAYS, create_access_token, generate_re
 from app.game_data import (
     ALWAYS_CHALLENGE_CHAPTER,
     MAX_CHARACTER_LEVEL,
+    MAX_CHARACTER_RANK,
+    MIN_CHARACTER_RANK,
     build_skill_node_specs,
     calculate_stat_grade_totals,
     dynamic_derived_description,
@@ -742,6 +744,8 @@ def patch_admin_character(
     normalized = {"def_" if key == "def" else key: value for key, value in stats.items()}
     if set(normalized) - allowed:
         raise HTTPException(status_code=400, detail="수정할 수 없는 능력치입니다.")
+    if "rank" in normalized and not MIN_CHARACTER_RANK <= normalized["rank"] <= MAX_CHARACTER_RANK:
+        raise HTTPException(status_code=400, detail=f"모험가 등급은 {MIN_CHARACTER_RANK}~{MAX_CHARACTER_RANK} 사이여야 합니다.")
     values = {key: getattr(character, key) for key in allowed}
     try:
         validated = CharacterCreate(name=character.name, **{**values, **normalized})
@@ -1385,6 +1389,8 @@ def _apply_item_effects(character: Character, effects: list[dict], sign: int) ->
         next_value = _floor_amount(current + delta) if value_type is int else float(current + delta)
         if attr == "hp" and not character.over_heal:
             next_value = min(next_value, character.hp_max)
+        elif attr == "rank":
+            next_value = max(MIN_CHARACTER_RANK, min(next_value, MAX_CHARACTER_RANK))
         setattr(character, attr, next_value)
 
         # 최대 체력/마나가 바뀌면 현재 체력/마나도 같은 만큼 함께 움직인다(늘면 늘고, 줄면 줄어듦).

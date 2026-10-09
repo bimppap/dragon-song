@@ -19,6 +19,10 @@ ALWAYS_CHALLENGE_CHAPTER = "상시"
 # 레벨로 인덱싱하는 LEVEL_GRADE_STATS는 5를 넘으면 clamp되어 이후 레벨은 모두 같은 조건이다.
 MAX_CHARACTER_LEVEL = 11
 
+# 모험가 등급(rank)은 메달 단계 그대로다: 1 동, 2 은, 3 금, 4 백금, 5 용린.
+MIN_CHARACTER_RANK = 1
+MAX_CHARACTER_RANK = 5
+
 
 def get_level_grade_stats(grade: int) -> dict:
     clamped = max(0, min(grade, len(LEVEL_GRADE_STATS) - 1))

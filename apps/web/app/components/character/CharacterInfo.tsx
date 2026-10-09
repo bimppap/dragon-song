@@ -31,7 +31,10 @@ import CharacterEquipmentSlots from "./CharacterEquipmentSlots";
 import CharacterTrait from "./CharacterTrait";
 import SpiritStoneCustomizeModal from "./SpiritStoneCustomizeModal";
 import SpiritStoneExchangeForm from "./SpiritStoneExchangeForm";
-import { SPIRIT_STONE_CUSTOMIZE_GUIDE, unlocksSpiritStoneCustomization } from "@/lib/spiritStone";
+import {
+  SPIRIT_STONE_CUSTOMIZE_GUIDE,
+  unlocksSpiritStoneCustomization,
+} from "@/lib/spiritStone";
 import EmptyState from "@/components/common/EmptyState";
 import InfoTooltip from "@/components/common/InfoTooltip";
 import Modal from "@/components/common/Modal";
@@ -43,12 +46,7 @@ import { formatRewardItems, rewardLabel, rewardVisual } from "@/lib/rewards";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -59,8 +57,41 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
-import { MAX_CHARACTER_LEVEL, patchAdminCharacter, formatEffect, consumeItem, deleteCharacter, equipItem, fetchCharacterDetail, fetchItems, fetchTraitStatus, fetchTakenDeliveryDates, fetchDeliveryRecipients, fetchRecollectionMissions, fetchAcquisitionChallenges, fetchSpiritStoneOptions, GRADE_CHOICE_STAT_OPTIONS, unequipItem, uploadDeliveryImage, upgradeCharacterStat, uploadCharacterImage } from "@/lib/api";
-import type { Character, CharacterDetail, CharacterOwnedItem, DeliveryPayload, Faction, GradeStat, Item, ItemEffect, ItemHistoryEntry, Reward, RewardGrant, UseItemSelection } from "@/lib/api";
+import {
+  MAX_CHARACTER_LEVEL,
+  patchAdminCharacter,
+  formatEffect,
+  consumeItem,
+  deleteCharacter,
+  equipItem,
+  fetchCharacterDetail,
+  fetchItems,
+  fetchTraitStatus,
+  fetchTakenDeliveryDates,
+  fetchDeliveryRecipients,
+  fetchRecollectionMissions,
+  fetchAcquisitionChallenges,
+  fetchSpiritStoneOptions,
+  GRADE_CHOICE_STAT_OPTIONS,
+  unequipItem,
+  uploadDeliveryImage,
+  upgradeCharacterStat,
+  uploadCharacterImage,
+} from "@/lib/api";
+import type {
+  Character,
+  CharacterDetail,
+  CharacterOwnedItem,
+  DeliveryPayload,
+  Faction,
+  GradeStat,
+  Item,
+  ItemEffect,
+  ItemHistoryEntry,
+  Reward,
+  RewardGrant,
+  UseItemSelection,
+} from "@/lib/api";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import DatePicker from "@/components/ui/date-picker";
 import { Textarea } from "@/components/ui/textarea";
@@ -82,56 +113,98 @@ interface Props {
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
-const percentageFormatter = new Intl.NumberFormat("ko-KR", { maximumFractionDigits: 1 });
+const percentageFormatter = new Intl.NumberFormat("ko-KR", {
+  maximumFractionDigits: 1,
+});
 
 const CORE_STATS: {
-  key: keyof Pick<CharacterDetail, "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom">;
+  key: keyof Pick<
+    CharacterDetail,
+    "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom"
+  >;
   label: string;
   icon: React.ElementType;
   accent: string;
 }[] = [
   { key: "stat_courage", label: "용기", icon: Flame, accent: "text-red-500" },
-  { key: "stat_endurance", label: "인내", icon: Shield, accent: "text-blue-500" },
-  { key: "stat_charity", label: "자애", icon: HeartHandshake, accent: "text-emerald-500" },
-  { key: "stat_wisdom", label: "지혜", icon: BookOpen, accent: "text-purple-500" },
+  {
+    key: "stat_endurance",
+    label: "인내",
+    icon: Shield,
+    accent: "text-blue-500",
+  },
+  {
+    key: "stat_charity",
+    label: "자애",
+    icon: HeartHandshake,
+    accent: "text-emerald-500",
+  },
+  {
+    key: "stat_wisdom",
+    label: "지혜",
+    icon: BookOpen,
+    accent: "text-purple-500",
+  },
 ];
 
 const RANK_GRADES = [
   {
     name: "동",
-    description: "기본적인 전투 감각을 익히는 입문 등급입니다.",
+    description: "입문의 증표. 모헙가로서 첫발을 내디딘 자에게 주어지는 패.",
     medalImage: "/medal/medal_1.png",
   },
   {
     name: "은",
-    description: "기본 전투를 안정적으로 수행할 수 있는 숙련 등급입니다.",
+    description:
+      "신뢰의 증표. 모험가로서 능력과 신뢰를 인정받은 자에게 주어지는 패.",
     medalImage: "/medal/medal_2.png",
   },
   {
     name: "금",
-    description: "전투와 파티 운영에서 중심 역할을 맡는 상위 등급입니다.",
+    description:
+      "공훈의 증표. 탁월한 공적을 세워 길드와 사람들에게 큰 기여를 한 자에게 주어지는 패.",
     medalImage: "/medal/medal_3.png",
   },
   {
     name: "백금",
-    description: "전쟁을 끝낸 기사에게 주어지는 최상위 등급입니다.",
+    description:
+      "위업의 증표. 한 국가의 역사에 남을 만한 업적을 세운 자에게 주어지는 패.",
+    medalImage: "/medal/medal_4.png",
+  },
+  {
+    name: "용린",
+    description:
+      "전설의 증표. 시대의 한계를 넘어설 정도의 업적을 세운 자에게 주어지는 패.",
     medalImage: "/medal/medal_4.png",
   },
 ] as const;
 
-/** 모험가 등급(rank) 값을 동/은/금/백금 4단계로 분류한다. */
+/** 모험가 등급(rank) 1~5를 동/은/금/백금/용린 패로 바꾼다. 범위를 벗어나면 가장 가까운 등급으로 본다. */
 function getRankGrade(rank: number) {
-  const index = rank <= 3 ? 0 : rank <= 6 ? 1 : rank <= 9 ? 2 : 3;
-  return RANK_GRADES[index];
+  return RANK_GRADES[Math.min(Math.max(rank, 1), RANK_GRADES.length) - 1];
 }
 
 const DETAIL_STATS: {
   key: keyof Pick<
     CharacterDetail,
-    "atk" | "atk_p" | "def" | "def_p" | "def_eff" | "presence" | "hp_max" |
-    "hp_max_p" | "hp_regen_true" | "hp_regen_fixed" | "heal_eff" |
-    "mp_max" | "mp_regen" | "sh" | "dmg_p" | "dmg_r" | "skill_eff_true" |
-    "skill_eff_fixed"
+    | "atk"
+    | "atk_p"
+    | "def"
+    | "def_p"
+    | "def_eff"
+    | "presence"
+    | "hp_max"
+    | "hp_max_p"
+    | "hp_regen_true"
+    | "hp_regen_fixed"
+    | "heal_eff"
+    | "mp_max"
+    | "mp_regen"
+    | "sh"
+    | "dmg_p"
+    | "dmg_r"
+    | "skill_eff_true"
+    | "skill_eff_fixed"
   >;
   label: string;
   description: string;
@@ -139,24 +212,114 @@ const DETAIL_STATS: {
   /** true면 값 자체를 ×100%로 표시(예: 0.3 → 30%). 기본은 (1+값)×100%(예: 0 → 100%, 증폭류 스탯). */
   rawPercent?: boolean;
 }[] = [
-  { key: "atk", label: "공격력", description: "공격 행동 시 에너미에게 주는 기본 피해량입니다." },
-  { key: "atk_p", label: "공격력 증폭(%)", isFloat: true, rawPercent: true, description: "공격력에 곱해지는 증폭 배율입니다. 높을수록 공격 피해가 커집니다." },
-  { key: "def", label: "방어력", description: "수비할 때 받는 피해를 고정으로 줄여 주는 값입니다." },
-  { key: "def_p", label: "방어력 증폭(%)", isFloat: true, rawPercent: true, description: "방어력에 곱해지는 증폭 배율입니다." },
-  { key: "def_eff", label: "방어 효율(%)", isFloat: true, rawPercent: true, description: "방어력이 실제 피해 경감에 적용되는 효율 배율입니다." },
-  { key: "presence", label: "존재감(%)", isFloat: true, rawPercent: true, description: "주목도와 함께 에너미의 대상 선정에 반영되는 보조 지표입니다." },
-  { key: "hp_max", label: "최대 체력", description: "체력의 최대치 기준값입니다." },
-  { key: "hp_max_p", label: "체력 증폭(%)", isFloat: true, rawPercent: true, description: "최대 체력에 곱해지는 증폭 배율입니다." },
-  { key: "hp_regen_true", label: "체력 재생력(고정)", description: "매 라운드 시작 시 고정으로 회복하는 체력입니다." },
-  { key: "hp_regen_fixed", label: "체력 재생력(비례)", isFloat: true, rawPercent: true, description: "매 라운드 최대 체력에 비례해 회복하는 체력 배율입니다." },
-  { key: "heal_eff", label: "치유 효율(%)", isFloat: true, rawPercent: true, description: "치유 행동 시 회복량의 기준값입니다." },
+  {
+    key: "atk",
+    label: "공격력",
+    description: "공격 행동 시 에너미에게 주는 기본 피해량입니다.",
+  },
+  {
+    key: "atk_p",
+    label: "공격력 증폭(%)",
+    isFloat: true,
+    rawPercent: true,
+    description:
+      "공격력에 곱해지는 증폭 배율입니다. 높을수록 공격 피해가 커집니다.",
+  },
+  {
+    key: "def",
+    label: "방어력",
+    description: "수비할 때 받는 피해를 고정으로 줄여 주는 값입니다.",
+  },
+  {
+    key: "def_p",
+    label: "방어력 증폭(%)",
+    isFloat: true,
+    rawPercent: true,
+    description: "방어력에 곱해지는 증폭 배율입니다.",
+  },
+  {
+    key: "def_eff",
+    label: "방어 효율(%)",
+    isFloat: true,
+    rawPercent: true,
+    description: "방어력이 실제 피해 경감에 적용되는 효율 배율입니다.",
+  },
+  {
+    key: "presence",
+    label: "존재감(%)",
+    isFloat: true,
+    rawPercent: true,
+    description: "주목도와 함께 에너미의 대상 선정에 반영되는 보조 지표입니다.",
+  },
+  {
+    key: "hp_max",
+    label: "최대 체력",
+    description: "체력의 최대치 기준값입니다.",
+  },
+  {
+    key: "hp_max_p",
+    label: "체력 증폭(%)",
+    isFloat: true,
+    rawPercent: true,
+    description: "최대 체력에 곱해지는 증폭 배율입니다.",
+  },
+  {
+    key: "hp_regen_true",
+    label: "체력 재생력(고정)",
+    description: "매 라운드 시작 시 고정으로 회복하는 체력입니다.",
+  },
+  {
+    key: "hp_regen_fixed",
+    label: "체력 재생력(비례)",
+    isFloat: true,
+    rawPercent: true,
+    description: "매 라운드 최대 체력에 비례해 회복하는 체력 배율입니다.",
+  },
+  {
+    key: "heal_eff",
+    label: "치유 효율(%)",
+    isFloat: true,
+    rawPercent: true,
+    description: "치유 행동 시 회복량의 기준값입니다.",
+  },
   { key: "mp_max", label: "마나 최대치", description: "마나의 최대치입니다." },
-  { key: "mp_regen", label: "마나 재생력", description: "매 라운드 회복하는 마나입니다." },
-  { key: "sh", label: "보호막", description: "체력보다 먼저 피해를 흡수하는 보호막입니다." },
-  { key: "dmg_p", label: "피해 증폭", isFloat: true, rawPercent: true, description: "가하는 피해 전체에 적용되는 증폭 배율입니다." },
-  { key: "dmg_r", label: "피해 감소(%)", isFloat: true, rawPercent: true, description: "받는 피해를 비율로 줄여 주는 감소율입니다. 전투에서 방어 행동을 고른 라운드에는 여기에 수비 +50%, 그 외 포지션 +30%가 더해집니다." },
-  { key: "skill_eff_true", label: "기술 효율(고정)", description: "기술 피해·치유에 더해지는 고정값입니다." },
-  { key: "skill_eff_fixed", label: "기술 효율(비례)", isFloat: true, rawPercent: true, description: "기술 등급과 곱해져 위력을 높이는 비례 계수입니다." },
+  {
+    key: "mp_regen",
+    label: "마나 재생력",
+    description: "매 라운드 회복하는 마나입니다.",
+  },
+  {
+    key: "sh",
+    label: "보호막",
+    description: "체력보다 먼저 피해를 흡수하는 보호막입니다.",
+  },
+  {
+    key: "dmg_p",
+    label: "피해 증폭",
+    isFloat: true,
+    rawPercent: true,
+    description: "가하는 피해 전체에 적용되는 증폭 배율입니다.",
+  },
+  {
+    key: "dmg_r",
+    label: "피해 감소(%)",
+    isFloat: true,
+    rawPercent: true,
+    description:
+      "받는 피해를 비율로 줄여 주는 감소율입니다. 전투에서 방어 행동을 고른 라운드에는 여기에 수비 +50%, 그 외 포지션 +30%가 더해집니다.",
+  },
+  {
+    key: "skill_eff_true",
+    label: "기술 효율(고정)",
+    description: "기술 피해·치유에 더해지는 고정값입니다.",
+  },
+  {
+    key: "skill_eff_fixed",
+    label: "기술 효율(비례)",
+    isFloat: true,
+    rawPercent: true,
+    description: "기술 등급과 곱해져 위력을 높이는 비례 계수입니다.",
+  },
 ];
 
 type AdminOnlyStatType = "int" | "percent" | "boolean";
@@ -182,18 +345,23 @@ const ADMIN_ONLY_STATS: {
   {
     key: "act_time",
     label: "행동횟수",
-    description: "(적군 전용 능력치) 한 차례의 몇 번의 행동을 하는지 정하는 수치 (기본: 1)",
+    description:
+      "(적군 전용 능력치) 한 차례의 몇 번의 행동을 하는지 정하는 수치 (기본: 1)",
     type: "int",
   },
   {
     key: "over_heal",
     label: "오버힐",
-    description: "회복되는 수치가 회복 대상의 최대 체력을 초과하는 경우, 초과분 누적의 허용을 결정하는 값",
+    description:
+      "회복되는 수치가 회복 대상의 최대 체력을 초과하는 경우, 초과분 누적의 허용을 결정하는 값",
     type: "boolean",
   },
 ];
 
-function formatAdminOnlyStat(type: AdminOnlyStatType, value: number | boolean): string {
+function formatAdminOnlyStat(
+  type: AdminOnlyStatType,
+  value: number | boolean,
+): string {
   if (type === "boolean") return value ? "가능" : "불가능";
   if (type === "percent") return `${(Number(value) * 100).toFixed(1)}%`;
   return numberFormatter.format(Number(value));
@@ -201,9 +369,20 @@ function formatAdminOnlyStat(type: AdminOnlyStatType, value: number | boolean): 
 
 /** 수치를 더블클릭(또는 포커스 후 Enter)하면 그 자리에서 고칠 수 있게 하는 표시용 래퍼.
  *  onSave가 없으면 편집 기능 없이 값만 보여준다(러너 화면·열람 전용). */
-function EditableValue({ value, display, label, onSave, disabled = false, boolean = false }: {
-  value: number | boolean; display: React.ReactNode; label: string;
-  onSave?: (value: number | boolean) => Promise<void>; disabled?: boolean; boolean?: boolean;
+function EditableValue({
+  value,
+  display,
+  label,
+  onSave,
+  disabled = false,
+  boolean = false,
+}: {
+  value: number | boolean;
+  display: React.ReactNode;
+  label: string;
+  onSave?: (value: number | boolean) => Promise<void>;
+  disabled?: boolean;
+  boolean?: boolean;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value));
@@ -225,7 +404,9 @@ function EditableValue({ value, display, label, onSave, disabled = false, boolea
         aria-label={`${label} 직접 수정`}
         className="cursor-text rounded underline decoration-dotted decoration-muted underline-offset-2"
         onDoubleClick={startEditing}
-        onKeyDown={(event) => { if (event.key === "Enter") startEditing(); }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") startEditing();
+        }}
       >
         {display}
       </span>
@@ -238,14 +419,25 @@ function EditableValue({ value, display, label, onSave, disabled = false, boolea
       onSubmit={async (event) => {
         event.preventDefault();
         const next = boolean ? draft === "true" : Number(draft);
-        if (!boolean && (!draft.trim() || !Number.isFinite(next))) { setError("숫자를 입력해 주세요."); return; }
-        try { await onSave(next); setEditing(false); }
-        catch (saveError) { setError(saveError instanceof Error ? saveError.message : "저장 실패"); }
+        if (!boolean && (!draft.trim() || !Number.isFinite(next))) {
+          setError("숫자를 입력해 주세요.");
+          return;
+        }
+        try {
+          await onSave(next);
+          setEditing(false);
+        } catch (saveError) {
+          setError(
+            saveError instanceof Error ? saveError.message : "저장 실패",
+          );
+        }
       }}
     >
       {boolean ? (
         <Select value={draft} onValueChange={setDraft}>
-          <SelectTrigger aria-label={label} className="h-7 w-24"><SelectValue /></SelectTrigger>
+          <SelectTrigger aria-label={label} className="h-7 w-24">
+            <SelectValue />
+          </SelectTrigger>
           <SelectContent>
             <SelectItem value="true">가능</SelectItem>
             <SelectItem value="false">불가능</SelectItem>
@@ -260,12 +452,37 @@ function EditableValue({ value, display, label, onSave, disabled = false, boolea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           className="h-7 w-24"
-          onKeyDown={(event) => { if (event.key === "Escape") { event.stopPropagation(); setEditing(false); } }}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              event.stopPropagation();
+              setEditing(false);
+            }
+          }}
         />
       )}
-      <Button type="submit" size="sm" variant="ghost" disabled={disabled} className="h-7 px-2 text-xs text-gold">저장</Button>
-      <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)} className="h-7 px-2 text-xs text-muted">취소</Button>
-      {error && <span role="alert" className="w-full text-xs text-red-500">{error}</span>}
+      <Button
+        type="submit"
+        size="sm"
+        variant="ghost"
+        disabled={disabled}
+        className="h-7 px-2 text-xs text-gold"
+      >
+        저장
+      </Button>
+      <Button
+        type="button"
+        size="sm"
+        variant="ghost"
+        onClick={() => setEditing(false)}
+        className="h-7 px-2 text-xs text-muted"
+      >
+        취소
+      </Button>
+      {error && (
+        <span role="alert" className="w-full text-xs text-red-500">
+          {error}
+        </span>
+      )}
     </form>
   );
 }
@@ -298,7 +515,19 @@ function StatBar({
           {label}
         </span>
         <span className="font-num text-ivory">
-          <EditableValue value={value} display={numberFormatter.format(value)} label={`${label} 현재값`} onSave={onValueSave} /> / <EditableValue value={max} display={numberFormatter.format(max)} label={`${label} 최대값`} onSave={onMaxSave} />
+          <EditableValue
+            value={value}
+            display={numberFormatter.format(value)}
+            label={`${label} 현재값`}
+            onSave={onValueSave}
+          />{" "}
+          /{" "}
+          <EditableValue
+            value={max}
+            display={numberFormatter.format(max)}
+            label={`${label} 최대값`}
+            onSave={onMaxSave}
+          />
         </span>
       </div>
       <div className="h-2.5 w-full overflow-hidden rounded-full bg-white/10">
@@ -338,7 +567,12 @@ function CoreStatLine({
       </span>
       <span className="flex items-center gap-1.5">
         <span className="font-num text-base font-semibold text-ivory">
-          <EditableValue value={value} display={numberFormatter.format(value)} label={label} onSave={onEdit} />
+          <EditableValue
+            value={value}
+            display={numberFormatter.format(value)}
+            label={label}
+            onSave={onEdit}
+          />
         </span>
         {canUpgrade && (
           <button
@@ -373,7 +607,10 @@ function ExperienceBar({
   const [cumulative, setCumulative] = useState(false);
   const displayValue = cumulative ? cumulativeValue : value;
   const displayMax = cumulative ? cumulativeMax : max;
-  const pct = displayMax > 0 ? Math.min(100, Math.max(0, (displayValue / displayMax) * 100)) : 0;
+  const pct =
+    displayMax > 0
+      ? Math.min(100, Math.max(0, (displayValue / displayMax) * 100))
+      : 0;
 
   return (
     <button
@@ -389,7 +626,8 @@ function ExperienceBar({
         />
       </span>
       <span className="font-num shrink-0 text-ivory">
-        {numberFormatter.format(displayValue)} / {numberFormatter.format(displayMax)}
+        {numberFormatter.format(displayValue)} /{" "}
+        {numberFormatter.format(displayMax)}
       </span>
     </button>
   );
@@ -418,7 +656,10 @@ function GradeChoiceSelector({
 
   return (
     <div className="mt-3 flex flex-col gap-2">
-      <p className="text-sm text-muted">능력치를 {requiredCount}개 선택하세요. ({selected.length}/{requiredCount})</p>
+      <p className="text-sm text-muted">
+        능력치를 {requiredCount}개 선택하세요. ({selected.length}/
+        {requiredCount})
+      </p>
       <div className="flex flex-wrap gap-2">
         {GRADE_CHOICE_STAT_OPTIONS.map((option) => (
           <button
@@ -452,7 +693,8 @@ function FactionChoiceSelector({
   return (
     <div className="mt-3 flex flex-col gap-3">
       <p className="text-sm text-muted">
-        바꿀 역할을 선택하세요. 기술과 능력치가 초기화되고, 사용한 SP와 AP를 모두 돌려받습니다.
+        바꿀 역할을 선택하세요. 기술과 능력치가 초기화되고, 사용한 SP와 AP를
+        모두 돌려받습니다.
       </p>
       <RadioGroup
         value={selected ?? ""}
@@ -470,12 +712,19 @@ function FactionChoiceSelector({
               selected === faction && "border-gold bg-gold/10",
             )}
           >
-            <Image src={FACTION_POSITION_IMAGE[faction]} alt={faction} width={40} height={40} />
+            <Image
+              src={FACTION_POSITION_IMAGE[faction]}
+              alt={faction}
+              width={40}
+              height={40}
+            />
             <div className="flex items-center gap-2">
               <RadioGroupItem value={faction} />
               <span className="font-semibold text-ivory">{faction}</span>
             </div>
-            {faction === currentFaction && <span className="text-xs text-muted">현재 역할</span>}
+            {faction === currentFaction && (
+              <span className="text-xs text-muted">현재 역할</span>
+            )}
           </label>
         ))}
       </RadioGroup>
@@ -499,19 +748,29 @@ function DeliveryDateSlotForm({
   return (
     <div className="mt-3 flex flex-col gap-3">
       <div className="space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">날짜 (미래 날짜만 선택 가능)</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          날짜 (미래 날짜만 선택 가능)
+        </p>
         <DatePicker
           value={date}
-          onChange={(value) => { setDate(value); onChange({ date: value, note }); }}
+          onChange={(value) => {
+            setDate(value);
+            onChange({ date: value, note });
+          }}
           minDate={tomorrow}
           disabledDates={takenDates}
         />
       </div>
       <div className="space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">지문 입력란</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          지문 입력란
+        </p>
         <Textarea
           value={note}
-          onChange={(event) => { setNote(event.target.value); onChange({ date: date ?? undefined, note: event.target.value }); }}
+          onChange={(event) => {
+            setNote(event.target.value);
+            onChange({ date: date ?? undefined, note: event.target.value });
+          }}
           rows={3}
           placeholder="출석부에 남길 지문을 입력하세요."
         />
@@ -540,15 +799,29 @@ const RECIPIENT_QUICK_PICKS: { label: string; faction: Faction | null }[] = [
 ];
 
 function emptyGiftSet(key: number): GiftSetDraft {
-  return { key, recipientIds: [], imageUrl: null, previewUrl: null, uploading: false, letter: "" };
+  return {
+    key,
+    recipientIds: [],
+    imageUrl: null,
+    previewUrl: null,
+    uploading: false,
+    letter: "",
+  };
 }
 
 /** 선물 상자 배달 요청 폼. 개인은 1명에게 1세트, 단체는 세트마다 여러 명에게 보내며 익명 여부는 전체에 한 번만 정한다. */
 // 요청 1회에 담을 수 있는 선물세트 수(서버 DeliveryGiftGroup 목록 최대 길이와 같다).
 const MAX_GIFT_SETS = 100;
 
-function DeliveryGiftForm({ characterId, recipients, availableBoxes, onChange }: {
-  characterId: number; recipients: DeliveryRecipient[]; availableBoxes: number;
+function DeliveryGiftForm({
+  characterId,
+  recipients,
+  availableBoxes,
+  onChange,
+}: {
+  characterId: number;
+  recipients: DeliveryRecipient[];
+  availableBoxes: number;
   onChange: (groups: DeliveryPayload[]) => void;
 }) {
   const { toast } = useToast();
@@ -559,162 +832,386 @@ function DeliveryGiftForm({ characterId, recipients, availableBoxes, onChange }:
   const nextKey = useRef(1);
 
   useEffect(() => {
-    onChange(sets.map((set) => ({
-      recipient_ids: set.recipientIds, image_url: set.imageUrl, letter: set.letter, anonymous, uploading: set.uploading,
-    })));
+    onChange(
+      sets.map((set) => ({
+        recipient_ids: set.recipientIds,
+        image_url: set.imageUrl,
+        letter: set.letter,
+        anonymous,
+        uploading: set.uploading,
+      })),
+    );
   }, [sets, anonymous, onChange]);
 
   function updateSet(key: number, update: (set: GiftSetDraft) => GiftSetDraft) {
     // 업로드가 끝나기 전에 세트가 지워졌다면 결과를 버린다.
-    setSets((prev) => prev.map((set) => set.key === key ? update(set) : set));
+    setSets((prev) => prev.map((set) => (set.key === key ? update(set) : set)));
   }
 
   async function uploadImage(key: number, file: File) {
     // 다른 이미지 업로드 폼과 동일하게, 서버 업로드 완료를 기다리지 않고 먼저 로컬 미리보기를 보여준다.
-    updateSet(key, (set) => ({ ...set, previewUrl: URL.createObjectURL(file), uploading: true }));
+    updateSet(key, (set) => ({
+      ...set,
+      previewUrl: URL.createObjectURL(file),
+      uploading: true,
+    }));
     try {
       const url = await uploadDeliveryImage(characterId, file);
       updateSet(key, (set) => ({ ...set, imageUrl: url, uploading: false }));
     } catch (error) {
-      toast(error instanceof Error ? error.message : "이미지 업로드 실패", "error");
-      updateSet(key, (set) => ({ ...set, previewUrl: set.imageUrl, uploading: false }));
+      toast(
+        error instanceof Error ? error.message : "이미지 업로드 실패",
+        "error",
+      );
+      updateSet(key, (set) => ({
+        ...set,
+        previewUrl: set.imageUrl,
+        uploading: false,
+      }));
     }
   }
 
   const [firstSet] = sets;
   // 선물 상자는 받는 캐릭터 1명당 1개라, 모든 세트의 선택 인원 합계가 보유 수를 넘지 못한다.
-  const selectedCount = sets.reduce((total, set) => total + set.recipientIds.length, 0);
+  const selectedCount = sets.reduce(
+    (total, set) => total + set.recipientIds.length,
+    0,
+  );
   const remainingBoxes = Math.max(0, availableBoxes - selectedCount);
   const lostOnSingle = [
-    sets.length > 1 && (sets.length === 2 ? "선물세트 2" : `선물세트 2~${sets.length}`),
-    firstSet.recipientIds.length > 1 && `선물세트 1의 수신자 ${firstSet.recipientIds.length}명 선택`,
+    sets.length > 1 &&
+      (sets.length === 2 ? "선물세트 2" : `선물세트 2~${sets.length}`),
+    firstSet.recipientIds.length > 1 &&
+      `선물세트 1의 수신자 ${firstSet.recipientIds.length}명 선택`,
   ].filter((part): part is string => Boolean(part));
 
   function selectMode(next: GiftMode) {
     if (next === mode) return;
-    if (next === "single" && lostOnSingle.length > 0) { setConfirmingSingle(true); return; }
+    if (next === "single" && lostOnSingle.length > 0) {
+      setConfirmingSingle(true);
+      return;
+    }
     setConfirmingSingle(false);
     setMode(next);
   }
 
   function convertToSingle() {
-    setSets((prev) => [{ ...prev[0], recipientIds: prev[0].recipientIds.length === 1 ? prev[0].recipientIds : [] }]);
+    setSets((prev) => [
+      {
+        ...prev[0],
+        recipientIds:
+          prev[0].recipientIds.length === 1 ? prev[0].recipientIds : [],
+      },
+    ]);
     setMode("single");
     setConfirmingSingle(false);
   }
 
-  return <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <div className="flex rounded-lg border border-line bg-inset p-1" role="group" aria-label="보내는 방식">
-        {([["single", "개인"], ["group", "단체"]] as const).map(([value, label]) => (
-          <Button key={value} type="button" size="sm" variant={mode === value ? "default" : "ghost"} aria-pressed={mode === value}
-            onClick={() => selectMode(value)}>{label}</Button>
-        ))}
+  return (
+    <div className="mt-3 max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div
+          className="flex rounded-lg border border-line bg-inset p-1"
+          role="group"
+          aria-label="보내는 방식"
+        >
+          {(
+            [
+              ["single", "개인"],
+              ["group", "단체"],
+            ] as const
+          ).map(([value, label]) => (
+            <Button
+              key={value}
+              type="button"
+              size="sm"
+              variant={mode === value ? "default" : "ghost"}
+              aria-pressed={mode === value}
+              onClick={() => selectMode(value)}
+            >
+              {label}
+            </Button>
+          ))}
+        </div>
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox
+            checked={anonymous}
+            onCheckedChange={(checked) => setAnonymous(checked === true)}
+          />
+          익명으로 보내기
+        </label>
       </div>
-      <label className="flex items-center gap-2 text-sm">
-        <Checkbox checked={anonymous} onCheckedChange={(checked) => setAnonymous(checked === true)} />익명으로 보내기
-      </label>
+      {confirmingSingle && lostOnSingle.length > 0 && (
+        <div
+          role="alertdialog"
+          aria-label="개인으로 전환 확인"
+          className="space-y-2 rounded-lg border border-red-500/50 bg-red-500/10 p-3"
+        >
+          <p className="text-sm text-ivory">
+            개인으로 바꾸면 다음 편집 정보가 사라집니다:{" "}
+            {lostOnSingle.join(", ")}. 선물세트 1의 이미지와 편지는 유지됩니다.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setConfirmingSingle(false)}
+            >
+              단체 유지
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={convertToSingle}
+            >
+              개인으로 전환
+            </Button>
+          </div>
+        </div>
+      )}
+      {mode === "group" && (
+        <p
+          className={cn(
+            "text-sm font-semibold",
+            remainingBoxes === 0 ? "text-gold" : "text-ivory",
+          )}
+        >
+          보유 선물 상자 {availableBoxes}개 · 선택 {selectedCount}명
+        </p>
+      )}
+      <p className="text-xs text-muted">
+        {mode === "single"
+          ? "선물 상자 1개로 1명에게 보냅니다."
+          : "세트에 담긴 모든 수신자에게 같은 내용을 전달합니다. 1명당 선물 상자 1개를 소비합니다."}
+      </p>
+      {sets.map((set, index) => (
+        <GiftSetEditor
+          key={set.key}
+          set={set}
+          mode={mode}
+          title={`선물세트 ${index + 1}`}
+          recipients={recipients}
+          remainingBoxes={remainingBoxes}
+          onRemove={
+            mode === "group" && sets.length > 1
+              ? () =>
+                  setSets((prev) =>
+                    prev.filter((value) => value.key !== set.key),
+                  )
+              : undefined
+          }
+          onRecipients={(recipientIds) =>
+            updateSet(set.key, (value) => ({ ...value, recipientIds }))
+          }
+          onLetter={(letter) =>
+            updateSet(set.key, (value) => ({ ...value, letter }))
+          }
+          onImage={(file) => void uploadImage(set.key, file)}
+        />
+      ))}
+      {mode === "group" && (
+        <Button
+          type="button"
+          variant="outline"
+          disabled={sets.length >= MAX_GIFT_SETS || remainingBoxes === 0}
+          onClick={() => {
+            const key = nextKey.current++;
+            setSets((prev) => [...prev, emptyGiftSet(key)]);
+          }}
+        >
+          선물세트 추가
+        </Button>
+      )}
     </div>
-    {confirmingSingle && lostOnSingle.length > 0 && <div role="alertdialog" aria-label="개인으로 전환 확인" className="space-y-2 rounded-lg border border-red-500/50 bg-red-500/10 p-3">
-      <p className="text-sm text-ivory">개인으로 바꾸면 다음 편집 정보가 사라집니다: {lostOnSingle.join(", ")}. 선물세트 1의 이미지와 편지는 유지됩니다.</p>
-      <div className="flex justify-end gap-2">
-        <Button type="button" size="sm" variant="outline" onClick={() => setConfirmingSingle(false)}>단체 유지</Button>
-        <Button type="button" size="sm" variant="destructive" onClick={convertToSingle}>개인으로 전환</Button>
-      </div>
-    </div>}
-    {mode === "group" && <p className={cn("text-sm font-semibold", remainingBoxes === 0 ? "text-gold" : "text-ivory")}>
-      보유 선물 상자 {availableBoxes}개 · 선택 {selectedCount}명
-    </p>}
-    <p className="text-xs text-muted">
-      {mode === "single"
-        ? "선물 상자 1개로 1명에게 보냅니다."
-        : "세트에 담긴 모든 수신자에게 같은 내용을 전달합니다. 1명당 선물 상자 1개를 소비합니다."}
-    </p>
-    {sets.map((set, index) => (
-      <GiftSetEditor key={set.key} set={set} mode={mode} title={`선물세트 ${index + 1}`} recipients={recipients} remainingBoxes={remainingBoxes}
-        onRemove={mode === "group" && sets.length > 1 ? () => setSets((prev) => prev.filter((value) => value.key !== set.key)) : undefined}
-        onRecipients={(recipientIds) => updateSet(set.key, (value) => ({ ...value, recipientIds }))}
-        onLetter={(letter) => updateSet(set.key, (value) => ({ ...value, letter }))}
-        onImage={(file) => void uploadImage(set.key, file)} />
-    ))}
-    {mode === "group" && <Button type="button" variant="outline" disabled={sets.length >= MAX_GIFT_SETS || remainingBoxes === 0} onClick={() => {
-      const key = nextKey.current++;
-      setSets((prev) => [...prev, emptyGiftSet(key)]);
-    }}>선물세트 추가</Button>}
-  </div>;
+  );
 }
 
-function GiftSetEditor({ set, mode, title, recipients, remainingBoxes, onRemove, onRecipients, onLetter, onImage }: {
-  set: GiftSetDraft; mode: GiftMode; title: string; recipients: DeliveryRecipient[]; remainingBoxes: number;
-  onRemove?: () => void; onRecipients: (ids: number[]) => void; onLetter: (letter: string) => void; onImage: (file: File) => void;
+function GiftSetEditor({
+  set,
+  mode,
+  title,
+  recipients,
+  remainingBoxes,
+  onRemove,
+  onRecipients,
+  onLetter,
+  onImage,
+}: {
+  set: GiftSetDraft;
+  mode: GiftMode;
+  title: string;
+  recipients: DeliveryRecipient[];
+  remainingBoxes: number;
+  onRemove?: () => void;
+  onRecipients: (ids: number[]) => void;
+  onLetter: (letter: string) => void;
+  onImage: (file: File) => void;
 }) {
   const { previewUrl } = set;
   const shownImage = set.imageUrl ?? previewUrl;
-  useEffect(() => () => {
-    if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
+  useEffect(
+    () => () => {
+      if (previewUrl?.startsWith("blob:")) URL.revokeObjectURL(previewUrl);
+    },
+    [previewUrl],
+  );
 
   return (
-    <div className={cn("flex flex-col gap-3", mode === "group" && "rounded-lg border border-line p-3")}>
-      {mode === "group" && <div className="flex items-center justify-between">
-        <strong>{title}</strong>
-        {onRemove && <Button type="button" size="sm" variant="ghost" onClick={onRemove}>삭제</Button>}
-      </div>}
+    <div
+      className={cn(
+        "flex flex-col gap-3",
+        mode === "group" && "rounded-lg border border-line p-3",
+      )}
+    >
+      {mode === "group" && (
+        <div className="flex items-center justify-between">
+          <strong>{title}</strong>
+          {onRemove && (
+            <Button type="button" size="sm" variant="ghost" onClick={onRemove}>
+              삭제
+            </Button>
+          )}
+        </div>
+      )}
       {mode === "single" ? (
         <div className="space-y-1.5">
-          <p id={`gift-recipient-${set.key}`} className="text-xs font-semibold text-muted">수신자 (러너·스텝 캐릭터 1명)</p>
-          <Select value={set.recipientIds[0]?.toString() ?? ""} disabled={set.uploading} onValueChange={(value) => onRecipients([Number(value)])}>
-            <SelectTrigger aria-labelledby={`gift-recipient-${set.key}`}><SelectValue placeholder="선물 상자를 받을 캐릭터 선택" /></SelectTrigger>
-            <SelectContent>{recipients.map((recipient) => <SelectItem key={recipient.id} value={String(recipient.id)}>{recipient.name}</SelectItem>)}</SelectContent>
+          <p
+            id={`gift-recipient-${set.key}`}
+            className="text-xs font-semibold text-muted"
+          >
+            수신자 (러너·스텝 캐릭터 1명)
+          </p>
+          <Select
+            value={set.recipientIds[0]?.toString() ?? ""}
+            disabled={set.uploading}
+            onValueChange={(value) => onRecipients([Number(value)])}
+          >
+            <SelectTrigger aria-labelledby={`gift-recipient-${set.key}`}>
+              <SelectValue placeholder="선물 상자를 받을 캐릭터 선택" />
+            </SelectTrigger>
+            <SelectContent>
+              {recipients.map((recipient) => (
+                <SelectItem key={recipient.id} value={String(recipient.id)}>
+                  {recipient.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
           </Select>
         </div>
       ) : (
         <div className="space-y-1.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
-            <p className="text-xs font-semibold text-muted">수신자 ({set.recipientIds.length}명)</p>
-            <div className="flex flex-wrap gap-1" role="group" aria-label={`${title} 수신자 빠른 선택`}>
+            <p className="text-xs font-semibold text-muted">
+              수신자 ({set.recipientIds.length}명)
+            </p>
+            <div
+              className="flex flex-wrap gap-1"
+              role="group"
+              aria-label={`${title} 수신자 빠른 선택`}
+            >
               {RECIPIENT_QUICK_PICKS.map((pick) => {
-                const ids = recipients.filter((recipient) => pick.faction == null || recipient.faction === pick.faction).map((recipient) => recipient.id);
-                const allSelected = ids.length > 0 && ids.every((id) => set.recipientIds.includes(id));
-                const missing = ids.filter((id) => !set.recipientIds.includes(id)).length;
+                const ids = recipients
+                  .filter(
+                    (recipient) =>
+                      pick.faction == null ||
+                      recipient.faction === pick.faction,
+                  )
+                  .map((recipient) => recipient.id);
+                const allSelected =
+                  ids.length > 0 &&
+                  ids.every((id) => set.recipientIds.includes(id));
+                const missing = ids.filter(
+                  (id) => !set.recipientIds.includes(id),
+                ).length;
                 const exceeds = !allSelected && missing > remainingBoxes;
-                return <Button key={pick.label} type="button" size="sm" variant={allSelected ? "default" : "outline"} aria-pressed={allSelected}
-                  title={exceeds ? `선물 상자가 ${missing - remainingBoxes}개 부족합니다.` : undefined}
-                  disabled={set.uploading || ids.length === 0 || exceeds}
-                  onClick={() => onRecipients(allSelected
-                    ? set.recipientIds.filter((id) => !ids.includes(id))
-                    : [...new Set([...set.recipientIds, ...ids])])}>{pick.label}</Button>;
+                return (
+                  <Button
+                    key={pick.label}
+                    type="button"
+                    size="sm"
+                    variant={allSelected ? "default" : "outline"}
+                    aria-pressed={allSelected}
+                    title={
+                      exceeds
+                        ? `선물 상자가 ${missing - remainingBoxes}개 부족합니다.`
+                        : undefined
+                    }
+                    disabled={set.uploading || ids.length === 0 || exceeds}
+                    onClick={() =>
+                      onRecipients(
+                        allSelected
+                          ? set.recipientIds.filter((id) => !ids.includes(id))
+                          : [...new Set([...set.recipientIds, ...ids])],
+                      )
+                    }
+                  >
+                    {pick.label}
+                  </Button>
+                );
               })}
             </div>
           </div>
           <div className="grid max-h-40 grid-cols-2 gap-2 overflow-y-auto rounded border border-line p-2">
-            {recipients.map((recipient) => <label key={recipient.id} className="flex items-center gap-2 text-sm">
-              <Checkbox disabled={set.uploading || (remainingBoxes === 0 && !set.recipientIds.includes(recipient.id))} checked={set.recipientIds.includes(recipient.id)} onCheckedChange={(checked) => onRecipients(
-                checked === true ? [...set.recipientIds, recipient.id] : set.recipientIds.filter((id) => id !== recipient.id),
-              )} />{recipient.name}
-            </label>)}
+            {recipients.map((recipient) => (
+              <label
+                key={recipient.id}
+                className="flex items-center gap-2 text-sm"
+              >
+                <Checkbox
+                  disabled={
+                    set.uploading ||
+                    (remainingBoxes === 0 &&
+                      !set.recipientIds.includes(recipient.id))
+                  }
+                  checked={set.recipientIds.includes(recipient.id)}
+                  onCheckedChange={(checked) =>
+                    onRecipients(
+                      checked === true
+                        ? [...set.recipientIds, recipient.id]
+                        : set.recipientIds.filter((id) => id !== recipient.id),
+                    )
+                  }
+                />
+                {recipient.name}
+              </label>
+            ))}
           </div>
         </div>
       )}
       <div className="space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">이미지 (선택)</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          이미지 (선택)
+        </p>
         {shownImage && (
           <div className="relative aspect-video w-full overflow-hidden rounded-lg border border-line bg-inset">
             {/* blob: 미리보기 URL은 next/image 옵티마이저가 처리할 수 없어 unoptimized로 렌더링한다. */}
-            <Image src={shownImage} alt="첨부 이미지 미리보기" fill unoptimized className="object-contain" />
+            <Image
+              src={shownImage}
+              alt="첨부 이미지 미리보기"
+              fill
+              unoptimized
+              className="object-contain"
+            />
           </div>
         )}
         <input
           type="file"
           accept="image/*"
           disabled={set.uploading}
-          onChange={(event) => { const file = event.target.files?.[0]; if (file) onImage(file); }}
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) onImage(file);
+          }}
           className="w-full text-xs text-muted file:mr-2 file:rounded-md file:border file:border-line file:bg-surface file:px-2 file:py-1 file:text-xs file:text-ivory"
         />
         {set.uploading && <p className="text-xs text-muted">업로드 중...</p>}
       </div>
       <div className="space-y-1.5">
-        <p className="text-xs font-semibold uppercase tracking-wide text-muted">편지 (선택)</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-muted">
+          편지 (선택)
+        </p>
         <Textarea
           value={set.letter}
           disabled={set.uploading}
@@ -749,7 +1246,14 @@ function GroupBadgeTile() {
       >
         <div className="relative flex size-14 shrink-0 cursor-default">
           <div className="relative flex size-full items-center justify-center overflow-hidden rounded-2xl bg-gold/10 text-gold">
-            <Image src={GROUP_BADGE.imageUrl} alt={GROUP_BADGE.name} fill sizes="56px" unoptimized className="object-cover" />
+            <Image
+              src={GROUP_BADGE.imageUrl}
+              alt={GROUP_BADGE.name}
+              fill
+              sizes="56px"
+              unoptimized
+              className="object-cover"
+            />
           </div>
         </div>
       </InfoTooltip>
@@ -791,11 +1295,16 @@ function OwnedItemTile({
   const remainingUses = item.quantity - item.used_quantity;
   const badgeCount = isConsumable ? remainingUses : item.quantity;
   const gradeChoiceEffect = item.effects.find(
-    (effect) => effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2",
+    (effect) =>
+      effect.stat === "grade_choice_1" || effect.stat === "grade_choice_2",
   );
-  const isFullReset = item.effects.some((effect) => effect.stat === "full_reset");
+  const isFullReset = item.effects.some(
+    (effect) => effect.stat === "full_reset",
+  );
   const deliveryStat = item.effects.find(
-    (effect) => effect.stat === "delivery_date_slot" || effect.stat === "delivery_freeform",
+    (effect) =>
+      effect.stat === "delivery_date_slot" ||
+      effect.stat === "delivery_freeform",
   )?.stat;
 
   return (
@@ -808,12 +1317,26 @@ function OwnedItemTile({
             {item.item_description && (
               <div className="mt-1 text-muted">{item.item_description}</div>
             )}
-            {item.effects.length > 0 && <div className="mt-2 text-gold">{item.effects.map(formatEffect).join(" · ")}</div>}
+            {item.effects.length > 0 && (
+              <div className="mt-2 text-gold">
+                {item.effects.map(formatEffect).join(" · ")}
+              </div>
+            )}
             {item.battle_only && (
-              <div className="mt-1 text-gold">전투 중에만 사용할 수 있는 아이템입니다.</div>
+              <div className="mt-1 text-gold">
+                전투 중에만 사용할 수 있는 아이템입니다.
+              </div>
             )}
             {item.customizable && !readOnly && onCustomize && (
-              <Button type="button" size="sm" variant="secondary" className="mt-2 w-full" onClick={onCustomize}>커스텀하기</Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                className="mt-2 w-full"
+                onClick={onCustomize}
+              >
+                커스텀하기
+              </Button>
             )}
           </div>
         }
@@ -826,7 +1349,14 @@ function OwnedItemTile({
             )}
           >
             {item.item_image_url ? (
-              <Image src={item.item_image_url} alt={item.item_name} fill sizes="56px" unoptimized className="object-cover" />
+              <Image
+                src={item.item_image_url}
+                alt={item.item_name}
+                fill
+                sizes="56px"
+                unoptimized
+                className="object-cover"
+              />
             ) : (
               <Package size={22} />
             )}
@@ -843,77 +1373,197 @@ function OwnedItemTile({
           size="sm"
           variant="outline"
           onClick={async () => {
-            if (item.effects.some((effect) => effect.stat === "spirit_stone_exchange")) {
-              if (!spiritStones.length) { toast("교환할 수 있는 보유 정령석이 없습니다.", "error"); return; }
+            if (
+              item.effects.some(
+                (effect) => effect.stat === "spirit_stone_exchange",
+              )
+            ) {
+              if (!spiritStones.length) {
+                toast("교환할 수 있는 보유 정령석이 없습니다.", "error");
+                return;
+              }
               try {
                 const options = await fetchSpiritStoneOptions(characterId);
-                const soldOutIds = new Set(options.filter((option) => option.sold_out).map((option) => option.item_id));
-                if (spiritStones.every((stone) => soldOutIds.has(stone.item_id))) {
-                  toast("보유한 정령석이 모두 품절된 정령석이라 교환할 수 없습니다.", "error");
+                const soldOutIds = new Set(
+                  options
+                    .filter((option) => option.sold_out)
+                    .map((option) => option.item_id),
+                );
+                if (
+                  spiritStones.every((stone) => soldOutIds.has(stone.item_id))
+                ) {
+                  toast(
+                    "보유한 정령석이 모두 품절된 정령석이라 교환할 수 없습니다.",
+                    "error",
+                  );
                   return;
                 }
-                if (!options.some((option) => !option.owned && !option.sold_out)) {
+                if (
+                  !options.some((option) => !option.owned && !option.sold_out)
+                ) {
                   toast("받을 수 있는 정령석이 없습니다.", "error");
                   return;
                 }
-                const selection: { current: { fromItemId: number | null; toItemId: number | null } } = { current: { fromItemId: null, toItemId: null } };
+                const selection: {
+                  current: {
+                    fromItemId: number | null;
+                    toItemId: number | null;
+                  };
+                } = { current: { fromItemId: null, toItemId: null } };
                 const ok = await confirm({
                   title: "정령석 교환",
                   confirmText: "교환하기",
                   maxWidthClassName: "max-w-3xl",
                   disableEnterConfirm: true,
-                  validate: () => !selection.current.fromItemId
-                    ? "교환할 보유 정령석을 골라 주세요."
-                    : !selection.current.toItemId ? "받을 정령석을 골라 주세요." : null,
-                  content: <SpiritStoneExchangeForm owned={spiritStones} options={options} onChange={(next) => { selection.current = next; }} />,
+                  validate: () =>
+                    !selection.current.fromItemId
+                      ? "교환할 보유 정령석을 골라 주세요."
+                      : !selection.current.toItemId
+                        ? "받을 정령석을 골라 주세요."
+                        : null,
+                  content: (
+                    <SpiritStoneExchangeForm
+                      owned={spiritStones}
+                      options={options}
+                      onChange={(next) => {
+                        selection.current = next;
+                      }}
+                    />
+                  ),
                 });
                 const { fromItemId, toItemId } = selection.current;
-                if (ok && fromItemId && toItemId) onUse({ exchange: { fromItemId, toItemId } });
-              } catch (error) { toast(error instanceof Error ? error.message : "정령석 목록 조회 실패", "error"); }
+                if (ok && fromItemId && toItemId)
+                  onUse({ exchange: { fromItemId, toItemId } });
+              } catch (error) {
+                toast(
+                  error instanceof Error
+                    ? error.message
+                    : "정령석 목록 조회 실패",
+                  "error",
+                );
+              }
               return;
             }
-            if (item.effects.some((effect) => effect.stat === "challenge_acquisition")) {
+            if (
+              item.effects.some(
+                (effect) => effect.stat === "challenge_acquisition",
+              )
+            ) {
               try {
-                const challenges = await fetchAcquisitionChallenges(characterId, item.item_id);
-                if (!challenges.length) { toast("획득할 수 있는 미달성 도전과제가 없습니다.", "error"); return; }
-                const selected: { current: number | undefined } = { current: undefined };
+                const challenges = await fetchAcquisitionChallenges(
+                  characterId,
+                  item.item_id,
+                );
+                if (!challenges.length) {
+                  toast("획득할 수 있는 미달성 도전과제가 없습니다.", "error");
+                  return;
+                }
+                const selected: { current: number | undefined } = {
+                  current: undefined,
+                };
                 const ok = await confirm({
                   title: "도전과제 획득",
                   description: `'${item.item_name}'을(를) 사용해 선택한 도전과제를 달성합니다.`,
                   confirmText: "사용하기",
-                  content: <Select onValueChange={(value) => { selected.current = Number(value); }}>
-                    <SelectTrigger className="mt-3 h-auto min-h-9 [&>span]:line-clamp-none [&>span]:whitespace-normal" aria-label="획득할 도전과제"><SelectValue placeholder="획득할 도전과제 선택" /></SelectTrigger>
-                    <SelectContent>{challenges.map((challenge) => <SelectItem key={challenge.id} value={String(challenge.id)}>
-                      {challenge.name}
-                    </SelectItem>)}</SelectContent>
-                  </Select>,
+                  content: (
+                    <Select
+                      onValueChange={(value) => {
+                        selected.current = Number(value);
+                      }}
+                    >
+                      <SelectTrigger
+                        className="mt-3 h-auto min-h-9 [&>span]:line-clamp-none [&>span]:whitespace-normal"
+                        aria-label="획득할 도전과제"
+                      >
+                        <SelectValue placeholder="획득할 도전과제 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {challenges.map((challenge) => (
+                          <SelectItem
+                            key={challenge.id}
+                            value={String(challenge.id)}
+                          >
+                            {challenge.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ),
                 });
                 if (!ok) return;
-                if (selected.current === undefined) { toast("도전과제를 선택해 주세요.", "error"); return; }
+                if (selected.current === undefined) {
+                  toast("도전과제를 선택해 주세요.", "error");
+                  return;
+                }
                 onUse({ challengeId: selected.current });
-              } catch (error) { toast(error instanceof Error ? error.message : "획득 가능한 도전과제 조회 실패", "error"); }
+              } catch (error) {
+                toast(
+                  error instanceof Error
+                    ? error.message
+                    : "획득 가능한 도전과제 조회 실패",
+                  "error",
+                );
+              }
               return;
             }
-            if (item.effects.some((effect) => effect.stat === "mission_exp_recollection")) {
+            if (
+              item.effects.some(
+                (effect) => effect.stat === "mission_exp_recollection",
+              )
+            ) {
               try {
-                const missions = await fetchRecollectionMissions(characterId, item.item_id);
-                if (!missions.length) { toast("회고할 수 있는 미달성 임무가 없습니다.", "error"); return; }
-                const selected: { current: number | undefined } = { current: undefined };
+                const missions = await fetchRecollectionMissions(
+                  characterId,
+                  item.item_id,
+                );
+                if (!missions.length) {
+                  toast("회고할 수 있는 미달성 임무가 없습니다.", "error");
+                  return;
+                }
+                const selected: { current: number | undefined } = {
+                  current: undefined,
+                };
                 const ok = await confirm({
                   title: "회고록 사용",
                   description: "선택한 임무의 경험치만 받습니다.",
                   confirmText: "사용하기",
-                  content: <Select onValueChange={(value) => { selected.current = Number(value); }}>
-                    <SelectTrigger className="mt-3" aria-label="회고할 임무"><SelectValue placeholder="경험치를 받을 임무 선택" /></SelectTrigger>
-                    <SelectContent>{missions.map((mission) => <SelectItem key={mission.id} value={String(mission.id)}>
-                      {mission.name} · 경험치 {mission.reward_experience.toLocaleString()}
-                    </SelectItem>)}</SelectContent>
-                  </Select>,
+                  content: (
+                    <Select
+                      onValueChange={(value) => {
+                        selected.current = Number(value);
+                      }}
+                    >
+                      <SelectTrigger className="mt-3" aria-label="회고할 임무">
+                        <SelectValue placeholder="경험치를 받을 임무 선택" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {missions.map((mission) => (
+                          <SelectItem
+                            key={mission.id}
+                            value={String(mission.id)}
+                          >
+                            {mission.name} · 경험치{" "}
+                            {mission.reward_experience.toLocaleString()}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ),
                 });
                 if (!ok) return;
-                if (selected.current === undefined) { toast("임무를 선택해 주세요.", "error"); return; }
+                if (selected.current === undefined) {
+                  toast("임무를 선택해 주세요.", "error");
+                  return;
+                }
                 onUse({ missionId: selected.current });
-              } catch (error) { toast(error instanceof Error ? error.message : "회고할 임무 조회 실패", "error"); }
+              } catch (error) {
+                toast(
+                  error instanceof Error
+                    ? error.message
+                    : "회고할 임무 조회 실패",
+                  "error",
+                );
+              }
               return;
             }
             if (isFullReset) {
@@ -925,17 +1575,23 @@ function OwnedItemTile({
                 content: (
                   <FactionChoiceSelector
                     currentFaction={currentFaction}
-                    onChange={(faction) => { chosenRef.current = faction; }}
+                    onChange={(faction) => {
+                      chosenRef.current = faction;
+                    }}
                   />
                 ),
               });
               if (!ok) return;
-              if (chosenRef.current === null) { toast("바꿀 역할을 선택해 주세요.", "error"); return; }
+              if (chosenRef.current === null) {
+                toast("바꿀 역할을 선택해 주세요.", "error");
+                return;
+              }
               onUse({ chosenFaction: chosenRef.current });
               return;
             }
             if (gradeChoiceEffect) {
-              const requiredCount = gradeChoiceEffect.stat === "grade_choice_1" ? 1 : 2;
+              const requiredCount =
+                gradeChoiceEffect.stat === "grade_choice_1" ? 1 : 2;
               const chosenRef: { current: string[] } = { current: [] };
               const ok = await confirm({
                 title: "아이템 사용",
@@ -943,7 +1599,9 @@ function OwnedItemTile({
                 content: (
                   <GradeChoiceSelector
                     requiredCount={requiredCount}
-                    onChange={(stats) => { chosenRef.current = stats; }}
+                    onChange={(stats) => {
+                      chosenRef.current = stats;
+                    }}
                   />
                 ),
               });
@@ -951,7 +1609,9 @@ function OwnedItemTile({
               return;
             }
             if (deliveryStat === "delivery_date_slot") {
-              const takenDates = await fetchTakenDeliveryDates(item.item_id).catch(() => []);
+              const takenDates = await fetchTakenDeliveryDates(
+                item.item_id,
+              ).catch(() => []);
               const payloadRef: { current: DeliveryPayload } = { current: {} };
               const ok = await confirm({
                 title: "출석부 지문",
@@ -959,12 +1619,17 @@ function OwnedItemTile({
                 content: (
                   <DeliveryDateSlotForm
                     takenDates={takenDates}
-                    onChange={(payload) => { payloadRef.current = payload; }}
+                    onChange={(payload) => {
+                      payloadRef.current = payload;
+                    }}
                   />
                 ),
               });
               if (!ok) return;
-              if (!payloadRef.current.date || !(payloadRef.current.note || "").trim()) {
+              if (
+                !payloadRef.current.date ||
+                !(payloadRef.current.note || "").trim()
+              ) {
                 toast("날짜와 지문을 모두 입력해 주세요.", "error");
                 return;
               }
@@ -973,10 +1638,24 @@ function OwnedItemTile({
             }
             if (deliveryStat === "delivery_freeform") {
               let recipients: DeliveryRecipient[];
-              try { recipients = await fetchDeliveryRecipients(); }
-              catch (error) { toast(error instanceof Error ? error.message : "수신자 목록 조회 실패", "error"); return; }
-              if (!recipients.length) { toast("선택 가능한 수신자가 없습니다.", "error"); return; }
-              const groupsRef: { current: DeliveryPayload[] } = { current: [{}] };
+              try {
+                recipients = await fetchDeliveryRecipients();
+              } catch (error) {
+                toast(
+                  error instanceof Error
+                    ? error.message
+                    : "수신자 목록 조회 실패",
+                  "error",
+                );
+                return;
+              }
+              if (!recipients.length) {
+                toast("선택 가능한 수신자가 없습니다.", "error");
+                return;
+              }
+              const groupsRef: { current: DeliveryPayload[] } = {
+                current: [{}],
+              };
               const ok = await confirm({
                 title: "선물 상자 배달 요청",
                 confirmText: "요청하기",
@@ -984,25 +1663,48 @@ function OwnedItemTile({
                 disableEnterConfirm: true,
                 validate: () => {
                   for (const [index, group] of groupsRef.current.entries()) {
-                    const label = groupsRef.current.length > 1 ? `선물세트 ${index + 1}의 ` : "";
-                    if (group.uploading) return `${label}이미지 업로드를 완료해 주세요.`;
-                    if (!group.recipient_ids?.length) return `${label}수신자를 선택해 주세요.`;
-                    if (!group.image_url && !group.letter?.trim()) return `${label}이미지 또는 편지를 입력해 주세요.`;
+                    const label =
+                      groupsRef.current.length > 1
+                        ? `선물세트 ${index + 1}의 `
+                        : "";
+                    if (group.uploading)
+                      return `${label}이미지 업로드를 완료해 주세요.`;
+                    if (!group.recipient_ids?.length)
+                      return `${label}수신자를 선택해 주세요.`;
+                    if (!group.image_url && !group.letter?.trim())
+                      return `${label}이미지 또는 편지를 입력해 주세요.`;
                   }
-                  const required = groupsRef.current.reduce((total, group) => total + (group.recipient_ids?.length ?? 0), 0);
-                  if (required > remainingUses) return `받는 캐릭터 수만큼 선물 상자가 필요합니다. (필요 ${required}개 / 보유 ${remainingUses}개)`;
+                  const required = groupsRef.current.reduce(
+                    (total, group) =>
+                      total + (group.recipient_ids?.length ?? 0),
+                    0,
+                  );
+                  if (required > remainingUses)
+                    return `받는 캐릭터 수만큼 선물 상자가 필요합니다. (필요 ${required}개 / 보유 ${remainingUses}개)`;
                   return null;
                 },
-                content: <DeliveryGiftForm recipients={recipients} characterId={characterId} availableBoxes={remainingUses}
-                  onChange={(groups) => { groupsRef.current = groups; }} />,
+                content: (
+                  <DeliveryGiftForm
+                    recipients={recipients}
+                    characterId={characterId}
+                    availableBoxes={remainingUses}
+                    onChange={(groups) => {
+                      groupsRef.current = groups;
+                    }}
+                  />
+                ),
               });
               if (!ok) return;
               onUse({ deliveryGroups: groupsRef.current });
               return;
             }
-            const description = item.effects.some((effect) => effect.stat === "trait_change")
+            const description = item.effects.some(
+              (effect) => effect.stat === "trait_change",
+            )
               ? `'${item.item_name}'을(를) 사용하면 장착한 특성이 해제되고, 특성을 다시 고를 수 있습니다. 사용하시겠습니까?`
-              : item.effects.some((effect) => effect.stat === "accessory_upgrade")
+              : item.effects.some(
+                    (effect) => effect.stat === "accessory_upgrade",
+                  )
                 ? `'${item.item_name}'을(를) 사용하면 '성장의 목걸이'와 이 아이템이 사라지고, 강화된 장신구를 받습니다. 사용하시겠습니까?`
                 : `'${item.item_name}'을(를) 사용하시겠습니까?`;
             if (await confirm({ title: "아이템 사용", description })) onUse();
@@ -1012,7 +1714,12 @@ function OwnedItemTile({
           사용
         </Button>
       ) : item.equipped ? (
-        <Button size="sm" variant="secondary" onClick={onUnequip} disabled={loading}>
+        <Button
+          size="sm"
+          variant="secondary"
+          onClick={onUnequip}
+          disabled={loading}
+        >
           해제
         </Button>
       ) : (
@@ -1021,10 +1728,23 @@ function OwnedItemTile({
           variant="outline"
           onClick={async () => {
             const chosen: { current: string[] } = { current: [] };
-            const requiredCount = gradeChoiceEffect?.stat === "grade_choice_2" ? 2 : 1;
-            if (await confirm({ title: "아이템 장착", description: `'${item.item_name}'을(를) 장착하시겠습니까?`,
-              content: gradeChoiceEffect ? <GradeChoiceSelector requiredCount={requiredCount} onChange={(stats) => { chosen.current = stats; }} /> : undefined,
-            })) onEquip({ chosenStats: chosen.current });
+            const requiredCount =
+              gradeChoiceEffect?.stat === "grade_choice_2" ? 2 : 1;
+            if (
+              await confirm({
+                title: "아이템 장착",
+                description: `'${item.item_name}'을(를) 장착하시겠습니까?`,
+                content: gradeChoiceEffect ? (
+                  <GradeChoiceSelector
+                    requiredCount={requiredCount}
+                    onChange={(stats) => {
+                      chosen.current = stats;
+                    }}
+                  />
+                ) : undefined,
+              })
+            )
+              onEquip({ chosenStats: chosen.current });
           }}
           disabled={loading || item.quantity <= 0}
         >
@@ -1055,16 +1775,21 @@ function AchievedTile({
       content={
         <div className="max-w-56 text-left">
           <div className="font-semibold">{name}</div>
-          {description && (
-            <div className="mt-1 text-muted">{description}</div>
-          )}
+          {description && <div className="mt-1 text-muted">{description}</div>}
           <RewardSummary entries={rewardItems} items={items} className="mt-2" />
         </div>
       }
     >
       <div className="relative flex size-14 shrink-0 cursor-default items-center justify-center overflow-hidden bg-gold/10 text-gold">
         {imageUrl ? (
-          <Image src={imageUrl} alt={name} fill sizes="56px" unoptimized className="object-cover" />
+          <Image
+            src={imageUrl}
+            alt={name}
+            fill
+            sizes="56px"
+            unoptimized
+            className="object-cover"
+          />
         ) : (
           <Trophy size={22} />
         )}
@@ -1081,7 +1806,9 @@ function RewardHistoryRow({ reward }: { reward: Reward }) {
   return (
     <div className="flex items-center justify-between rounded-2xl border border-line px-4 py-4">
       <div className="flex items-center gap-3">
-        <span className={`flex size-10 shrink-0 items-center justify-center rounded-full ${iconClassName}`}>
+        <span
+          className={`flex size-10 shrink-0 items-center justify-center rounded-full ${iconClassName}`}
+        >
           <RewardIcon size={18} />
         </span>
         <div className="flex flex-col gap-1">
@@ -1117,7 +1844,14 @@ function ItemHistoryRow({ entry }: { entry: ItemHistoryEntry }) {
           )}
         >
           {entry.item_image_url ? (
-            <Image src={entry.item_image_url} alt={entry.item_name} fill sizes="40px" unoptimized className="object-cover" />
+            <Image
+              src={entry.item_image_url}
+              alt={entry.item_name}
+              fill
+              sizes="40px"
+              unoptimized
+              className="object-cover"
+            />
           ) : (
             <Backpack size={18} />
           )}
@@ -1129,7 +1863,13 @@ function ItemHistoryRow({ entry }: { entry: ItemHistoryEntry }) {
           </p>
           {refunds.length > 0 && (
             <p className="text-sm text-emerald-400">
-              {refunds.map((refund) => `${refund.label} +${refund.amount.toLocaleString()}`).join(" · ")} 환급
+              {refunds
+                .map(
+                  (refund) =>
+                    `${refund.label} +${refund.amount.toLocaleString()}`,
+                )
+                .join(" · ")}{" "}
+              환급
             </p>
           )}
         </div>
@@ -1165,7 +1905,9 @@ function HistoryModal<T extends { id: number }>({
   function handleScroll(event: React.UIEvent<HTMLDivElement>) {
     const el = event.currentTarget;
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 120) {
-      setVisibleCount((prev) => Math.min(prev + HISTORY_PAGE_SIZE, items.length));
+      setVisibleCount((prev) =>
+        Math.min(prev + HISTORY_PAGE_SIZE, items.length),
+      );
     }
   }
 
@@ -1177,7 +1919,10 @@ function HistoryModal<T extends { id: number }>({
         <EmptyState className="rounded-2xl">{emptyText}</EmptyState>
       ) : (
         <>
-          <div className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto pr-1" onScroll={handleScroll}>
+          <div
+            className="flex max-h-[60vh] flex-col gap-3 overflow-y-auto pr-1"
+            onScroll={handleScroll}
+          >
             {visibleItems.map((item) => (
               <div key={item.id}>{renderItem(item)}</div>
             ))}
@@ -1205,14 +1950,21 @@ export default function CharacterInfo({
   const canViewHistory = showHistory ?? !readOnly;
   const { toast } = useToast();
   const { confirm, alert } = useDialog();
-  const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<number | null>(focusCharacterId);
+  const [selectedCharacterIdState, setSelectedCharacterIdState] = useState<
+    number | null
+  >(focusCharacterId);
   const [detail, setDetail] = useState<CharacterDetail | null>(null);
-  const [customizingItemId, setCustomizingItemId] = useState<number | null>(null);
+  const [customizingItemId, setCustomizingItemId] = useState<number | null>(
+    null,
+  );
   const [detailLoading, setDetailLoading] = useState(false);
-  const [statUpgradeLoading, setStatUpgradeLoading] = useState<GradeStat | null>(null);
+  const [statUpgradeLoading, setStatUpgradeLoading] =
+    useState<GradeStat | null>(null);
   const [adminSaving, setAdminSaving] = useState(false);
   const [showDetails, setShowDetails] = useState(false);
-  const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(null);
+  const [itemActionLoadingId, setItemActionLoadingId] = useState<number | null>(
+    null,
+  );
   const [imageUploading, setImageUploading] = useState(false);
   const [imageError, setImageError] = useState<string | null>(null);
   const [deletingCharacter, setDeletingCharacter] = useState(false);
@@ -1224,7 +1976,9 @@ export default function CharacterInfo({
 
   useEffect(() => {
     fetchItems().then(setItems).catch(console.error);
-    fetchTraitStatus().then((status) => setTraitOpen(status.is_open)).catch(console.error);
+    fetchTraitStatus()
+      .then((status) => setTraitOpen(status.is_open))
+      .catch(console.error);
   }, []);
 
   const selectedCharacterId = characters.some(
@@ -1234,7 +1988,10 @@ export default function CharacterInfo({
     : (characters[0]?.id ?? null);
   const selectedDetail =
     detail != null && detail.id === selectedCharacterId ? detail : null;
-  const customizingItem = selectedDetail?.owned_items.find((owned) => owned.item_id === customizingItemId && owned.customizable) ?? null;
+  const customizingItem =
+    selectedDetail?.owned_items.find(
+      (owned) => owned.item_id === customizingItemId && owned.customizable,
+    ) ?? null;
 
   useEffect(() => {
     const characterId = selectedCharacterId;
@@ -1256,7 +2013,9 @@ export default function CharacterInfo({
         if (cancelled) return;
         console.error(error);
         toast(
-          error instanceof Error ? error.message : "캐릭터 상세 정보를 불러오지 못했습니다.",
+          error instanceof Error
+            ? error.message
+            : "캐릭터 상세 정보를 불러오지 못했습니다.",
           "error",
         );
       } finally {
@@ -1275,19 +2034,31 @@ export default function CharacterInfo({
 
   async function handleItemAction(
     itemId: number,
-    action: (characterId: number, itemId: number, selection?: UseItemSelection) => Promise<CharacterDetail>,
+    action: (
+      characterId: number,
+      itemId: number,
+      selection?: UseItemSelection,
+    ) => Promise<CharacterDetail>,
     selection?: UseItemSelection,
   ) {
     if (selectedDetail == null) return;
     setItemActionLoadingId(itemId);
-    const item = selectedDetail.owned_items.find((owned) => owned.item_id === itemId);
+    const item = selectedDetail.owned_items.find(
+      (owned) => owned.item_id === itemId,
+    );
     let unlockedCustomization = false;
     try {
       const nextDetail = await action(selectedDetail.id, itemId, selection);
       setDetail(nextDetail);
-      unlockedCustomization = action === consumeItem && item != null && unlocksSpiritStoneCustomization(item.effects);
+      unlockedCustomization =
+        action === consumeItem &&
+        item != null &&
+        unlocksSpiritStoneCustomization(item.effects);
     } catch (error) {
-      toast(error instanceof Error ? error.message : "아이템 처리에 실패했습니다.", "error");
+      toast(
+        error instanceof Error ? error.message : "아이템 처리에 실패했습니다.",
+        "error",
+      );
     } finally {
       setItemActionLoadingId(null);
     }
@@ -1295,41 +2066,80 @@ export default function CharacterInfo({
     if (unlockedCustomization) await alert(SPIRIT_STONE_CUSTOMIZE_GUIDE);
   }
 
-  const canAdminEdit = adminMode && !readOnly && selectedDetail?.member_id === null;
+  const canAdminEdit =
+    adminMode && !readOnly && selectedDetail?.member_id === null;
   // 러너가 공개된 관리자 캐릭터를 볼 때는 정보 카드만 보여준다(보유 아이템·임무·도전과제 제외).
   const cardOnly = readOnly && selectedDetail?.member_id === null;
 
   async function toggleVisibility() {
     if (!selectedDetail) return;
     setAdminSaving(true);
-    try { setDetail(await patchAdminCharacter(selectedDetail.id, { is_public: !selectedDetail.is_public })); }
-    catch (error) { toast(error instanceof Error ? error.message : "공개 여부 변경 실패", "error"); }
-    finally { setAdminSaving(false); }
+    try {
+      setDetail(
+        await patchAdminCharacter(selectedDetail.id, {
+          is_public: !selectedDetail.is_public,
+        }),
+      );
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "공개 여부 변경 실패",
+        "error",
+      );
+    } finally {
+      setAdminSaving(false);
+    }
   }
 
   async function saveAdminFaction(nextFaction: Faction) {
     if (!selectedDetail) return;
     setAdminSaving(true);
-    try { setDetail(await patchAdminCharacter(selectedDetail.id, { faction: nextFaction })); }
-    catch (error) { toast(error instanceof Error ? error.message : "포지션 변경 실패", "error"); }
-    finally { setAdminSaving(false); }
+    try {
+      setDetail(
+        await patchAdminCharacter(selectedDetail.id, { faction: nextFaction }),
+      );
+    } catch (error) {
+      toast(
+        error instanceof Error ? error.message : "포지션 변경 실패",
+        "error",
+      );
+    } finally {
+      setAdminSaving(false);
+    }
   }
 
   async function saveAdminStat(key: string, value: number | boolean) {
     if (!selectedDetail || !canAdminEdit) return;
     setAdminSaving(true);
-    try { setDetail(await patchAdminCharacter(selectedDetail.id, { stats: { [key]: value } })); }
-    finally { setAdminSaving(false); }
+    try {
+      setDetail(
+        await patchAdminCharacter(selectedDetail.id, {
+          stats: { [key]: value },
+        }),
+      );
+    } finally {
+      setAdminSaving(false);
+    }
   }
 
-  async function handleStatUpgrade(stat: GradeStat, label: string, cost: number) {
+  async function handleStatUpgrade(
+    stat: GradeStat,
+    label: string,
+    cost: number,
+  ) {
     if (selectedDetail == null) return;
     const accepted = await confirm({
       description: `${label} 등급을 올리시겠습니까?`,
       content: (
         <p className="text-xs text-muted">
-          소모 AP {numberFormatter.format(cost)} / 보유 AP {numberFormatter.format(selectedDetail.ap)}
-          <span className="mt-2 block">{Object.entries(selectedDetail.stat_upgrades?.[stat]?.changes ?? {}).map(([key, delta]) => formatEffect({ stat: key as ItemEffect["stat"], delta })).join(" · ")}</span>
+          소모 AP {numberFormatter.format(cost)} / 보유 AP{" "}
+          {numberFormatter.format(selectedDetail.ap)}
+          <span className="mt-2 block">
+            {Object.entries(selectedDetail.stat_upgrades?.[stat]?.changes ?? {})
+              .map(([key, delta]) =>
+                formatEffect({ stat: key as ItemEffect["stat"], delta }),
+              )
+              .join(" · ")}
+          </span>
         </p>
       ),
       maxWidthClassName: "max-w-xs",
@@ -1340,7 +2150,10 @@ export default function CharacterInfo({
       const next = await upgradeCharacterStat(selectedDetail.id, stat, 1);
       setDetail(next);
     } catch (error) {
-      toast(error instanceof Error ? error.message : "능력치 강화에 실패했습니다.", "error");
+      toast(
+        error instanceof Error ? error.message : "능력치 강화에 실패했습니다.",
+        "error",
+      );
     } finally {
       setStatUpgradeLoading(null);
     }
@@ -1356,7 +2169,11 @@ export default function CharacterInfo({
       const next = await uploadCharacterImage(selectedDetail.id, file);
       setDetail(next);
     } catch (error) {
-      setImageError(error instanceof Error ? error.message : "이미지 업로드에 실패했습니다.");
+      setImageError(
+        error instanceof Error
+          ? error.message
+          : "이미지 업로드에 실패했습니다.",
+      );
     } finally {
       setImageUploading(false);
     }
@@ -1376,7 +2193,10 @@ export default function CharacterInfo({
       await deleteCharacter(selectedDetail.id);
       onDeleted?.(selectedDetail.id);
     } catch (error) {
-      toast(error instanceof Error ? error.message : "캐릭터 삭제에 실패했습니다.", "error");
+      toast(
+        error instanceof Error ? error.message : "캐릭터 삭제에 실패했습니다.",
+        "error",
+      );
     } finally {
       setDeletingCharacter(false);
     }
@@ -1411,7 +2231,9 @@ export default function CharacterInfo({
             <div className="w-full md:w-60">
               <Select
                 value={selectedCharacterId?.toString() ?? ""}
-                onValueChange={(value) => setSelectedCharacterIdState(Number(value))}
+                onValueChange={(value) =>
+                  setSelectedCharacterIdState(Number(value))
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="캐릭터 선택" />
@@ -1419,7 +2241,10 @@ export default function CharacterInfo({
                 <SelectContent>
                   <SelectGroup>
                     {characters.map((character) => (
-                      <SelectItem key={character.id} value={character.id.toString()}>
+                      <SelectItem
+                        key={character.id}
+                        value={character.id.toString()}
+                      >
                         {character.name}
                       </SelectItem>
                     ))}
@@ -1453,7 +2278,7 @@ export default function CharacterInfo({
                   content={
                     <div className="max-w-52 whitespace-pre-line text-left">
                       <div className="font-semibold">
-                        모험가 등급 {selectedDetail.rank} · {getRankGrade(selectedDetail.rank).name}
+                        모험가 등급 · {getRankGrade(selectedDetail.rank).name}패
                       </div>
                       <div className="mt-1 text-muted">
                         {getRankGrade(selectedDetail.rank).description}
@@ -1472,7 +2297,14 @@ export default function CharacterInfo({
                 </InfoTooltip>
                 <div className="relative aspect-square w-full overflow-hidden rounded-xl border border-line bg-inset">
                   {selectedDetail.image_url ? (
-                    <Image src={selectedDetail.image_url} alt={`${selectedDetail.name} 이미지`} fill sizes="160px" unoptimized className="object-cover" />
+                    <Image
+                      src={selectedDetail.image_url}
+                      alt={`${selectedDetail.name} 이미지`}
+                      fill
+                      sizes="160px"
+                      unoptimized
+                      className="object-cover"
+                    />
                   ) : (
                     <div className="flex size-full flex-col items-center justify-center gap-1 text-muted">
                       <ImageIcon size={30} />
@@ -1486,23 +2318,57 @@ export default function CharacterInfo({
                           <ImageIcon size={12} />
                           {imageUploading ? "업로드 중..." : "편집"}
                         </span>
-                        <span className="text-[10px] font-normal text-ivory/80">(200*200 권장)</span>
+                        <span className="text-[10px] font-normal text-ivory/80">
+                          (200*200 권장)
+                        </span>
                       </span>
-                      <input type="file" accept="image/*" className="hidden" onChange={handleImageUpload} disabled={imageUploading} />
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={handleImageUpload}
+                        disabled={imageUploading}
+                      />
                     </label>
                   )}
                 </div>
-                {imageError && <span className="text-[11px] text-red-500">{imageError}</span>}
+                {imageError && (
+                  <span className="text-[11px] text-red-500">{imageError}</span>
+                )}
                 {/* key는 목록용이 아니라 캐릭터가 바뀔 때 내부 상태를 버리고 다시 마운트하려는 것이다.
                     형제끼리 값이 같으면 안 되므로 컴포넌트 이름을 앞에 붙여 구분한다. */}
                 {/* 슬롯은 모두 같은 크기의 칸(CharacterSlot)이라, 한 줄에 가지런히 놓이고 넘치면 다음 줄로 접힌다. */}
                 <div className="flex flex-wrap items-center gap-1">
-                  <CharacterOwnedSkills key={`skills:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} adminMode={canAdminEdit} onUpdated={setDetail} />
-                  <CharacterClonedSkills key={`cloned:${selectedDetail.id}`} characterId={selectedDetail.id} readOnly={readOnly} />
-                  <CharacterEquipmentSlots key={`equipment:${selectedDetail.id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} locked={selectedDetail.in_live_battle}
-                    onCustomize={(item) => setCustomizingItemId(item.item_id)} />
+                  <CharacterOwnedSkills
+                    key={`skills:${selectedDetail.id}`}
+                    characterId={selectedDetail.id}
+                    readOnly={readOnly}
+                    adminMode={canAdminEdit}
+                    onUpdated={setDetail}
+                  />
+                  <CharacterClonedSkills
+                    key={`cloned:${selectedDetail.id}`}
+                    characterId={selectedDetail.id}
+                    readOnly={readOnly}
+                  />
+                  <CharacterEquipmentSlots
+                    key={`equipment:${selectedDetail.id}`}
+                    character={selectedDetail}
+                    onUpdated={setDetail}
+                    readOnly={readOnly}
+                    locked={selectedDetail.in_live_battle}
+                    onCustomize={(item) => setCustomizingItemId(item.item_id)}
+                  />
                   {/* 개방 전에는 관리자가 만든 캐릭터에만(=관리자 화면에서만) 특성 슬롯을 띄운다. */}
-                  {(traitOpen || canAdminEdit) && <CharacterTrait key={`trait:${selectedDetail.id}:${selectedDetail.trait_id}`} character={selectedDetail} onUpdated={setDetail} readOnly={readOnly} adminMode={canAdminEdit} />}
+                  {(traitOpen || canAdminEdit) && (
+                    <CharacterTrait
+                      key={`trait:${selectedDetail.id}:${selectedDetail.trait_id}`}
+                      character={selectedDetail}
+                      onUpdated={setDetail}
+                      readOnly={readOnly}
+                      adminMode={canAdminEdit}
+                    />
+                  )}
                 </div>
               </div>
 
@@ -1532,12 +2398,27 @@ export default function CharacterInfo({
                         연속 {selectedDetail.attendance_streak}일 출석!
                       </Badge>
                     )}
-                    {showId && <Badge variant="outline" className="font-num">ID {selectedDetail.id}</Badge>}
+                    {showId && (
+                      <Badge variant="outline" className="font-num">
+                        ID {selectedDetail.id}
+                      </Badge>
+                    )}
                     {canAdminEdit && (
-                      <Button type="button" size="sm" variant={selectedDetail.is_public ? "cta" : "outline"} className="gap-1.5"
-                        aria-pressed={selectedDetail.is_public} disabled={adminSaving} onClick={() => void toggleVisibility()}
-                        title="공개하면 러너도 이 캐릭터의 정보 카드를 볼 수 있습니다. 보유 아이템·임무·도전과제·이력은 보이지 않습니다.">
-                        {selectedDetail.is_public ? <Eye size={14} /> : <EyeOff size={14} />}
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={selectedDetail.is_public ? "cta" : "outline"}
+                        className="gap-1.5"
+                        aria-pressed={selectedDetail.is_public}
+                        disabled={adminSaving}
+                        onClick={() => void toggleVisibility()}
+                        title="공개하면 러너도 이 캐릭터의 정보 카드를 볼 수 있습니다. 보유 아이템·임무·도전과제·이력은 보이지 않습니다."
+                      >
+                        {selectedDetail.is_public ? (
+                          <Eye size={14} />
+                        ) : (
+                          <EyeOff size={14} />
+                        )}
                         {selectedDetail.is_public ? "러너에게 공개" : "비공개"}
                       </Button>
                     )}
@@ -1548,21 +2429,78 @@ export default function CharacterInfo({
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge className="gap-1 font-num">
                     <Trophy size={12} />
-                    {canAdminEdit ? <Select value={String(selectedDetail.lv)} disabled={adminSaving} onValueChange={async (value) => {
-                      setAdminSaving(true);
-                      try { setDetail(await patchAdminCharacter(selectedDetail.id, { lv: Number(value) })); }
-                      catch (error) { toast(error instanceof Error ? error.message : "레벨 변경 실패", "error"); }
-                      finally { setAdminSaving(false); }
-                    }}><SelectTrigger aria-label="캐릭터 레벨" className="h-7 w-24"><SelectValue /></SelectTrigger><SelectContent>{Array.from({ length: Math.max(MAX_CHARACTER_LEVEL, selectedDetail.lv) }, (_, index) => index + 1).map((level) => <SelectItem key={level} value={String(level)}>Lv.{level}</SelectItem>)}</SelectContent></Select> : `Lv.${selectedDetail.lv}`}
+                    {canAdminEdit ? (
+                      <Select
+                        value={String(selectedDetail.lv)}
+                        disabled={adminSaving}
+                        onValueChange={async (value) => {
+                          setAdminSaving(true);
+                          try {
+                            setDetail(
+                              await patchAdminCharacter(selectedDetail.id, {
+                                lv: Number(value),
+                              }),
+                            );
+                          } catch (error) {
+                            toast(
+                              error instanceof Error
+                                ? error.message
+                                : "레벨 변경 실패",
+                              "error",
+                            );
+                          } finally {
+                            setAdminSaving(false);
+                          }
+                        }}
+                      >
+                        <SelectTrigger
+                          aria-label="캐릭터 레벨"
+                          className="h-7 w-24"
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {Array.from(
+                            {
+                              length: Math.max(
+                                MAX_CHARACTER_LEVEL,
+                                selectedDetail.lv,
+                              ),
+                            },
+                            (_, index) => index + 1,
+                          ).map((level) => (
+                            <SelectItem key={level} value={String(level)}>
+                              Lv.{level}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      `Lv.${selectedDetail.lv}`
+                    )}
                   </Badge>
                   {canAdminEdit && (
                     <Badge variant="outline" className="gap-1">
-                      <Select value={selectedDetail.faction ?? undefined} disabled={adminSaving}
-                        onValueChange={(value) => saveAdminFaction(value as Faction)}>
-                        <SelectTrigger aria-label="캐릭터 포지션" className="h-7 w-24"><SelectValue placeholder="포지션" /></SelectTrigger>
+                      <Select
+                        value={selectedDetail.faction ?? undefined}
+                        disabled={adminSaving}
+                        onValueChange={(value) =>
+                          saveAdminFaction(value as Faction)
+                        }
+                      >
+                        <SelectTrigger
+                          aria-label="캐릭터 포지션"
+                          className="h-7 w-24"
+                        >
+                          <SelectValue placeholder="포지션" />
+                        </SelectTrigger>
                         <SelectContent>
-                          {(Object.keys(FACTION_POSITION_IMAGE) as Faction[]).map((value) => (
-                            <SelectItem key={value} value={value}>{value}</SelectItem>
+                          {(
+                            Object.keys(FACTION_POSITION_IMAGE) as Faction[]
+                          ).map((value) => (
+                            <SelectItem key={value} value={value}>
+                              {value}
+                            </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
@@ -1571,21 +2509,41 @@ export default function CharacterInfo({
                   <ExperienceBar
                     value={selectedDetail.exp}
                     max={GROWTH_EXP_PER_LEVEL}
-                    cumulativeValue={(selectedDetail.lv - 1) * GROWTH_EXP_PER_LEVEL + selectedDetail.exp}
+                    cumulativeValue={
+                      (selectedDetail.lv - 1) * GROWTH_EXP_PER_LEVEL +
+                      selectedDetail.exp
+                    }
                     cumulativeMax={selectedDetail.lv * GROWTH_EXP_PER_LEVEL}
                   />
                   <Badge variant="outline" className="gap-1 font-num">
                     <Gauge size={12} className="text-gold" />
-                    AP <EditableValue value={selectedDetail.ap} display={numberFormatter.format(selectedDetail.ap)}
-                      label="AP" disabled={adminSaving}
-                      onSave={canAdminEdit ? (value) => saveAdminStat("ap", value) : undefined} />
+                    AP{" "}
+                    <EditableValue
+                      value={selectedDetail.ap}
+                      display={numberFormatter.format(selectedDetail.ap)}
+                      label="AP"
+                      disabled={adminSaving}
+                      onSave={
+                        canAdminEdit
+                          ? (value) => saveAdminStat("ap", value)
+                          : undefined
+                      }
+                    />
                   </Badge>
                 </div>
 
                 <div className="grid gap-4 md:grid-cols-2">
                   <StatBar
-                    onValueSave={canAdminEdit ? (value) => saveAdminStat("hp", value) : undefined}
-                    onMaxSave={canAdminEdit ? (value) => saveAdminStat("hp_max", value) : undefined}
+                    onValueSave={
+                      canAdminEdit
+                        ? (value) => saveAdminStat("hp", value)
+                        : undefined
+                    }
+                    onMaxSave={
+                      canAdminEdit
+                        ? (value) => saveAdminStat("hp_max", value)
+                        : undefined
+                    }
                     label="HP"
                     icon={Heart}
                     value={selectedDetail.hp}
@@ -1594,8 +2552,16 @@ export default function CharacterInfo({
                     barColor="bg-rose-500"
                   />
                   <StatBar
-                    onValueSave={canAdminEdit ? (value) => saveAdminStat("mp", value) : undefined}
-                    onMaxSave={canAdminEdit ? (value) => saveAdminStat("mp_max", value) : undefined}
+                    onValueSave={
+                      canAdminEdit
+                        ? (value) => saveAdminStat("mp", value)
+                        : undefined
+                    }
+                    onMaxSave={
+                      canAdminEdit
+                        ? (value) => saveAdminStat("mp_max", value)
+                        : undefined
+                    }
                     label="MP"
                     icon={Zap}
                     value={selectedDetail.mp}
@@ -1605,12 +2571,20 @@ export default function CharacterInfo({
                   />
                 </div>
 
-                {canAdminEdit && <p className="text-xs text-muted">레벨당 AP 2점이 지급됩니다. 능력치와 상세정보의 수치를 더블클릭하거나 키보드로 선택 후 Enter를 누르면 직접 수정할 수 있습니다.</p>}
+                {canAdminEdit && (
+                  <p className="text-xs text-muted">
+                    레벨당 AP 2점이 지급됩니다. 능력치와 상세정보의 수치를
+                    더블클릭하거나 키보드로 선택 후 Enter를 누르면 직접 수정할
+                    수 있습니다.
+                  </p>
+                )}
                 {/* 핵심 능력치 */}
                 <div className="grid gap-2 sm:grid-cols-2 sm:gap-x-8">
                   {CORE_STATS.map(({ key, label, icon: Icon, accent }) => {
-                    const cost = selectedDetail.stat_upgrades?.[key]?.cost ?? null;
-                    const canUpgrade = !readOnly && cost != null && selectedDetail.ap >= cost;
+                    const cost =
+                      selectedDetail.stat_upgrades?.[key]?.cost ?? null;
+                    const canUpgrade =
+                      !readOnly && cost != null && selectedDetail.ap >= cost;
                     return (
                       <CoreStatLine
                         key={key}
@@ -1620,8 +2594,14 @@ export default function CharacterInfo({
                         accent={accent}
                         canUpgrade={canUpgrade}
                         upgrading={statUpgradeLoading === key}
-                        onUpgrade={() => cost != null && handleStatUpgrade(key, label, cost)}
-                        onEdit={canAdminEdit ? (value) => saveAdminStat(key, value) : undefined}
+                        onUpgrade={() =>
+                          cost != null && handleStatUpgrade(key, label, cost)
+                        }
+                        onEdit={
+                          canAdminEdit
+                            ? (value) => saveAdminStat(key, value)
+                            : undefined
+                        }
                       />
                     );
                   })}
@@ -1635,28 +2615,84 @@ export default function CharacterInfo({
                     onClick={() => setShowDetails((prev) => !prev)}
                     className="h-auto px-0 text-muted hover:bg-transparent hover:text-ivory"
                   >
-                    {showDetails ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                    {showDetails ? (
+                      <ChevronUp size={15} />
+                    ) : (
+                      <ChevronDown size={15} />
+                    )}
                     상세정보 {showDetails ? "접기" : "펼치기"}
                   </Button>
                   {showDetails && (
                     <div className="mt-4 flex flex-col gap-4">
-                      {selectedDetail.equipped_trait && <p className="text-xs text-muted">특성의 현재 보정을 포함한 수치입니다. 전투 중 조건·중첩에 따라 달라지며, 관리자 편집은 특성 적용 전 기본값을 변경합니다.</p>}
+                      {selectedDetail.equipped_trait && (
+                        <p className="text-xs text-muted">
+                          특성의 현재 보정을 포함한 수치입니다. 전투 중
+                          조건·중첩에 따라 달라지며, 관리자 편집은 특성 적용 전
+                          기본값을 변경합니다.
+                        </p>
+                      )}
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
-                        {DETAIL_STATS.map(({ key, label, isFloat, rawPercent, description }) => {
-                          const effective = Number(selectedDetail[key]) + (selectedDetail.trait_stat_bonuses?.[key] ?? 0);
-                          return (
-                          <InfoTooltip key={key} side="top" content={description}>
-                            <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
-                              <span className="shrink-0 whitespace-nowrap text-muted">{label}</span>
-                              <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-ivory">
-                                <EditableValue key={`${selectedDetail.id}:${key}`} label={label} disabled={adminSaving}
-                                  value={isFloat ? Math.round((rawPercent ? Number(selectedDetail[key]) : 1 + Number(selectedDetail[key])) * 10000) / 100 : selectedDetail[key]}
-                                  display={isFloat ? `${percentageFormatter.format((rawPercent ? effective : 1 + effective) * 100)}%` : numberFormatter.format(effective)}
-                                  onSave={canAdminEdit ? (value) => saveAdminStat(key, isFloat ? Number(value) / 100 - (rawPercent ? 0 : 1) : value) : undefined} />
-                              </span>
-                            </div>
-                          </InfoTooltip>
-                        ); })}
+                        {DETAIL_STATS.map(
+                          ({
+                            key,
+                            label,
+                            isFloat,
+                            rawPercent,
+                            description,
+                          }) => {
+                            const effective =
+                              Number(selectedDetail[key]) +
+                              (selectedDetail.trait_stat_bonuses?.[key] ?? 0);
+                            return (
+                              <InfoTooltip
+                                key={key}
+                                side="top"
+                                content={description}
+                              >
+                                <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-inset px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
+                                  <span className="shrink-0 whitespace-nowrap text-muted">
+                                    {label}
+                                  </span>
+                                  <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-ivory">
+                                    <EditableValue
+                                      key={`${selectedDetail.id}:${key}`}
+                                      label={label}
+                                      disabled={adminSaving}
+                                      value={
+                                        isFloat
+                                          ? Math.round(
+                                              (rawPercent
+                                                ? Number(selectedDetail[key])
+                                                : 1 +
+                                                  Number(selectedDetail[key])) *
+                                                10000,
+                                            ) / 100
+                                          : selectedDetail[key]
+                                      }
+                                      display={
+                                        isFloat
+                                          ? `${percentageFormatter.format((rawPercent ? effective : 1 + effective) * 100)}%`
+                                          : numberFormatter.format(effective)
+                                      }
+                                      onSave={
+                                        canAdminEdit
+                                          ? (value) =>
+                                              saveAdminStat(
+                                                key,
+                                                isFloat
+                                                  ? Number(value) / 100 -
+                                                      (rawPercent ? 0 : 1)
+                                                  : value,
+                                              )
+                                          : undefined
+                                      }
+                                    />
+                                  </span>
+                                </div>
+                              </InfoTooltip>
+                            );
+                          },
+                        )}
                       </div>
 
                       {selectedDetail.start_sh != null && (
@@ -1666,20 +2702,53 @@ export default function CharacterInfo({
                             관리자 전용 능력치
                           </div>
                           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 2xl:grid-cols-4">
-                            {ADMIN_ONLY_STATS.map(({ key, label, description, type }) => {
-                              const value = selectedDetail[key];
-                              if (value == null) return null;
-                              return (
-                                <InfoTooltip key={key} side="top" content={description}>
-                                  <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-gold/10 px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
-                                    <span className="shrink-0 whitespace-nowrap text-gold">{label}</span>
-                                    <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-gold">
-                                      <EditableValue key={`${selectedDetail.id}:${key}`} label={label} boolean={type === "boolean"} disabled={adminSaving} value={type === "percent" ? Number(value) * 100 : value} display={formatAdminOnlyStat(type, value)} onSave={canAdminEdit ? (next) => saveAdminStat(key, type === "percent" ? Number(next) / 100 : next) : undefined} />
-                                    </span>
-                                  </div>
-                                </InfoTooltip>
-                              );
-                            })}
+                            {ADMIN_ONLY_STATS.map(
+                              ({ key, label, description, type }) => {
+                                const value = selectedDetail[key];
+                                if (value == null) return null;
+                                return (
+                                  <InfoTooltip
+                                    key={key}
+                                    side="top"
+                                    content={description}
+                                  >
+                                    <div className="flex min-w-0 cursor-help items-center justify-between gap-2 rounded-lg bg-gold/10 px-2.5 py-2 text-[clamp(13px,0.95vw,15px)]">
+                                      <span className="shrink-0 whitespace-nowrap text-gold">
+                                        {label}
+                                      </span>
+                                      <span className="min-w-0 whitespace-nowrap font-bold tracking-normal tabular-nums text-gold">
+                                        <EditableValue
+                                          key={`${selectedDetail.id}:${key}`}
+                                          label={label}
+                                          boolean={type === "boolean"}
+                                          disabled={adminSaving}
+                                          value={
+                                            type === "percent"
+                                              ? Number(value) * 100
+                                              : value
+                                          }
+                                          display={formatAdminOnlyStat(
+                                            type,
+                                            value,
+                                          )}
+                                          onSave={
+                                            canAdminEdit
+                                              ? (next) =>
+                                                  saveAdminStat(
+                                                    key,
+                                                    type === "percent"
+                                                      ? Number(next) / 100
+                                                      : next,
+                                                  )
+                                              : undefined
+                                          }
+                                        />
+                                      </span>
+                                    </div>
+                                  </InfoTooltip>
+                                );
+                              },
+                            )}
                           </div>
                         </div>
                       )}
@@ -1690,194 +2759,240 @@ export default function CharacterInfo({
             </CardContent>
           </Card>
 
-          {!cardOnly && <>
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between gap-3">
-              <CardTitle>보유 중인 아이템</CardTitle>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="gap-1 font-num">
-                  <Coins size={12} className="text-gold" />
-                  {numberFormatter.format(selectedDetail.gold)} G
-                </Badge>
-                <Badge variant="outline" className="gap-1 font-num">
-                  <Gem size={12} className="text-cyan-500" />
-                  {numberFormatter.format(selectedDetail.cp)} CP
-                </Badge>
-                <Badge variant="outline" className="gap-1 font-num">
-                  <Zap size={12} className="text-violet-500" />
-                  SP {numberFormatter.format(selectedDetail.sp)}
-                </Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="flex flex-col gap-3">
-              {selectedDetail.in_live_battle && !readOnly && (
-                <p className="text-xs text-gold">실전 전투가 진행 중입니다. 전투가 끝날 때까지 아이템 사용과 장착 변경을 할 수 없습니다.</p>
-              )}
-              <div className="flex flex-wrap gap-4">
-                <GroupBadgeTile />
-                {/* 장착 중인 동반자·장신구는 슬롯에서 관리하므로 보유 목록에서는 감춘다. */}
-                {selectedDetail.owned_items.filter((item) => !item.equipped).map((item) => (
-                  <OwnedItemTile
-                    key={item.item_id}
-                    item={item}
-                    characterId={selectedDetail.id}
-                    readOnly={readOnly}
-                    locked={selectedDetail.in_live_battle}
-                    loading={itemActionLoadingId === item.item_id}
-                    currentFaction={selectedDetail.faction}
-                    spiritStones={selectedDetail.owned_items.filter((owned) => owned.is_spirit_stone)}
-                    onCustomize={() => setCustomizingItemId(item.item_id)}
-                    onUse={(selection) => handleItemAction(item.item_id, consumeItem, selection)}
-                    onEquip={(selection) => handleItemAction(item.item_id, equipItem, selection)}
-                    onUnequip={() => handleItemAction(item.item_id, unequipItem)}
-                  />
-                ))}
-              </div>
-              {customizingItem && !readOnly && (
-                <SpiritStoneCustomizeModal key={customizingItem.item_id} characterId={selectedDetail.id} item={customizingItem}
-                  onClose={() => setCustomizingItemId(null)} onUpdated={setDetail} />
-              )}
-            </CardContent>
-          </Card>
-
-          <div className="grid gap-6 xl:grid-cols-2">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-3">
-                <CardTitle>달성한 임무</CardTitle>
-                <Badge variant="success" className="shrink-0 whitespace-nowrap">{selectedDetail.achieved_missions.length}개</Badge>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                {selectedDetail.achieved_missions.length > 0 ? (
-                  <div className="flex flex-wrap gap-4">
-                    {selectedDetail.achieved_missions.map((mission) => (
-                      <AchievedTile
-                        key={mission.mission_id}
-                        name={mission.name}
-                        description={mission.description}
-                        imageUrl={mission.image_url}
-                        rewardItems={mission.reward_items}
-                        items={items}
-                      />
-                    ))}
+          {!cardOnly && (
+            <>
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-3">
+                  <CardTitle>보유 중인 아이템</CardTitle>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="gap-1 font-num">
+                      <Coins size={12} className="text-gold" />
+                      {numberFormatter.format(selectedDetail.gold)} G
+                    </Badge>
+                    <Badge variant="outline" className="gap-1 font-num">
+                      <Gem size={12} className="text-cyan-500" />
+                      {numberFormatter.format(selectedDetail.cp)} CP
+                    </Badge>
+                    <Badge variant="outline" className="gap-1 font-num">
+                      <Zap size={12} className="text-violet-500" />
+                      SP {numberFormatter.format(selectedDetail.sp)}
+                    </Badge>
                   </div>
-                ) : (
-                  <EmptyState className="rounded-2xl">
-                    아직 달성한 임무가 없습니다.
-                  </EmptyState>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-3">
-                <CardTitle>달성한 도전과제</CardTitle>
-                <Badge variant="success" className="shrink-0 whitespace-nowrap">{selectedDetail.achieved_challenges.length}개</Badge>
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                {selectedDetail.achieved_challenges.length > 0 ? (
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {selectedDetail.in_live_battle && !readOnly && (
+                    <p className="text-xs text-gold">
+                      실전 전투가 진행 중입니다. 전투가 끝날 때까지 아이템
+                      사용과 장착 변경을 할 수 없습니다.
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-4">
-                    {selectedDetail.achieved_challenges.map((challenge) => (
-                      <AchievedTile
-                        key={challenge.challenge_id}
-                        name={challenge.name}
-                        description={challenge.description}
-                        imageUrl={challenge.image_url}
-                        rewardItems={challenge.reward_items}
-                        items={items}
-                      />
-                    ))}
+                    <GroupBadgeTile />
+                    {/* 장착 중인 동반자·장신구는 슬롯에서 관리하므로 보유 목록에서는 감춘다. */}
+                    {selectedDetail.owned_items
+                      .filter((item) => !item.equipped)
+                      .map((item) => (
+                        <OwnedItemTile
+                          key={item.item_id}
+                          item={item}
+                          characterId={selectedDetail.id}
+                          readOnly={readOnly}
+                          locked={selectedDetail.in_live_battle}
+                          loading={itemActionLoadingId === item.item_id}
+                          currentFaction={selectedDetail.faction}
+                          spiritStones={selectedDetail.owned_items.filter(
+                            (owned) => owned.is_spirit_stone,
+                          )}
+                          onCustomize={() => setCustomizingItemId(item.item_id)}
+                          onUse={(selection) =>
+                            handleItemAction(
+                              item.item_id,
+                              consumeItem,
+                              selection,
+                            )
+                          }
+                          onEquip={(selection) =>
+                            handleItemAction(item.item_id, equipItem, selection)
+                          }
+                          onUnequip={() =>
+                            handleItemAction(item.item_id, unequipItem)
+                          }
+                        />
+                      ))}
                   </div>
-                ) : (
-                  <EmptyState className="rounded-2xl">
-                    아직 달성한 도전과제가 없습니다.
-                  </EmptyState>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-          </>}
+                  {customizingItem && !readOnly && (
+                    <SpiritStoneCustomizeModal
+                      key={customizingItem.item_id}
+                      characterId={selectedDetail.id}
+                      item={customizingItem}
+                      onClose={() => setCustomizingItemId(null)}
+                      onUpdated={setDetail}
+                    />
+                  )}
+                </CardContent>
+              </Card>
 
-          {canViewHistory && <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-3">
-                <CardTitle>보상 이력</CardTitle>
-                {selectedDetail.reward_history.length > HISTORY_PREVIEW_COUNT && (
-                  <button
-                    type="button"
-                    onClick={() => setRewardModalOpen(true)}
-                    className="shrink-0 text-sm font-semibold text-gold hover:underline"
-                  >
-                    더보기
-                  </button>
-                )}
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                {selectedDetail.reward_history.length > 0 ? (
-                  selectedDetail.reward_history
-                    .slice(0, HISTORY_PREVIEW_COUNT)
-                    .map((reward) => <RewardHistoryRow key={reward.id} reward={reward} />)
-                ) : (
-                  <EmptyState className="rounded-2xl">
-                    지급된 보상이 없습니다.
-                  </EmptyState>
-                )}
-              </CardContent>
-            </Card>
+              <div className="grid gap-6 xl:grid-cols-2">
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-3">
+                    <CardTitle>달성한 임무</CardTitle>
+                    <Badge
+                      variant="success"
+                      className="shrink-0 whitespace-nowrap"
+                    >
+                      {selectedDetail.achieved_missions.length}개
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3">
+                    {selectedDetail.achieved_missions.length > 0 ? (
+                      <div className="flex flex-wrap gap-4">
+                        {selectedDetail.achieved_missions.map((mission) => (
+                          <AchievedTile
+                            key={mission.mission_id}
+                            name={mission.name}
+                            description={mission.description}
+                            imageUrl={mission.image_url}
+                            rewardItems={mission.reward_items}
+                            items={items}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState className="rounded-2xl">
+                        아직 달성한 임무가 없습니다.
+                      </EmptyState>
+                    )}
+                  </CardContent>
+                </Card>
 
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between gap-3">
-                <CardTitle>구매/사용 이력</CardTitle>
-                {selectedDetail.item_history.length > HISTORY_PREVIEW_COUNT && (
-                  <button
-                    type="button"
-                    onClick={() => setItemHistoryModalOpen(true)}
-                    className="shrink-0 text-sm font-semibold text-gold hover:underline"
-                  >
-                    더보기
-                  </button>
-                )}
-              </CardHeader>
-              <CardContent className="flex flex-col gap-3">
-                {selectedDetail.item_history.length > 0 ? (
-                  selectedDetail.item_history
-                    .slice(0, HISTORY_PREVIEW_COUNT)
-                    .map((entry) => <ItemHistoryRow key={entry.id} entry={entry} />)
-                ) : (
-                  <EmptyState className="rounded-2xl">
-                    구매/사용 이력이 없습니다.
-                  </EmptyState>
-                )}
-              </CardContent>
-            </Card>
+                <Card>
+                  <CardHeader className="flex flex-row items-center justify-between gap-3">
+                    <CardTitle>달성한 도전과제</CardTitle>
+                    <Badge
+                      variant="success"
+                      className="shrink-0 whitespace-nowrap"
+                    >
+                      {selectedDetail.achieved_challenges.length}개
+                    </Badge>
+                  </CardHeader>
+                  <CardContent className="flex flex-col gap-3">
+                    {selectedDetail.achieved_challenges.length > 0 ? (
+                      <div className="flex flex-wrap gap-4">
+                        {selectedDetail.achieved_challenges.map((challenge) => (
+                          <AchievedTile
+                            key={challenge.challenge_id}
+                            name={challenge.name}
+                            description={challenge.description}
+                            imageUrl={challenge.image_url}
+                            rewardItems={challenge.reward_items}
+                            items={items}
+                          />
+                        ))}
+                      </div>
+                    ) : (
+                      <EmptyState className="rounded-2xl">
+                        아직 달성한 도전과제가 없습니다.
+                      </EmptyState>
+                    )}
+                  </CardContent>
+                </Card>
+              </div>
+            </>
+          )}
 
-            {rewardModalOpen && (
-              <HistoryModal
-                open={rewardModalOpen}
-                onClose={() => setRewardModalOpen(false)}
-                title="보상 이력"
-                items={selectedDetail.reward_history}
-                renderItem={(reward) => <RewardHistoryRow reward={reward} />}
-                emptyText="지급된 보상이 없습니다."
-              />
-            )}
-            {itemHistoryModalOpen && (
-              <HistoryModal
-                open={itemHistoryModalOpen}
-                onClose={() => setItemHistoryModalOpen(false)}
-                title="구매/사용 이력"
-                items={selectedDetail.item_history}
-                renderItem={(entry) => <ItemHistoryRow entry={entry} />}
-                emptyText="구매/사용 이력이 없습니다."
-              />
-            )}
-          </div>}
+          {canViewHistory && (
+            <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-3">
+                  <CardTitle>보상 이력</CardTitle>
+                  {selectedDetail.reward_history.length >
+                    HISTORY_PREVIEW_COUNT && (
+                    <button
+                      type="button"
+                      onClick={() => setRewardModalOpen(true)}
+                      className="shrink-0 text-sm font-semibold text-gold hover:underline"
+                    >
+                      더보기
+                    </button>
+                  )}
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {selectedDetail.reward_history.length > 0 ? (
+                    selectedDetail.reward_history
+                      .slice(0, HISTORY_PREVIEW_COUNT)
+                      .map((reward) => (
+                        <RewardHistoryRow key={reward.id} reward={reward} />
+                      ))
+                  ) : (
+                    <EmptyState className="rounded-2xl">
+                      지급된 보상이 없습니다.
+                    </EmptyState>
+                  )}
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-row items-center justify-between gap-3">
+                  <CardTitle>구매/사용 이력</CardTitle>
+                  {selectedDetail.item_history.length >
+                    HISTORY_PREVIEW_COUNT && (
+                    <button
+                      type="button"
+                      onClick={() => setItemHistoryModalOpen(true)}
+                      className="shrink-0 text-sm font-semibold text-gold hover:underline"
+                    >
+                      더보기
+                    </button>
+                  )}
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  {selectedDetail.item_history.length > 0 ? (
+                    selectedDetail.item_history
+                      .slice(0, HISTORY_PREVIEW_COUNT)
+                      .map((entry) => (
+                        <ItemHistoryRow key={entry.id} entry={entry} />
+                      ))
+                  ) : (
+                    <EmptyState className="rounded-2xl">
+                      구매/사용 이력이 없습니다.
+                    </EmptyState>
+                  )}
+                </CardContent>
+              </Card>
+
+              {rewardModalOpen && (
+                <HistoryModal
+                  open={rewardModalOpen}
+                  onClose={() => setRewardModalOpen(false)}
+                  title="보상 이력"
+                  items={selectedDetail.reward_history}
+                  renderItem={(reward) => <RewardHistoryRow reward={reward} />}
+                  emptyText="지급된 보상이 없습니다."
+                />
+              )}
+              {itemHistoryModalOpen && (
+                <HistoryModal
+                  open={itemHistoryModalOpen}
+                  onClose={() => setItemHistoryModalOpen(false)}
+                  title="구매/사용 이력"
+                  items={selectedDetail.item_history}
+                  renderItem={(entry) => <ItemHistoryRow entry={entry} />}
+                  emptyText="구매/사용 이력이 없습니다."
+                />
+              )}
+            </div>
+          )}
 
           {!readOnly && onDeleted && (
             <div className="flex justify-end gap-2">
-              <Button variant="destructive" onClick={handleDeleteCharacter} disabled={deletingCharacter}>
-                  <Trash2 size={15} />
-                  {deletingCharacter ? "삭제 중..." : "캐릭터 삭제하기"}
-                </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteCharacter}
+                disabled={deletingCharacter}
+              >
+                <Trash2 size={15} />
+                {deletingCharacter ? "삭제 중..." : "캐릭터 삭제하기"}
+              </Button>
             </div>
           )}
         </>

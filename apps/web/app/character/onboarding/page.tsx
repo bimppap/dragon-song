@@ -27,9 +27,9 @@ const FACTIONS: { value: Faction; label: string; image: string }[] = [
   { value: "치유", label: "치유", image: "/position/position_3.png" },
 ];
 
-const RANKS: { value: 1 | 4; label: string; image: string }[] = [
+const RANKS: { value: 1 | 2; label: string; image: string }[] = [
   { value: 1, label: "동패", image: "/medal/medal_1.png" },
-  { value: 4, label: "은패", image: "/medal/medal_2.png" },
+  { value: 2, label: "은패", image: "/medal/medal_2.png" },
 ];
 
 type StatKey = "stat_courage" | "stat_endurance" | "stat_charity" | "stat_wisdom";
@@ -54,7 +54,7 @@ export default function CharacterOnboardingPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [faction, setFaction] = useState<Faction | "">("");
-  const [rank, setRank] = useState<1 | 4>(1);
+  const [rank, setRank] = useState<1 | 2>(1);
   const [stats, setStats] = useState(EMPTY_STATS);
   const [loading, setLoading] = useState(false);
 
@@ -144,7 +144,7 @@ export default function CharacterOnboardingPage() {
               <label className="text-xs font-semibold text-muted uppercase tracking-wide">모험가 등급</label>
               <RadioGroup
                 value={String(rank)}
-                onValueChange={(value) => setRank(Number(value) as 1 | 4)}
+                onValueChange={(value) => setRank(Number(value) as 1 | 2)}
                 className="grid grid-cols-1 gap-2 sm:grid-cols-2"
               >
                 {RANKS.map((r) => (

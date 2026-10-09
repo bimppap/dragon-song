@@ -3,7 +3,7 @@ from datetime import date, datetime, time
 from typing import Literal, get_args
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.game_data import MAX_CHARACTER_LEVEL
+from app.game_data import MAX_CHARACTER_LEVEL, MAX_CHARACTER_RANK, MIN_CHARACTER_RANK
 from app.models import KST
 from app.trait_effects import validate_rules
 
@@ -227,7 +227,7 @@ class RefreshTokenRequest(BaseModel):
 class CharacterOnboardingCreate(BaseModel):
     name: str = Field(min_length=1, max_length=50)
     faction: Faction
-    rank: Literal[1, 4] = 1
+    rank: Literal[1, 2] = 1
     stat_courage: int = Field(default=0, ge=0, le=2)
     stat_endurance: int = Field(default=0, ge=0, le=2)
     stat_charity: int = Field(default=0, ge=0, le=2)
@@ -369,7 +369,7 @@ class CharacterCreate(BaseModel):
 
     # 성장 등급 배지
     lv: int = Field(default=1, ge=0)
-    rank: int = Field(default=1, ge=0)
+    rank: int = Field(default=MIN_CHARACTER_RANK, ge=MIN_CHARACTER_RANK, le=MAX_CHARACTER_RANK)
     exp: int = Field(default=0, ge=0)
 
     # 적게 변하는 능력치
