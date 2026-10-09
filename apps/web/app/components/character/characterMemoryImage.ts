@@ -10,7 +10,36 @@ const SCALE = 2;
 /** 배경 이미지 권장 크기: 실제 PNG 크기(3200×1800)와 같으면 확대·잘림 없이 그대로 들어간다. */
 export const MEMORY_BACKGROUND_SIZE = `${MEMORY_WIDTH * SCALE}×${MEMORY_HEIGHT * SCALE}`;
 
-const COLOR = {
+export type MemoryTheme = "dark" | "light" | "custom";
+
+export const MEMORY_THEMES: { value: MemoryTheme; label: string }[] = [
+  { value: "dark", label: "어두움" },
+  { value: "light", label: "밝음" },
+  { value: "custom", label: "직접 등록" },
+];
+
+interface Palette {
+  ground: string;
+  surface: string;
+  inset: string;
+  gold: string;
+  ivory: string;
+  muted: string;
+  line: string;
+  cell: string;
+  hp: string;
+  mp: string;
+  cp: string;
+  /** 이름표 안쪽 그라데이션의 맨 위 색. */
+  bannerTop: string;
+  /** 금색 테두리 안쪽 전체 바탕. */
+  frame: string;
+  /** 패널·장비·능력치 카드 바탕. */
+  card: string;
+  textShadow: string;
+}
+
+const DARK: Palette = {
   ground: "#171e1e",
   surface: "#222b28",
   inset: "#1b2321",
@@ -21,7 +50,45 @@ const COLOR = {
   cell: "rgba(232, 201, 54, 0.06)",
   hp: "#f43f5e",
   mp: "#0ea5e9",
+  cp: "#22d3ee",
+  bannerTop: "#3a4d40",
+  frame: "#222b28",
+  card: "#1b2321",
+  textShadow: "rgba(0, 0, 0, 0.6)",
 };
+
+const LIGHT: Palette = {
+  ground: "#e7e1cf",
+  surface: "#f5f1e4",
+  inset: "#fffdf7",
+  gold: "#9a7608",
+  ivory: "#2a332e",
+  muted: "#6f776f",
+  line: "#d8cfb6",
+  cell: "rgba(154, 118, 8, 0.07)",
+  hp: "#e11d48",
+  mp: "#0284c7",
+  cp: "#0e7490",
+  bannerTop: "#fff8dc",
+  frame: "#f5f1e4",
+  card: "#fffdf7",
+  textShadow: "rgba(0, 0, 0, 0.2)",
+};
+
+/** 직접 등록한 배경 위: 어두운 테마를 바탕으로 테두리 안쪽과 카드를 반투명하게 둔다. */
+const CUSTOM: Palette = {
+  ...DARK,
+  line: "rgba(241, 238, 220, 0.14)",
+  frame: "rgba(23, 30, 30, 0.5)",
+  card: "rgba(23, 30, 30, 0.6)",
+};
+
+const PALETTES: Record<MemoryTheme, Palette> = { dark: DARK, light: LIGHT, custom: CUSTOM };
+
+// 그리는 동안 쓰는 팔레트와 카드 뒤에 비칠 흐린 배경. renderCharacterMemory가 (await 없이 이어지는)
+// 그리기 구간을 시작할 때 정하므로, 그리기 함수들이 인자로 넘겨받지 않고 바로 쓴다.
+let COLOR: Palette = DARK;
+let cardBackdrop: HTMLCanvasElement | null = null;
 
 const BOOK_COLOR: Record<SkillBook, string> = {
   "용맹의 서": "#ef4444",
@@ -66,7 +133,8 @@ export interface MemoryImageData {
   skill: CharacterSkillNode | null;
   /** 왼쪽 아래 타이틀 이미지 경로(MEMORY_TITLES 중 하나). */
   titleImage: string;
-  /** 러너가 고른 배경 이미지 URL(로컬 파일의 object URL). 없으면 기본 단색 배경. */
+  theme: MemoryTheme;
+  /** "직접 등록" 테마에서 러너가 고른 배경 이미지 URL(로컬 파일의 object URL). 없으면 어두운 테마로 그린다. */
   backgroundImage?: string | null;
 }
 
@@ -149,16 +217,66 @@ function drawContain(ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: 
   ctx.drawImage(image, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
 }
 
+/** w×h를 빈틈없이 채우도록 가운데를 잘라낼 원본 영역. */
+function coverSource(image: HTMLImageElement, w: number, h: number) {
+  const ratio = Math.max(w / image.naturalWidth, h / image.naturalHeight);
+  const sw = w / ratio;
+  const sh = h / ratio;
+  return [(image.naturalWidth - sw) / 2, (image.naturalHeight - sh) / 2, sw, sh] as const;
+}
+
 /** smooth를 주면 확대할 때도 부드럽게 보간한다(사진처럼 픽셀 아트가 아닌 이미지). */
 function drawCover(
   ctx: CanvasRenderingContext2D, image: HTMLImageElement, x: number, y: number, w: number, h: number, smooth = false,
 ) {
-  const ratio = Math.max(w / image.naturalWidth, h / image.naturalHeight);
-  const sw = w / ratio;
-  const sh = h / ratio;
   setSmoothing(ctx, image, w);
   if (smooth) ctx.imageSmoothingEnabled = true;
-  ctx.drawImage(image, (image.naturalWidth - sw) / 2, (image.naturalHeight - sh) / 2, sw, sh, x, y, w, h);
+  ctx.drawImage(image, ...coverSource(image, w, h), x, y, w, h);
+}
+
+const BACKDROP_BLUR = 16; // 실제 픽셀 기준
+
+/** 카드 뒤에 비칠, 배경을 흐리게 만든 복사본(실제 PNG 크기). 캔버스 filter를 못 쓰는 브라우저에서는
+ *  작게 줄였다가 다시 키워 흐림을 흉내 낸다. */
+function blurredBackdrop(image: HTMLImageElement): HTMLCanvasElement {
+  const width = MEMORY_WIDTH * SCALE;
+  const height = MEMORY_HEIGHT * SCALE;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d")!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+  const filter = `blur(${BACKDROP_BLUR}px)`;
+  ctx.filter = filter;
+  if (ctx.filter === filter) {
+    // 가장자리가 투명하게 번지지 않도록 흐림 반경만큼 넓게 그린다.
+    const margin = BACKDROP_BLUR * 2;
+    ctx.drawImage(image, ...coverSource(image, width + margin * 2, height + margin * 2), -margin, -margin, width + margin * 2, height + margin * 2);
+    return canvas;
+  }
+  const small = document.createElement("canvas");
+  small.width = Math.round(width / 24);
+  small.height = Math.round(height / 24);
+  const smallCtx = small.getContext("2d")!;
+  smallCtx.imageSmoothingQuality = "high";
+  smallCtx.drawImage(image, ...coverSource(image, small.width, small.height), 0, 0, small.width, small.height);
+  ctx.drawImage(small, 0, 0, width, height);
+  return canvas;
+}
+
+/** 패널·장비·능력치 카드 바탕. 흐린 배경이 있으면 카드 모양으로 잘라 먼저 깔고 반투명 바탕을 덮는다. */
+function cardBox(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, radius = 8) {
+  if (cardBackdrop) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.clip();
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(cardBackdrop, 0, 0, MEMORY_WIDTH, MEMORY_HEIGHT);
+    ctx.restore();
+  }
+  box(ctx, x, y, w, h, { fill: COLOR.card, stroke: COLOR.line, radius });
 }
 
 /** 테두리 있는 정사각 아이콘 칸. 이미지가 없으면 칸만 남긴다. */
@@ -178,7 +296,7 @@ function drawIcon(
 function panel(
   ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, title: string, count: string,
 ): number {
-  box(ctx, x, y, w, h, { fill: COLOR.inset, stroke: COLOR.line, radius: 10 });
+  cardBox(ctx, x, y, w, h, 10);
   drawText(ctx, title, x + 16, y + 22, { size: 16, color: COLOR.gold, bold: true });
   const titleWidth = ctx.measureText(title).width;
   drawText(ctx, count, x + 16 + titleWidth + 10, y + 22, { size: 13, color: COLOR.muted, family: "GalmuriMono11" });
@@ -246,7 +364,7 @@ function drawNameBanner(ctx: CanvasRenderingContext2D, name: string, factionImag
   ctx.fillStyle = outer;
   ctx.fill();
   const inner = ctx.createLinearGradient(0, y, 0, y + h);
-  inner.addColorStop(0, "#3a4d40");
+  inner.addColorStop(0, COLOR.bannerTop);
   inner.addColorStop(0.5, COLOR.surface);
   inner.addColorStop(1, COLOR.inset);
   hexagon(4);
@@ -261,7 +379,7 @@ function drawNameBanner(ctx: CanvasRenderingContext2D, name: string, factionImag
   ctx.fillStyle = COLOR.gold;
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+  ctx.shadowColor = COLOR.textShadow;
   ctx.shadowOffsetY = 2;
   ctx.fillText(nameText, cursor, y + h / 2 + 1);
   ctx.shadowColor = "transparent";
@@ -392,7 +510,7 @@ function drawLoadoutCard(
   },
   x: number, y: number, w: number, h: number,
 ) {
-  box(ctx, x, y, w, h, { fill: COLOR.inset, stroke: COLOR.line });
+  cardBox(ctx, x, y, w, h);
   const iconSize = 52;
   drawIcon(ctx, name ? image : null, x + 12, y + 12, iconSize, name ? border : COLOR.line);
   const textX = x + 24 + iconSize;
@@ -453,7 +571,7 @@ function todayLabel() {
   return `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
 }
 
-export async function renderCharacterMemory({ character, skill, titleImage, backgroundImage }: MemoryImageData): Promise<Blob> {
+export async function renderCharacterMemory({ character, skill, titleImage, theme, backgroundImage }: MemoryImageData): Promise<Blob> {
   const equipped = (type: CharacterOwnedItem["item_type"]) =>
     character.owned_items.find((item) => item.equipped && item.item_type === type && item.quantity > 0) ?? null;
   const companion = equipped("companion");
@@ -487,7 +605,7 @@ export async function renderCharacterMemory({ character, skill, titleImage, back
     image(companion?.item_image_url),
     image(accessory?.item_image_url),
     image(trait?.image_url),
-    image(backgroundImage),
+    image(theme === "custom" ? backgroundImage : null),
     loadFonts(),
   ]);
   const [missionImages, challengeImages, itemImages] = await Promise.all([
@@ -504,12 +622,16 @@ export async function renderCharacterMemory({ character, skill, titleImage, back
   if (!ctx) throw new Error("이미지를 그릴 수 없는 브라우저입니다.");
   ctx.scale(SCALE, SCALE);
 
-  // 바탕과 금색 테두리. 배경 이미지가 있으면 화면 전체를 채우고, 글씨가 읽히도록 테두리 안쪽만 반투명하게 어둡게 덮는다.
+  // 여기서부터 끝까지 await 없이 그린다(COLOR·cardBackdrop은 이 구간에서만 쓰인다).
+  COLOR = background ? CUSTOM : PALETTES[theme === "custom" ? "dark" : theme];
+  cardBackdrop = background ? blurredBackdrop(background) : null;
+
+  // 바탕과 금색 테두리. 배경 이미지가 있으면 화면 전체를 채우고 테두리 안쪽을 반투명하게 덮는다.
   ctx.fillStyle = COLOR.ground;
   ctx.fillRect(0, 0, MEMORY_WIDTH, MEMORY_HEIGHT);
   if (background) drawCover(ctx, background, 0, 0, MEMORY_WIDTH, MEMORY_HEIGHT, true);
   box(ctx, 16, 16, MEMORY_WIDTH - 32, MEMORY_HEIGHT - 32, {
-    fill: background ? "rgba(23, 30, 30, 0.55)" : COLOR.surface, stroke: "rgba(232, 201, 54, 0.55)", radius: 14, lineWidth: 3,
+    fill: COLOR.frame, stroke: "rgba(232, 201, 54, 0.55)", radius: 14, lineWidth: 3,
   });
   box(ctx, 24, 24, MEMORY_WIDTH - 48, MEMORY_HEIGHT - 48, { stroke: COLOR.line, radius: 10 });
 
@@ -560,7 +682,7 @@ export async function renderCharacterMemory({ character, skill, titleImage, back
   GRADE_STATS.forEach((stat, index) => {
     const x = left + (index % 2) * (halfWidth + 12);
     const cellY = y + Math.floor(index / 2) * 52;
-    box(ctx, x, cellY, halfWidth, 42, { fill: COLOR.inset, stroke: COLOR.line });
+    cardBox(ctx, x, cellY, halfWidth, 42);
     drawText(ctx, stat.label, x + 12, cellY + 21, { size: 15, color: stat.color, bold: true });
     drawText(ctx, String(character[stat.key]), x + halfWidth - 12, cellY + 21, { size: 18, align: "right", family: "GalmuriMono11" });
   });
@@ -672,7 +794,7 @@ export async function renderCharacterMemory({ character, skill, titleImage, back
   drawRightAlignedRun(ctx, [
     ...currencyParts("골드", COLOR.gold, character.gold, character.total_gold_earned),
     { text: "·", color: COLOR.line, size: 14 },
-    ...currencyParts("CP", "#22d3ee", character.cp, character.total_cp_earned),
+    ...currencyParts("CP", COLOR.cp, character.cp, character.total_cp_earned),
   ], right + rightWidth - 16, itemsY + 22);
   const itemColumns = 6;
   const itemGap = 8;
@@ -696,6 +818,7 @@ export async function renderCharacterMemory({ character, skill, titleImage, back
     drawText(ctx, `외 ${ownedItems.length - shownItems.length}종`, x + itemCellWidth / 2, cellY + itemRowHeight / 2, { size: 13, color: COLOR.muted, align: "center" });
   }
 
+  cardBackdrop = null; // 큰 캔버스를 다음 그리기까지 붙잡아 두지 않는다.
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("이미지를 만들지 못했습니다."))), "image/png");
   });
