@@ -276,12 +276,14 @@ function drawBar(
 /** 한 가지 색·굵기로 이어 쓰는 글자 조각. 줄바꿈(\n)은 강제 개행이다. */
 interface TextRun { text: string; color: string; bold?: boolean; family?: string }
 
-/** 여러 색이 섞인 글을 maxWidth에 맞춰 줄바꿈해 그린다. maxLines를 넘치면 마지막 줄을 말줄임한다. */
-function drawRichText(
-  ctx: CanvasRenderingContext2D, runs: TextRun[], x: number, y: number, maxWidth: number,
-  { size, lineHeight, maxLines }: { size: number; lineHeight: number; maxLines: number },
-) {
-  type Piece = TextRun & { width: number };
+type TextPiece = TextRun & { width: number };
+
+/** 여러 색이 섞인 글을 maxWidth에 맞춰 줄로 나눈다. maxLines를 넘치면 마지막 줄을 말줄임한다. */
+function wrapRichText(
+  ctx: CanvasRenderingContext2D, runs: TextRun[], maxWidth: number,
+  { size, maxLines }: { size: number; maxLines: number },
+): TextPiece[][] {
+  type Piece = TextPiece;
   const measure = (run: TextRun, text: string) => {
     ctx.font = font(size, run);
     return ctx.measureText(text).width;
@@ -332,9 +334,16 @@ function drawRichText(
     }
     last.push({ ...ellipsis, width: ellipsisWidth });
   }
+  return shown.filter((line, index) => line.length > 0 || index < shown.length - 1);
+}
+
+function drawRichLines(
+  ctx: CanvasRenderingContext2D, lines: TextPiece[][], x: number, y: number,
+  { size, lineHeight }: { size: number; lineHeight: number },
+) {
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  shown.forEach((line, index) => {
+  lines.forEach((line, index) => {
     let cursor = x;
     for (const piece of line) {
       ctx.font = font(size, piece);
@@ -345,46 +354,33 @@ function drawRichText(
   });
 }
 
-// 기술 설명에서 수치를 서 색으로 강조하는 규칙(components/skill/SkillTreeGrid.tsx의 DESCRIPTION_NUMBER_PATTERN과 같다).
-const DESCRIPTION_NUMBER_PATTERN = /[+-]?(?:\d[\d,.]*|[nN]+)(?:\s*(?:명|개|회|턴|라운드|단계|등급|스택|%|배|HP|MP|SP))?/g;
-
 /** 작은따옴표로 감싼 구간을 강조색으로 바꾼다. 따옴표는 서식 기호라 지운다. 홀수 번째 조각이 따옴표 안쪽이다. */
 function quotedRuns(text: string, base: TextRun, quoted: TextRun): TextRun[] {
   return text.split(/'([^']+)'/g).map((part, index) => ({ ...(index % 2 ? quoted : base), text: part }));
 }
 
-/** 기술 툴팁과 같은 규칙으로 기술 설명을 칠한다: 기본 설명은 따옴표·수치를 서 색으로,
- *  커스텀 설명은 따옴표 구간을 커스텀 색(없으면 서 색)으로. */
+/** 기술은 러너가 쓴 커스텀 설명만 보여준다. 따옴표 구간은 커스텀 색(없으면 서 색)으로 굵게 칠한다. */
 function skillDescriptionRuns(skill: CharacterSkillNode): TextRun[] {
-  const accent = BOOK_ACCENT[skill.book].line;
-  const runs: TextRun[] = [];
-  if (skill.description) {
-    for (const run of quotedRuns(skill.description, { text: "", color: COLOR.muted }, { text: "", color: accent })) {
-      if (run.color === accent) { runs.push(run); continue; }
-      let cursor = 0;
-      for (const match of run.text.matchAll(DESCRIPTION_NUMBER_PATTERN)) {
-        runs.push({ text: run.text.slice(cursor, match.index), color: COLOR.muted });
-        runs.push({ text: match[0], color: accent, family: "GalmuriMono11" });
-        cursor = match.index + match[0].length;
-      }
-      runs.push({ text: run.text.slice(cursor), color: COLOR.muted });
-    }
-  }
-  if (skill.custom_description) {
-    if (runs.length) runs.push({ text: "\n", color: COLOR.muted });
-    runs.push(...quotedRuns(skill.custom_description,
-      { text: "", color: COLOR.ivory },
-      { text: "", color: skill.custom_description_color || accent, bold: true }));
-  }
-  return runs;
+  if (!skill.custom_description) return [];
+  return quotedRuns(skill.custom_description,
+    { text: "", color: COLOR.ivory },
+    { text: "", color: skill.custom_description_color || BOOK_ACCENT[skill.book].line, bold: true });
 }
 
-/** 기술·동반자·장신구·특성 칸: 위에 아이콘·이름, 아래에 설명. */
+const LOADOUT_HEADER_HEIGHT = 76;
+const LOADOUT_TEXT = { size: 12, lineHeight: 16, maxLines: 6 };
+
+/** 설명 줄 수에 맞춘 칸 높이. 설명이 없으면 아이콘·이름 부분만 쓴다. */
+function loadoutCardHeight(lineCount: number) {
+  return lineCount ? LOADOUT_HEADER_HEIGHT + 8 + lineCount * LOADOUT_TEXT.lineHeight + 10 : LOADOUT_HEADER_HEIGHT;
+}
+
+/** 기술·동반자·장신구·특성 칸: 위에 아이콘·이름, 아래에 설명(미리 줄바꿈한 lines). */
 function drawLoadoutCard(
   ctx: CanvasRenderingContext2D,
-  { label, name, nameColor = COLOR.ivory, image, border, description }: {
+  { label, name, nameColor = COLOR.ivory, image, border, lines }: {
     label: string; name: string | null; nameColor?: string; image: HTMLImageElement | null;
-    border: string; description: TextRun[];
+    border: string; lines: TextPiece[][];
   },
   x: number, y: number, w: number, h: number,
 ) {
@@ -396,13 +392,10 @@ function drawLoadoutCard(
   drawText(ctx, name ?? "없음", textX, y + 50, {
     size: 16, color: name ? nameColor : COLOR.muted, maxWidth: x + w - 12 - textX, minSize: 11,
   });
-  if (!name || description.length === 0) return;
+  if (lines.length === 0) return;
   ctx.fillStyle = COLOR.line;
-  ctx.fillRect(x + 12, y + 76, w - 24, 1);
-  const lineHeight = 16;
-  drawRichText(ctx, description, x + 12, y + 84, w - 24, {
-    size: 12, lineHeight, maxLines: Math.floor((h - 84 - 8) / lineHeight),
-  });
+  ctx.fillRect(x + 12, y + LOADOUT_HEADER_HEIGHT, w - 24, 1);
+  drawRichLines(ctx, lines, x + 12, y + LOADOUT_HEADER_HEIGHT + 8, LOADOUT_TEXT);
 }
 
 /** 아이콘 + 이름이 들어간 작은 칸(임무·도전과제·아이템 공용). */
@@ -518,11 +511,10 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
   const medalSize = 72;
   let y = frameY + 256;
   const gradeWidth = leftWidth - medalSize - 12;
-  box(ctx, left, y, gradeWidth, medalSize, { fill: COLOR.inset, stroke: COLOR.line });
-  drawText(ctx, `Lv. ${character.lv}`, left + 14, y + 26, { size: 24, color: COLOR.gold, family: "GalmuriMono11" });
+  drawText(ctx, `Lv. ${character.lv}`, left + 4, y + 24, { size: 28, color: COLOR.gold, family: "GalmuriMono11" });
   const totalExp = Math.max(0, (character.lv - 1) * GROWTH_EXP_PER_LEVEL + character.exp);
-  drawText(ctx, `총 획득 경험치 ${numberFormatter.format(totalExp)} EXP`, left + 14, y + 54, {
-    size: 12, color: COLOR.muted, maxWidth: gradeWidth - 28, minSize: 10,
+  drawText(ctx, `Total ${numberFormatter.format(totalExp)} EXP`, left + 4, y + 54, {
+    size: 15, color: COLOR.ivory, family: "GalmuriMono11", maxWidth: gradeWidth - 8, minSize: 11,
   });
   if (medal) {
     ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
@@ -564,11 +556,9 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
   drawText(ctx, todayLabel(), right + rightWidth, 66, { size: 14, color: COLOR.muted, align: "right", family: "GalmuriMono11" });
   drawText(ctx, `모험가 등급 · ${grade.name}패`, right + rightWidth, 92, { size: 13, color: COLOR.gold, align: "right" });
 
-  // 기술·동반자·장신구·특성(설명 포함). 기술 설명이 가장 길어 기술 칸을 넓게 잡는다.
+  // 기술·동반자·장신구·특성(설명 포함). 칸 높이는 설명이 가장 긴 칸에 맞춘다.
   const loadoutY = 124;
-  const loadoutHeight = 196;
-  const skillCardWidth = 404;
-  const otherCardWidth = (rightWidth - 36 - skillCardWidth) / 3;
+  const cardWidth = (rightWidth - 36) / 4;
   const plain = (text: string | null | undefined): TextRun[] => (text ? [{ text, color: COLOR.muted }] : []);
   const loadout = [
     {
@@ -580,11 +570,13 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
     { label: "장신구", name: accessory?.item_name ?? null, image: accessoryImage, border: COLOR.gold, description: plain(accessory?.item_description) },
     { label: "특성", name: trait?.name ?? null, image: traitImage, border: COLOR.gold, description: plain(trait?.description) },
   ];
-  let cardX = right;
-  loadout.forEach((slot, index) => {
-    const width = index === 0 ? skillCardWidth : otherCardWidth;
-    drawLoadoutCard(ctx, slot, cardX, loadoutY, width, loadoutHeight);
-    cardX += width + 12;
+  const cards = loadout.map((slot) => ({
+    ...slot,
+    lines: slot.name ? wrapRichText(ctx, slot.description, cardWidth - 24, LOADOUT_TEXT) : [],
+  }));
+  const loadoutHeight = loadoutCardHeight(Math.max(...cards.map((card) => card.lines.length)));
+  cards.forEach((card, index) => {
+    drawLoadoutCard(ctx, card, right + index * (cardWidth + 12), loadoutY, cardWidth, loadoutHeight);
   });
 
   // 달성 임무(4개씩, 챕터별) · 도전과제(2개씩)
