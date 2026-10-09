@@ -37,6 +37,8 @@ interface Palette {
   /** 패널·장비·능력치 카드 바탕. */
   card: string;
   textShadow: string;
+  /** 글씨 둘레 그림자. 배경 이미지 위에서 막을 옅게 해도 글씨가 읽히게 한다. */
+  textHalo: string | null;
 }
 
 const DARK: Palette = {
@@ -55,6 +57,7 @@ const DARK: Palette = {
   frame: "#222b28",
   card: "#1b2321",
   textShadow: "rgba(0, 0, 0, 0.6)",
+  textHalo: null,
 };
 
 const LIGHT: Palette = {
@@ -73,17 +76,24 @@ const LIGHT: Palette = {
   frame: "#f5f1e4",
   card: "#fffdf7",
   textShadow: "rgba(0, 0, 0, 0.2)",
+  textHalo: null,
 };
 
-/** 직접 등록한 배경 위: 어두운 테마를 바탕으로 테두리 안쪽과 카드를 반투명하게 둔다. */
-const CUSTOM: Palette = {
-  ...DARK,
-  line: "rgba(241, 238, 220, 0.14)",
-  frame: "rgba(23, 30, 30, 0.5)",
-  card: "rgba(23, 30, 30, 0.6)",
-};
+/** "직접 등록" 테마의 배경 어둡기 기본값과 범위(테두리 안쪽을 덮는 막의 불투명도). */
+export const MEMORY_OVERLAY = { default: 0.3, min: 0, max: 0.8, step: 0.05 };
 
-const PALETTES: Record<MemoryTheme, Palette> = { dark: DARK, light: LIGHT, custom: CUSTOM };
+/** 직접 등록한 배경 위: 어두운 테마를 바탕으로 테두리 안쪽을 overlay만큼, 카드는 그보다 조금 더 진하게 덮는다. */
+function customPalette(overlay: number): Palette {
+  return {
+    ...DARK,
+    line: "rgba(241, 238, 220, 0.16)",
+    frame: `rgba(23, 30, 30, ${overlay})`,
+    card: `rgba(23, 30, 30, ${Math.min(overlay + 0.15, 0.9)})`,
+    textHalo: "rgba(0, 0, 0, 0.85)",
+  };
+}
+
+const PALETTES: Record<Exclude<MemoryTheme, "custom">, Palette> = { dark: DARK, light: LIGHT };
 
 // 그리는 동안 쓰는 팔레트와 카드 뒤에 비칠 흐린 배경. renderCharacterMemory가 (await 없이 이어지는)
 // 그리기 구간을 시작할 때 정하므로, 그리기 함수들이 인자로 넘겨받지 않고 바로 쓴다.
@@ -136,6 +146,8 @@ export interface MemoryImageData {
   theme: MemoryTheme;
   /** "직접 등록" 테마에서 러너가 고른 배경 이미지 URL(로컬 파일의 object URL). 없으면 어두운 테마로 그린다. */
   backgroundImage?: string | null;
+  /** "직접 등록" 테마의 배경 어둡기(0~1). */
+  overlay?: number;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -190,7 +202,17 @@ function drawText(
   ctx.fillStyle = color;
   ctx.textAlign = align;
   ctx.textBaseline = "middle";
-  ctx.fillText(content, x, y);
+  fillText(ctx, content, x, y);
+}
+
+/** fillText에 테마의 글씨 둘레 그림자를 입힌다. */
+function fillText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number) {
+  if (!COLOR.textHalo) { ctx.fillText(text, x, y); return; }
+  ctx.save();
+  ctx.shadowColor = COLOR.textHalo;
+  ctx.shadowBlur = 4;
+  ctx.fillText(text, x, y);
+  ctx.restore();
 }
 
 function box(
@@ -474,7 +496,7 @@ function drawRichLines(
     for (const piece of line) {
       ctx.font = font(size, piece);
       ctx.fillStyle = piece.color;
-      ctx.fillText(piece.text, cursor, y + index * lineHeight + lineHeight / 2);
+      fillText(ctx, piece.text, cursor, y + index * lineHeight + lineHeight / 2);
       cursor += piece.width;
     }
   });
@@ -571,7 +593,9 @@ function todayLabel() {
   return `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(now.getDate()).padStart(2, "0")}`;
 }
 
-export async function renderCharacterMemory({ character, skill, titleImage, theme, backgroundImage }: MemoryImageData): Promise<Blob> {
+export async function renderCharacterMemory({
+  character, skill, titleImage, theme, backgroundImage, overlay = MEMORY_OVERLAY.default,
+}: MemoryImageData): Promise<Blob> {
   const equipped = (type: CharacterOwnedItem["item_type"]) =>
     character.owned_items.find((item) => item.equipped && item.item_type === type && item.quantity > 0) ?? null;
   const companion = equipped("companion");
@@ -623,7 +647,7 @@ export async function renderCharacterMemory({ character, skill, titleImage, them
   ctx.scale(SCALE, SCALE);
 
   // 여기서부터 끝까지 await 없이 그린다(COLOR·cardBackdrop은 이 구간에서만 쓰인다).
-  COLOR = background ? CUSTOM : PALETTES[theme === "custom" ? "dark" : theme];
+  COLOR = background ? customPalette(overlay) : PALETTES[theme === "custom" ? "dark" : theme];
   cardBackdrop = background ? blurredBackdrop(background) : null;
 
   // 바탕과 금색 테두리. 배경 이미지가 있으면 화면 전체를 채우고 테두리 안쪽을 반투명하게 덮는다.
@@ -670,7 +694,7 @@ export async function renderCharacterMemory({ character, skill, titleImage, them
   ctx.font = totalFont;
   ctx.fillStyle = COLOR.ivory;
   ctx.textAlign = "left";
-  ctx.fillText(totalText, textX, y + 54);
+  fillText(ctx, totalText, textX, y + 54);
 
   y += medalSize + 24;
   drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, left, y, leftWidth);

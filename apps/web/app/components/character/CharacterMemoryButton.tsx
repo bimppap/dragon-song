@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { fetchCharacterSkillTree, type CharacterDetail, type SkillBook } from "@/lib/api";
 import { deepestLearnedSkill } from "@/lib/skillProgression";
 import {
-  MEMORY_BACKGROUND_SIZE, MEMORY_HEIGHT, MEMORY_THEMES, MEMORY_TITLES, MEMORY_WIDTH, renderCharacterMemory, type MemoryTheme,
+  MEMORY_BACKGROUND_SIZE, MEMORY_HEIGHT, MEMORY_OVERLAY, MEMORY_THEMES, MEMORY_TITLES, MEMORY_WIDTH, renderCharacterMemory,
+  type MemoryTheme,
 } from "./characterMemoryImage";
 
 const BOOKS: SkillBook[] = ["용맹의 서", "불굴의 서", "헌신의 서", "탐구의 서"];
@@ -33,6 +34,14 @@ export default function CharacterMemoryButton({ character }: { character: Charac
 
   useEffect(() => () => { if (backgroundUrl) URL.revokeObjectURL(backgroundUrl); }, [backgroundUrl]);
 
+  // 슬라이더를 움직이는 동안 매번 다시 그리지 않도록, 손을 멈춘 뒤의 값으로만 그린다.
+  const [overlay, setOverlay] = useState(MEMORY_OVERLAY.default);
+  const [appliedOverlay, setAppliedOverlay] = useState(overlay);
+  useEffect(() => {
+    const timer = setTimeout(() => setAppliedOverlay(overlay), 250);
+    return () => clearTimeout(timer);
+  }, [overlay]);
+
   // 창을 열 때마다 최신 정보로 다시 그린다.
   useEffect(() => {
     if (!open) return;
@@ -47,6 +56,7 @@ export default function CharacterMemoryButton({ character }: { character: Charac
           titleImage,
           theme,
           backgroundImage: backgroundUrl,
+          overlay: appliedOverlay,
         });
         if (cancelled) return;
         url = URL.createObjectURL(blob);
@@ -59,7 +69,7 @@ export default function CharacterMemoryButton({ character }: { character: Charac
       cancelled = true;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [open, character, titleImage, theme, backgroundUrl]);
+  }, [open, character, titleImage, theme, backgroundUrl, appliedOverlay]);
 
   function openModal() {
     setImageUrl(null);
@@ -150,6 +160,21 @@ export default function CharacterMemoryButton({ character }: { character: Charac
               <X size={14} />
               배경 지우기
             </Button>
+          )}
+          {backgroundUrl && (
+            <label className="flex items-center gap-2 text-sm text-muted">
+              배경 어둡기
+              <input
+                type="range"
+                min={MEMORY_OVERLAY.min}
+                max={MEMORY_OVERLAY.max}
+                step={MEMORY_OVERLAY.step}
+                value={overlay}
+                onChange={(event) => setOverlay(Number(event.target.value))}
+                className="w-32 accent-gold"
+              />
+              <span className="w-10 font-num text-ivory">{Math.round(overlay * 100)}%</span>
+            </label>
           )}
           <span className="text-xs text-muted">
             {backgroundUrl ? "" : "배경 이미지를 등록하면 카드가 반투명해지고 뒤 배경이 흐리게 비칩니다. "}
