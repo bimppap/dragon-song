@@ -112,11 +112,16 @@ const RANK_GRADES = [
     description: "전투와 파티 운영에서 중심 역할을 맡는 상위 등급입니다.",
     medalImage: "/medal/medal_3.png",
   },
+  {
+    name: "백금",
+    description: "전쟁을 끝낸 기사에게 주어지는 최상위 등급입니다.",
+    medalImage: "/medal/medal_4.png",
+  },
 ] as const;
 
-/** 모험가 등급(rank) 값을 동/은/금 3단계로 분류한다. */
+/** 모험가 등급(rank) 값을 동/은/금/백금 4단계로 분류한다. */
 function getRankGrade(rank: number) {
-  const index = rank <= 3 ? 0 : rank <= 6 ? 1 : 2;
+  const index = rank <= 3 ? 0 : rank <= 6 ? 1 : rank <= 9 ? 2 : 3;
   return RANK_GRADES[index];
 }
 
