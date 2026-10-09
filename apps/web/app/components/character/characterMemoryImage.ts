@@ -583,7 +583,7 @@ function drawLoadoutCard(
   drawIcon(ctx, image, x + 12, y + 12, iconSize, border);
   const textX = x + 24 + iconSize;
   drawText(ctx, label, textX, y + 26, { size: 12, color: COLOR.muted });
-  drawText(ctx, name, textX, y + 50, { size: 16, color: nameColor, maxWidth: x + w - 12 - textX, minSize: 11 });
+  drawFittedName(ctx, name, textX, y + 50, { size: 16, minSize: 11, maxWidth: x + w - 12 - textX, maxHeight: 32, color: nameColor });
   if (text.lines.length === 0) return;
   ctx.fillStyle = COLOR.line;
   ctx.fillRect(x + 12, y + LOADOUT_HEADER_HEIGHT, w - 24, 1);
@@ -604,7 +604,37 @@ function drawEntryCell(
     right -= ctx.measureText(trailing).width + 8;
   }
   const textX = x + iconSize + 12;
-  drawText(ctx, name, textX, y + h / 2, { size: 12, maxWidth: right - textX, minSize: 10 });
+  drawFittedName(ctx, name, textX, y + h / 2, { size: 12, minSize: 10, maxWidth: right - textX, maxHeight: h - 8 });
+}
+
+const NAME_LINE_MIN_SIZE = 6;
+
+/**
+ * 이름을 자르지 않고 그린다. 한 줄로 size~minSize 안에 들어가면 한 줄로 그리고,
+ * 아니면 줄을 바꿔 maxHeight 안에 들어가는 가장 큰 크기로 그린다(centerY 기준 세로 가운데).
+ */
+function drawFittedName(
+  ctx: CanvasRenderingContext2D, text: string, x: number, centerY: number,
+  { size, minSize, maxWidth, maxHeight, color = COLOR.ivory }: {
+    size: number; minSize: number; maxWidth: number; maxHeight: number; color?: string;
+  },
+) {
+  for (let current = size; current >= minSize; current -= 1) {
+    ctx.font = font(current);
+    if (ctx.measureText(text).width <= maxWidth) {
+      drawText(ctx, text, x, centerY, { size: current, color });
+      return;
+    }
+  }
+  for (let current = size; ; current -= 1) {
+    const lineHeight = Math.round(current * 1.2);
+    const lines = wrapRichText(ctx, [{ text, color }], maxWidth, { size: current, maxLines: Infinity });
+    const height = lines.length * lineHeight;
+    if (height <= maxHeight || current <= NAME_LINE_MIN_SIZE) {
+      drawRichLines(ctx, lines, x, centerY - height / 2, { size: current, lineHeight });
+      return;
+    }
+  }
 }
 
 /** "1. 서막" → ["1", "서막"]. 번호가 없으면 이름만 쓴다. */
