@@ -97,6 +97,7 @@ function AdminCharacterConsole() {
           setTab("list");
         }}
         adminMode
+        showMemoryButton
       />
     )}
     {tab === "create" && <CharacterCreate onCreated={(character) => { setCharacters((prev) => [...prev, character].toSorted((a, b) => a.name.localeCompare(b.name, "ko"))); setFocusCharacterId(character.id); setTab("info"); }} />}
@@ -209,6 +210,7 @@ function MyCharacterConsole({ role }: { role: MemberRole }) {
         readOnly={!isStaff}
         adminMode={isStaff}
         showHistory={isStaff}
+        showMemoryButton={isStaff}
       />
     </>}
   </PageContainer>;

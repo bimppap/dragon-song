@@ -112,7 +112,7 @@ interface Props {
   onDeleted?: (characterId: number) => void;
   /** 지정하면, 관리자가 만든 캐릭터(러너 계정 미연결)에 한해 수정 버튼을 노출한다(관리자 콘솔 전용). */
   adminMode?: boolean;
-  /** 이름표 오른쪽에 "추억 남기기" 버튼을 띄운다(러너 본인 캐릭터 화면 전용). */
+  /** 이름표 오른쪽에 "추억 남기기" 버튼을 띄운다(러너 본인 캐릭터, 스텝·관리자는 모든 캐릭터). */
   showMemoryButton?: boolean;
 }
 
