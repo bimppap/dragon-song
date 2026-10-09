@@ -553,8 +553,7 @@ export async function renderCharacterMemory({ character, skill, titleImage }: Me
   const rightWidth = MEMORY_WIDTH - 48 - right;
 
   drawNameBanner(ctx, character.name, faction, right, 48);
-  drawText(ctx, todayLabel(), right + rightWidth, 66, { size: 14, color: COLOR.muted, align: "right", family: "GalmuriMono11" });
-  drawText(ctx, `모험가 등급 · ${grade.name}패`, right + rightWidth, 92, { size: 13, color: COLOR.gold, align: "right" });
+  drawText(ctx, todayLabel(), right + rightWidth, 80, { size: 14, color: COLOR.muted, align: "right", family: "GalmuriMono11" });
 
   // 기술·동반자·장신구·특성(설명 포함). 칸 높이는 설명이 가장 긴 칸에 맞춘다.
   const loadoutY = 124;
