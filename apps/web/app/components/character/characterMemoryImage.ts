@@ -535,28 +535,32 @@ function skillDescriptionRuns(skill: CharacterSkillNode): TextRun[] {
 }
 
 const LOADOUT_HEADER_HEIGHT = 76;
-/** 설명 글자 크기는 maxSize에서 시작해, 설명이 maxHeight 안에 다 들어갈 때까지 minSize까지 줄인다. */
-const LOADOUT_TEXT = { maxSize: 12, minSize: 8, maxHeight: 96 };
+/**
+ * 설명 글자 크기는 maxSize에서 시작해, 설명이 maxHeight 안에 다 들어갈 때까지 minSize까지 줄인다.
+ * minSize로도 넘치는 긴 설명만 칸을 longMaxHeight까지 늘린다(그만큼 아래 패널이 밀리고 보유 아이템이 한 줄로 줄어든다).
+ */
+const LOADOUT_TEXT = { maxSize: 12, minSize: 8, maxHeight: 96, longMaxHeight: 176 };
 
 interface LoadoutText { lines: TextPiece[][]; size: number; lineHeight: number }
 
 const loadoutLineHeight = (size: number) => Math.round(size * 4 / 3);
 
-/** 설명이 칸에 다 들어가는 가장 큰 글자 크기로 줄바꿈한다. 가장 작은 크기로도 넘치면 마지막 줄을 말줄임한다. */
+/** 설명이 칸에 다 들어가는 가장 큰 글자 크기로 줄바꿈한다. 늘린 칸에도 넘치면 마지막 줄을 말줄임한다. */
 function fitLoadoutText(ctx: CanvasRenderingContext2D, runs: TextRun[], maxWidth: number): LoadoutText {
   for (let size = LOADOUT_TEXT.maxSize; ; size -= 1) {
     const lineHeight = loadoutLineHeight(size);
     const all = wrapRichText(ctx, runs, maxWidth, { size, maxLines: Infinity });
-    if (richLinesHeight(all, lineHeight) <= LOADOUT_TEXT.maxHeight) return { lines: all, size, lineHeight };
-    if (size <= LOADOUT_TEXT.minSize) {
-      // 높이 안에 들어가는 줄까지만 남긴다. 같은 크기로 다시 줄바꿈하므로 앞쪽 줄은 all과 같다.
-      let maxLines = 0;
-      for (let height = 0; maxLines < all.length; maxLines += 1) {
-        height += richLineHeight(all[maxLines], lineHeight);
-        if (height > LOADOUT_TEXT.maxHeight) break;
-      }
-      return { lines: wrapRichText(ctx, runs, maxWidth, { size, maxLines }), size, lineHeight };
+    const height = richLinesHeight(all, lineHeight);
+    if (height <= LOADOUT_TEXT.maxHeight) return { lines: all, size, lineHeight };
+    if (size > LOADOUT_TEXT.minSize) continue;
+    if (height <= LOADOUT_TEXT.longMaxHeight) return { lines: all, size, lineHeight };
+    // 높이 안에 들어가는 줄까지만 남긴다. 같은 크기로 다시 줄바꿈하므로 앞쪽 줄은 all과 같다.
+    let maxLines = 0;
+    for (let used = 0; maxLines < all.length; maxLines += 1) {
+      used += richLineHeight(all[maxLines], lineHeight);
+      if (used > LOADOUT_TEXT.longMaxHeight) break;
     }
+    return { lines: wrapRichText(ctx, runs, maxWidth, { size, maxLines }), size, lineHeight };
   }
 }
 
