@@ -527,19 +527,35 @@ function skillDescriptionRuns(skill: CharacterSkillNode): TextRun[] {
 }
 
 const LOADOUT_HEADER_HEIGHT = 76;
-const LOADOUT_TEXT = { size: 12, lineHeight: 16, maxLines: 6 };
+/** 설명 글자 크기는 maxSize에서 시작해, 설명이 maxHeight 안에 다 들어갈 때까지 minSize까지 줄인다. */
+const LOADOUT_TEXT = { maxSize: 12, minSize: 8, maxHeight: 96 };
 
-/** 설명 줄 수에 맞춘 칸 높이. 설명이 없으면 아이콘·이름 부분만 쓴다. */
-function loadoutCardHeight(lineCount: number) {
-  return lineCount ? LOADOUT_HEADER_HEIGHT + 8 + lineCount * LOADOUT_TEXT.lineHeight + 10 : LOADOUT_HEADER_HEIGHT;
+interface LoadoutText { lines: TextPiece[][]; size: number; lineHeight: number }
+
+const loadoutLineHeight = (size: number) => Math.round(size * 4 / 3);
+
+/** 설명이 칸에 다 들어가는 가장 큰 글자 크기로 줄바꿈한다. 가장 작은 크기로도 넘치면 마지막 줄을 말줄임한다. */
+function fitLoadoutText(ctx: CanvasRenderingContext2D, runs: TextRun[], maxWidth: number): LoadoutText {
+  for (let size = LOADOUT_TEXT.maxSize; ; size -= 1) {
+    const lineHeight = loadoutLineHeight(size);
+    const maxLines = Math.floor(LOADOUT_TEXT.maxHeight / lineHeight);
+    const all = wrapRichText(ctx, runs, maxWidth, { size, maxLines: Infinity });
+    if (all.length <= maxLines) return { lines: all, size, lineHeight };
+    if (size <= LOADOUT_TEXT.minSize) return { lines: wrapRichText(ctx, runs, maxWidth, { size, maxLines }), size, lineHeight };
+  }
+}
+
+/** 설명 높이에 맞춘 칸 높이. 설명이 없으면 아이콘·이름 부분만 쓴다. */
+function loadoutCardHeight(textHeight: number) {
+  return textHeight ? LOADOUT_HEADER_HEIGHT + 8 + textHeight + 10 : LOADOUT_HEADER_HEIGHT;
 }
 
 /** 기술·동반자·장신구·특성 칸: 위에 아이콘·이름, 아래에 설명(미리 줄바꿈한 lines). */
 function drawLoadoutCard(
   ctx: CanvasRenderingContext2D,
-  { label, name, nameColor = COLOR.ivory, image, border, lines }: {
+  { label, name, nameColor = COLOR.ivory, image, border, text }: {
     label: string; name: string; nameColor?: string; image: HTMLImageElement | null;
-    border: string; lines: TextPiece[][];
+    border: string; text: LoadoutText;
   },
   x: number, y: number, w: number, h: number,
 ) {
@@ -549,10 +565,10 @@ function drawLoadoutCard(
   const textX = x + 24 + iconSize;
   drawText(ctx, label, textX, y + 26, { size: 12, color: COLOR.muted });
   drawText(ctx, name, textX, y + 50, { size: 16, color: nameColor, maxWidth: x + w - 12 - textX, minSize: 11 });
-  if (lines.length === 0) return;
+  if (text.lines.length === 0) return;
   ctx.fillStyle = COLOR.line;
   ctx.fillRect(x + 12, y + LOADOUT_HEADER_HEIGHT, w - 24, 1);
-  drawRichLines(ctx, lines, x + 12, y + LOADOUT_HEADER_HEIGHT + 8, LOADOUT_TEXT);
+  drawRichLines(ctx, text.lines, x + 12, y + LOADOUT_HEADER_HEIGHT + 8, text);
 }
 
 /** 아이콘 + 이름이 들어간 작은 칸(임무·도전과제·아이템 공용). */
@@ -767,8 +783,10 @@ export async function renderCharacterMemory({
     ...(trait ? [{ label: "특성", name: trait.name, image: traitImage, border: COLOR.iconBorder, description: plain(trait.description) }] : []),
   ];
   const cardWidth = (rightWidth - 12 * (loadout.length - 1)) / Math.max(loadout.length, 1);
-  const cards = loadout.map((slot) => ({ ...slot, lines: wrapRichText(ctx, slot.description, cardWidth - 24, LOADOUT_TEXT) }));
-  const loadoutHeight = cards.length ? loadoutCardHeight(Math.max(...cards.map((card) => card.lines.length))) : 0;
+  const cards = loadout.map((slot) => ({ ...slot, text: fitLoadoutText(ctx, slot.description, cardWidth - 24) }));
+  const loadoutHeight = cards.length
+    ? loadoutCardHeight(Math.max(...cards.map((card) => card.text.lines.length * card.text.lineHeight)))
+    : 0;
   cards.forEach((card, index) => {
     drawLoadoutCard(ctx, card, right + index * (cardWidth + 12), loadoutY, cardWidth, loadoutHeight);
   });
