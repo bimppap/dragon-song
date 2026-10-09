@@ -708,9 +708,9 @@ export async function renderCharacterMemory({
   const titleY = MEMORY_HEIGHT - 48 - titleHeight - 8;
 
   // 용기·인내·자애·지혜 그림을 여백 없이 위아래로 붙여, 메달 줄과 타이틀 사이 가운데에 둔다.
-  // 그림은 4px 단위 픽셀 아트라, 실제 PNG에서 1.25배(한 칸 5px)로 그려도 칸 크기가 고르게 유지된다.
-  const statScale = 1.25 / SCALE;
-  const statsTop = y + 12;
+  // 그림은 4px 단위 픽셀 아트라, 실제 PNG에서 1.5배(한 칸 6px)로 그려도 칸 크기가 고르게 유지된다.
+  const statScale = 1.5 / SCALE;
+  const statsTop = y + 8;
   const statsHeight = gradeStatImages.reduce((sum, img) => sum + (img ? img.naturalHeight * statScale : 0), 0);
   let statY = statsTop + Math.max(0, (titleY - statsTop - statsHeight) / 2);
   ctx.imageSmoothingEnabled = false;
