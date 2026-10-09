@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import { fetchCharacterSkillTree, type CharacterDetail, type SkillBook } from "@/lib/api";
 import { deepestLearnedSkill } from "@/lib/skillProgression";
 import {
-  MEMORY_BACKGROUND_SIZE, MEMORY_GLASSES, MEMORY_HEIGHT, MEMORY_OVERLAY, MEMORY_THEMES, MEMORY_TITLES, MEMORY_WIDTH,
+  MEMORY_BACKGROUND_SIZE, MEMORY_FRAME_BORDER_DEFAULTS, MEMORY_GLASSES, MEMORY_HEIGHT, MEMORY_OVERLAY, MEMORY_THEMES, MEMORY_TITLES, MEMORY_WIDTH,
   renderCharacterMemory, type MemoryGlass, type MemoryTheme,
 } from "./characterMemoryImage";
 
@@ -27,21 +27,17 @@ export default function CharacterMemoryButton({ character }: { character: Charac
 
   useEffect(() => () => { if (backgroundUrl) URL.revokeObjectURL(backgroundUrl); }, [backgroundUrl]);
 
-  // 슬라이더를 움직이는 동안 매번 다시 그리지 않도록, 손을 멈춘 뒤의 값으로만 그린다.
   const [glass, setGlass] = useState<MemoryGlass>("dark");
+  const [frameBorder, setFrameBorder] = useState(MEMORY_FRAME_BORDER_DEFAULTS.dark);
   const [overlay, setOverlay] = useState(MEMORY_OVERLAY.defaults.dark);
-  const [appliedOverlay, setAppliedOverlay] = useState(overlay);
-  useEffect(() => {
-    const timer = setTimeout(() => setAppliedOverlay(overlay), 250);
-    return () => clearTimeout(timer);
-  }, [overlay]);
 
-  // 창을 열 때마다 최신 정보로 다시 그린다.
+  // 창을 열 때와 설정을 바꿀 때마다 최신 정보로 다시 그린다. 슬라이더·색 고르기를 움직이는 동안
+  // 매번 그리지 않도록, 값이 잠시 멈춘 뒤에 한 번만 그린다.
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
     let url: string | null = null;
-    (async () => {
+    const timer = setTimeout(async () => {
       try {
         const trees = await Promise.all(BOOKS.map((book) => fetchCharacterSkillTree(character.id, book)));
         const blob = await renderCharacterMemory({
@@ -50,8 +46,9 @@ export default function CharacterMemoryButton({ character }: { character: Charac
           titleImage,
           theme,
           backgroundImage: backgroundUrl,
-          overlay: appliedOverlay,
+          overlay,
           glass,
+          frameBorder,
         });
         if (cancelled) return;
         url = URL.createObjectURL(blob);
@@ -59,12 +56,13 @@ export default function CharacterMemoryButton({ character }: { character: Charac
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : "이미지를 만들지 못했습니다.");
       }
-    })();
+    }, 250);
     return () => {
       cancelled = true;
+      clearTimeout(timer);
       if (url) URL.revokeObjectURL(url);
     };
-  }, [open, character, titleImage, theme, backgroundUrl, appliedOverlay, glass]);
+  }, [open, character, titleImage, theme, backgroundUrl, overlay, glass, frameBorder]);
 
   function openModal() {
     setImageUrl(null);
@@ -87,10 +85,10 @@ export default function CharacterMemoryButton({ character }: { character: Charac
   }
 
   function changeGlass(value: MemoryGlass) {
+    // 유리 색을 바꾸면 진하기·테두리 색도 그 유리의 기본값으로 돌린다.
     setGlass(value);
-    // 유리 색과 기본 진하기를 한 번에 반영해, 기다렸다가 한 번 더 그리지 않게 한다.
     setOverlay(MEMORY_OVERLAY.defaults[value]);
-    setAppliedOverlay(MEMORY_OVERLAY.defaults[value]);
+    setFrameBorder(MEMORY_FRAME_BORDER_DEFAULTS[value]);
   }
 
   function changeBackground(file: File | null) {
@@ -190,6 +188,17 @@ export default function CharacterMemoryButton({ character }: { character: Charac
                 className="w-32 accent-gold"
               />
               <span className="w-10 font-num text-ivory">{Math.round(overlay * 100)}%</span>
+            </label>
+          )}
+          {backgroundUrl && (
+            <label className="flex items-center gap-2 text-sm text-muted">
+              테두리 색
+              <input
+                type="color"
+                value={frameBorder}
+                onChange={(event) => setFrameBorder(event.target.value)}
+                className="h-8 w-10 cursor-pointer border border-line bg-surface"
+              />
             </label>
           )}
           <span className="text-xs text-muted">

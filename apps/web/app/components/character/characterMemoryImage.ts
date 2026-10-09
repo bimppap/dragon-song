@@ -1,4 +1,4 @@
-import type { CharacterDetail, CharacterOwnedItem, CharacterSkillNode, SkillBook } from "@/lib/api";
+import type { CharacterDetail, CharacterOwnedItem, CharacterSkillNode } from "@/lib/api";
 import { BOOK_ACCENT } from "@/components/skill/bookAccent";
 import { FACTION_POSITION_IMAGE } from "@/lib/faction";
 import { getRankGrade } from "@/lib/rankGrade";
@@ -37,7 +37,14 @@ interface Palette {
   textShadow: string;
   /** 글씨 둘레 그림자. 배경 이미지 위에서 막을 옅게 해도 글씨가 읽히게 한다. */
   textHalo: string | null;
+  /** 가장 바깥 큰 카드의 테두리 색. 명패·액자 그림의 놋쇠색에 맞춘다. */
+  frameBorder: string;
+  /** 기술·동반자·장신구·특성 아이콘 테두리 색. */
+  iconBorder: string;
 }
+
+// 명패(name_bg.png) 테두리에서 뽑은 놋쇠색. 어두운 바탕엔 밝은 쪽, 밝은 바탕엔 짙은 쪽을 쓴다.
+const BRASS = { light: "#b49164", deep: "#8a6a3f" };
 
 const DARK: Palette = {
   ground: "#171e1e",
@@ -55,6 +62,8 @@ const DARK: Palette = {
   card: "#1b2321",
   textShadow: "rgba(0, 0, 0, 0.6)",
   textHalo: null,
+  frameBorder: BRASS.light,
+  iconBorder: "#ffffff",
 };
 
 const LIGHT: Palette = {
@@ -73,6 +82,8 @@ const LIGHT: Palette = {
   card: "#fffdf7",
   textShadow: "rgba(0, 0, 0, 0.2)",
   textHalo: null,
+  frameBorder: BRASS.deep,
+  iconBorder: BRASS.deep,
 };
 
 /** "직접 등록" 테마에서 배경 위를 덮는 막(유리)의 색. */
@@ -82,6 +93,9 @@ export type MemoryGlass = "dark" | "light";
  *  밝은 유리는 글씨가 어두워, 어두운 배경에서도 읽히도록 기본값을 더 진하게 둔다. */
 export const MEMORY_OVERLAY = { min: 0, max: 0.8, step: 0.05, defaults: { dark: 0.3, light: 0.5 } as Record<MemoryGlass, number> };
 
+/** "직접 등록" 테마에서 바깥 테두리 색의 유리 색별 기본값(러너가 바꿀 수 있다). */
+export const MEMORY_FRAME_BORDER_DEFAULTS: Record<MemoryGlass, string> = { dark: BRASS.light, light: BRASS.deep };
+
 export const MEMORY_GLASSES: { value: MemoryGlass; label: string }[] = [
   { value: "dark", label: "어두운 유리" },
   { value: "light", label: "밝은 유리" },
@@ -89,7 +103,7 @@ export const MEMORY_GLASSES: { value: MemoryGlass; label: string }[] = [
 
 /** 직접 등록한 배경 위: 어두운/밝은 테마를 바탕으로 테두리 안쪽을 overlay만큼, 카드는 그보다 조금 더 진하게 덮는다.
  *  밝은 유리는 글씨가 어두워 배경이 비치면 덜 읽히므로 카드를 조금 더 진하게 덮는다. */
-function customPalette(overlay: number, glass: MemoryGlass): Palette {
+function customPalette(overlay: number, glass: MemoryGlass, frameBorder: string): Palette {
   if (glass === "light") {
     return {
       ...LIGHT,
@@ -97,6 +111,7 @@ function customPalette(overlay: number, glass: MemoryGlass): Palette {
       frame: `rgba(255, 253, 247, ${overlay})`,
       card: `rgba(255, 253, 247, ${Math.min(overlay + 0.25, 0.92)})`,
       textHalo: "rgba(255, 255, 255, 0.9)",
+      frameBorder,
     };
   }
   return {
@@ -105,6 +120,7 @@ function customPalette(overlay: number, glass: MemoryGlass): Palette {
     frame: `rgba(23, 30, 30, ${overlay})`,
     card: `rgba(23, 30, 30, ${Math.min(overlay + 0.15, 0.9)})`,
     textHalo: "rgba(0, 0, 0, 0.85)",
+    frameBorder,
   };
 }
 
@@ -115,12 +131,6 @@ const PALETTES: Record<Exclude<MemoryTheme, "custom">, Palette> = { dark: DARK, 
 let COLOR: Palette = DARK;
 let cardBackdrop: HTMLCanvasElement | null = null;
 
-const BOOK_COLOR: Record<SkillBook, string> = {
-  "용맹의 서": "#ef4444",
-  "불굴의 서": "#3b82f6",
-  "헌신의 서": "#22c55e",
-  "탐구의 서": "#a855f7",
-};
 
 // 용기·인내·자애·지혜 순서. 등급(0~9)별 그림 public/stat/<name><등급>.png를 위에서부터 이어 붙이면
 // 하나의 액자처럼 이어진다(맨 위·맨 아래 그림에 액자 장식이 있다).
@@ -170,6 +180,8 @@ export interface MemoryImageData {
   /** "직접 등록" 테마의 막 진하기(0~1)와 막의 색. */
   overlay?: number;
   glass?: MemoryGlass;
+  /** "직접 등록" 테마의 바깥 테두리 색. 없으면 유리 색별 기본값. */
+  frameBorder?: string;
 }
 
 const numberFormatter = new Intl.NumberFormat("ko-KR");
@@ -594,6 +606,7 @@ function todayLabel() {
 
 export async function renderCharacterMemory({
   character, skill, titleImage, theme, backgroundImage, glass = "dark", overlay = MEMORY_OVERLAY.defaults[glass],
+  frameBorder = MEMORY_FRAME_BORDER_DEFAULTS[glass],
 }: MemoryImageData): Promise<Blob> {
   const equipped = (type: CharacterOwnedItem["item_type"]) =>
     character.owned_items.find((item) => item.equipped && item.item_type === type && item.quantity > 0) ?? null;
@@ -648,7 +661,7 @@ export async function renderCharacterMemory({
   ctx.scale(SCALE, SCALE);
 
   // 여기서부터 끝까지 await 없이 그린다(COLOR·cardBackdrop은 이 구간에서만 쓰인다).
-  COLOR = background ? customPalette(overlay, glass) : PALETTES[theme === "custom" ? "dark" : theme];
+  COLOR = background ? customPalette(overlay, glass, frameBorder) : PALETTES[theme === "custom" ? "dark" : theme];
   cardBackdrop = background ? blurredBackdrop(background) : null;
 
   // 바탕과 금색 테두리. 배경 이미지가 있으면 화면 전체를 채우고 테두리 안쪽을 반투명하게 덮는다.
@@ -656,7 +669,7 @@ export async function renderCharacterMemory({
   ctx.fillRect(0, 0, MEMORY_WIDTH, MEMORY_HEIGHT);
   if (background) drawCover(ctx, background, 0, 0, MEMORY_WIDTH, MEMORY_HEIGHT, true);
   box(ctx, 16, 16, MEMORY_WIDTH - 32, MEMORY_HEIGHT - 32, {
-    fill: COLOR.frame, stroke: "rgba(232, 201, 54, 0.55)", radius: 14, lineWidth: 3,
+    fill: COLOR.frame, stroke: COLOR.frameBorder, radius: 14, lineWidth: 3,
   });
   box(ctx, 24, 24, MEMORY_WIDTH - 48, MEMORY_HEIGHT - 48, { stroke: COLOR.line, radius: 10 });
 
@@ -749,11 +762,11 @@ export async function renderCharacterMemory({
     {
       label: "기술", name: skill?.display_name ?? null, image: skillImage,
       nameColor: skill?.custom_description_color || COLOR.ivory,
-      border: skill ? BOOK_COLOR[skill.book] : COLOR.gold, description: skill ? skillDescriptionRuns(skill) : [],
+      border: COLOR.iconBorder, description: skill ? skillDescriptionRuns(skill) : [],
     },
-    { label: "동반자", name: companion?.item_name ?? null, image: companionImage, border: COLOR.gold, description: plain(companion?.item_description) },
-    { label: "장신구", name: accessory?.item_name ?? null, image: accessoryImage, border: COLOR.gold, description: plain(accessory?.item_description) },
-    { label: "특성", name: trait?.name ?? null, image: traitImage, border: COLOR.gold, description: plain(trait?.description) },
+    { label: "동반자", name: companion?.item_name ?? null, image: companionImage, border: COLOR.iconBorder, description: plain(companion?.item_description) },
+    { label: "장신구", name: accessory?.item_name ?? null, image: accessoryImage, border: COLOR.iconBorder, description: plain(accessory?.item_description) },
+    { label: "특성", name: trait?.name ?? null, image: traitImage, border: COLOR.iconBorder, description: plain(trait?.description) },
   ];
   const cards = loadout.map((slot) => ({
     ...slot,
