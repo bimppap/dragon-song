@@ -661,24 +661,22 @@ export async function renderCharacterMemory({
   if (frame) drawContain(ctx, frame, frameX, frameY, 240, 240);
   if (photo) drawCover(ctx, photo, frameX + 20, frameY + 20, 200, 200);
 
-  // 메달과 그 오른쪽의 성장 등급(Lv. n + 포지션 아이콘, 아래에 총 획득 경험치). 묶음 전체를 사진 폭(200) 안 가운데에 둔다.
-  const photoX = frameX + 20;
-  const photoWidth = 200;
+  // [메달] [Lv. n / 총 획득 경험치] [포지션 아이콘]을 한 줄로 놓고, 묶음 전체를 액자 폭(240) 안 가운데에 둔다.
+  const groupWidthMax = 240;
   const medalSize = 72;
-  const medalGap = 10;
-  const factionSize = faction ? 28 : 0;
-  const factionGap = faction ? 8 : 0;
+  const factionSize = faction ? 48 : 0;
+  const gap = 10;
   let y = frameY + 256;
-  const levelText = `Lv. ${character.lv}`;
   const totalExp = Math.max(0, (character.lv - 1) * GROWTH_EXP_PER_LEVEL + character.exp);
-  const textMaxWidth = photoWidth - medalSize - medalGap;
-  const levelMaxWidth = textMaxWidth - factionSize - factionGap;
-  const levelLine = fitText(ctx, levelText, levelMaxWidth, 28, { family: "GalmuriMono11", minSize: 18 });
+  const textMaxWidth = groupWidthMax - medalSize - gap - (faction ? gap + factionSize : 0);
+  const levelLine = fitText(ctx, `Lv. ${character.lv}`, textMaxWidth, 28, { family: "GalmuriMono11", minSize: 18 });
+  const levelFont = ctx.font;
   const levelWidth = ctx.measureText(levelLine).width;
-  const totalText = fitText(ctx, `Total ${numberFormatter.format(totalExp)} EXP`, textMaxWidth, 15, { family: "GalmuriMono11", minSize: 10 });
+  const totalLine = fitText(ctx, `Total ${numberFormatter.format(totalExp)} EXP`, textMaxWidth, 15, { family: "GalmuriMono11", minSize: 10 });
   const totalFont = ctx.font;
-  const textWidth = Math.max(levelWidth + factionGap + factionSize, ctx.measureText(totalText).width);
-  const groupX = photoX + (photoWidth - medalSize - medalGap - textWidth) / 2;
+  const textWidth = Math.max(levelWidth, ctx.measureText(totalLine).width);
+  const groupWidth = medalSize + gap + textWidth + (faction ? gap + factionSize : 0);
+  const groupX = frameX + (groupWidthMax - groupWidth) / 2;
   if (medal) {
     ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
     ctx.shadowBlur = 4;
@@ -686,13 +684,16 @@ export async function renderCharacterMemory({
     ctx.shadowColor = "transparent";
     ctx.shadowBlur = 0;
   }
-  const textX = groupX + medalSize + medalGap;
-  drawText(ctx, levelText, textX, y + 24, { size: 28, color: COLOR.gold, family: "GalmuriMono11", maxWidth: levelMaxWidth, minSize: 18 });
-  if (faction) drawContain(ctx, faction, textX + levelWidth + factionGap, y + 24 - factionSize / 2 - 1, factionSize, factionSize);
+  const textX = groupX + medalSize + gap;
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.font = levelFont;
+  ctx.fillStyle = COLOR.gold;
+  fillText(ctx, levelLine, textX, y + 24);
   ctx.font = totalFont;
   ctx.fillStyle = COLOR.ivory;
-  ctx.textAlign = "left";
-  fillText(ctx, totalText, textX, y + 54);
+  fillText(ctx, totalLine, textX, y + 54);
+  if (faction) drawContain(ctx, faction, textX + textWidth + gap, y + (medalSize - factionSize) / 2, factionSize, factionSize);
 
   y += medalSize + 24;
   drawBar(ctx, "HP", character.hp, character.hp_max, COLOR.hp, left, y, leftWidth);
