@@ -375,13 +375,14 @@ function emptyNote(ctx: CanvasRenderingContext2D, text: string, x: number, y: nu
   drawText(ctx, text, x + w / 2, y + h / 2, { size: 13, color: COLOR.muted, align: "center" });
 }
 
-const NAMEPLATE = { width: 400, height: 72 }; // public/profile/name_bg.png 원본 크기
-// 명패 그림은 테마와 관계없이 같은 갈색이라 이름도 늘 같은 금색으로 쓴다.
-const NAMEPLATE_TEXT = "#e8c936";
+// public/profile/name_bg.png 원본 크기와, 그 안쪽 갈색 상자의 세로 가운데(그림 기준 20~52px).
+const NAMEPLATE = { width: 400, height: 72, innerCenterY: 36 };
+// 명패 그림은 테마와 관계없이 같은 갈색이라 이름도 늘 같은 흰색으로 쓴다.
+const NAMEPLATE_TEXT = "#ffffff";
 
 /** 이름표: 명패 그림(name_bg.png) 가운데에 이름을 쓴다. 원본 크기로 그려 픽셀이 고르게 보인다. */
 function drawNameplate(ctx: CanvasRenderingContext2D, name: string, plate: HTMLImageElement | null, x: number, y: number) {
-  const { width, height } = NAMEPLATE;
+  const { width, height, innerCenterY } = NAMEPLATE;
   if (plate) {
     ctx.imageSmoothingEnabled = false;
     ctx.drawImage(plate, x, y, width, height);
@@ -389,10 +390,13 @@ function drawNameplate(ctx: CanvasRenderingContext2D, name: string, plate: HTMLI
   const nameText = fitText(ctx, name, width - 72, 26, { family: "Galmuri14", minSize: 16 });
   ctx.fillStyle = NAMEPLATE_TEXT;
   ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
+  // "middle" 기준선은 글꼴 여백 때문에 한글이 위로 떠 보여, 실제 글자 윤곽의 가운데를 상자 가운데에 맞춘다.
+  ctx.textBaseline = "alphabetic";
+  const metrics = ctx.measureText(nameText);
+  const baselineY = y + innerCenterY + (metrics.actualBoundingBoxAscent - metrics.actualBoundingBoxDescent) / 2;
   ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
   ctx.shadowOffsetY = 2;
-  ctx.fillText(nameText, x + width / 2, y + height / 2 + 1);
+  ctx.fillText(nameText, x + width / 2, baselineY);
   ctx.shadowColor = "transparent";
   ctx.shadowOffsetY = 0;
 }
