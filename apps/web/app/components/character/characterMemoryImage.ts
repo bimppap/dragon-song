@@ -502,16 +502,24 @@ function drawRichLines(
 ) {
   ctx.textAlign = "left";
   ctx.textBaseline = "middle";
-  lines.forEach((line, index) => {
+  let lineY = y;
+  for (const line of lines) {
     let cursor = x;
     for (const piece of line) {
       ctx.font = font(size, piece);
       ctx.fillStyle = piece.color;
-      fillText(ctx, piece.text, cursor, y + index * lineHeight + lineHeight / 2);
+      fillText(ctx, piece.text, cursor, lineY + lineHeight / 2);
       cursor += piece.width;
     }
-  });
+    lineY += richLineHeight(line, lineHeight);
+  }
 }
+
+/** 빈 줄(문단 사이)은 반 줄 높이만 쓴다. */
+const richLineHeight = (line: TextPiece[], lineHeight: number) => (line.length ? lineHeight : lineHeight / 2);
+
+const richLinesHeight = (lines: TextPiece[][], lineHeight: number) =>
+  lines.reduce((sum, line) => sum + richLineHeight(line, lineHeight), 0);
 
 /** 작은따옴표로 감싼 구간을 강조색으로 바꾼다. 따옴표는 서식 기호라 지운다. 홀수 번째 조각이 따옴표 안쪽이다. */
 function quotedRuns(text: string, base: TextRun, quoted: TextRun): TextRun[] {
@@ -538,10 +546,17 @@ const loadoutLineHeight = (size: number) => Math.round(size * 4 / 3);
 function fitLoadoutText(ctx: CanvasRenderingContext2D, runs: TextRun[], maxWidth: number): LoadoutText {
   for (let size = LOADOUT_TEXT.maxSize; ; size -= 1) {
     const lineHeight = loadoutLineHeight(size);
-    const maxLines = Math.floor(LOADOUT_TEXT.maxHeight / lineHeight);
     const all = wrapRichText(ctx, runs, maxWidth, { size, maxLines: Infinity });
-    if (all.length <= maxLines) return { lines: all, size, lineHeight };
-    if (size <= LOADOUT_TEXT.minSize) return { lines: wrapRichText(ctx, runs, maxWidth, { size, maxLines }), size, lineHeight };
+    if (richLinesHeight(all, lineHeight) <= LOADOUT_TEXT.maxHeight) return { lines: all, size, lineHeight };
+    if (size <= LOADOUT_TEXT.minSize) {
+      // 높이 안에 들어가는 줄까지만 남긴다. 같은 크기로 다시 줄바꿈하므로 앞쪽 줄은 all과 같다.
+      let maxLines = 0;
+      for (let height = 0; maxLines < all.length; maxLines += 1) {
+        height += richLineHeight(all[maxLines], lineHeight);
+        if (height > LOADOUT_TEXT.maxHeight) break;
+      }
+      return { lines: wrapRichText(ctx, runs, maxWidth, { size, maxLines }), size, lineHeight };
+    }
   }
 }
 
@@ -785,7 +800,7 @@ export async function renderCharacterMemory({
   const cardWidth = (rightWidth - 12 * (loadout.length - 1)) / Math.max(loadout.length, 1);
   const cards = loadout.map((slot) => ({ ...slot, text: fitLoadoutText(ctx, slot.description, cardWidth - 24) }));
   const loadoutHeight = cards.length
-    ? loadoutCardHeight(Math.max(...cards.map((card) => card.text.lines.length * card.text.lineHeight)))
+    ? loadoutCardHeight(Math.max(...cards.map((card) => richLinesHeight(card.text.lines, card.text.lineHeight))))
     : 0;
   cards.forEach((card, index) => {
     drawLoadoutCard(ctx, card, right + index * (cardWidth + 12), loadoutY, cardWidth, loadoutHeight);
